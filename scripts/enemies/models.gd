@@ -6,6 +6,7 @@ extends RefCounted
 ## 每个种类只往 host 的动画部件表里登记（legs / wings / sacs / crystals / plates / jaws / scythes / abdomen / crown / turret / core_mi）。
 
 const ART = preload("res://scripts/art.gd")
+const Bugs2 = preload("res://scripts/bugs2.gd")
 const BONE := Color(0.66, 0.67, 0.7)
 const C_CH := Color(0.34, 0.35, 0.38)     ## 主甲壳（提亮到在战场上不糊成黑块）
 const C_CH2 := Color(0.5, 0.51, 0.55)     ## 亮一档甲壳
@@ -24,6 +25,12 @@ static func decal_size(kind: String) -> float:
 		"shielder": return 2.4
 		"mortar": return 3.0
 		"ironjaw": return 4.0
+		"aegis": return 3.4
+		"lancer": return 2.0
+		"overseer": return 2.8
+		"ripper": return 2.4
+		"brood": return 5.2
+		"colossus": return 6.4
 		_: return 2.8
 
 
@@ -38,6 +45,12 @@ static func build(h, body: Node3D, kind: String, s: float) -> void:
 		"shielder": _shielder(h, body, s)
 		"mortar": _mortar(h, body, s)
 		"ironjaw": _ironjaw(h, body, s)
+		"aegis": Bugs2.build_aegis(h, body, s)
+		"lancer": Bugs2.build_lancer(h, body, s)
+		"overseer": Bugs2.build_overseer(h, body, s)
+		"ripper": Bugs2.build_ripper(h, body, s)
+		"brood": Bugs2.build_brood(h, body, s)
+		"colossus": Bugs2.build_colossus(h, body, s)
 		_: _mantis(h, body, s)
 
 

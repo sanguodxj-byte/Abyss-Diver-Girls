@@ -86,6 +86,37 @@ const ENEMIES := {
 		"color": Color(0.26, 0.14, 0.34), "scale": 3.3, "drop": 1.0, "script": BOSS_QUEEN, "sfx": "abyss_queen", "boss": true,
 		"ai": "boss", "windup": 1.1, "strike": 0.35, "recover": 1.1, "weak_back": 1.8, "weak_core": 3.0, "loot": "boss_queen",
 		"phases": [1.0, 0.66, 0.3]},
+	# ---------------- 第二批补充：重装、远狙、支援与重锤 ----------------
+	# 盾卫虫：正面挂着整块复合盾的推进体，正面极硬，逼玩家绕后。
+	"aegis": {"name": "盾卫虫", "hp": 420.0, "speed": 3.2, "dmg": 26.0, "range": 3.2, "rate": 1.9, "radius": 1.35,
+		"color": Color(0.32, 0.34, 0.3), "scale": 1.5, "drop": 0.8, "script": ENEMY, "sfx": "crystal_bug",
+		"ai": "shell", "windup": 0.9, "strike": 0.24, "recover": 0.75, "charge_speed": 11.0, "charge_time": 0.32,
+		"aggro": 20.0, "armor": 0.12, "front_resist": 0.65, "interrupt": 0.3, "loot": "crystal"},
+	# 狙击虫：极远距离单发酸弹，弹道慢但伤害高，站在开阔地最危险。
+	"lancer": {"name": "狙击虫", "hp": 70.0, "speed": 4.4, "dmg": 30.0, "range": 30.0, "rate": 3.6, "radius": 0.7,
+		"color": Color(0.34, 0.3, 0.22), "scale": 1.0, "drop": 0.45, "script": ENEMY, "sfx": "wasp",
+		"ai": "artillery", "windup": 1.25, "strike": 0.2, "recover": 0.9, "volley": 1, "shell_time": 1.1,
+		"keep": 20.0, "flee": 8.0, "aggro": 26.0, "loot": "mantis"},
+	# 指挥虫：不冲阵，靠脉冲给周围虫群补盾与修甲，优先点掉。
+	"overseer": {"name": "指挥虫", "hp": 110.0, "speed": 4.2, "dmg": 10.0, "range": 16.0, "rate": 1.4, "radius": 0.9,
+		"color": Color(0.3, 0.28, 0.36), "scale": 1.25, "drop": 0.7, "script": ENEMY, "sfx": "shielder",
+		"ai": "support", "windup": 0.7, "strike": 0.2, "recover": 0.6, "pulse_r": 7.5, "pulse_heal": 16.0,
+		"pulse_shield": 12.0, "aggro": 18.0, "loot": "scrap"},
+	# 链锯虫：贴脸的高速切割体，起手快、收招短，逼玩家拉开距离。
+	"ripper": {"name": "链锯虫", "hp": 180.0, "speed": 6.8, "dmg": 20.0, "range": 2.8, "rate": 1.1, "radius": 0.9,
+		"color": Color(0.28, 0.26, 0.24), "scale": 1.2, "drop": 0.6, "script": ENEMY, "sfx": "mech_beetle",
+		"ai": "lancer", "windup": 0.45, "strike": 0.16, "recover": 0.5, "charge_speed": 18.0, "charge_time": 0.28,
+		"aggro": 19.0, "interrupt": 0.2, "loot": "scrap"},
+	# 巢母：移动缓慢的虫群核心，靠修复脉冲维持整片虫群，血量高但输出低。
+	"brood": {"name": "巢母", "hp": 900.0, "speed": 2.6, "dmg": 22.0, "range": 18.0, "rate": 2.0, "radius": 2.2,
+		"color": Color(0.3, 0.26, 0.3), "scale": 2.6, "drop": 1.0, "script": ENEMY, "sfx": "broodmother",
+		"ai": "support", "windup": 0.9, "strike": 0.25, "recover": 0.8, "pulse_r": 9.0, "pulse_heal": 24.0,
+		"pulse_shield": 18.0, "aggro": 20.0, "armor": 0.08, "loot": "boss_brood"},
+	# 破城巨像：慢速重锤，正面推进，靠体量与范围伤害压场地。
+	"colossus": {"name": "破城巨像", "hp": 1800.0, "speed": 2.0, "dmg": 55.0, "range": 4.6, "rate": 2.4, "radius": 3.0,
+		"color": Color(0.26, 0.26, 0.28), "scale": 3.2, "drop": 1.0, "script": ENEMY, "sfx": "ironjaw",
+		"ai": "juggernaut", "windup": 1.0, "strike": 0.32, "recover": 0.9, "charge_speed": 12.0, "charge_time": 0.4,
+		"aggro": 24.0, "armor": 0.15, "front_resist": 0.45, "interrupt": 0.4, "loot": "elite"},
 }
 const SPAWNS := {
 	# 灰港市：城区街巷密度中等，跳虫与酸液虫为主，开阔地混少量啸翅虫。
@@ -93,23 +124,24 @@ const SPAWNS := {
 		"kinds": {"ling": 46, "spitter": 24, "beetle": 18, "wasp": 12}, "pack_size": [2, 4]},
 	# 铁锈工业带：厂房掩体多、零件多，镰爪虫在编组站与厂区之间巡逻。
 	"ironbelt": {"packs": {"D": 1.2, "R": 1.5, "I": 2.2, "H": 1.4, "Y": 1.9, "M": 1.6, "P": 1.0, "F": 0.7, "W": 0.9, "T": 1.1, "C": 1.5, "S": 2.6, "K": 0.0},
-		"kinds": {"ling": 32, "spitter": 20, "beetle": 15, "mantis": 24, "shielder": 9}, "pack_size": [2, 4]},
+		"kinds": {"ling": 32, "spitter": 20, "beetle": 15, "mantis": 24, "shielder": 9, "ripper": 8, "aegis": 5}, "pack_size": [2, 4]},
 	# 尘土平原：视野开阔、虫群分散成小群，自爆虫贴着田埂冲过来。
 	"dustfield": {"packs": {"D": 1.1, "R": 1.5, "I": 0.6, "H": 0.4, "Y": 0.4, "M": 1.3, "P": 1.0, "F": 1.0, "W": 0.9, "T": 1.2, "C": 1.7, "S": 2.3, "K": 0.3},
-		"kinds": {"ling": 38, "spitter": 22, "beetle": 14, "bomber": 26}, "pack_size": [2, 3]},
+		"kinds": {"ling": 38, "spitter": 22, "beetle": 14, "bomber": 26, "lancer": 6}, "pack_size": [2, 3]},
 	# 赤湖新区：林地与湖畔，晶背虫与盾脉虫成群；巢母由 spawn_redlake.gd 布置。
 	"redlake": {"packs": {"D": 1.4, "R": 1.7, "I": 0.8, "H": 0.8, "Y": 0.5, "M": 1.4, "P": 1.6, "F": 1.2, "W": 0.9, "T": 1.8, "C": 1.6, "S": 2.4, "K": 0.0},
-		"kinds": {"ling": 30, "spitter": 22, "beetle": 15, "crystal_bug": 19, "shielder": 10, "wasp": 4}, "pack_size": [2, 4],
+		"kinds": {"ling": 30, "spitter": 22, "beetle": 15, "crystal_bug": 19, "shielder": 10, "wasp": 4, "overseer": 5}, "pack_size": [2, 4],
 		"script": "res://scripts/enemies/spawn_redlake.gd"},
 	# 裂谷矿区：路线少、伏击点多，钻地虫与曲炮虫封锁干河谷，精英铁颚虫游荡。
 	"canyon": {"packs": {"D": 0.8, "R": 0.6, "I": 1.3, "H": 0.6, "Y": 0.9, "M": 1.5, "P": 0.4, "F": 0.4, "W": 1.4, "T": 0.8, "C": 1.9, "S": 2.7, "K": 0.0},
-		"kinds": {"ling": 10, "beetle": 15, "mantis": 17, "burrower": 21, "mech_beetle": 14, "mortar": 15, "ironjaw": 8}, "pack_size": [2, 3],
+		"kinds": {"ling": 10, "beetle": 15, "mantis": 17, "burrower": 21, "mech_beetle": 14, "mortar": 15, "ironjaw": 8, "lancer": 6, "ripper": 7}, "pack_size": [2, 3],
 		"script": "res://scripts/enemies/spawn_canyon.gd"},
+
 }
 
 ## 零号深渊井的虫群分布：战区由地图团队登记后才并入（战区未登记时不产生指向不存在战区的分布）
 const ABYSS_SPAWN := {"packs": {"D": 0.0, "R": 0.0, "I": 1.4, "H": 0.0, "Y": 0.0, "M": 1.6, "P": 0.0, "F": 0.0, "W": 1.2, "T": 0.0, "C": 2.0, "S": 3.0, "K": 0.0},
-	"kinds": {"burrower": 22, "crystal_bug": 20, "ironjaw": 16, "mech_beetle": 14, "mortar": 14, "wasp": 14}, "pack_size": [2, 4],
+	"kinds": {"burrower": 22, "crystal_bug": 20, "ironjaw": 16, "mech_beetle": 14, "mortar": 14, "wasp": 14, "aegis": 6, "overseer": 4, "brood": 3, "colossus": 2}, "pack_size": [2, 4],
 	"script": "res://scripts/enemies/spawn_abyss.gd"}
 
 
