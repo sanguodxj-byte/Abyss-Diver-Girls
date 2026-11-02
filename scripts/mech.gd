@@ -239,12 +239,14 @@ func _physics_process(delta: float) -> void:
 			dsp = 19.0
 		elif leg_type == "quad":
 			dsp = 15.0
+		elif leg_type == "titan":
+			dsp = 13.0
 			visual.position.y = sin(clampf(1.0 - dash_time / 0.5, 0.0, 1.0) * PI) * 2.2
 		velocity.x = dash_dir.x * dsp
 		velocity.z = dash_dir.z * dsp
 		if dash_time <= 0.0:
 			visual.position.y = 0.0
-			land_t = 0.35 if leg_type in ["quad", "tread"] else 0.2
+			land_t = 0.35 if leg_type in ["quad", "tread", "titan"] else 0.2
 			var sk: Dictionary = GameData.SKILLS.get(leg_type, {})
 			if sk.has("dmg"):
 				raid.explode(global_position, float(sk.r), float(sk.dmg), "mech_slam")
@@ -684,6 +686,20 @@ func try_skill_e() -> void:
 			message.emit("火力过载已启动")
 		"core_heavy":
 			raid.explode(global_position, float(sk.r), float(sk.dmg))
+		"core_assault":
+			overdrive_t = float(sk.dur)
+			message.emit("火控过载已启动")
+		"core_command":
+			var cp := aim_point
+			cp.y = 0.0
+			raid.alert_noise(cp, 30.0)
+			raid.spark(cp + Vector3(0, 0.5, 0), Color(1.0, 0.7, 0.2), 10)
+			get_tree().create_timer(2.5).timeout.connect(func():
+				if is_instance_valid(raid):
+					raid.explode(cp, float(sk.r), float(sk.dmg)))
+		"core_fortress":
+			guard_t = float(sk.dur)
+			message.emit("要塞护盾展开")
 
 
 func try_skill_r() -> void:
@@ -708,6 +724,11 @@ func try_skill_r() -> void:
 			emergency = 0.0
 		"gen_reactor":
 			raid.explode(global_position, float(sk.r), float(sk.dmg))
+		"gen_diesel":
+			raid.explode(global_position, float(sk.r), float(sk.dmg))
+		"gen_hfc", "gen_turbine":
+			energy = min(max_energy, energy + float(sk.amt))
+			emergency = 0.0
 		"gen_crystal":
 			heal_t = float(sk.dur)
 			heal_rate = float(sk.amt) / float(sk.dur)

@@ -21,23 +21,39 @@ const Affix = preload("res://scripts/modules/affix.gd")
 
 const MODULES := {
 	# ---- 躯干 ----
+	"core_assault": {"name": "AS-2 突击 框架", "slot": "core", "w": 15, "v": 2000, "rar": 2, "hp": 170, "cargo": 20, "drain": 0.12, "armor": 0.02, "color": Color(0.42, 0.34, 0.28)},
+	"core_command": {"name": "CMD-1 指挥 框架", "slot": "core", "w": 13, "v": 2200, "rar": 2, "hp": 150, "cargo": 22, "drain": 0.11, "armor": 0.01, "color": Color(0.34, 0.38, 0.42)},
+	"core_fortress": {"name": "FT-5 要塞 框架", "slot": "core", "w": 26, "v": 3400, "rar": 3, "hp": 280, "cargo": 24, "drain": 0.17, "armor": 0.10, "color": Color(0.40, 0.42, 0.38)},
 	"core_heavy": {"name": "BW-3 重型 框架", "slot": "core", "w": 20, "v": 2400, "rar": 2, "hp": 220, "cargo": 24, "drain": 0.14, "color": Color(0.78, 0.302, 0.239)},
 	"core_scout": {"name": "SC-1 轻型 框架", "slot": "core", "w": 8, "v": 400, "rar": 0, "hp": 90, "cargo": 12, "drain": 0.08, "color": Color(0.922, 0.722, 0.251)},
 	"core_std": {"name": "MK-II 中型 框架", "slot": "core", "w": 12, "v": 1000, "rar": 1, "hp": 140, "cargo": 18, "drain": 0.1, "color": Color(0.302, 0.58, 0.851)},
 	# ---- 底盘 ----
+	"legs_titan": {"name": "TT-8 重装 四足底盘", "slot": "legs", "w": 28, "v": 3200, "rar": 3, "speed": 5.2, "load": 120, "drain": 0.14, "armor": 0.18, "type": "titan", "overload_immune": true, "acid_immune": true, "color": Color(0.36, 0.38, 0.34)},
 	"legs_biped": {"name": "ST-8 轻型 双足底盘", "slot": "legs", "w": 8, "v": 350, "rar": 0, "speed": 6.2, "load": 45, "drain": 0.06, "type": "biped", "color": Color(0.549, 0.549, 0.502)},
 	"legs_hover": {"name": "SK-9 轻型 悬浮底盘", "slot": "legs", "w": 6, "v": 2600, "rar": 3, "speed": 9.5, "load": 38, "drain": 0.16, "type": "hover", "color": Color(0.851, 0.851, 0.902)},
 	"legs_quad": {"name": "AR-4 重型 四足底盘", "slot": "legs", "w": 14, "v": 1700, "rar": 2, "speed": 6.4, "load": 80, "drain": 0.09, "type": "quad", "color": Color(0.502, 0.42, 0.6)},
 	"legs_tread": {"name": "SAXX-1 重型 履带底盘", "slot": "legs", "w": 16, "v": 1200, "rar": 1, "speed": 6.0, "load": 65, "drain": 0.08, "armor": 0.15, "type": "tread", "color": Color(0.349, 0.38, 0.302)},
 	# ---- 背部挂载 ----
+	"back_rack": {"name": "RK-4 外挂 货架", "slot": "back", "w": 3, "v": 350, "rar": 0, "cargo": 14, "ability": "none", "color": Color(0.40, 0.40, 0.36)},
+	"back_rocket": {"name": "RP-7 火箭 巢", "slot": "back", "w": 8, "v": 2100, "rar": 2, "ability": "missile", "cd": 8.0, "cost": 8.0, "dmg": 24.0, "count": 8, "color": Color(0.38, 0.40, 0.34)},
+	"back_vls": {"name": "VLS-12 垂发 单元", "slot": "back", "w": 11, "v": 2800, "rar": 3, "ability": "missile", "cd": 13.0, "cost": 12.0, "dmg": 36.0, "count": 12, "color": Color(0.34, 0.36, 0.38)},
 	"back_cargo": {"name": "CG-10 轻型 载货背包", "slot": "back", "w": 4, "v": 300, "rar": 0, "cargo": 10, "ability": "none", "color": Color(0.502, 0.42, 0.302)},
 	"back_missile": {"name": "MS-6 中型 导弹挂架", "slot": "back", "w": 7, "v": 1900, "rar": 2, "ability": "missile", "cd": 7.0, "cost": 8.0, "dmg": 30.0, "count": 6, "color": Color(0.4, 0.451, 0.349)},
 	"back_shield": {"name": "SH-3 中型 力场护盾", "slot": "back", "w": 6, "v": 1600, "rar": 2, "ability": "shield", "cd": 12.0, "cost": 10.0, "dur": 3.5, "color": Color(0.349, 0.549, 0.902)},
 	# ---- 动力炉 ----
+	"gen_diesel": {"name": "DS-6 柴油 机组", "slot": "gen", "w": 9, "v": 700, "rar": 1, "energy": 120.0, "eff": 0.95, "color": Color(0.40, 0.36, 0.30)},
+	"gen_hfc": {"name": "HFC-3 氢燃料 堆", "slot": "gen", "w": 10, "v": 1900, "rar": 2, "energy": 170.0, "eff": 0.88, "color": Color(0.36, 0.40, 0.42)},
+	"gen_turbine": {"name": "TB-5 涡轮 机组", "slot": "gen", "w": 12, "v": 2400, "rar": 2, "energy": 200.0, "eff": 0.92, "color": Color(0.38, 0.39, 0.36)},
 	"gen_cell": {"name": "B-40 轻型 电池组", "slot": "gen", "w": 5, "v": 300, "rar": 0, "energy": 100.0, "eff": 1.0, "color": Color(1, 0.8, 0.2)},
 	"gen_crystal": {"name": "CR-8 试作中型 反应炉", "slot": "gen", "w": 8, "v": 3200, "rar": 3, "energy": 230.0, "eff": 0.8, "color": Color(0.851, 0.302, 1)},
 	"gen_reactor": {"name": "RT-1 试作中型 动力炉", "slot": "gen", "w": 10, "v": 1500, "rar": 1, "energy": 150.0, "eff": 0.9, "color": Color(0.2, 0.902, 1)},
 	# ---- 手臂武装 ----
+	"arm_hmg": {"name": "HMG-24 重型 机枪", "slot": "arm", "w": 8, "v": 900, "rar": 1, "weapon": "mg", "dmg": 13.0, "rate": 7.0, "cost": 0.09, "spread": 3.5, "speed": 50.0, "range": 32.0, "color": Color(0.42, 0.43, 0.43)},
+	"arm_gatling": {"name": "GAU-6 六管 转管炮", "slot": "arm", "w": 9, "v": 1900, "rar": 2, "weapon": "mg", "dmg": 7.0, "rate": 15.0, "cost": 0.05, "spread": 5.5, "speed": 55.0, "range": 28.0, "color": Color(0.38, 0.40, 0.42)},
+	"arm_ac30": {"name": "AC-30 机炮", "slot": "arm", "w": 12, "v": 2200, "rar": 2, "weapon": "mg", "dmg": 24.0, "rate": 2.8, "cost": 0.4, "spread": 1.2, "speed": 90.0, "range": 38.0, "color": Color(0.40, 0.41, 0.39)},
+	"arm_slug": {"name": "SLG-12 独头枪", "slot": "arm", "w": 7, "v": 1200, "rar": 1, "weapon": "shotgun", "dmg": 44.0, "pellets": 1, "rate": 1.2, "cost": 0.45, "spread": 2.0, "speed": 42.0, "range": 18.0, "color": Color(0.38, 0.36, 0.32)},
+	"arm_cannon": {"name": "CN-105 短管炮", "slot": "arm", "w": 13, "v": 2400, "rar": 2, "weapon": "shotgun", "dmg": 62.0, "pellets": 1, "rate": 0.75, "cost": 0.8, "spread": 1.0, "speed": 34.0, "range": 26.0, "color": Color(0.45, 0.42, 0.34)},
+	"arm_rail": {"name": "RG-9 轨道炮", "slot": "arm", "w": 14, "v": 4200, "rar": 3, "weapon": "laser", "dmg": 95.0, "rate": 0.85, "cost": 4.5, "range": 50.0, "color": Color(0.36, 0.38, 0.40)},
 	"arm_flamer": {"name": "FT-20 喷火器", "slot": "arm", "w": 7, "v": 1400, "rar": 2, "weapon": "flamer", "dmg": 4.5, "rate": 20.0, "cost": 0.06, "spread": 16.0, "speed": 16.0, "range": 9.0, "color": Color(0.851, 0.349, 0.149)},
 	"arm_laser": {"name": "LZ-42 聚焦激光器", "slot": "arm", "w": 4, "v": 1800, "rar": 2, "weapon": "laser", "dmg": 42.0, "rate": 1.8, "cost": 1.6, "range": 34.0, "color": Color(0.302, 0.851, 0.949)},
 	"arm_mg": {"name": "G-36 转管机炮", "slot": "arm", "w": 5, "v": 300, "rar": 0, "weapon": "mg", "dmg": 9.0, "rate": 9.0, "cost": 0.05, "spread": 5.0, "speed": 48.0, "range": 30.0, "color": Color(0.6, 0.6, 0.549)},
@@ -46,7 +62,15 @@ const MODULES := {
 
 const AMMO := {}
 
-const SKILLS := {}
+const SKILLS := {
+	"titan": {"name": "震地重踏", "icon": "quake", "cd": 5.0, "cost": 10.0, "dmg": 34.0, "r": 5.2},
+	"core_assault": {"name": "火控过载", "icon": "overdrive", "cd": 14.0, "cost": 8.0, "dur": 4.0},
+	"core_command": {"name": "战术标记", "icon": "decoy", "cd": 12.0, "cost": 7.0, "dmg": 40.0, "r": 4.0},
+	"core_fortress": {"name": "要塞护盾", "icon": "shield", "cd": 20.0, "cost": 10.0, "dur": 5.0, "guard": 0.55},
+	"gen_diesel": {"name": "过载排放", "icon": "vent", "cd": 12.0, "cost": 6.0, "dmg": 24.0, "r": 5.0},
+	"gen_hfc": {"name": "应急充能", "icon": "charge", "cd": 24.0, "cost": 0.0, "amt": 35.0},
+	"gen_turbine": {"name": "飞轮释能", "icon": "charge", "cd": 18.0, "cost": 0.0, "amt": 45.0},
+}
 
 const ITEMS := {
 	# ---- food ----
@@ -81,7 +105,11 @@ const ITEMS := {
 
 const LOOT_TABLES := {}
 
-const SHOP := ["sonic_decoy", "extract_flare", "energy_rod", "coolant_pack", "extract_barrier", "surge_cell"]
+const SHOP := ["sonic_decoy", "extract_flare", "energy_rod", "coolant_pack", "extract_barrier", "surge_cell",
+	"arm_hmg", "arm_gatling", "arm_ac30", "arm_slug", "arm_cannon", "arm_rail",
+	"legs_titan", "back_rack", "back_rocket", "back_vls",
+	"core_assault", "core_command", "core_fortress",
+	"gen_diesel", "gen_hfc", "gen_turbine"]
 
 const SFX := {}
 

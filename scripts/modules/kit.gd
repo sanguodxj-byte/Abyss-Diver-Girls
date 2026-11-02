@@ -34,6 +34,12 @@ const REAL := {
 	"arm_mg": Color(0.42, 0.43, 0.44), "arm_shotgun": Color(0.46, 0.44, 0.4), "arm_flamer": Color(0.44, 0.36, 0.3), "arm_laser": Color(0.36, 0.4, 0.44),
 	"back_cargo": Color(0.42, 0.42, 0.38), "back_missile": Color(0.36, 0.39, 0.34), "back_shield": Color(0.4, 0.43, 0.47),
 	"gen_cell": Color(0.36, 0.37, 0.37), "gen_reactor": Color(0.34, 0.36, 0.38), "gen_crystal": Color(0.32, 0.32, 0.35),
+	"core_assault": Color(0.44, 0.38, 0.32), "core_command": Color(0.36, 0.40, 0.44), "core_fortress": Color(0.42, 0.43, 0.39),
+	"legs_titan": Color(0.36, 0.38, 0.34),
+	"back_rack": Color(0.42, 0.41, 0.36), "back_rocket": Color(0.38, 0.40, 0.34), "back_vls": Color(0.34, 0.36, 0.38),
+	"gen_diesel": Color(0.40, 0.37, 0.31), "gen_hfc": Color(0.36, 0.40, 0.42), "gen_turbine": Color(0.38, 0.39, 0.36),
+	"arm_hmg": Color(0.42, 0.43, 0.43), "arm_gatling": Color(0.38, 0.40, 0.42), "arm_ac30": Color(0.40, 0.41, 0.39),
+	"arm_slug": Color(0.38, 0.36, 0.32), "arm_cannon": Color(0.45, 0.42, 0.34), "arm_rail": Color(0.36, 0.38, 0.40),
 }
 
 
