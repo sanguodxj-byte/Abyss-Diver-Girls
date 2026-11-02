@@ -1,7 +1,6 @@
 extends CharacterBody3D
-## 虫族：跳虫=猎手(近战快)、酸液虫=喷吐者(远程)、甲虫=冲锋者(肉盾)。
+## 虫族（参考《绝地潜兵2》终端虫）：跳虫=猎手(近战快)、酸液虫=胆汁喷吐者(远程)、甲虫=冲锋者(肉盾)。
 ## 黑褐色厚重切角甲壳 + 甲片缝隙露出的橙黄肉质 + 发光脓包。
-## 种类数值的核心表是 KINDS；运行时从合并了扩展数据的 GameData.ENEMIES 读取。新种类可继承本脚本（见 data\ext\enemies.gd）。
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/modules/kit.gd")
@@ -10,9 +9,15 @@ const KINDS := {
 	"ling": {"name": "跳虫", "hp": 26.0, "speed": 8.8, "dmg": 6.0, "range": 2.0, "rate": 0.7, "radius": 0.6, "color": Color(0.36, 0.09, 0.16), "scale": 0.8, "drop": 0.25},
 	"spitter": {"name": "酸液虫", "hp": 42.0, "speed": 5.0, "dmg": 9.0, "range": 14.0, "rate": 2.0, "radius": 0.75, "color": Color(0.2, 0.28, 0.1), "scale": 1.0, "drop": 0.4},
 	"beetle": {"name": "甲虫", "hp": 190.0, "speed": 4.2, "dmg": 20.0, "range": 2.8, "rate": 1.6, "radius": 1.35, "color": Color(0.24, 0.15, 0.1), "scale": 1.8, "drop": 0.9},
+
 }
+const Bugs2 = preload("res://scripts/bugs2.gd")
+const HS = preload("res://scripts/hs.gd")
+const KINDS2 := ["mantis", "bomber", "aegis", "mortar", "lancer", "burrower", "overseer", "ripper", "brood", "colossus"]
 
 var kind := "ling"
+## 行为模板：ling（近战快）/ spitter（远程）/ beetle（重型近战）；第二批虫族靠它复用现有 AI 与动画
+var beh := "ling"
 var data := {}
 var hp := 30.0
 var raid
@@ -28,6 +33,7 @@ var parts: Array = []
 var legs: Array = []
 var jaws: Array = []
 var scythes: Array = []
+var spinners: Array = []   ## [节点, 局部轴, 待机转速, 攻击转速]：钻头、雷达、核心转子
 var sac: MeshInstance3D
 var flash_t := 0.0
 var gun: Node3D
@@ -42,16 +48,16 @@ var hit_v := Vector3.ZERO
 var spawn_t := 0.0
 var dying := false
 var move_amt := 0.0
+var sfx := ""
+var _last_state := "idle"
 var anim_t := 0.0
 var strafe := 1.0
-## 音效前缀：bug_<sfx>_appear / windup / attack / hurt / death
-var sfx := "ling"
-var _last_state := "idle"
 
 
 func setup(k: String, r, tgt) -> void:
 	kind = k
 	data = GameData.ENEMIES.get(k, KINDS.get(k, KINDS.ling))
+	beh = data.get("beh", k)
 	sfx = str(data.get("sfx", k))
 	hp = data.hp
 	raid = r
@@ -62,9 +68,9 @@ func setup(k: String, r, tgt) -> void:
 	var cs := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = data.radius
-	shape.height = 3.2   # 故意做高：俯视角下子弹从机甲肩部高度射出也能命中
+	shape.height = maxf(3.2, float(data.scale) * 1.6 + 1.0)   # 故意做高：俯视角下子弹从机甲肩部高度射出也能命中
 	cs.shape = shape
-	cs.position.y = 1.6
+	cs.position.y = shape.height * 0.5
 	add_child(cs)
 	strafe = 1.0 if randf() < 0.5 else -1.0
 	anim_t = randf() * 10.0
@@ -87,10 +93,11 @@ func _seg(parent: Node3D, p0: Vector3, p1: Vector3, r0: float, r1: float, m: Mat
 	return mi
 
 
-# ---------------------------------------------------------------- 虫族外形要素
-#  猎手   → 骨白色带刺甲壳、粗壮弯曲的尖刺长腿、红橙肉质躯干、背后一对橙色膜翼、头顶橙色褶冠、前伸钩爪
-#  喷吐者 → 巨大发光黄绿色胆汁囊（带暗色脉络），背上一层层参差的暗橄榄色锯齿甲片，暗色刀片腿
-#  冲锋者 → 高大，两条巨型锯齿甲壳前腿像柱子撑地，三角形带刺头冠 + 橙色角，后腿短小，尾部橙色肉臀发光
+# ---------------------------------------------------------------- 终端虫外形
+# 对照《绝地潜兵2》参考图：
+#  猎手 Hunter   → 骨白色带刺甲壳、粗壮弯曲的尖刺长腿、红橙肉质躯干、背后一对橙色膜翼、头顶橙色褶冠、前伸钩爪
+#  胆汁喷吐者     → 巨大发光黄绿色胆汁囊（带暗色脉络），背上一层层参差的暗橄榄色锯齿甲片，暗色刀片腿
+#  冲锋者 Charger → 高大，两条巨型锯齿甲壳前腿像柱子撑地，三角形带刺头冠 + 橙色角，后腿短小，尾部橙色肉臀发光
 static var _tmats := {}
 
 
@@ -239,17 +246,15 @@ func _jag(p: Node3D, w: float, l: float, thick: float, m: Material, pos: Vector3
 	return mi
 
 
-static func _bx(v: Vector3) -> BoxMesh:
-	var b := BoxMesh.new()
-	b.size = v
-	return b
+static func _bx(v: Vector3) -> Mesh:
+	return HS.cbox(v)
 
 
 func _pustule(p: Node3D, pos: Vector3, r: float, c: Color, e := 1.0) -> void:
 	A.add(p, A.sphere(r, -1, 10), A.emit(c, e), pos, Vector3.ZERO, Vector3(1, 0.75, 1), false)
 
 
-# ---------------------------------------------------------------- 异形虫族
+# ---------------------------------------------------------------- v2 异形虫族（星际争霸 Zerg × 绝地潜兵 Terminid）
 # 统一配色：暗褐黑亮面甲壳 → 骨白刃尖（顶点色渐变），甲片缝隙露出橙红发光肉质，橙色发光眼/囊。
 # 造型语言：弯曲的镰刃、背脊长刺、分段拱形甲、反关节腿、前倾猎食姿态 —— 不是现实昆虫。
 static var _sm := {}
@@ -405,9 +410,9 @@ func _blade(parent: Node3D, pts: Array, r0: float, flat := 0.35, up := Vector3.U
 	return _sweep(parent, pts, radii, C_CH, C_BONE, flat, 1.0, up, 1, 4, null, 0.45, true)
 
 
-func _spike(parent: Node3D, base: Vector3, dir: Vector3, length: float, r: float, bend := Vector3.ZERO) -> MeshInstance3D:
-	var d := dir.normalized() * length
-	return _sweep(parent, [base, base + d * 0.5 + bend * 0.5, base + d + bend], [r, r * 0.5, 0.0], C_CH2, C_BONE, 1.0, 1.0, Vector3.UP if abs(d.normalized().y) < 0.9 else Vector3.FORWARD, 1, 4, null, 0.2, true)
+## 已废弃：虫族纯机械，不得有仿生尖刺（用户 2026-11-02）。保留空函数兼容旧调用。
+func _spike(_parent: Node3D, _base: Vector3, _dir: Vector3, _length: float, _r: float, _bend := Vector3.ZERO) -> MeshInstance3D:
+	return null
 
 
 ## 拱形甲带：从左侧低处 → 背顶 → 右侧低处的一条扁平甲，前后叠放成分段甲壳
@@ -430,7 +435,14 @@ func _band(parent: Node3D, z: float, y: float, half_w: float, arch: float, thick
 			_spike(parent, Vector3(sx * half_w * 0.95, y - 0.02, z), Vector3(sx, 0.2, 0.6), spines * 0.7, thick * 1.2)
 
 
-## 反关节腿：髋 → 膝（外上）→ 跗（外下靠后）→ 足刃插地；膝后一根骨刺
+## 机械足垫：踝伺服 + 八棱缓冲柱 + 切角底板（取代尖足 / 爪）
+func _foot_pad(hip: Node3D, foot: Vector3, w: float) -> void:
+	_servo(hip, foot + Vector3(0, w * 0.8, 0), w * 0.8)
+	_p(hip, A.cyl(w * 0.7, w * 0.9, w * 0.8, 8), _steel(), foot + Vector3(0, w * 0.3, 0))
+	_p(hip, HS.cbox(Vector3(w * 2.6, w * 0.45, w * 3.0), w * 0.15), _vmat_solid(C_CH), foot + Vector3(0, -w * 0.25, 0))
+
+
+## 机械连杆腿：髋 → 膝（外上）→ 跗（外下靠后）→ 液压足垫
 func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, by: float, w: float, phase: float, spur := true) -> Node3D:
 	var hip := Node3D.new()
 	hip.position = hip_pos
@@ -439,14 +451,19 @@ func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	var knee := Vector3(sx * reach * 0.42, by * 0.42, 0)
 	var hock := Vector3(sx * reach * 0.78, -by * 0.35, w * 0.6)
 	var tip := Vector3(sx * reach, -by + 0.01, -w * 0.8)
-	_sweep(hip, [Vector3.ZERO, knee, hock, tip], [w, w * 0.95, w * 0.6, 0.0], C_CH, C_BONE, 0.8, 1.15, Vector3.FORWARD, 5, 6, null, 0.62, true)
+	# 纯机械：三段放样连杆 + 液压足垫（无尖端）
+	var DKm := _vmat_solid(C_CH)
+	var ARm := _vmat_solid(C_CH2)
+	var foot := Vector3(tip.x, -by + w * 0.5, tip.z)
+	_limb(hip, Vector3.ZERO, knee, w * 1.7, w * 1.9, DKm, 0.75, 1.15)
+	_limb(hip, knee, hock, w * 1.4, w * 1.6, ARm, 0.7, 1.1, Vector3.FORWARD)
+	_limb(hip, hock, foot + Vector3(0, w * 0.8, 0), w * 1.0, w * 1.1, DKm, 0.85, 1.0, Vector3.FORWARD)
+	_foot_pad(hip, foot, w)
 	_servo(hip, Vector3.ZERO, w * 1.3)
 	_servo(hip, knee, w * 1.05)
 	_servo(hip, hock, w * 0.7)
 	# 液压杆：股节下方平行一根银色活塞
 	_seg(hip, Vector3(sx * w * 0.5, -w * 1.2, 0), knee.lerp(hock, 0.35) + Vector3(0, -w * 0.3, 0), w * 0.28, w * 0.2, _steel(), 6)
-	if spur:
-		_spike(hip, knee + Vector3(0, w * 0.6, 0), Vector3(sx * 0.3, 1.0, 0.5), w * 4.0, w * 0.55, Vector3(0, 0, w * 1.5))
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -454,12 +471,9 @@ func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	return hip
 
 
-## 发光眼簇
-func _eyes(head: Node3D, z: float, y: float, xs: Array, r: float) -> void:
-	# 机械传感器：发光横向目镜条 + 黑色镜框
-	for x in xs:
-		_p(head, _bx(Vector3(r * 3.0, r * 1.2, r * 1.4)), _vmat_solid(Color(0.03, 0.03, 0.04)), Vector3(x, y, z + r * 0.2), Vector3.ZERO, Vector3.ONE, false)
-		_p(head, _bx(Vector3(r * 2.6, r * 0.55, r * 1.2)), _glow(4.0), Vector3(x, y, z - r * 0.15), Vector3.ZERO, Vector3.ONE, false)
+## 已废弃：虫族不得有眼、嘴等仿生物部位（用户 2026-11-02）。保留空函数以兼容旧调用。
+func _eyes(_head: Node3D, _z: float, _y: float, _xs: Array, _r: float) -> void:
+	pass
 
 
 ## 关节伺服：侧向金属圆盘 + 发光环
@@ -488,6 +502,29 @@ func _build_visual() -> void:
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
+	if kind in KINDS2:
+		match kind:
+			"mantis":
+				Bugs2.build_mantis(self, body, s)
+			"bomber":
+				Bugs2.build_bomber(self, body, s)
+			"aegis":
+				Bugs2.build_aegis(self, body, s)
+			"mortar":
+				Bugs2.build_mortar(self, body, s)
+			"lancer":
+				Bugs2.build_lancer(self, body, s)
+			"burrower":
+				Bugs2.build_burrower(self, body, s)
+			"overseer":
+				Bugs2.build_overseer(self, body, s)
+			"ripper":
+				Bugs2.build_ripper(self, body, s)
+			"brood":
+				Bugs2.build_brood(self, body, s)
+			"colossus":
+				Bugs2.build_colossus(self, body, s)
+		return
 	match kind:
 		"ling":
 			_build_ling(body, s)
@@ -508,12 +545,41 @@ func _bar(parent: Node3D, a: Vector3, b: Vector3, w: float, h: float, m: Materia
 	x = x.normalized()
 	var y := z.cross(x).normalized()
 	var mi := MeshInstance3D.new()
-	mi.mesh = _bx(Vector3.ONE)
+	mi.mesh = _bx(Vector3(w, h, l))
 	mi.material_override = m
-	mi.transform = Transform3D(Basis(x * w, y * h, z * l), (a + b) * 0.5)
+	mi.transform = Transform3D(Basis(x, y, z), (a + b) * 0.5)
 	parent.add_child(mi)
 	parts.append(mi)
 	return mi
+
+
+## 放样肢节：a → b，起点截面 w×h，末端 taper，中前段鼓起 bulge（硬表面切角截面，取代方棍）
+func _limb(parent: Node3D, a: Vector3, b: Vector3, w: float, h: float, m: Material, taper := 0.7, bulge := 1.15, up := Vector3.UP, chamf := 0.35) -> MeshInstance3D:
+	var d := b - a
+	var l := d.length()
+	var z := d / l
+	var x := up.cross(z)
+	if x.length() < 0.01:
+		x = Vector3.RIGHT
+	x = x.normalized()
+	var y := z.cross(x).normalized()
+	var mi := MeshInstance3D.new()
+	mi.mesh = HS.limb_mesh(l, w, h, taper, bulge, chamf)
+	mi.material_override = m
+	mi.transform = Transform3D(Basis(x, y, z), (a + b) * 0.5)
+	parent.add_child(mi)
+	parts.append(mi)
+	return mi
+
+
+## 放样体：base 截面 + secs（见 hs.gd loft）
+func _loft(parent: Node3D, base: Array, secs: Array, m: Material, pos: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
+	return _p(parent, HS.loft(base, secs), m, pos, rot)
+
+
+## 弧形覆甲壳（沿局部 Z），profile = [[t, 宽比, 高比, 顶面 y], ...]
+func _shell(parent: Node3D, m: Material, pos: Vector3, r: float, t: float, z0: float, z1: float, profile: Array, rot := Vector3.ZERO, ang := 70.0, seg := 6) -> MeshInstance3D:
+	return _p(parent, HS.shell_mesh(r, t, z0, z1, profile, ang, seg), m, pos, rot)
 
 
 func _box(parent: Node3D, m: Material, pos: Vector3, size: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
@@ -535,10 +601,11 @@ func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	_bar(hip, Vector3(0, w * 0.9, 0), knee + Vector3(0, w * 0.9, 0), w * 1.9, w * 0.5, AR)
 	_servo(hip, knee, w * 1.15)
 	var ank := knee.lerp(foot, 0.55) + Vector3(sx * w * 0.8, 0, 0)
-	_sweep(hip, [knee, ank, foot], [w * 1.0, w * 0.75, 0.0], C_CH, C_BONE, 0.7, 1.3, Vector3.FORWARD, 1, 4, null, 0.5, true)
+	var fp := Vector3(foot.x, -by + w * 0.5, foot.z)
+	_limb(hip, knee, ank, w * 1.5, w * 1.7, DK, 0.75, 1.12, Vector3.FORWARD)
+	_limb(hip, ank, fp + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, AR, 0.85, 1.0, Vector3.FORWARD)
+	_foot_pad(hip, fp, w)
 	_seg(hip, Vector3(0, -w * 1.0, 0), knee.lerp(ank, 0.5) + Vector3(-sx * w * 0.6, 0, 0), w * 0.25, w * 0.2, _steel(), 6)
-	if spur:
-		_spike(hip, knee + Vector3(0, w * 1.0, 0), Vector3(sx * 0.4, 1.0, 0.4), w * 3.5, w * 0.5)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -601,12 +668,10 @@ func _build_ling(body: Node3D, s: float) -> void:
 	_box(body, _glow(2.0), Vector3(-0.272 * s, by - 0.02 * s, 0.06 * s), Vector3(0.006, 0.016, 0.5) * s)
 	for k in 3:
 		_box(body, BL, Vector3(-0.273 * s, by + 0.06 * s, (-0.1 + k * 0.1) * s), Vector3(0.006, 0.12, 0.045) * s)
-	# 正面大圆透镜独眼：钢圈 + 暗色腔 + 发光晶体
+	# 正面圆形装甲舱盖（非眼睛：实心钢盖，无发光、无暗腔）
 	var eye := Vector3(-0.02 * s, by + 0.0, -0.34 * s)
 	_p(body, A.cyl(0.17 * s, 0.08 * s, 0.17 * s, 16), AR, eye, Vector3(90, 0, 0))
 	_p(body, A.cyl(0.14 * s, 0.02 * s, 0.14 * s, 16), _steel(), eye + Vector3(0, 0, -0.045 * s), Vector3(90, 0, 0))
-	_p(body, A.cyl(0.115 * s, 0.01 * s, 0.115 * s, 16), BL, eye + Vector3(0, 0, -0.056 * s), Vector3(90, 0, 0), Vector3.ONE, false)
-	_p(body, A.cyl(0.08 * s, 0.01 * s, 0.08 * s, 16), _glow(2.6), eye + Vector3(0, 0, -0.06 * s), Vector3(90, 0, 0), Vector3.ONE, false)
 	# 左前上方小传感头（红色狭缝）
 	var head := Node3D.new()
 	head.position = Vector3(-0.17 * s, by + 0.38 * s, -0.24 * s)
@@ -756,10 +821,9 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_servo(hip, knee, 0.15 * s)
 	_bar(hip, knee, ank, 0.14 * s, 0.16 * s, DK)
 	_seg(hip, knee + Vector3(-sx * 0.1, -0.08, 0.1) * s, ank + Vector3(-sx * 0.06, 0.06, 0.1) * s, 0.04 * s, 0.03 * s, _steel(), 6)
-	# 尖足：暗色足靴 + 前后两片爪
+	# 足：暗色足靴 + 切角底板（纯机械）
 	_box(hip, DK, ank + Vector3(0, -0.06 * s, 0), Vector3(0.2, 0.26, 0.24) * s)
-	for zz: float in [-0.07, 0.07]:
-		_bar(hip, ank + Vector3(0, -0.1 * s, zz * s), foot + Vector3(0, 0, zz * 1.8 * s), 0.08 * s, 0.1 * s, AR)
+	_box(hip, AR, foot + Vector3(0, 0.03 * s, 0), Vector3(0.26, 0.06, 0.36) * s)
 	# 大盾：挂在膝外侧，盾面朝外（沿腿方向），顶部向内后仰
 	var sh := Node3D.new()
 	sh.position = Vector3(sx * 1.36 * s, (0.3 + 0.05 * ss) * s, 0)
@@ -838,7 +902,7 @@ func _build_spitter(body: Node3D, s: float) -> void:
 		_box(body, BL, Vector3(sx * 0.364 * s, by + 0.21 * s, 0.2 * s), Vector3(0.006, 0.12, 0.22) * s)
 		for k in 3:
 			_box(body, _steel(), Vector3(sx * 0.366 * s, by + 0.11 * s, (0.05 + k * 0.12) * s), Vector3(0.01, 0.025, 0.025) * s)
-	# 楔形头舱：前下方尖吻，顶部两层叠甲后掠，正面一道紫色狭缝目镜，两侧格栅
+	# 楔形头舱：前端楔形装甲，顶部两层叠甲后掠，两侧格栅
 	var head := Node3D.new()
 	head.position = Vector3(GX * 0.6, by + 0.5 * s, -0.4 * s)
 	head.scale = Vector3.ONE * 1.25
@@ -847,9 +911,6 @@ func _build_spitter(body: Node3D, s: float) -> void:
 	_prism(head, side.call([Vector2(0.75, 0.0), Vector2(0.45, 0.32), Vector2(-0.05, 0.42), Vector2(-0.15, 0.05), Vector2(0.35, -0.16)]), 0.4 * s, 0.06, DK, Vector3.ZERO, Vector3(0, 90, 0))
 	_prism(head, side.call([Vector2(0.55, 0.3), Vector2(0.3, 0.46), Vector2(-0.12, 0.5), Vector2(-0.12, 0.38), Vector2(0.4, 0.3)]), 0.46 * s, 0.08, AR, Vector3.ZERO, Vector3(0, 90, 0))
 	_prism(head, side.call([Vector2(0.3, 0.47), Vector2(0.12, 0.56), Vector2(-0.2, 0.58), Vector2(-0.2, 0.48)]), 0.3 * s, 0.1, DK, Vector3.ZERO, Vector3(0, 90, 0))
-	# 目镜狭缝（吻部斜面上）
-	_box(head, BL, Vector3(0, 0.17 * s, -0.6 * s), Vector3(0.36, 0.05, 0.02) * s, Vector3(-48, 0, 0))
-	_box(head, _glow(2.2), Vector3(0, 0.17 * s, -0.61 * s), Vector3(0.24, 0.018, 0.01) * s, Vector3(-48, 0, 0))
 	for sx: float in [-1.0, 1.0]:
 		for k in 4:
 			_box(head, BL, Vector3(sx * 0.205 * s, 0.12 * s, (-0.05 - k * 0.07) * s), Vector3(0.01, 0.14, 0.03) * s)
@@ -858,7 +919,6 @@ func _build_spitter(body: Node3D, s: float) -> void:
 		var jaw := Node3D.new()
 		jaw.position = Vector3((j * 2 - 1) * 0.1 * s, -0.12 * s, -0.4 * s)
 		head.add_child(jaw)
-		_box(jaw, DK, Vector3(0, 0, -0.04 * s), Vector3(0.06, 0.05, 0.12) * s)
 		jaws.append(jaw)
 	sac = _box(body, DK, Vector3(0, by - 0.1 * s, 0.2 * s), Vector3(0.36, 0.3, 0.5) * s)
 	# 顶部长背甲：从头舱后上方斜升到尾部背鳍，两层（亮灰主板 + 暗色顶盖 + 侧裙）
@@ -869,12 +929,15 @@ func _build_spitter(body: Node3D, s: float) -> void:
 	for sx: float in [-1.0, 1.0]:
 		_bar(body, d0 + Vector3(sx * 0.3 * s, -0.08 * s, 0.05 * s), d1 + Vector3(sx * 0.3 * s, -0.1 * s, -0.05 * s), 0.05 * s, 0.22 * s, DK)
 	_box(body, TR, d1 + Vector3(0, 0.16 * s, -0.3 * s), Vector3(0.012, 0.012, 0.5) * s, Vector3(-20, 0, 0))
-	# 背鳍：尾部斜立的大刃板，向后上方挑起
+	# 尾部散热器
 	var fin := [Vector2(0, 0), Vector2(0.3, 0), Vector2(0.85, 0.95), Vector2(0.75, 1.05), Vector2(0.05, 0.3)]
 	var fs: Array = []
 	for q in fin:
 		fs.append(q * s)
-	_prism(body, fs, 0.07 * s, 0.15, AR, Vector3(-0.08 * s, by + 1.1 * s, 0.35 * s), Vector3(0, -90, 0))
+	# 尾部散热器箱（取代背鳍）：箱体 + 四片竖向散热片
+	_box(body, AR, Vector3(-0.08 * s, by + 1.28 * s, 0.6 * s), Vector3(0.3, 0.26, 0.36) * s)
+	for k in 4:
+		_box(body, DK, Vector3((-0.2 + k * 0.08) * s, by + 1.44 * s, 0.6 * s), Vector3(0.03, 0.1, 0.32) * s)
 	_box(body, DK, Vector3(-0.12 * s, by + 0.66 * s, 0.45 * s), Vector3(0.12, 0.16, 0.22) * s)
 	# 主炮：头舱下方、沿机体右侧前伸的长身管炮（加长机匣 + 前护套 + 三道箍 + 炮口制退器）
 	var GM := StandardMaterial3D.new()
@@ -995,9 +1058,6 @@ func _build_brute(body: Node3D, s: float) -> void:
 	head.position = Vector3(0, by + 0.42 * s, -0.42 * s)
 	body.add_child(head)
 	_prism(head, [Vector2(-0.2, 0) * s, Vector2(0.2, 0) * s, Vector2(0.15, 0.12) * s, Vector2(-0.15, 0.12) * s], 0.3 * s, 0.08, DK, Vector3.ZERO)
-	_box(head, BL, Vector3(0, 0.06 * s, -0.152 * s), Vector3(0.3, 0.06, 0.01) * s)
-	for k in 3:
-		_box(head, _glow(2.6), Vector3((k - 1) * 0.09 * s, 0.06 * s, -0.158 * s), Vector3(0.04, 0.025, 0.006) * s)
 	# 两侧液压破碎钳
 	for sx: float in [-1.0, 1.0]:
 		var sc := Node3D.new()
@@ -1086,10 +1146,6 @@ func _physics_process(delta: float) -> void:
 			_sleep_acc = 0.0
 			if aggro_range > 0.0 and global_position.distance_to(raid.mech.global_position) > aggro_range:
 				return
-	if state != _last_state:
-		if state == "chase" and _last_state == "idle":
-			_sfx("appear")
-		_last_state = state
 	atk_cd = max(0.0, atk_cd - delta)
 	if flash_t > 0.0:
 		flash_t -= delta
@@ -1122,7 +1178,7 @@ func _physics_process(delta: float) -> void:
 			home = global_position
 		else:
 			var fwd: Vector3 = to / max(d, 0.01)
-			if kind == "spitter":
+			if beh == "spitter":
 				if d < 8.0:
 					dir = -fwd
 				elif d < data.range:
@@ -1137,12 +1193,12 @@ func _physics_process(delta: float) -> void:
 					dir = fwd
 				if d < data.range + 0.8 and atk_cd <= 0.0 and act == "":
 					atk_cd = data.rate
-					_begin("wind", 0.2 if kind == "ling" else 0.45, fwd)
+					_begin("wind", 0.2 if beh == "ling" else 0.45, fwd)
 	if spawn_t > 0.0:
 		dir = Vector3.ZERO
 	if act != "":
 		_tick_act(delta)
-		dir = Vector3.ZERO if act != "strike" else act_dir * (2.6 if kind == "ling" else 1.2)
+		dir = Vector3.ZERO if act != "strike" else act_dir * (2.6 if beh == "ling" else 1.2)
 	var spd: float = data.speed
 	velocity.x = dir.x * spd
 	velocity.z = dir.z * spd
@@ -1160,12 +1216,6 @@ func _begin(a: String, t: float, d: Vector3) -> void:
 	act = a
 	act_t = t
 	act_dir = d
-	if a == "wind":
-		_sfx("windup")
-
-
-func _sfx(what: String) -> void:
-	Audio.play_sfx("bug_%s_%s" % [sfx, what], global_position + Vector3(0, 0.8, 0))
 
 
 func _tick_act(delta: float) -> void:
@@ -1175,19 +1225,18 @@ func _tick_act(delta: float) -> void:
 	match act:
 		"wind":
 			act = "strike"
-			act_t = 0.14 if kind != "beetle" else 0.18
+			act_t = 0.14 if beh != "beetle" else 0.18
 			_strike()
 		"strike":
 			act = "recover"
-			act_t = 0.3 if kind != "beetle" else 0.45
+			act_t = 0.3 if beh != "beetle" else 0.45
 		_:
 			act = ""
 
 
 func _strike() -> void:
-	_sfx("attack")
 	var valid: bool = target != null and is_instance_valid(target) and not target.dead
-	if kind == "spitter":
+	if beh == "spitter":
 		if gun_tip and raid:
 			var mp: Vector3 = gun_tip.global_position
 			var aim := act_dir
@@ -1205,25 +1254,25 @@ func _strike() -> void:
 			target.take_damage(data.dmg)
 			if raid:
 				raid.spark(target.global_position + Vector3(0, 1.4, 0) - to.normalized() * 0.8, Color(1.0, 0.75, 0.3), 10)
-				if kind == "beetle":
+				if beh == "beetle":
 					raid.shake = max(raid.shake, 0.35)
 
 
 ## 程序动画：步态（抬腿 = 绕腿轴 z 旋转，摆腿 = 绕 y）、身体起伏、攻击前摇/出手/收招、受击后仰、出生爬出
 func _animate(delta: float, mv: float) -> void:
 	move_amt = move_toward(move_amt, clampf(mv, 0.0, 1.0), delta * 6.0)
-	var cad: float = 14.0 if kind == "ling" else (9.0 if kind == "spitter" else 6.5)
+	var cad: float = 14.0 if beh == "ling" else (9.0 if beh == "spitter" else 6.5)
 	anim_t += delta * (0.3 + move_amt)
 	var amt := move_amt
-	var swing := 0.42 if kind != "beetle" else 0.4
-	var liftk := 0.45 if kind == "ling" else (0.32 if kind == "spitter" else 0.32)
+	var swing := 0.42 if beh != "beetle" else 0.4
+	var liftk := 0.45 if beh == "ling" else (0.32 if beh == "spitter" else 0.32)
 	var k := clampf(16.0 * delta, 0.0, 1.0)
 	for hip in legs:
 		var ph: float = anim_t * cad + hip.get_meta("phase")
 		var side: float = float(hip.get_meta("side"))
 		var sy := float(hip.get_meta("base_y")) - sin(ph) * swing * amt * side
 		var lz := maxf(0.0, cos(ph)) * liftk * amt * side
-		if act == "wind" and kind == "beetle":
+		if act == "wind" and beh == "beetle":
 			lz += 0.12 * side   # 前摇：收腿蓄力
 		hip.rotation.y = lerp_angle(hip.rotation.y, sy, k)
 		hip.rotation.x = 0.0
@@ -1239,7 +1288,7 @@ func _animate(delta: float, mv: float) -> void:
 	var a_t := act_t
 	match act:
 		"wind":
-			match kind:
+			match beh:
 				"ling":
 					pitch = 0.18; fwd_off = 0.25; by -= 0.1
 				"spitter":
@@ -1249,7 +1298,7 @@ func _animate(delta: float, mv: float) -> void:
 				"beetle":
 					pitch = -0.32; fwd_off = 0.35; by += 0.12
 		"strike":
-			match kind:
+			match beh:
 				"ling":
 					pitch = -0.12; fwd_off = -0.7
 				"spitter":
@@ -1288,8 +1337,12 @@ func _animate(delta: float, mv: float) -> void:
 		elif act == "strike":
 			rx = -0.35
 		sc.rotation.x = lerp(sc.rotation.x, rx, clampf(14.0 * delta, 0.0, 1.0))
+	for sp in spinners:
+		var on: bool = act == "wind" or act == "strike"
+		var w: float = float(sp[3]) if on else float(sp[2])
+		sp[0].rotate_object_local(sp[1], w * delta)
 	if sac:
-		var ks := 1.0 + sin(anim_t * 4.0) * 0.08
+		var ks := 1.0 + sin(anim_t * (4.0 if act != "wind" else 22.0)) * (0.08 if act != "wind" else 0.16)
 		sac.scale = Vector3(ks, 0.9 * ks, 1.1 * ks)
 	# 出生：从地下爬出
 	if spawn_t > 0.0:
@@ -1317,11 +1370,8 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	var push := clampf(amount / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
 	hit_v += Vector3(randf_range(-1.0, -0.4), 0, randf_range(-0.6, 0.6)) * push * 4.0
 	if hp <= 0.0:
-		_sfx("death")
 		raid.on_bug_killed(self)
 		_die()
-	else:
-		_sfx("hurt")
 
 
 ## 死亡：移出战斗、残骸塌落（腿外撇、机身砸地侧翻）、冒火花与黑烟，数秒后沉入地面
