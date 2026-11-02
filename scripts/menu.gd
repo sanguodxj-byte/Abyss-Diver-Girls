@@ -1,5 +1,5 @@
 extends Control
-## 主菜单：飞行中飞空艇座舱朝外俯瞰云海（伪天空盒 + 滚滚云海 + 座舱舷窗骨架与仪表台）+ 标题 + 核心按钮
+## 主菜单：贴着飞空艇舷窗俯瞰——伪天空盒 + 3D 云海层 + 云下真实 3D 城市遗迹（楼体取自战区地图）+ 标题 + 核心按钮
 signal start_requested
 
 const A = preload("res://scripts/art.gd")
@@ -7,87 +7,13 @@ const UI = preload("res://scripts/ui.gd")
 const MV = preload("res://scripts/mech_visual.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 
-const SKY_SHADER := """
-shader_type sky;
-uniform vec4 top_color : source_color = vec4(0.08, 0.14, 0.28, 1.0);
-uniform vec4 horiz_color : source_color = vec4(0.96, 0.54, 0.22, 1.0);
-uniform vec4 haze_color : source_color = vec4(0.85, 0.40, 0.16, 1.0);
-uniform vec3 sun_dir = vec3(0.55, 0.18, -0.80);
-uniform float t = 0.0;
-
-void sky() {
-	float h = clamp(EYEDIR.y * 3.2, -1.0, 1.0);
-	vec3 col = mix(horiz_color.rgb, top_color.rgb, clamp(h, 0.0, 1.0));
-	col = mix(col, haze_color.rgb, clamp(-h * 1.5, 0.0, 1.0));
-
-	float sun_dot = max(dot(EYEDIR, normalize(sun_dir)), 0.0);
-	float sun_disk = pow(sun_dot, 512.0) * 4.0;
-	float sun_halo = pow(sun_dot, 28.0) * 0.9 + pow(sun_dot, 4.0) * 0.4;
-	vec3 sun_col = vec3(1.0, 0.92, 0.72) * sun_disk + vec3(1.0, 0.65, 0.28) * sun_halo;
-
-	// High altitude cirrus streaks
-	float cirrus = sin(EYEDIR.x * 12.0 + t * 0.02) * sin(EYEDIR.z * 10.0 + EYEDIR.y * 18.0);
-	cirrus = smoothstep(0.42, 0.92, cirrus) * clamp(EYEDIR.y * 2.0, 0.0, 1.0) * 0.35;
-	col += vec3(1.0, 0.85, 0.68) * cirrus;
-
-	COLOR = col + sun_col;
-}
-"""
-
-const CLOUD_SHADER := """
-shader_type spatial;
-render_mode blend_mix, cull_disabled;
-uniform vec4 cloud_light : source_color = vec4(0.98, 0.85, 0.68, 1.0);
-uniform vec4 cloud_shadow : source_color = vec4(0.38, 0.28, 0.34, 1.0);
-uniform vec4 cloud_ambient : source_color = vec4(0.85, 0.50, 0.28, 1.0);
-uniform float t = 0.0;
-
-float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-float noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = hash(i);
-	float b = hash(i + vec2(1.0, 0.0));
-	float c = hash(i + vec2(0.0, 1.0));
-	float d = hash(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-float fbm(vec2 p) {
-	float v = 0.0;
-	v += 0.5000 * noise(p); p *= 2.02;
-	v += 0.2500 * noise(p); p *= 2.03;
-	v += 0.1250 * noise(p); p *= 2.01;
-	v += 0.0625 * noise(p);
-	return v;
-}
-void fragment() {
-	vec2 uv = UV * 24.0 + vec2(0.0, t * 0.15);
-	float n = fbm(uv);
-	float n2 = fbm(uv * 2.5 + vec2(t * 0.08, 0.0));
-	float billow = clamp(n * 0.65 + n2 * 0.35, 0.0, 1.0);
-
-	vec3 col = mix(cloud_shadow.rgb, cloud_light.rgb, smoothstep(0.28, 0.75, billow));
-	col = mix(col, cloud_ambient.rgb, 0.30);
-
-	ALBEDO = col;
-	ROUGHNESS = 0.95;
-	ALPHA = 0.98;
-}
-"""
+const MenuShip = preload("res://scripts/menu_ship.gd")
 
 var cam: Camera3D
 var toon: Node
 var menu_env: Environment
-var cabin: Node3D
-var wing_beacon: OmniLight3D
-var skybox_mat: ShaderMaterial
-var cloud_mat: ShaderMaterial
-var escort_ship: Node3D
-var cloud_nodes: Array = []
 var t := 0.0
+var refs := {}
 var settings_panel: PanelContainer
 var start_panel: PanelContainer
 var _dlg_name: LineEdit
@@ -112,182 +38,77 @@ func _ready() -> void:
 func _build_scene(sv: SubViewport) -> void:
 	var root := Node3D.new()
 	sv.add_child(root)
-
-	# 1. 环境与伪天空盒
+	# 伪天空盒：黄昏云海 + 云缝下依稀可见的废土（menu_sky.gdshader）
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	var sky := Sky.new()
-	var sh_sky := Shader.new()
-	sh_sky.code = SKY_SHADER
-	skybox_mat = ShaderMaterial.new()
-	skybox_mat.shader = sh_sky
-	sky.sky_material = skybox_mat
+	var sm := ShaderMaterial.new()
+	sm.shader = load("res://shaders/menu_sky.gdshader")
+	sky.sky_material = sm
+	sky.radiance_size = Sky.RADIANCE_SIZE_64
+	sky.process_mode = Sky.PROCESS_MODE_QUALITY
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.85
+	env.ambient_light_energy = 0.38
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.15
-	env.tonemap_white = 10.0
+	env.tonemap_exposure = 1.05
+	env.tonemap_white = 8.0
 	env.ssao_enabled = true
-	env.ssao_radius = 1.2
-	env.ssao_intensity = 1.8
-	env.ssil_enabled = true
-	env.ssil_intensity = 0.9
+	env.ssao_radius = 0.8
+	env.ssao_intensity = 1.6
 	env.glow_enabled = true
-	env.glow_intensity = 0.8
-	env.glow_bloom = 0.08
+	env.glow_intensity = 0.9
+	env.glow_bloom = 0.12
+	env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.92, 0.58, 0.30)
-	env.fog_density = 0.0008
-	env.fog_depth_begin = 35.0
-	env.fog_depth_end = 280.0
-	env.volumetric_fog_enabled = false
+	# 舱内体积雾：只在近处，阳光穿窗形成光柱（天空不受影响）
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.012
+	env.volumetric_fog_albedo = Color(1.0, 0.85, 0.7)
+	env.volumetric_fog_anisotropy = 0.75
+	env.volumetric_fog_length = 14.0
+	env.volumetric_fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.12
-	env.adjustment_saturation = 0.94
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 0.95
 	we.environment = env
 	menu_env = env
 	root.add_child(we)
-
+	# 太阳：低悬在窗外右前方，穿过窗框把竖梃影子投进舱内
+	var L := Vector3(0.5, 0.24, -1.0).normalized()
 	var sun := DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.72, 0.45)
-	sun.light_energy = 2.8
-	sun.rotation_degrees = Vector3(-12, -145, 0)
+	sun.light_color = Color(1.0, 0.72, 0.46)
+	sun.light_energy = 2.4
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 60.0
+	sun.shadow_blur = 1.5
+	sun.light_angular_distance = 0.6
+	sun.light_volumetric_fog_energy = 4.0
+	sun.directional_shadow_max_distance = 30.0
 	root.add_child(sun)
-
-	var rim := DirectionalLight3D.new()
-	rim.light_color = Color(0.40, 0.50, 0.75)
-	rim.light_energy = 0.6
-	rim.rotation_degrees = Vector3(-30, 45, 0)
-	root.add_child(rim)
-
-	# 2. 滚滚云海（下方大面积横向流动云海平面）
-	var cloud_mesh := PlaneMesh.new()
-	cloud_mesh.size = Vector2(800, 800)
-	var sh_cloud := Shader.new()
-	sh_cloud.code = CLOUD_SHADER
-	cloud_mat = ShaderMaterial.new()
-	cloud_mat.shader = sh_cloud
-	var cloud_inst := MeshInstance3D.new()
-	cloud_inst.mesh = cloud_mesh
-	cloud_inst.material_override = cloud_mat
-	cloud_inst.position = Vector3(0, -6.5, -60.0)
-	cloud_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(cloud_inst)
-
-	# 3. 立体云团群（从飞空艇舷窗下方向后快速漂移，产生飞行速度感与真实视差）
-	var cloud_pbr := StandardMaterial3D.new()
-	cloud_pbr.albedo_color = Color(0.95, 0.82, 0.70, 0.85)
-	cloud_pbr.roughness = 0.95
-	cloud_pbr.emission_enabled = true
-	cloud_pbr.emission = Color(0.85, 0.45, 0.22)
-	cloud_pbr.emission_energy_multiplier = 0.35
-	cloud_pbr.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 42
-	for i in 22:
-		var s := rng.randf_range(12.0, 32.0)
-		var puff := MeshInstance3D.new()
-		var sm_puff := SphereMesh.new()
-		sm_puff.radius = s * 0.5
-		sm_puff.height = s * 0.6
-		puff.mesh = sm_puff
-		puff.material_override = cloud_pbr
-		puff.position = Vector3(rng.randf_range(-140, 160), rng.randf_range(-22, -10), rng.randf_range(-220, 20))
-		puff.set_meta("base_z", puff.position.z)
-		puff.set_meta("speed", rng.randf_range(28.0, 48.0))
-		root.add_child(puff)
-		cloud_nodes.append(puff)
-
-	# 4. 僚舰（右侧前方伴随飞行的巡防飞空艇，朝向航向前方）
-	escort_ship = Node3D.new()
-	escort_ship.position = Vector3(34.0, 6.0, -52.0)
-	escort_ship.rotation_degrees = Vector3(0, 8, 0)
-	root.add_child(escort_ship)
-	var hull_mat := A.paint(Color(0.24, 0.26, 0.28), 0.35, 0.65, {"panel_scale": 0.6})
-	# 艇身主气囊（沿 Z 轴布置）
-	A.add(escort_ship, A.capsule(2.6, 22.0), hull_mat, Vector3.ZERO, Vector3(90, 0, 0), Vector3.ONE, false)
-	# 艇腹吊舱
-	A.add(escort_ship, A.bevel_box(Vector3(2.2, 1.6, 7.0), 0.15), hull_mat, Vector3(0, -2.2, 1.0), Vector3.ZERO, Vector3.ONE, false)
-	# 尾翼十字稳定翼
-	A.add(escort_ship, A.bevel_box(Vector3(6.8, 0.15, 3.2), 0.04, 0.6), hull_mat, Vector3(0, 0, 8.5), Vector3.ZERO, Vector3.ONE, false)
-	A.add(escort_ship, A.bevel_box(Vector3(0.15, 6.8, 3.2), 0.04, 0.6), hull_mat, Vector3(0, 0, 8.5), Vector3.ZERO, Vector3.ONE, false)
-	# 舷窗发光与尾喷
-	for k in 4:
-		A.add(escort_ship, A.sphere(0.2, -1, 6), A.emit(Color(1.0, 0.75, 0.35), 4.5), Vector3(-1.2, -2.0, -1.5 + k * 1.6), Vector3.ZERO, Vector3.ONE, false)
-	A.add(escort_ship, A.sphere(0.45, -1, 6), A.emit(Color(0.3, 0.8, 1.0), 6.0), Vector3(0, -0.6, 11.2), Vector3.ZERO, Vector3.ONE, false)
-
-	# 5. 飞空艇座舱（观察桥楼内景骨架结构：无遮挡全景观察舷窗、仪表台、右侧外露机翼与涡轮引擎）
-	cabin = Node3D.new()
-	root.add_child(cabin)
-	var frame_mat := A.paint(Color(0.15, 0.16, 0.19), 0.15, 0.85, {"panel_scale": 0.5})
-
-	# 舷窗顶部框架与顶棚（保持高位，不遮挡天空视线）
-	A.add(cabin, A.bevel_box(Vector3(8.0, 0.35, 3.2), 0.06), frame_mat, Vector3(0.0, 2.65, 0.4), Vector3(8, 0, 0))
-	# 舷窗左侧 A 柱（退至画面左侧，留出主视口）
-	A.add(cabin, A.bevel_box(Vector3(0.35, 3.2, 0.35), 0.05), frame_mat, Vector3(-2.6, 1.6, 0.2), Vector3(0, 20, 16))
-	# 舷窗右侧 A 柱（分隔正向大视窗与右侧外探机翼舷窗）
-	A.add(cabin, A.bevel_box(Vector3(0.32, 3.2, 0.35), 0.05), frame_mat, Vector3(1.85, 1.6, 0.1), Vector3(0, -18, -14))
-
-	# 仪表操作台（下方斜面控制台）
-	var dash_mat := A.paint(Color(0.12, 0.13, 0.15), 0.1, 0.9)
-	A.add(cabin, A.bevel_box(Vector3(6.2, 0.5, 1.4), 0.05), dash_mat, Vector3(0.1, 0.68, -0.3), Vector3(18, 0, 0))
-	# 仪表盘发光屏与战术仪表
-	A.add(cabin, A.bevel_box(Vector3(0.85, 0.04, 0.55), 0.02), A.emit(Color(0.20, 0.85, 0.70), 2.2), Vector3(-0.95, 0.82, -0.2), Vector3(18, 8, 0))
-	A.add(cabin, A.bevel_box(Vector3(0.75, 0.04, 0.45), 0.02), A.emit(Color(1.0, 0.72, 0.30), 1.6), Vector3(0.95, 0.82, -0.2), Vector3(18, -8, 0))
-	for led in 6:
-		var c_led := Color(0.25, 1.0, 0.45) if led % 2 == 0 else Color(1.0, 0.55, 0.2)
-		A.add(cabin, A.sphere(0.022, -1, 4), A.emit(c_led, 2.5), Vector3(-0.25 + led * 0.1, 0.78, -0.42), Vector3.ZERO, Vector3.ONE, false)
-
-	# 舱内微弱暖色顶光
-	var cabin_light := OmniLight3D.new()
-	cabin_light.light_color = Color(1.0, 0.68, 0.35)
-	cabin_light.light_energy = 0.9
-	cabin_light.omni_range = 3.2
-	cabin_light.position = Vector3(0, 2.3, 0.5)
-	cabin.add_child(cabin_light)
-
-	# 右侧舷窗外探出的飞空艇主翼与涡轮推进器
-	var wing := Node3D.new()
-	wing.position = Vector3(3.2, 0.5, -3.0)
-	wing.rotation_degrees = Vector3(0, -8, 3)
-	cabin.add_child(wing)
-	var wing_mat := A.paint(Color(0.20, 0.22, 0.25), 0.3, 0.7)
-	A.add(wing, A.bevel_box(Vector3(3.6, 0.22, 1.6), 0.08, 0.75), wing_mat, Vector3(1.5, 0, 0))
-	# 涡轮机舱
-	var nacelle := A.cyl(0.60, 3.0, 0.60, 14)
-	A.add(wing, nacelle, wing_mat, Vector3(1.6, -0.45, 0.2), Vector3(90, 0, 0))
-	# 翼尖频闪防撞信号灯
-	wing_beacon = OmniLight3D.new()
-	wing_beacon.light_color = Color(1.0, 0.25, 0.18)
-	wing_beacon.light_energy = 3.5
-	wing_beacon.omni_range = 6.0
-	wing_beacon.position = Vector3(3.4, 0.15, 0)
-	wing.add_child(wing_beacon)
-	A.add(wing, A.sphere(0.08, -1, 6), A.emit(Color(1.0, 0.25, 0.18), 5.0), Vector3(3.4, 0.15, 0), Vector3.ZERO, Vector3.ONE, false)
-
-	# 舷窗外流动的冷凝气流与风痕粒子
-	A.emitter(cabin, Vector3(0.5, 1.4, -4.5), {
-		"amount": 45, "life": 0.6, "size": 0.04, "box": Vector3(4.5, 2.0, 1.0),
-		"dir": Vector3(0, 0, 1.0), "spread": 2.0, "vmin": 16.0, "vmax": 24.0,
-		"c0": Color(1.0, 0.95, 0.9, 0.0), "cmid": Color(1.0, 0.9, 0.82, 0.45),
-		"c1": Color(1.0, 0.85, 0.75, 0.0), "grow0": 1.0, "grow1": 1.0, "additive": true
-	})
-
-	# 7. 摄像机：置于座舱内，朝向舷窗外开阔的云海与落日地平线
+	sun.basis = Basis.looking_at(-L, Vector3.UP)
+	# 云下城市（真实 3D 楼体 + 3D 云海层）
+	var city := preload("res://scripts/menu_city.gd").new()
+	root.add_child(city)
+	city.setup(sky.sky_material, L)
+	refs = MenuShip.build(root)
 	cam = Camera3D.new()
-	cam.fov = 42
-	root.add_child(cam)
-	cam.position = Vector3(-0.25, 1.45, 0.95)
-	cam.look_at(Vector3(0.35, 1.25, -16.0), Vector3.UP)
+	cam.fov = 62
+	cam.near = 0.03
+	cam.far = 40000.0
 	var ca := CameraAttributesPractical.new()
-	ca.dof_blur_far_enabled = false
+	ca.dof_blur_near_enabled = true
+	ca.dof_blur_near_distance = 0.35
+	ca.dof_blur_near_transition = 0.4
+	ca.dof_blur_amount = 0.04
 	cam.attributes = ca
+	root.add_child(cam)
 	cam.current = true
+	# 舱内浮尘（被阳光照亮）
+	A.emitter(root, Vector3(1.0, 1.8, 1.4), {"amount": 90, "life": 9.0, "size": 0.012, "box": Vector3(4.5, 2.2, 1.8), "dir": Vector3(-1, 0.1, 0.2),
+		"spread": 60.0, "vmin": 0.03, "vmax": 0.08, "gravity": Vector3(0, -0.005, 0), "c0": Color(1.0, 0.85, 0.65, 0.0), "cmid": Color(1.0, 0.88, 0.7, 0.7),
+		"c1": Color(1.0, 0.85, 0.65, 0.0), "grow0": 1.0, "grow1": 1.0, "additive": true})
 	toon = preload("res://scripts/toon.gd").attach(root, menu_env, cam, GameData.render_style == 1)
 
 
@@ -550,37 +371,26 @@ func _process(delta: float) -> void:
 	t += delta
 	if post_mat:
 		post_mat.set_shader_parameter("t", fmod(t, 10.0))
-	if skybox_mat:
-		skybox_mat.set_shader_parameter("t", t)
-	if cloud_mat:
-		cloud_mat.set_shader_parameter("t", t)
-
-	# 飞空艇航行中的重工业机体呼吸感与气流颠簸
-	if cabin:
-		cabin.rotation.z = sin(t * 0.45) * 0.012 + sin(t * 1.1) * 0.003
-		cabin.rotation.x = sin(t * 0.32) * 0.007
-		cabin.position.y = sin(t * 0.70) * 0.035
-
-	# 摄像机微调伴随感
-	if cam:
-		cam.position.y = 1.42 + sin(t * 0.85) * 0.012
-		cam.position.x = -0.35 + sin(t * 0.45) * 0.008
-
-	# 翼尖频闪信号灯（每 1.2 秒闪一次）
-	if wing_beacon:
-		wing_beacon.light_energy = 3.5 if fmod(t, 1.2) < 0.12 else 0.0
-
-	# 僚舰编队浮动
-	if escort_ship:
-		escort_ship.position.y = 15.0 + sin(t * 0.6 + 1.0) * 0.7
-		escort_ship.rotation.z = sin(t * 0.4 + 0.5) * 0.02
-
-	# 立体云块向后掠过飞空艇
-	for puff: Node3D in cloud_nodes:
-		var spd: float = puff.get_meta("speed", 36.0)
-		puff.position.z += spd * delta
-		if puff.position.z > 30.0:
-			puff.position.z = -220.0
+	var sway := sin(t * 0.35) * 0.6 + sin(t * 0.13) * 0.4
+	# 贴窗视角：镜头几乎贴着玻璃，窗框和仪表台只占画面边缘
+	cam.position = Vector3(0.75 + sin(t * 0.07) * 0.04, 1.82 + sin(t * 0.4) * 0.02, 1.1)
+	cam.look_at(Vector3(1.6 + sin(t * 0.05) * 0.15, 0.9, -6.0), Vector3.UP)
+	cam.rotate_object_local(Vector3.FORWARD, deg_to_rad(sway * 0.6))
+	if refs.has("lamp"):
+		refs.lamp.rotation.z = sin(t * 0.35 - 0.6) * 0.05
+		refs.lamp.rotation.x = sin(t * 0.27) * 0.03
+	if refs.has("prop"):
+		refs.prop.rotation.x += delta * 14.0
+	if refs.has("clouds"):
+		for c in refs.clouds:
+			c.position.x -= delta * 4.0
+			if c.position.x < -280.0:
+				c.position.x += 560.0
+	if refs.has("needles"):
+		for i in refs.needles.size():
+			var nd = refs.needles[i]
+			if nd:
+				nd.rotation.z = deg_to_rad(-40.0 + i * 55.0) + sin(t * (0.6 + i * 0.37)) * 0.05
 
 
 func _unhandled_input(e: InputEvent) -> void:
