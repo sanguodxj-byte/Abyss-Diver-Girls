@@ -39,7 +39,7 @@ void fragment() {
 		float fl = hgt / 3.3;
 		float co = u / 2.8;
 		vec2 fw = fwidth(vec2(co, fl));
-		float fade = smoothstep(0.35, 0.9, max(fw.x, fw.y));   // 远处窗格小于 ~2 像素时平均
+		float fade = smoothstep(0.1, 0.33, max(fw.x, fw.y));   // 窗格小于约 8 像素就开始过渡到平均色，防摩尔纹
 		vec2 cell = floor(vec2(co, fl));
 		vec2 f = fract(vec2(co, fl));
 		float win = smoothstep(0.18, 0.24, f.x) * (1.0 - smoothstep(0.76, 0.82, f.x))

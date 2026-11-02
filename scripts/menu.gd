@@ -30,6 +30,7 @@ func _ready() -> void:
 	add_child(svc)
 	var sv := SubViewport.new()
 	sv.msaa_3d = Viewport.MSAA_4X
+	sv.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	svc.add_child(sv)
 	_build_scene(sv)
 	_build_ui()
@@ -138,158 +139,415 @@ func _build_ui() -> void:
 	post.material = post_mat
 	add_child(post)
 
-	# 左侧暗角渐变
+	# 左侧压暗：只压文字区，窗外场景大部分保留
 	var grad := TextureRect.new()
 	var gt := GradientTexture2D.new()
 	var g := Gradient.new()
-	g.set_color(0, Color(0.03, 0.03, 0.04, 0.92))
-	g.set_color(1, Color(0.03, 0.03, 0.04, 0.0))
+	g.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+	g.colors = PackedColorArray([Color(0.02, 0.025, 0.03, 0.88), Color(0.02, 0.025, 0.03, 0.5), Color(0.02, 0.025, 0.03, 0.0)])
 	gt.gradient = g
-	gt.fill_from = Vector2(0, 0)
 	gt.fill_to = Vector2(1, 0)
 	grad.texture = gt
 	grad.stretch_mode = TextureRect.STRETCH_SCALE
 	grad.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
-	grad.offset_right = 720
+	grad.offset_right = 780
 	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(grad)
 
-	var v := VBoxContainer.new()
-	v.set_anchors_and_offsets_preset(Control.PRESET_CENTER_LEFT)
-	v.offset_left = 90
-	v.offset_top = -250
-	v.offset_bottom = 250
-	v.add_theme_constant_override("separation", 8)
-	add_child(v)
+	# 取景框角标 + 菜单游标（自绘）
+	hud = Control.new()
+	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.draw.connect(_draw_hud)
+	add_child(hud)
 
-	var title := UI.label("Abyss Diver Girls", 60, Color(0.97, 0.94, 0.88), true)
-	title.add_theme_constant_override("outline_size", 6)
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
-	v.add_child(title)
+	# 标题：生成的金属艺术字（中文 / 英文两版），带扫光
+	title_rect = TextureRect.new()
+	title_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	title_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	title_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 项目全局为 Nearest（像素 UI），标题是高清图需线性+mipmap
+	var tsh := Shader.new()
+	tsh.code = TITLE_FX
+	title_mat = ShaderMaterial.new()
+	title_mat.shader = tsh
+	title_rect.material = title_mat
+	add_child(title_rect)
+	_apply_title_lang()
 
-	var bar := ColorRect.new()
-	bar.color = UI.ACCENT
-	bar.custom_minimum_size = Vector2(120, 4)
-	bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(bar)
-
-	var sp := Control.new()
-	sp.custom_minimum_size = Vector2(0, 28)
-	v.add_child(sp)
-
-	# 核心一级按钮：新的游戏、载入游戏、游戏设置、退出游戏
+	# 菜单
+	menu_box = VBoxContainer.new()
+	menu_box.position = Vector2(96, 330)
+	menu_box.add_theme_constant_override("separation", 0)
+	add_child(menu_box)
 	var has_save := FileAccess.file_exists(GameData.save_path)
 	var items := [
-		["新的游戏", "", func(): _open_start(), "ui_confirm", false],
-		["载入游戏", "", func(): _load_game(), "ui_confirm", not has_save],
-		["游戏设置", "", func(): _toggle_settings(), "", false],
-		["退出游戏", "", func(): get_tree().quit(), "ui_cancel", false]
+		["新的游戏", "NEW GAME", func(): _open_start(), "ui_confirm", false],
+		["载入游戏", "CONTINUE" if has_save else "无存档", func(): _load_game(), "ui_confirm", not has_save],
+		["游戏设置", "SETTINGS", func(): _toggle_settings(), "", false],
+		["退出游戏", "QUIT", func(): get_tree().quit(), "ui_cancel", false]
 	]
-	for it in items:
-		var mb := _menu_button(it[0], it[1], it[2], it[4])
+	for i in items.size():
+		var it: Array = items[i]
+		var mb := _menu_button(i, it[0], it[1], it[2], it[4])
 		mb.set_meta("sfx", it[3])
-		v.add_child(mb)
+		menu_box.add_child(mb)
+
+	# 左下：舱内仪表读数
+	var readout := HBoxContainer.new()
+	readout.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	readout.offset_left = 96
+	readout.offset_top = -92
+	readout.offset_bottom = -64
+	readout.add_theme_constant_override("separation", 28)
+	add_child(readout)
+	status_dot = UI.label("●", 12, UI.GOOD)
+	var live := HBoxContainer.new()
+	live.add_theme_constant_override("separation", 6)
+	live.add_child(status_dot)
+	live.add_child(_spaced(UI.label("链路在线", 12, Color(1, 1, 1, 0.7)), 1))
+	readout.add_child(live)
+	for kv in [["高度", "260 m"], ["航速", "6.5 m/s"], ["航向", "074°"], ["云层", "-165 ~ -15 m"]]:
+		readout.add_child(_readout(kv[0], kv[1]))
+
+	# 弹窗遮罩
+	shade = ColorRect.new()
+	shade.color = Color(0.01, 0.012, 0.015, 0.6)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.visible = false
+	shade.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed:
+			_close_dialogs())
+	add_child(shade)
 
 	_build_settings()
 	_build_start_panel()
+	_select(0, false)
 
 
-func _menu_button(text: String, hint: String, cb: Callable, disabled: bool = false) -> Control:
+## ---------- 小部件 ----------
+func _spaced(l: Label, px: int) -> Label:
+	var fv := FontVariation.new()
+	fv.base_font = l.get_theme_font("font")
+	fv.spacing_glyph = px
+	l.add_theme_font_override("font", fv)
+	return l
+
+
+func _tag_label(text: String, c: Color) -> Control:
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(c, 0.0)
+	sb.border_color = c
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.content_margin_left = 8
+	sb.content_margin_right = 6
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_child(_spaced(UI.label(text, 13, c), 2))
+	return pc
+
+
+func _readout(k: String, v: String) -> Control:
+	var b := VBoxContainer.new()
+	b.add_theme_constant_override("separation", -2)
+	b.add_child(_spaced(UI.label(k, 11, Color(1, 1, 1, 0.42)), 2))
+	b.add_child(UI.label(v, 14, Color(1, 1, 1, 0.82)))
+	return b
+
+
+func _keycap(key: String, what: String) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.08)
+	sb.border_color = Color(1, 1, 1, 0.3)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(2)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_child(UI.label(key, 11, Color(1, 1, 1, 0.85)))
+	h.add_child(pc)
+	h.add_child(UI.label(what, 12, Color(1, 1, 1, 0.55)))
+	return h
+
+
+func _menu_button(idx: int, text: String, sub: String, cb: Callable, disabled: bool = false) -> Control:
 	var b := Button.new()
 	b.flat = true
-	b.custom_minimum_size = Vector2(380, 56)
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(420, 58)
 	b.focus_mode = Control.FOCUS_NONE
 	b.disabled = disabled
-
-	var sb_n := StyleBoxFlat.new()
-	sb_n.bg_color = Color(0, 0, 0, 0)
-	sb_n.content_margin_left = 22
-	var sb_h := StyleBoxFlat.new()
-	sb_h.bg_color = Color(1.0, 0.69, 0.13, 0.14)
-	sb_h.border_color = UI.ACCENT
-	sb_h.border_width_left = 4
-	sb_h.content_margin_left = 22
-
-	b.add_theme_stylebox_override("normal", sb_n)
-	b.add_theme_stylebox_override("hover", sb_h)
-	b.add_theme_stylebox_override("pressed", sb_h)
-	b.add_theme_stylebox_override("focus", sb_n)
-
-	var h := VBoxContainer.new()
-	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	h.offset_left = 22
-	h.alignment = BoxContainer.ALIGNMENT_CENTER
-	h.add_theme_constant_override("separation", 0)
-	b.add_child(h)
-
-	var l := UI.label(text, 24, UI.TEXT if not disabled else UI.MUTED)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	h.add_child(l)
-	if hint != "":
-		var hl := UI.label(hint, 12, UI.MUTED)
-		hl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		h.add_child(hl)
-
+	var empty := StyleBoxEmpty.new()
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(st, empty)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 18
+	row.offset_right = -18
+	row.add_theme_constant_override("separation", 16)
+	b.add_child(row)
+	var num := _spaced(UI.label("%02d" % (idx + 1), 12, Color(1, 1, 1, 0.35)), 1)
+	num.custom_minimum_size = Vector2(22, 0)
+	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	num.size_flags_vertical = Control.SIZE_FILL
+	row.add_child(num)
+	var l := UI.label(text, 25, UI.TEXT if not disabled else Color(1, 1, 1, 0.3))
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.size_flags_vertical = Control.SIZE_FILL
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(l)
+	var sl := _spaced(UI.label(sub, 11, Color(1, 1, 1, 0.3) if not disabled else Color(1, 0.55, 0.4, 0.55)), 2)
+	sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	sl.size_flags_vertical = Control.SIZE_FILL
+	row.add_child(sl)
+	b.set_meta("parts", [row, num, l, sl])
+	b.set_meta("disabled", disabled)
+	b.mouse_entered.connect(func(): _select(idx, true))
 	if not disabled:
-		b.mouse_entered.connect(func():
-			l.add_theme_color_override("font_color", UI.ACCENT)
-			var tw := create_tween()
-			tw.tween_property(h, "offset_left", 34.0, 0.12))
-		b.mouse_exited.connect(func():
-			l.add_theme_color_override("font_color", UI.TEXT)
-			var tw := create_tween()
-			tw.tween_property(h, "offset_left", 22.0, 0.12))
 		b.pressed.connect(cb)
-	else:
-		b.mouse_filter = Control.MOUSE_FILTER_STOP
-
 	buttons.append(b)
 	return b
 
 
+func _select(i: int, sfx: bool) -> void:
+	if i < 0 or i >= buttons.size():
+		return
+	var changed := i != sel
+	sel = i
+	for k in buttons.size():
+		var bb: Button = buttons[k]
+		var parts: Array = bb.get_meta("parts")
+		var on: bool = k == sel and not bool(bb.get_meta("disabled"))
+		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(parts[0], "offset_left", 30.0 if on else 18.0, 0.16)
+		if not bb.get_meta("disabled"):
+			(parts[2] as Label).add_theme_color_override("font_color", Color(1, 0.93, 0.8) if on else UI.TEXT)
+			(parts[1] as Label).add_theme_color_override("font_color", UI.ACCENT if on else Color(1, 1, 1, 0.35))
+	var target := float(sel) * 58.0
+	if cur_tw:
+		cur_tw.kill()
+	cur_tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	cur_tw.tween_property(self, "cur_y", target, 0.18 if sfx else 0.0)
+	if sfx and changed and Audio.has_sfx("ui_hover"):
+		Audio.play_ui("ui_hover")
+
+
+var hud: Control
+var title_rect: TextureRect
+var title_mat: ShaderMaterial
+var title_lang := ""
+const MENU_CFG := "user://menu.cfg"
+const TITLE_FX := """
+shader_type canvas_item;
+// 标题扫光：一道斜向高光每 7 秒掠过金属面，只作用在不透明处；外加柔和投影
+uniform float t = 0.0;
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	vec2 px = TEXTURE_PIXEL_SIZE * vec2(6.0, 9.0);
+	float sh = texture(TEXTURE, UV - px).a;
+	float ph = fract(t / 7.0) * 2.6 - 0.8;
+	float band = UV.x + UV.y * 0.35 - ph;
+	float glint = exp(-band * band * 260.0) * 0.55 + exp(-band * band * 30.0) * 0.12;
+	vec3 col = c.rgb + vec3(1.0, 0.9, 0.72) * glint * c.a;
+	vec4 shadow = vec4(0.0, 0.0, 0.0, sh * 0.45);
+	COLOR = mix(shadow, vec4(col, 1.0), c.a);
+}
+"""
+
+
+func _apply_title_lang() -> void:
+	if title_lang == "":
+		var cf := ConfigFile.new()
+		if cf.load(MENU_CFG) == OK:
+			title_lang = str(cf.get_value("menu", "title_lang", ""))
+		if title_lang == "":
+			title_lang = "zh" if OS.get_locale_language() == "zh" else "en"
+	var zh := title_lang == "zh"
+	title_rect.texture = load("res://assets/title_%s.png" % ("zh" if zh else "en"))
+	var w := 560.0 if zh else 500.0
+	var tsz: Vector2 = title_rect.texture.get_size()
+	title_rect.position = Vector2(84, 300 - w * tsz.y / tsz.x - 24)
+	title_rect.size = Vector2(w, w * tsz.y / tsz.x)
+var menu_box: VBoxContainer
+var status_dot: Label
+var shade: ColorRect
+var sel := -1
+var cur_y := 0.0:
+	set(v):
+		cur_y = v
+		if hud:
+			hud.queue_redraw()
+var cur_tw: Tween
+
+
+func _draw_hud() -> void:
+	var sz := hud.size
+	var bar := sz.y * 0.045
+	# 取景角标
+	var m := 34.0
+	var arm := 26.0
+	var c := Color(1, 1, 1, 0.32)
+	for corner in [Vector2(m, bar + m * 0.6), Vector2(sz.x - m, bar + m * 0.6), Vector2(m, sz.y - bar - m * 0.6), Vector2(sz.x - m, sz.y - bar - m * 0.6)]:
+		var sx := 1.0 if corner.x < sz.x * 0.5 else -1.0
+		var sy := 1.0 if corner.y < sz.y * 0.5 else -1.0
+		hud.draw_line(corner, corner + Vector2(arm * sx, 0), c, 1.5)
+		hud.draw_line(corner, corner + Vector2(0, arm * sy), c, 1.5)
+	# 菜单分隔线 + 游标
+	if menu_box == null or buttons.is_empty():
+		return
+	var o := menu_box.position
+	for k in buttons.size() + 1:
+		hud.draw_line(o + Vector2(0, k * 58.0), o + Vector2(420, k * 58.0), Color(1, 1, 1, 0.07 if k > 0 and k < buttons.size() else 0.14), 1.0)
+	if sel >= 0 and not buttons[sel].get_meta("disabled"):
+		var y := o.y + cur_y
+		var sk := 14.0
+		var pts := PackedVector2Array([Vector2(o.x, y + 1), Vector2(o.x + 420 + sk, y + 1), Vector2(o.x + 420, y + 57), Vector2(o.x, y + 57)])
+		var cols := PackedColorArray([Color(1, 0.69, 0.13, 0.26), Color(1, 0.69, 0.13, 0.0), Color(1, 0.69, 0.13, 0.0), Color(1, 0.69, 0.13, 0.2)])
+		hud.draw_polygon(pts, cols)
+		hud.draw_rect(Rect2(o.x, y + 1, 4, 56), UI.ACCENT)
+		# 右侧箭头
+		var ax := o.x + 432.0
+		var ay := y + 29.0
+		hud.draw_colored_polygon(PackedVector2Array([Vector2(ax, ay - 6), Vector2(ax + 7, ay), Vector2(ax, ay + 6)]), UI.ACCENT)
+
+
+## ---------- 弹窗 ----------
+func _dialog(title: String, code: String) -> Array:
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.055, 0.06, 0.068, 0.96)
+	sb.border_color = Color(1, 1, 1, 0.1)
+	sb.set_border_width_all(1)
+	sb.content_margin_left = 30
+	sb.content_margin_right = 30
+	sb.content_margin_top = 24
+	sb.content_margin_bottom = 26
+	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_size = 24
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	pc.custom_minimum_size = Vector2(480, 0)
+	pc.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	pc.grow_vertical = Control.GROW_DIRECTION_BOTH
+	pc.visible = false
+	add_child(pc)
+	pc.draw.connect(func():
+		pc.draw_rect(Rect2(0, 0, 120, 3), UI.ACCENT)
+		pc.draw_rect(Rect2(pc.size.x - 10, pc.size.y - 10, 6, 6), Color(1, 1, 1, 0.25)))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 14)
+	pc.add_child(v)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	v.add_child(hb)
+	var cl := _spaced(UI.label(code, 11, UI.ACCENT), 2)
+	cl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cl.size_flags_vertical = Control.SIZE_FILL
+	hb.add_child(cl)
+	hb.add_child(UI.label(title, 24, Color(0.97, 0.95, 0.9)))
+	var div := ColorRect.new()
+	div.color = Color(1, 1, 1, 0.08)
+	div.custom_minimum_size = Vector2(0, 1)
+	v.add_child(div)
+	return [pc, v]
+
+
+func _field_label(t: String) -> Label:
+	return _spaced(UI.label(t, 12, Color(1, 1, 1, 0.5)), 2)
+
+
+func _btn(text: String, primary: bool, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(140, 42)
+	b.focus_mode = Control.FOCUS_NONE
+	var n := StyleBoxFlat.new()
+	var h := StyleBoxFlat.new()
+	if primary:
+		n.bg_color = UI.ACCENT
+		h.bg_color = UI.ACCENT.lightened(0.18)
+		b.add_theme_color_override("font_color", Color(0.08, 0.07, 0.05))
+		b.add_theme_color_override("font_hover_color", Color(0.08, 0.07, 0.05))
+		b.add_theme_color_override("font_pressed_color", Color(0.08, 0.07, 0.05))
+	else:
+		n.bg_color = Color(1, 1, 1, 0.0)
+		n.border_color = Color(1, 1, 1, 0.3)
+		n.set_border_width_all(1)
+		h.bg_color = Color(1, 1, 1, 0.08)
+		h.border_color = Color(1, 1, 1, 0.55)
+		h.set_border_width_all(1)
+	for s2 in [n, h]:
+		s2.content_margin_left = 18
+		s2.content_margin_right = 18
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("hover", h)
+	b.add_theme_stylebox_override("pressed", h)
+	b.add_theme_stylebox_override("focus", n)
+	b.add_theme_font_size_override("font_size", 16)
+	b.pressed.connect(cb)
+	return b
+
+
+func _line_edit() -> LineEdit:
+	var e := LineEdit.new()
+	var n := StyleBoxFlat.new()
+	n.bg_color = Color(0, 0, 0, 0.35)
+	n.border_color = Color(1, 1, 1, 0.18)
+	n.border_width_bottom = 2
+	n.content_margin_left = 12
+	n.content_margin_right = 12
+	n.content_margin_top = 8
+	n.content_margin_bottom = 8
+	var f := n.duplicate()
+	f.border_color = UI.ACCENT
+	e.add_theme_stylebox_override("normal", n)
+	e.add_theme_stylebox_override("focus", f)
+	e.add_theme_font_size_override("font_size", 20)
+	e.add_theme_color_override("caret_color", UI.ACCENT)
+	return e
+
+
 ## 新的游戏：驾驶员登记
 func _build_start_panel() -> void:
-	start_panel = UI.panel(18)
-	start_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	start_panel.custom_minimum_size = Vector2(420, 0)
-	start_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	start_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	start_panel.visible = false
-	add_child(start_panel)
-
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
-	start_panel.add_child(v)
-	v.add_child(UI.label("驾驶员登记", 22, UI.ACCENT))
-	v.add_child(UI.label("姓名", 14, UI.MUTED))
-	_dlg_name = LineEdit.new()
+	var d := _dialog("驾驶员登记", "// 01")
+	start_panel = d[0]
+	var v: VBoxContainer = d[1]
+	v.add_child(_field_label("姓名"))
+	_dlg_name = _line_edit()
 	_dlg_name.max_length = 8
+	_dlg_name.placeholder_text = "最多 8 个字"
 	_dlg_name.text_submitted.connect(func(_t): _confirm_start())
 	v.add_child(_dlg_name)
-
+	var sp := Control.new()
+	sp.custom_minimum_size = Vector2(0, 6)
+	v.add_child(sp)
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 10)
+	line.add_theme_constant_override("separation", 12)
+	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)
-	var ok := Button.new()
-	ok.text = "启程"
-	ok.pressed.connect(_confirm_start)
-	line.add_child(ok)
-	var cancel := Button.new()
-	cancel.text = "返回"
-	cancel.pressed.connect(_close_start)
-	line.add_child(cancel)
+	line.add_child(_btn("返回", false, _close_start))
+	line.add_child(_btn("启程", true, _confirm_start))
 
 
 func _open_start() -> void:
 	_dlg_name.text = Growth.player_name()
 	start_panel.visible = true
+	shade.visible = true
+	_dlg_name.grab_focus()
 	Audio.play_ui("ui_open")
 
 
 func _close_start() -> void:
 	start_panel.visible = false
+	shade.visible = settings_panel.visible
 	Audio.play_ui("ui_cancel")
 
 
@@ -297,8 +555,16 @@ func _confirm_start() -> void:
 	Growth.set_player_name(_dlg_name.text)
 	GameData.new_game()
 	start_panel.visible = false
+	shade.visible = false
 	Audio.play_ui("ui_confirm")
 	start_requested.emit()
+
+
+func _close_dialogs() -> void:
+	if start_panel.visible:
+		_close_start()
+	elif settings_panel.visible:
+		_toggle_settings()
 
 
 ## 载入游戏
@@ -314,18 +580,9 @@ func _load_game() -> void:
 
 
 func _build_settings() -> void:
-	settings_panel = UI.panel(18)
-	settings_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	settings_panel.custom_minimum_size = Vector2(420, 0)
-	settings_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	settings_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	settings_panel.visible = false
-	add_child(settings_panel)
-
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
-	settings_panel.add_child(v)
-	v.add_child(UI.label("游戏设置", 22, UI.ACCENT))
+	var d := _dialog("游戏设置", "// 03")
+	settings_panel = d[0]
+	var v: VBoxContainer = d[1]
 	var fs := CheckButton.new()
 	fs.text = "全屏"
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
@@ -336,7 +593,7 @@ func _build_settings() -> void:
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	v.add_child(vs)
-	v.add_child(UI.label("画面风格", 14, UI.MUTED))
+	v.add_child(_field_label("画面风格"))
 	var st := OptionButton.new()
 	st.add_item("写实光影", 0)
 	st.add_item("三渲二（卡通描边）", 1)
@@ -347,7 +604,20 @@ func _build_settings() -> void:
 		if toon:
 			toon.set_enabled(i == 1))
 	v.add_child(st)
-	v.add_child(UI.label("主音量", 14, UI.MUTED))
+	v.add_child(_field_label("标题语言"))
+	var tl := OptionButton.new()
+	tl.add_item("中文", 0)
+	tl.add_item("English", 1)
+	tl.selected = 0 if title_lang == "zh" else 1
+	tl.item_selected.connect(func(i):
+		title_lang = "zh" if i == 0 else "en"
+		var cf := ConfigFile.new()
+		cf.load(MENU_CFG)
+		cf.set_value("menu", "title_lang", title_lang)
+		cf.save(MENU_CFG)
+		_apply_title_lang())
+	v.add_child(tl)
+	v.add_child(_field_label("主音量"))
 	var vol := HSlider.new()
 	vol.min_value = 0
 	vol.max_value = 1
@@ -355,22 +625,28 @@ func _build_settings() -> void:
 	vol.value = Audio.get_volume("Master")
 	vol.value_changed.connect(func(x): Audio.set_volume("Master", x))
 	v.add_child(vol)
-	var close := Button.new()
-	close.text = "返回"
+	var line := HBoxContainer.new()
+	line.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(line)
+	var close := _btn("返回", false, _toggle_settings)
 	close.set_meta("sfx", "")
-	close.pressed.connect(_toggle_settings)
-	v.add_child(close)
+	line.add_child(close)
 
 
 func _toggle_settings() -> void:
 	settings_panel.visible = not settings_panel.visible
+	shade.visible = settings_panel.visible or start_panel.visible
 	Audio.play_ui("ui_open" if settings_panel.visible else "ui_cancel")
 
 
 func _process(delta: float) -> void:
+	if status_dot:
+		status_dot.modulate.a = 0.45 + 0.55 * absf(sin(t * 1.6))
 	t += delta
 	if post_mat:
 		post_mat.set_shader_parameter("t", fmod(t, 10.0))
+	if title_mat:
+		title_mat.set_shader_parameter("t", fmod(t, 70.0))
 	var sway := sin(t * 0.35) * 0.6 + sin(t * 0.13) * 0.4
 	# 贴窗视角：镜头几乎贴着玻璃，窗框和仪表台只占画面边缘
 	cam.position = Vector3(0.75 + sin(t * 0.07) * 0.04, 1.82 + sin(t * 0.4) * 0.02, 1.1)
@@ -394,5 +670,27 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE and settings_panel.visible:
-		_toggle_settings()
+	if not (e is InputEventKey and e.pressed and not e.echo):
+		return
+	if e.keycode == KEY_ESCAPE:
+		if start_panel.visible or settings_panel.visible:
+			_close_dialogs()
+		return
+	if start_panel.visible or settings_panel.visible:
+		return
+	if e.keycode == KEY_UP or e.keycode == KEY_W:
+		_step(-1)
+	elif e.keycode == KEY_DOWN or e.keycode == KEY_S:
+		_step(1)
+	elif e.keycode == KEY_ENTER or e.keycode == KEY_KP_ENTER or e.keycode == KEY_SPACE:
+		if sel >= 0 and not buttons[sel].get_meta("disabled"):
+			buttons[sel].emit_signal("pressed")
+
+
+func _step(dir: int) -> void:
+	var i := sel
+	for _k in buttons.size():
+		i = posmod(i + dir, buttons.size())
+		if not buttons[i].get_meta("disabled"):
+			_select(i, true)
+			return

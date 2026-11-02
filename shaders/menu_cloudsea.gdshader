@@ -3,7 +3,7 @@ shader_type spatial;
 // 每一步向太阳再步进几次求自阴影（Beer-Lambert + powder），云团有真正的厚度、背光面和透光边。
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 #include "res://shaders/menu_common.gdshaderinc"
-uniform int steps = 40;
+uniform int steps = 56;
 uniform float sigma = 0.045;      // 消光系数（每米，密度 1 时）
 uniform float far_fade = 5200.0;  // 远处交给天空盒的云海
 varying vec3 wp;
@@ -17,7 +17,7 @@ void fragment() {
 	if (d.y > -0.003) discard;
 	float t0 = (cloud_top - ro.y) / d.y;
 	float t1 = (cloud_bot - ro.y) / d.y;
-	float len = min(t1 - t0, 900.0);
+	float len = min(t1 - t0, 1600.0);
 	float dt = len / float(steps);
 	float jit = hash(FRAGCOORD.xy + fract(TIME) * 37.0);
 	vec3 L = normalize(sun_dir);
@@ -58,8 +58,8 @@ void fragment() {
 	col /= max(alpha, 1e-4);
 	float dist = dsum / max(wsum, 1e-4);
 	// 大气透视：随距离褪向地平线霾色（与天空盒同色）
-	float af = 1.0 - exp(-dist * 0.00042);
-	col = mix(col, mix(haze_col, horizon, 0.5) * 1.05, clamp(af, 0.0, 0.9));
+	float af = 1.0 - exp(-dist * 0.00026);
+	col = mix(col, mix(haze_col, horizon, 0.5) * 1.05, clamp(af, 0.0, 0.7));
 	ALBEDO = col * exposure;
 	ALPHA = alpha * (1.0 - smoothstep(far_fade * 0.55, far_fade, t0)) * smoothstep(0.003, 0.02, -d.y);
 }

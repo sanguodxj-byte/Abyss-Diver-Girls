@@ -8,7 +8,17 @@ func _ready() -> void:
 		for c in m.get_children():
 			if c is CanvasItem and not (c is SubViewportContainer):
 				c.visible = false
-	await RenderingServer.frame_post_draw
-	get_viewport().get_texture().get_image().save_png("/workspace/work/menu_adg.png")
+	if OS.get_environment("LANG_T") != "":
+		m.title_lang = OS.get_environment("LANG_T")
+		m._apply_title_lang()
+	if OS.get_environment("GLINT") != "":
+		m.t = float(OS.get_environment("GLINT"))
+	if OS.get_environment("OPEN") == "start":
+		m._open_start()
+	if OS.get_environment("OPEN") == "settings":
+		m._toggle_settings()
+	for _i in 3:
+		await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(OS.get_environment("OUT") if OS.get_environment("OUT") != "" else "/workspace/work/menu_adg.png")
 	print("[menupic] DONE")
 	get_tree().quit()

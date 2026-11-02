@@ -57,8 +57,8 @@ vec3 menu_fog(vec3 c, vec3 d) {
 }
 
 // ---- 体积云（真正的三维密度场，menu_cloudsea 光线步进 + 地面云影共用） ----
-uniform float cloud_top = -50.0;     // 云层顶（世界 y）
-uniform float cloud_bot = -150.0;    // 云层底
+uniform float cloud_top = -15.0;     // 云层顶（世界 y）
+uniform float cloud_bot = -165.0;    // 云层底
 uniform vec2 cloud_wind = vec2(-5.0, 1.2);  // 云随风漂移（米/秒），与地面流向一致
 
 float hash3(vec3 p) {
@@ -83,8 +83,11 @@ float cloud_cov(vec2 xz) {
 float cloud_dens(vec3 p, float cov) {
 	float h = (p.y - cloud_bot) / (cloud_top - cloud_bot);
 	if (h < 0.0 || h > 1.0 || cov < 0.01) return 0.0;
-	float top = mix(0.35, 1.0, cov);
-	float shape = smoothstep(0.0, 0.1, h) * (1.0 - smoothstep(top - 0.32, top, h));
+	// 积云穹顶：覆盖率越高、团块噪声越大，顶越高；顶部做成圆弧而不是平切
+	vec2 qb = p.xz - cloud_wind * TIME;
+	float heap = vnoise(qb * 0.0065) * 0.65 + vnoise(qb * 0.016 + 3.7) * 0.35;
+	float top = clamp(mix(0.18, 1.05, pow(cov, 0.8)) * mix(0.55, 1.15, heap), 0.12, 1.0);
+	float shape = smoothstep(0.0, 0.08, h) * (1.0 - smoothstep(top * 0.55, top, h));
 	vec3 q = p - vec3(cloud_wind.x, 0.0, cloud_wind.y) * TIME * 1.3;
 	float det = vnoise3(q * 0.018) * 0.6 + vnoise3(q * 0.047 + 11.0) * 0.28 + vnoise3(q * 0.11 + 5.0) * 0.12;
 	return clamp(cov * shape * 1.6 - det * (0.62 + 0.45 * h) , 0.0, 1.0);

@@ -102,7 +102,7 @@ func setup(sky_mat: ShaderMaterial, sun_dir: Vector3) -> void:
 	cp.size = Vector2(14000, 14000)
 	cl.mesh = cp
 	cl.material_override = cm
-	cl.position = Vector3(0, -50.0, 0)
+	cl.position = Vector3(0, -15.0, 0)
 	cl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(cl)
 	_update_cols()
