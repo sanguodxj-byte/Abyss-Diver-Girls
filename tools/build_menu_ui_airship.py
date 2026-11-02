@@ -238,8 +238,10 @@ def build_menu_ui(version="zh", bg_path=None):
     return final_img
 
 if __name__ == "__main__":
-    zh_img = build_menu_ui("zh")
-    en_img = build_menu_ui("en")
+    concept_path = os.path.join(REVIEW_DIR, "airship_bridge_concept.png")
+    bg = concept_path if os.path.exists(concept_path) else None
+    zh_img = build_menu_ui("zh", bg)
+    en_img = build_menu_ui("en", bg)
 
     zh_path = os.path.join(REVIEW_DIR, "主界面优化_中文版.png")
     en_path = os.path.join(REVIEW_DIR, "主界面优化_英文版.png")
