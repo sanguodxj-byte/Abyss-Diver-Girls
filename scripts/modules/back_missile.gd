@@ -13,7 +13,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_DARK := K.dark()
 	var root := K.module_root("back", id, Vector3(0, -1, -0.25))
 	var M_BACK := K.armor(c, 0.6)
-	var M_WARHEAD := A.paint(Color(0.56, 0.30, 0.24), 0.1, 0.5, {"panel_scale": 0.0})
+	var M_WARHEAD := A.paint(Color(0.85, 0.2, 0.12), 0.1, 0.5, {"panel_scale": 0.0})
 	# 横梁 + 两侧挂架
 	K.bb(root, Vector3(1.5, 0.12, 0.22), M_FRAME, Vector3(0, 0.12, 0.1), Vector3.ZERO, 0.03)
 	for sx in [-1.0, 1.0]:
@@ -30,5 +30,5 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(pod, K.crect(0.5, 0.05), 0.64, K.accent(), Vector3(0, 0.17, 0.1), Vector3(0, 90, 0), 0.005)
 		A.rivets(pod, Vector3(sx * 0.32, 0.18, -0.35), Vector3(sx * 0.32, 0.18, 0.35), 5, 0.015, Vector3(0, 0, 90))
 		A.vent(pod, Vector3(0.4, 0.2, 0.04), Vector3(0, 0.0, 0.46), Vector3(0, 180, 0), 3)
-		A.stencil(pod, "ROCKET", Vector3(sx * 0.315, 0.0, 0.0), Vector3(0, sx * 90.0, 0), 0.003, Color(0.62, 0.56, 0.30, 0.8))
+		A.stencil(pod, "ROCKET", Vector3(sx * 0.315, 0.0, 0.0), Vector3(0, sx * 90.0, 0), 0.003, Color(0.95, 0.85, 0.3, 0.8))
 	return root

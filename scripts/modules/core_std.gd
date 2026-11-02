@@ -48,7 +48,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.plate(hd, K.trap(0.4, 0.3, 0.12, 0.02), 0.1, M_CORE2, Vector3(0, 0.0, -0.27), Vector3(-30, 0, 0), 0.02)
 	K.bb(hd, Vector3(0.3, 0.03, 0.02), A.emit(K.VISOR, 3.0), Vector3(0, 0.07, -0.252), Vector3.ZERO, 0.004)
 	for i in 3:
-		A.lens(hd, Vector3(-0.1 + i * 0.1, -0.06, -0.26), Vector3(-90, 0, 0), 0.03 if i != 1 else 0.042, Color(0.80, 0.74, 0.52), 2.0)
+		A.lens(hd, Vector3(-0.1 + i * 0.1, -0.06, -0.26), Vector3(-90, 0, 0), 0.03 if i != 1 else 0.042, Color(1.0, 0.85, 0.2), 2.0)
 	shoulder_x = 1.1
 	head_z = -0.7
 	head_y = 0.4

@@ -36,13 +36,13 @@ static func build(ctx: Dictionary) -> Node3D:
 	for sx in [-1.0, 1.0]:
 		var pod := K.node(torso, Vector3(sx * 0.66, 0.56, -0.2))
 		K.plate(pod, K.crect(0.16, 0.18, [0.05, 0.05, 0.0, 0.0]), 0.5, M_CORE2, Vector3.ZERO, Vector3.ZERO, 0.025)
-		A.lens(pod, Vector3(0, 0.0, -0.26), Vector3(-90, 0, 0), 0.045, Color(0.80, 0.74, 0.52), 1.6)
+		A.lens(pod, Vector3(0, 0.0, -0.26), Vector3(-90, 0, 0), 0.045, Color(1.0, 0.85, 0.2), 2.0)
 		K.plate(torso, K.trap(0.8, 0.6, 0.46, 0.06), 0.1, M_CORE, Vector3(sx * 0.63, 0.22, 0.2), Vector3(0, sx * 90.0, sx * 4.0), 0.03)
 		A.vent(torso, Vector3(0.3, 0.18, 0.05), Vector3(sx * 0.69, 0.18, 0.34), Vector3(0, sx * 90.0, 0), 4)
 	A.vent(torso, Vector3(0.5, 0.26, 0.05), Vector3(0, 0.725, 0.3), Vector3(-90, 0, 0), 5)
 	K.number(torso, serial, Vector3(-0.69, 0.32, 0.12), Vector3(0, -90, 0), 0.003)
 	K.cy(torso, 0.012, 1.1, M_DARK, Vector3(0.32, 1.35, 0.45))
-	A.add(torso, A.sphere(0.03), A.emit(Color(0.66, 0.26, 0.22), 3.0), Vector3(0.32, 1.9, 0.45), Vector3.ZERO, Vector3.ONE, false)
+	A.add(torso, A.sphere(0.03), A.emit(Color(1, 0.2, 0.15), 6.0), Vector3(0.32, 1.9, 0.45), Vector3.ZERO, Vector3.ONE, false)
 	shoulder_x = 0.98
 	head_z = -0.72
 	head_y = 0.36

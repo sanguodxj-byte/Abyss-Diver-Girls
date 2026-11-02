@@ -35,7 +35,7 @@ static func build(ctx: Dictionary) -> Node3D:
 		A.add(arm, A.sphere(0.15, -1, 14), M_TANK, Vector3(side * 0.18, oy, -0.46), Vector3.ZERO, Vector3(1, 1, 0.4))
 		for z in [-0.3, 0.0]:
 			K.cy(arm, 0.158, 0.04, A.paint(Color(0.12, 0.12, 0.1), 0.0, 0.85, {"panel_scale": 0.0}), Vector3(side * 0.18, oy, z), Vector3(90, 0, 0), -1.0, 18)
-	A.stencil(arm, "FLAMMABLE", Vector3(side * 0.34, 0.12, -0.15), Vector3(0, side * 90.0, 0), 0.0025, Color(0.62, 0.56, 0.30, 0.85))
+	A.stencil(arm, "FLAMMABLE", Vector3(side * 0.34, 0.12, -0.15), Vector3(0, side * 90.0, 0), 0.0025, Color(0.95, 0.85, 0.3, 0.85))
 	A.hose(arm, Vector3(side * 0.18, -0.16, -0.55), Vector3(0, -0.06, -0.8), Vector3(0, -0.1, -0.05), 0.035)
 	K.cy(arm, 0.09, 0.7, M_DARK, Vector3(0, -0.05, -0.95), Vector3(90, 0, 0), 0.13, 14)
 	K.plate(arm, K.trap(0.6, 0.36, 0.2, 0.04), 0.3, M_ARM, Vector3(0, 0.1, -0.98), Vector3(0, 90, 0), 0.025)

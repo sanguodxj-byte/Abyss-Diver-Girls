@@ -25,7 +25,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	var cm := A.emit(gc, 2.2)
 	A.add(root, A.cyl(0.0, 0.2, 0.09, 6), cm, Vector3(0, 0.1, 0.36), Vector3(0, 15, 0), Vector3.ONE, false)
 	A.add(root, A.cyl(0.09, 0.2, 0.0, 6), cm, Vector3(0, -0.1, 0.36), Vector3(0, 15, 0), Vector3.ONE, false)
-	A.stencil(root, "BIOHAZARD", Vector3(0.0, 0.295, 0.36), Vector3(-90, 0, 0), 0.0025, Color(0.62, 0.56, 0.30, 0.8))
+	A.stencil(root, "BIOHAZARD", Vector3(0.0, 0.295, 0.36), Vector3(-90, 0, 0), 0.0025, Color(0.95, 0.85, 0.3, 0.8))
 	if lights:
 		K.light(root, gc, Vector3(0, 0, 0.6), 0.35, 1.8)
 	return root

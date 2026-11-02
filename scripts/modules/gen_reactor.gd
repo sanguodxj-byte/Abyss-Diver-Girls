@@ -26,7 +26,7 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.bb(root, Vector3(0.02, 0.1, 0.34), A.metal(Color(0.3, 0.31, 0.33)), Vector3(cos(a) * 0.29, sin(a) * 0.29, 0.34), Vector3(0, 0, rad_to_deg(a) + 90.0), 0.005)
 	for sx in [-1.0, 1.0]:
 		A.hose(root, Vector3(sx * 0.3, 0.22, 0.12), Vector3(sx * 0.22, 0.2, 0.5), Vector3(sx * 0.1, 0.06, 0), 0.026, A.paint(Color(0.14, 0.3, 0.45), 0.1, 0.6))
-	A.stencil(root, "RADIATION", Vector3(0, -0.27, 0.3), Vector3(90, 180, 0), 0.0025, Color(0.62, 0.56, 0.30, 0.8))
+	A.stencil(root, "RADIATION", Vector3(0, -0.27, 0.3), Vector3(90, 180, 0), 0.0025, Color(0.95, 0.85, 0.3, 0.8))
 	if lights:
 		K.light(root, gc, Vector3(0, 0, 0.8), 0.3, 1.8)
 	return root

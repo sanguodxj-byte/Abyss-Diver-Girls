@@ -24,7 +24,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.cy(legs, 0.85, 0.55, M_LEG, Vector3(0, 0.78, 0), Vector3.ZERO, 1.05, 16)
 	K.cy(legs, 1.12, 0.14, M_DARK, Vector3(0, 0.48, 0), Vector3.ZERO, 1.14, 32)
 	K.cy(legs, 1.16, 0.2, A.rubber(), Vector3(0, 0.34, 0), Vector3.ZERO, 1.08, 32)
-	A.add(legs, A.torus(0.92, 1.02, 48), A.emit(Color(0.42, 0.55, 0.62), 1.4), Vector3(0, 0.25, 0), Vector3.ZERO, Vector3(1, 0.4, 1), false)
+	A.add(legs, A.torus(0.92, 1.02, 48), A.emit(Color(0.3, 0.85, 1.0), 2.2), Vector3(0, 0.25, 0), Vector3.ZERO, Vector3(1, 0.4, 1), false)
 	for i in 8:
 		var a := TAU * i / 8.0 + PI / 8.0
 		var sk := Node3D.new()
@@ -40,9 +40,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	for i in 4:
 		var a := TAU * i / 4.0 + PI / 4.0
 		K.cy(legs, 0.2, 0.25, M_DARK, Vector3(cos(a) * 0.6, 0.4, sin(a) * 0.6), Vector3.ZERO, 0.26)
-		A.add(legs, A.cyl(0.15, 0.05), A.emit(Color(0.45, 0.58, 0.66), 2.2), Vector3(cos(a) * 0.6, 0.27, sin(a) * 0.6), Vector3.ZERO, Vector3.ONE, false)
+		A.add(legs, A.cyl(0.15, 0.05), A.emit(Color(0.4, 0.9, 1.0), 4.0), Vector3(cos(a) * 0.6, 0.27, sin(a) * 0.6), Vector3.ZERO, Vector3.ONE, false)
 	if lights:
-		K.light(legs, Color(0.42, 0.55, 0.62), Vector3(0, 0.15, 0), 0.8, 2.5)
+		K.light(legs, Color(0.3, 0.8, 1.0), Vector3(0, 0.15, 0), 0.8, 2.5)
 		A.emitter(legs, Vector3(0, 0.1, 0), {"amount": 14, "life": 0.6, "size": 0.9, "tex": A.smoke_tex(), "additive": false,
 			"dir": Vector3(0, 0, 0), "spread": 180.0, "vmin": 2.0, "vmax": 3.5, "gravity": Vector3.ZERO, "radius": 0.7,
 			"c0": Color(0.7, 0.68, 0.62, 0.35), "c1": Color(0.6, 0.55, 0.5, 0.0), "grow0": 0.5, "grow1": 1.6})

@@ -37,7 +37,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.holes(arm, Vector3(side * 0.225, 0.02, -0.36), Vector3(0, side * 90.0, 0), 4, 2, 0.07, 0.018)
 	K.plate(arm, K.crect(0.6, 0.06), 0.46, M_ACC, Vector3(0, 0.17, -0.3), Vector3(0, 90, 0), 0.005)
 	# 侧挂大弹鼓（橙色）+ 供弹槽
-	var M_DRUM := A.paint(Color(0.48, 0.36, 0.24), 0.1, 0.6, {"wear": 0.55, "panel_scale": 0.0})
+	var M_DRUM := A.paint(Color(0.72, 0.32, 0.1), 0.1, 0.6, {"wear": 0.55, "panel_scale": 0.0})
 	K.cy(arm, 0.26, 0.24, M_DRUM, Vector3(side * 0.4, -0.12, 0.02), Vector3(0, 0, 90), -1.0, 24)
 	K.cy(arm, 0.27, 0.03, M_DARK, Vector3(side * 0.29, -0.12, 0.02), Vector3(0, 0, 90), -1.0, 24)
 	K.cy(arm, 0.27, 0.03, M_DARK, Vector3(side * 0.51, -0.12, 0.02), Vector3(0, 0, 90), -1.0, 24)

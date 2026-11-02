@@ -313,3 +313,68 @@ static func _plug(v: Node3D, iface: String) -> void:
 			bb(v, Vector3(0.74, 0.64, 0.06), M_P, Vector3(0, 0, 0.03), Vector3.ZERO, 0.02)
 			bb(v, Vector3(0.5, 0.1, 0.06), A.metal(Color(0.1, 0.1, 0.1)), Vector3(0, -0.2, -0.01), Vector3.ZERO, 0.01)
 			bb(v, Vector3(0.76, 0.04, 0.07), M_Y, Vector3(0, 0.3, 0.03), Vector3.ZERO, 0.01)
+
+
+# ================================================================ 接头转接件（v0.4.9 新模块用）
+## HP-A1 臂部转接：方形法兰（4 枚螺栓）→ 回转轴承 → 叉架立轴。
+## 在臂 Body 坐标里建（Body 原点在接口外 0.25m），返回叉架节点（原点 = 立轴中心，x=side*0.13）。武器机匣贴在立轴外侧。
+static func a1_mount(arm: Node3D, side: float, M: Material) -> Node3D:
+	var M_B := A.metal(Color(0.24, 0.24, 0.26))
+	var bolt := A.metal(Color(0.5, 0.5, 0.5))
+	# 法兰：贴在插头背面（接口外 0.06m 处）
+	bb(arm, Vector3(0.05, 0.42, 0.42), M_B, Vector3(-side * 0.165, 0, 0), Vector3.ZERO, 0.012)
+	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		cy(arm, 0.024, 0.03, bolt, Vector3(-side * 0.13, c.y * 0.16, c.x * 0.16), Vector3(0, 0, 90), -1.0, 6)
+	# 回转轴承：外圈 + 镀铬滚道 + 内圈
+	cy(arm, 0.2, 0.08, dark(), Vector3(-side * 0.1, 0, 0), Vector3(0, 0, 90), -1.0, 24)
+	cy(arm, 0.205, 0.016, A.chrome(), Vector3(-side * 0.06, 0, 0), Vector3(0, 0, 90), -1.0, 24)
+	cy(arm, 0.17, 0.08, M_B, Vector3(-side * 0.02, 0, 0), Vector3(0, 0, 90), -1.0, 20)
+	# 俯仰叉架：两片侧耳 + 耳轴
+	var yoke := node(arm, Vector3(side * 0.12, 0, 0), Vector3.ZERO, "Yoke")
+	bb(arm, Vector3(0.12, 0.2, 0.3), M, Vector3(side * 0.02, 0, 0), Vector3.ZERO, 0.02)
+	for sy in [-1.0, 1.0]:
+		bb(arm, Vector3(0.3, 0.05, 0.34), M, Vector3(side * 0.13, sy * 0.2, 0), Vector3.ZERO, 0.015)
+	cy(arm, 0.07, 0.48, dark(), Vector3(side * 0.13, 0, 0), Vector3.ZERO, -1.0, 14)
+	for sy in [-1.0, 1.0]:
+		cy(arm, 0.085, 0.03, A.chrome(), Vector3(side * 0.13, sy * 0.245, 0), Vector3.ZERO, -1.0, 14)
+	return yoke
+
+
+## HP-B1 背部转接：两只导轨卡箍（压在插头导轨块上）+ 横梁。在背部模块根坐标建；
+## up = 远离躯干的方向（与插座 out 相同）。返回横梁上表面的安装节点（+Y 为 up）。
+static func b1_mount(root: Node3D, M: Material, width := 1.2) -> Node3D:
+	var up := Vector3(0, 1, 0.25).normalized()
+	var base := Node3D.new()
+	base.name = "B1Mount"
+	root.add_child(base)
+	base.basis = Basis(Vector3.RIGHT, up, Vector3.RIGHT.cross(up))
+	var M_B := A.metal(Color(0.24, 0.24, 0.26))
+	for sx in [-0.3, 0.3]:
+		# 卡箍：U 形压块 + 两颗快拆销
+		bb(base, Vector3(0.24, 0.08, 0.5), M_B, Vector3(sx, 0.16, 0), Vector3.ZERO, 0.015)
+		for sz in [-0.18, 0.18]:
+			cy(base, 0.025, 0.3, A.chrome(), Vector3(sx, 0.15, sz), Vector3(0, 0, 90), -1.0, 8)
+			cy(base, 0.04, 0.02, accent(), Vector3(sx + 0.15, 0.15, sz), Vector3(0, 0, 90), -1.0, 8)
+	bb(base, Vector3(width, 0.12, 0.3), frame(), Vector3(0, 0.26, 0), Vector3.ZERO, 0.025)
+	var top := node(base, Vector3(0, 0.32, 0), Vector3.ZERO, "Top")
+	return top
+
+
+## HP-G1 动力舱转接：安装背板（四角锁销）。在动力模块根坐标建，返回背板后表面节点（+Z 向后）。
+static func g1_mount(root: Node3D, M: Material, w := 0.82, h := 0.66) -> Node3D:
+	plate(root, crect(w, h, [0.1, 0.1, 0.1, 0.1]), 0.08, frame(), Vector3(0, 0, 0.1), Vector3.ZERO, 0.02)
+	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		cy(root, 0.035, 0.06, A.chrome(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.15), Vector3(90, 0, 0), -1.0, 10)
+		cy(root, 0.05, 0.015, accent(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.185), Vector3(90, 0, 0), -1.0, 10)
+	return node(root, Vector3(0, 0, 0.14), Vector3.ZERO, "Back")
+
+
+## 重型臂的加强件：在 a1_mount 法兰后面加第二圈法兰 + 上下三角加强筋（同一 HP-A1 接口，只是更粗）
+static func heavy_gussets(arm: Node3D, side: float, M: Material) -> void:
+	bb(arm, Vector3(0.06, 0.5, 0.5), A.metal(Color(0.22, 0.22, 0.24)), Vector3(-side * 0.115, 0, 0), Vector3.ZERO, 0.015)
+	for i in 8:
+		var a := TAU * i / 8.0
+		cy(arm, 0.02, 0.03, A.metal(Color(0.5, 0.5, 0.5)), Vector3(-side * 0.08, sin(a) * 0.21, cos(a) * 0.21), Vector3(0, 0, 90), -1.0, 6)
+	for sy in [-1.0, 1.0]:
+		for sz in [-0.13, 0.13]:
+			bb(arm, Vector3(0.42, 0.1, 0.04), M, Vector3(side * 0.08, sy * 0.3, sz), Vector3(0, 0, side * sy * -28.0), 0.01)

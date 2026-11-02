@@ -24,7 +24,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	for sx in [-1.0, 1.0]:
 		K.plate(root, K.crect(0.44, 0.62, [0.0, 0.1, 0.1, 0.0]), 0.06, M_H, Vector3(sx * 0.39, 0, 0.3), Vector3(0, 90, 0), 0.015)
 	K.bb(root, Vector3(0.7, 0.04, 0.4), M_FRAME, Vector3(0, 0.0, 0.3), Vector3.ZERO, 0.01)
-	A.hose(root, Vector3(-0.36, -0.28, 0.12), Vector3(-0.2, -0.32, 0.45), Vector3(0, -0.08, 0), 0.025, A.paint(Color(0.46, 0.22, 0.18), 0.0, 0.6))
+	A.hose(root, Vector3(-0.36, -0.28, 0.12), Vector3(-0.2, -0.32, 0.45), Vector3(0, -0.08, 0), 0.025, A.paint(Color(0.6, 0.12, 0.08), 0.0, 0.6))
 	A.hose(root, Vector3(0.36, -0.28, 0.12), Vector3(0.2, -0.32, 0.45), Vector3(0, -0.08, 0), 0.025)
 	A.stencil(root, "B-40  48V", Vector3(0.417, 0.0, 0.3), Vector3(0, 90, 0), 0.0028, Color(0.92, 0.9, 0.85, 0.75))
 	if lights:

@@ -38,7 +38,7 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(sb, K.crect(0.07, 0.36), 0.64, M_ACC, Vector3(0, 0.0, -0.3), Vector3(0, 90, 0), 0.006)
 		# 排气管：方形管身 + 斜切管口
 		K.plate(torso, K.crect(0.22, 0.8, [0.06, 0.06, 0.06, 0.06]), 0.22, M_DARK, Vector3(sx * 0.55, 1.35, 0.66), Vector3.ZERO, 0.02)
-		A.add(torso, A.cyl(0.07, 0.04), A.emit(Color(0.72, 0.44, 0.26), 1.8), Vector3(sx * 0.55, 1.76, 0.66), Vector3.ZERO, Vector3.ONE, false)
+		A.add(torso, A.cyl(0.07, 0.04), A.emit(Color(1.0, 0.45, 0.15), 2.5), Vector3(sx * 0.55, 1.76, 0.66), Vector3.ZERO, Vector3.ONE, false)
 		A.vent(torso, Vector3(0.5, 0.3, 0.05), Vector3(sx * 1.0, 0.3, 0.3), Vector3(0, sx * 90.0, 0), 5)
 	# 低矮装甲头：嵌在上胸前沿，观察缝 + 双侧传感器
 	var hd := K.node(torso, Vector3(0, 0.98, -0.5))
@@ -46,12 +46,12 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.plate(hd, K.trap(0.66, 0.46, 0.14, 0.03), 0.1, M_CORE2, Vector3(0, -0.02, -0.25), Vector3(-25, 0, 0), 0.02)
 	K.bb(hd, Vector3(0.44, 0.03, 0.02), A.emit(K.VISOR, 3.0), Vector3(0, 0.04, -0.24), Vector3.ZERO, 0.004)
 	for sx in [-0.3, 0.3]:
-		A.lens(hd, Vector3(sx, -0.06, -0.24), Vector3(-90, 0, 0), 0.035, Color(0.80, 0.74, 0.52), 1.6)
+		A.lens(hd, Vector3(sx, -0.06, -0.24), Vector3(-90, 0, 0), 0.035, Color(1.0, 0.85, 0.2), 2.0)
 	var spot_m := K.node(torso, Vector3(0.62, 1.22, -0.25))
 	K.plate(spot_m, K.crect(0.26, 0.18, [0.05, 0.05, 0.0, 0.0]), 0.24, M_DARK, Vector3.ZERO, Vector3.ZERO, 0.02)
 	A.lens(spot_m, Vector3(0, 0, -0.13), Vector3(-90, 0, 0), 0.07, Color(1.0, 0.95, 0.8), 4.0)
 	K.number(torso, serial, Vector3(-0.45, 0.42, -0.83), Vector3(-12, 180, 0), 0.004)
-	A.stencil(torso, "DANGER  HIGH VOLTAGE", Vector3(-0.3, 1.155, 0.4), Vector3(-90, 0, 0), 0.0028, Color(0.62, 0.56, 0.30, 0.8))
+	A.stencil(torso, "DANGER  HIGH VOLTAGE", Vector3(-0.3, 1.155, 0.4), Vector3(-90, 0, 0), 0.0028, Color(0.95, 0.85, 0.3, 0.8))
 	shoulder_x = 1.3
 	head_z = -0.86
 	head_y = 0.66
