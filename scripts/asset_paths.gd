@@ -13,6 +13,7 @@ extends RefCounted
 ##   配音、音效、音乐见 scripts\audio\audio_registry.gd
 
 const PORTRAIT := "res://assets/portraits/%s.png"
+const PORTRAIT_CLIP := "res://assets/animations/%s_%s.ogv"
 const AVATAR := "res://assets/avatars/%s.png"
 const ITEM_ICON := "res://assets/icons/items/%s.png"
 const MAP_CARD := "res://assets/cards/maps/%s.png"
@@ -20,6 +21,20 @@ const CHAPTER_CARD := "res://assets/cards/chapters/%s.png"
 const ILLUSTRATION := "res://assets/illustrations/%s.png"
 const LOGO := "res://assets/logo/logo.png"
 const GAME_ICON := "res://assets/logo/icon.png"
+
+
+## 立绘动画；没有对应片段时返回空串，由调用方退回静态立绘。
+## 奈绪的片段以 nao_f 为前缀，其余角色与 id 同名；表情缺失时退回 idle。
+static func portrait_clip(char_id: String, expr := "") -> String:
+	if char_id == "":
+		return ""
+	var pre := "nao_f" if char_id == "nao" else char_id
+	if expr != "":
+		var p := PORTRAIT_CLIP % [pre, expr]
+		if ResourceLoader.exists(p):
+			return p
+	var idle := PORTRAIT_CLIP % [pre, "idle"]
+	return idle if ResourceLoader.exists(idle) else ""
 
 
 ## 立绘；expr 为空或该表情没有文件时用默认立绘

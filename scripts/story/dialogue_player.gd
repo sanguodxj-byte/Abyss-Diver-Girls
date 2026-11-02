@@ -408,15 +408,25 @@ func _focus(sp: String, expr: String) -> void:
 		else:
 			slot = "left" if int(_slots.left.seq) <= int(_slots.right.seq) else "right"
 		var n: PortraitPlace = _slots[slot].node
-		n.set_tex(AP.portrait(sp, expr))
+		_set_portrait(n, sp, expr)
 		_slots[slot].char = sp
 		_appear(slot)
 	else:
 		var n: PortraitPlace = _slots[slot].node
-		n.set_tex(AP.portrait(sp, expr))
+		_set_portrait(n, sp, expr)
 	_slots[slot].seq = _focus_seq
 	for side in _slots:
 		_set_dim(side, 1.0 if side == slot else 0.52)
+
+
+## 有立绘动画就播动画，没有就退回静态立绘
+func _set_portrait(n: PortraitPlace, sp: String, expr: String) -> void:
+	var clip := AP.portrait_clip(sp, expr)
+	if clip != "":
+		n.set_clip(clip)
+	else:
+		n.set_clip("")
+		n.set_tex(AP.portrait(sp, expr))
 
 
 func _set_dim(side: String, a: float) -> void:
@@ -639,9 +649,70 @@ void fragment(){
 ## 立绘位：有贴图时按高度等比铺开，没有贴图时画人形剪影占位（不写任何文字）
 class PortraitPlace extends Control:
 	var tex: Texture2D
+	var view: SubViewport
+	var vid: VideoStreamPlayer
+	var rect: TextureRect
 	var accent := Color(1.0, 0.69, 0.13)
 
+	func _ready() -> void:
+		view = SubViewport.new()
+		view.size = Vector2i(768, 768)
+		view.transparent_bg = true
+		view.disable_3d = true
+		view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(view)
+		vid = VideoStreamPlayer.new()
+		vid.expand = true
+		vid.size = Vector2(768, 768)
+		view.add_child(vid)
+		rect = TextureRect.new()
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_SCALE
+		rect.texture = view.get_texture()
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/portrait_key.gdshader")
+		rect.material = m
+		rect.visible = false
+		add_child(rect)
+		resized.connect(_fit_clip)
+		_fit_clip()
+
+	## 片段为正方形，按立绘位高度取正方形并贴底居中
+	func _fit_clip() -> void:
+		if rect == null:
+			return
+		var side := minf(size.x, size.y)
+		rect.position = Vector2((size.x - side) * 0.5, size.y - side)
+		rect.size = Vector2(side, side)
+
+	## 播立绘动画；传空串时停止并交回静态立绘
+	func set_clip(path: String) -> void:
+		if path == "":
+			if vid != null:
+				vid.stop()
+			if view != null:
+				view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			if rect != null:
+				rect.visible = false
+			return
+		var st: VideoStream = load(path)
+		if st == null:
+			return
+		tex = null
+		queue_redraw()
+		vid.stream = st
+		vid.loop = true
+		view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		vid.play()
+		rect.visible = true
+		_fit_clip()
+
 	func set_tex(t: Texture2D) -> void:
+		if rect != null and rect.visible:
+			vid.stop()
+			view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			rect.visible = false
 		if t != tex:
 			tex = t
 			queue_redraw()
@@ -650,6 +721,8 @@ class PortraitPlace extends Control:
 		var w := size.x
 		var h := size.y
 		if w <= 0.0 or h <= 0.0:
+			return
+		if rect != null and rect.visible:
 			return
 		var c := Vector2(w * 0.5, h * 0.55)
 		for i in 4:
