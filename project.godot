@@ -1,0 +1,43 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="Abyss Diver Girls"
+config/description="2.5D 俯视角机甲搜打撤原型"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[autoload]
+GameData="*res://scripts/game_data.gd"
+Events="*res://scripts/events.gd"
+Audio="*res://scripts/audio/audio_manager.gd"
+Story="*res://scripts/story/story.gd"
+Progress="*res://scripts/progression/progress.gd"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[gui]
+
+theme/custom_font="res://NotoSansSC-Subset.ttf"
+
+[rendering]
+anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/screen_space_aa=1
+anti_aliasing/screen_space_roughness_limiter/enabled=true
+anti_aliasing/screen_space_roughness_limiter/amount=0.6
+anti_aliasing/screen_space_roughness_limiter/limit=0.35
+textures/default_filters/anisotropic_filtering_level=4
+lights_and_shadows/directional_shadow/size=8192
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+
+[shader_globals]
+
+mech_damage={
+"type": "float",
+"value": 0.0
+}

@@ -1,0 +1,169 @@
+{
+  "can_food": {
+    "name": "罐头肉",
+    "cat": "food",
+    "w": 1.0,
+    "v": 60,
+    "rar": 0
+  },
+  "biscuit": {
+    "name": "压缩饼干",
+    "cat": "food",
+    "w": 0.5,
+    "v": 35,
+    "rar": 0
+  },
+  "water_tab": {
+    "name": "净水片",
+    "cat": "food",
+    "w": 0.2,
+    "v": 45,
+    "rar": 0
+  },
+  "coffee": {
+    "name": "旧世界咖啡豆",
+    "cat": "food",
+    "w": 0.6,
+    "v": 260,
+    "rar": 2
+  },
+  "circuit": {
+    "name": "电路板",
+    "cat": "misc",
+    "w": 0.5,
+    "v": 90,
+    "rar": 1
+  },
+  "wire": {
+    "name": "铜线卷",
+    "cat": "misc",
+    "w": 1.5,
+    "v": 70,
+    "rar": 0
+  },
+  "bolts": {
+    "name": "螺栓",
+    "cat": "misc",
+    "w": 0.8,
+    "v": 25,
+    "rar": 0
+  },
+  "hdd": {
+    "name": "旧世界硬盘",
+    "cat": "misc",
+    "w": 0.4,
+    "v": 380,
+    "rar": 2
+  },
+  "toy": {
+    "name": "发条玩具",
+    "cat": "misc",
+    "w": 0.3,
+    "v": 160,
+    "rar": 1
+  },
+  "chitin": {
+    "name": "虫甲壳",
+    "cat": "misc",
+    "w": 1.0,
+    "v": 80,
+    "rar": 0
+  },
+  "bug_crystal": {
+    "name": "虫晶",
+    "cat": "misc",
+    "w": 0.3,
+    "v": 450,
+    "rar": 3
+  },
+  "fuel_cell": {
+    "name": "燃料电池",
+    "cat": "use",
+    "w": 1.0,
+    "v": 120,
+    "rar": 1
+  },
+  "repair_kit": {
+    "name": "维修包",
+    "cat": "use",
+    "w": 1.2,
+    "v": 140,
+    "rar": 1
+  },
+  "beacon": {
+    "name": "呼叫信标",
+    "cat": "use",
+    "w": 0.5,
+    "v": 300,
+    "rar": 2
+  },
+  "credit_s": {
+    "name": "信用芯片(小)",
+    "cat": "money",
+    "w": 0.05,
+    "v": 100,
+    "rar": 1
+  },
+  "credit_l": {
+    "name": "信用芯片(大)",
+    "cat": "money",
+    "w": 0.05,
+    "v": 500,
+    "rar": 2
+  },
+  "gold": {
+    "name": "金条",
+    "cat": "money",
+    "w": 1.0,
+    "v": 1200,
+    "rar": 3
+  },
+  "sonic_decoy": {
+    "name": "声波诱饵信标",
+    "cat": "use",
+    "w": 0.8,
+    "v": 260,
+    "rar": 2,
+    "script": "res://scripts/modules/item_decoy.gd"
+  },
+  "extract_flare": {
+    "name": "撤离引导烟幕",
+    "cat": "use",
+    "w": 0.6,
+    "v": 220,
+    "rar": 1,
+    "script": "res://scripts/modules/item_flare.gd"
+  },
+  "energy_rod": {
+    "name": "高能电池棒",
+    "cat": "use",
+    "w": 1.4,
+    "v": 380,
+    "rar": 2,
+    "script": "res://scripts/modules/item_battery.gd"
+  },
+  "coolant_pack": {
+    "name": "冷却剂罐",
+    "cat": "use",
+    "w": 1.2,
+    "v": 240,
+    "rar": 1,
+    "script": "res://scripts/modules/item_coolant.gd"
+  },
+  "extract_barrier": {
+    "name": "撤离屏障",
+    "cat": "use",
+    "w": 2.0,
+    "v": 320,
+    "rar": 2,
+    "script": "res://scripts/modules/item_barrier.gd"
+  },
+  "surge_cell": {
+    "name": "超频电芯",
+    "cat": "use",
+    "w": 1.3,
+    "v": 400,
+    "rar": 2,
+    "script": "res://scripts/modules/item_surge.gd"
+  }
+}

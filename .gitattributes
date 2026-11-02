@@ -1,0 +1,5 @@
+assets/audio/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+assets/audio/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+assets/audio/**/*.wav filter=lfs diff=lfs merge=lfs -text
+assets/animations/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+assets/animations/**/*.png filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,70 @@
+{
+	"characters": {
+		"nao": {
+			"name_zh": "奈绪",
+			"name_ja": "白石 奈緒（しらいし なお）",
+			"role": "主力机甲驾驶员",
+			"expressions": ["neutral", "smile", "serious", "surprised", "sad", "tired"]
+		},
+		"rei": {
+			"name_zh": "零",
+			"name_ja": "久遠 零（くおん れい）",
+			"role": "机甲驾驶员（AI 队友）",
+			"expressions": ["neutral", "serious", "smile", "sad", "surprised", "angry", "tired"]
+		},
+		"kurumi": {
+			"name_zh": "胡桃",
+			"name_ja": "百瀬 くるみ（ももせ くるみ）",
+			"role": "机甲驾驶员（AI 队友）",
+			"expressions": ["smile", "neutral", "angry", "surprised", "sad", "serious", "tired"]
+		},
+		"lina": {
+			"name_zh": "莉娜",
+			"name_ja": "リナ・クラウゼ（Lina Krause）",
+			"role": "运输机「格里芬」驾驶员",
+			"expressions": ["neutral", "serious", "smile", "angry", "surprised", "sad", "tired"]
+		},
+		"laojiao": {
+			"name_zh": "米娅",
+			"name_ja": "ミア（Mia）",
+			"role": "机库整备师",
+			"expressions": ["neutral", "angry", "smile", "serious", "surprised", "tired", "sad"]
+		},
+		"ajin": {
+			"name_zh": "阿堇",
+			"name_ja": "蘇 菫（スー・ジン）",
+			"role": "黑市杂货与生活物资商",
+			"expressions": ["neutral"]
+		},
+		"xiaoman": {
+			"name_zh": "小满",
+			"name_ja": "林 小満（リン・シャオマン）",
+			"role": "战地军火与废铁倒爷",
+			"expressions": ["neutral"]
+		},
+		"shiori": {
+			"name_zh": "诗织",
+			"name_ja": "天城 詩織（あまぎ しおり）",
+			"role": "违禁生物与深渊样本商",
+			"expressions": ["neutral"]
+		},
+		"karasu": {
+			"name_zh": "鸦",
+			"name_ja": "鴉（からす）",
+			"role": "重型装甲与违禁特种弹药匠",
+			"expressions": ["neutral"]
+		},
+		"nihong": {
+			"name_zh": "霓虹",
+			"name_ja": "ネオン（Neon）",
+			"role": "旧时代电子残骸与黑客情报商",
+			"expressions": ["neutral"]
+		},
+		"gin": {
+			"name_zh": "银",
+			"name_ja": "銀（ぎん）",
+			"role": "灰烬商会账房与高危悬赏庄家",
+			"expressions": ["neutral"]
+		}
+	}
+}
