@@ -908,6 +908,12 @@ class DeployButton extends Button:
 			draw_rect(Rect2(c.x - w, c.y + y, w * 2.0, 2.0), col)
 			y += 2.0
 
+	## 像素虚线圆环：沿圆周交替画短弧，段长与间隔各占一份
+	func _dashed_ring(c: Vector2, r: float, col: Color) -> void:
+		var n := 48
+		for i in range(0, n, 2):
+			draw_arc(c, r - 1.0, TAU * i / n, TAU * (i + 1) / n, 3, col, 2.0, false)
+
 	func _draw() -> void:
 		var c := size * 0.5
 		var r: float = minf(size.x, size.y) * 0.5 - 2.0
@@ -917,12 +923,15 @@ class DeployButton extends Button:
 			fill = BG0
 		elif _hot:
 			fill = BG3
-		# 外圈：选中琥珀，悬停亮描边，常态橄榄灰
-		_disc(c, r, AMBER if on else (LINE2 if _hot else LINE))
-		_disc(c, r - 2.0, fill)
+		# 外圈：选中实线琥珀，常态与悬停为橙黄虚线
 		if on:
+			_disc(c, r, AMBER)
+			_disc(c, r - 2.0, fill)
 			_disc(c, r - 5.0, AMBER_DK)
 			_disc(c, r - 7.0, fill)
+		else:
+			_disc(c, r - 2.0, fill)
+			_dashed_ring(c, r, AMBER.lightened(0.2) if _hot else AMBER)
 		# 四个方向的短齿，像素感与页签描边呼应
 		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
 			var d := Vector2(cos(a), sin(a))
