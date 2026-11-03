@@ -842,57 +842,100 @@ class IconCell extends Control:
 
 
 ## 底部主导航按钮：等宽，像素图标 + 中文标题 / 小号大写英文；四态贴图 nav9_n（常态）/ nav9_h（悬停）/ nav9_p（按下瞬间）/ nav9_on（当前页）
-## 底部居中的大圆钮：像素化圆盘 + 亮金环，按下与选中时内圈点亮
+## 底部居中的大圆钮：与其他页签同一套像素材质与文字层级，只是外框为圆形
 class DeployButton extends Button:
-	const RING := Color(0.95, 0.66, 0.13)
-	const RING_HOT := Color(1.0, 0.82, 0.38)
-	const FACE := Color(0.09, 0.09, 0.1)
-	const FACE_ON := Color(0.16, 0.14, 0.09)
+	var cn_lbl: Label
+	var en_lbl: Label
+	var icon_rect: TextureRect
 	var _hot := false
+	var _tw: Tween
 
-	func _init(cn := "出击") -> void:
-		text = cn
+	func _init(cn := "出击", en_text := "SORTIE", icon_key := "nav_deploy") -> void:
 		toggle_mode = true
 		focus_mode = Control.FOCUS_NONE
-		custom_minimum_size = Vector2(104, 104)
+		custom_minimum_size = Vector2(112, 112)
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 			add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		mouse_entered.connect(func(): _hot = true; queue_redraw())
-		mouse_exited.connect(func(): _hot = false; queue_redraw())
-		toggled.connect(func(_on): queue_redraw())
-		button_down.connect(func(): queue_redraw())
-		button_up.connect(func(): queue_redraw())
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 2)
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(v)
+		var K = load("res://scripts/hub_kit.gd")
+		var tex: Texture2D = load("res://scripts/item_icons.gd").ui_icon(icon_key) if icon_key != "" else null
+		if tex:
+			icon_rect = K.icon_rect(tex, 40)
+			icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			v.add_child(icon_rect)
+		cn_lbl = Label.new()
+		cn_lbl.text = cn
+		cn_lbl.add_theme_font_size_override("font_size", 12)
+		cn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(cn_lbl)
+		en_lbl = Label.new()
+		en_lbl.text = en_text
+		en_lbl.add_theme_font_size_override("font_size", 12)
+		en_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		en_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(en_lbl)
+		resized.connect(func(): pivot_offset = size * 0.5)
+		mouse_entered.connect(func(): _hot = true; _spring(1.04))
+		mouse_exited.connect(func(): _hot = false; _spring(1.0))
+		button_down.connect(func(): _spring(0.96); queue_redraw())
+		button_up.connect(func(): _spring(1.04 if _hot else 1.0); queue_redraw())
+		toggled.connect(func(_on): _tint())
+		_tint()
+		pivot_offset = custom_minimum_size * 0.5
+		_spring(1.0, true)
+
+	func _spring(to: float, instant := false) -> void:
+		if _tw and _tw.is_valid():
+			_tw.kill()
+		if instant:
+			scale = Vector2.ONE * to
+			return
+		_tw = create_tween()
+		_tw.tween_property(self, "scale", Vector2.ONE * to, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 	func _disc(c: Vector2, r: float, col: Color) -> void:
 		var y := -r
 		while y < r:
-			var w: float = sqrt(maxf(r * r - y * y, 0.0))
-			w = floor(w / 2.0) * 2.0
+			var w: float = floor(sqrt(maxf(r * r - y * y, 0.0)) / 2.0) * 2.0
 			draw_rect(Rect2(c.x - w, c.y + y, w * 2.0, 2.0), col)
 			y += 2.0
 
 	func _draw() -> void:
 		var c := size * 0.5
 		var r: float = minf(size.x, size.y) * 0.5 - 2.0
-		var lit := _hot or button_pressed or button_down
-		_disc(c, r, RING_HOT if lit else RING)
-		_disc(c, r - 3.0, Color(0.04, 0.04, 0.05))
-		_disc(c, r - 5.0, FACE_ON if button_pressed else FACE)
-		# 刻度：环上四个方向的短齿
+		var on := button_pressed
+		var fill: Color = BG2
+		if button_down:
+			fill = BG0
+		elif _hot:
+			fill = BG3
+		# 外圈：选中琥珀，悬停亮描边，常态橄榄灰
+		_disc(c, r, AMBER if on else (LINE2 if _hot else LINE))
+		_disc(c, r - 2.0, fill)
+		if on:
+			_disc(c, r - 5.0, AMBER_DK)
+			_disc(c, r - 7.0, fill)
+		# 四个方向的短齿，像素感与页签描边呼应
 		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
 			var d := Vector2(cos(a), sin(a))
-			var t := c + d * (r - 1.5)
+			var t := c + d * (r - 1.0)
 			draw_rect(Rect2(t.x - 3, t.y - 3, 6, 6), Color(0.04, 0.04, 0.05))
-		var f = load("res://assets/fonts/fusion-pixel-12px-zh_hans.ttf")
-		var fs := 24
-		var tw: float = f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var col := RING_HOT if lit else Color(0.95, 0.93, 0.86)
-		draw_string(f, Vector2(c.x - tw * 0.5, c.y + 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
-		var en := "SORTIE"
-		var ew: float = f.get_string_size(en, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-		draw_string(f, Vector2(c.x - ew * 0.5, c.y + 26), en, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.7, 0.66, 0.55))
+
+	func _tint() -> void:
+		var on := button_pressed
+		cn_lbl.add_theme_color_override("font_color", AMBER if on else CREAM)
+		en_lbl.add_theme_color_override("font_color", AMBER_DK if on else CREAM_DIM)
+		if icon_rect:
+			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.8, 0.8, 0.76)
+		queue_redraw()
 
 
 class NavButton extends Button:
