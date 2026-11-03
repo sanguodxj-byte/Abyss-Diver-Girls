@@ -696,8 +696,8 @@ func _stack(list: Array, filter := "all") -> Array:
 # ============================================================ 1. 整备视图（装备槽 · 3D 机甲 · 仓库网格 · 属性汇总条）
 func _build_maintenance_view(parent: Control) -> void:
 	var v_m := _view(parent, "maintenance")
-	const LW := 300.0
-	const RW := 372.0
+	const LW := 336.0
+	const RW := 336.0
 
 	explode_btn = Button.new()
 	explode_btn.text = "◇ 拆解视图"
