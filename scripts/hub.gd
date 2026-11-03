@@ -583,7 +583,7 @@ func _build_bottom_bar() -> void:
 		td[3].add_child(btn)
 
 	# 圆形出击钮：压在底栏中线上，直径 104，向上探出底栏
-	var dep = K.DeployButton.new("出击", "SORTIE", "nav_deploy")
+	var dep = K.DeployButton.new("出击", "SORTIE", "")
 	dep.button_group = grp
 	dep.pressed.connect(func(): _switch_tab("deploy"))
 	nav_buttons["deploy"] = dep
