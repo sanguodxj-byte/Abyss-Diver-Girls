@@ -20,11 +20,13 @@ const BUG_DENSITY := 1.3       ## 分布表虫群密度的整体倍率（v0.6 �
 const FactionsScript = preload("res://scripts/factions/factions.gd")
 const WorldLinkScript = preload("res://scripts/world_link.gd")
 const CAM_OFFSET := Vector3(0, 43, 22)  # 2.5D 斜俯视（约 63°）
+const ZOOM_MIN := 0.5   ## 滚轮拉到最近（看机甲细节）
+const ZOOM_MAX := 1.3   ## 滚轮拉到最远：能看到的地图最多，也是默认视距（玩家视野与敌人视野都按这一档推算）
 
 var rng := RandomNumberGenerator.new()
 var mech
 var camera: Camera3D
-var cam_zoom := 0.9  # 鼠标滚轮缩放（0.5 近景看机甲细节 ~ 1.3 远景）
+var cam_zoom := ZOOM_MAX  # 鼠标滚轮缩放：默认最远一档（ZOOM_MAX），可滚轮拉近到 ZOOM_MIN
 var hud
 var world: Node3D
 var fx: Node3D
@@ -101,7 +103,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	add_child(camera)
 	camera.current = true
 	_apply_style.call_deferred()
-	camera.global_position = drop + CAM_OFFSET
+	camera.global_position = drop + CAM_OFFSET * cam_zoom
 	camera.look_at(drop, Vector3.UP)
 	# 3D 音效的收听点：放在机甲上方、朝向与镜头一致（镜头离地 40 多米，直接用镜头收听会让近处的声音太小）
 	listener = AudioListener3D.new()
@@ -1650,9 +1652,9 @@ func abandon() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			cam_zoom = clampf(cam_zoom - 0.06, 0.5, 1.3)
+			cam_zoom = clampf(cam_zoom - 0.06, ZOOM_MIN, ZOOM_MAX)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			cam_zoom = clampf(cam_zoom + 0.06, 0.5, 1.3)
+			cam_zoom = clampf(cam_zoom + 0.06, ZOOM_MIN, ZOOM_MAX)
 
 
 # ================= 大地图：道路 + 区块 =================
