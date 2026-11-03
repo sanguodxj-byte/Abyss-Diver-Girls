@@ -1260,6 +1260,11 @@ func alert(pos: Vector3) -> void:
 	if state == "idle":
 		if raid and _alive(raid.mech):
 			target = raid.mech
+			# 机甲远在丢失距离外（远处的空投、诱饵信标）：不扑机甲，只去声源处查看
+			if global_position.distance_to(raid.mech.global_position) > _lose_dist():
+				target = null
+				_set_investigate(pos)
+				return
 		state = "chase"
 		# 听到动静：朝声源方向搜过去，多给几秒「看不见也继续找」的宽限，找不到就去声源处查看
 		last_seen = pos
@@ -1531,11 +1536,18 @@ func _lose_target() -> void:
 	_wait_t = randf_range(0.6, 1.6)
 	wander_to = Vector3.ZERO
 	nav_agent.reset()
-	if last_seen != Vector3.INF and pack_leader == null:
-		_investigate = Vector3(last_seen.x, 0.0, last_seen.z)
-		_investigate_t = INVESTIGATE_T
-		_wait_t = 0.3
+	if last_seen != Vector3.INF:
+		_set_investigate(last_seen)
 	last_seen = Vector3.INF
+
+
+## 去 p 查看几秒：只有群首 / 散兵去，而且不出领地太远（虫群守地盘，不会被远处的动静一路勾走）
+func _set_investigate(p: Vector3) -> void:
+	if pack_leader != null or Vector2(p.x - home.x, p.z - home.z).length() > territory + 12.0:
+		return
+	_investigate = Vector3(p.x, 0.0, p.z)
+	_investigate_t = INVESTIGATE_T
+	_wait_t = 0.3
 
 
 ## 导航重算周期：近处 0.5 秒，中 / 远处更慢（错开由 Agent 内的随机系数完成）
@@ -1570,22 +1582,29 @@ func _chase_dir(fwd: Vector3, d: float, delta: float) -> Vector3:
 	return _separate(dir)
 
 
-## 局部避让：只在近处（LOD 0）追击时算，推开贴得太近的同伴，不改变总体朝向
+## 局部避让：只在近处（LOD 0）追击时算，推开贴得太近的同伴，不改变总体朝向。
+## 推力每 0.12 秒（错开）重算一次，中间帧沿用，几十只虫围着机甲时也不会每帧两两比较
+var _sep_push := Vector3.ZERO
+var _sep_t := 0.0
 func _separate(dir: Vector3) -> Vector3:
 	if lod != 0 or raid == null or not raid.has_method("bug_neighbors"):
 		return dir
-	var push := Vector3.ZERO
-	var p := global_position
-	var r0 := float(data.radius)
-	for b in raid.bug_neighbors(p):
-		if b == self:
-			continue
-		var o: Vector3 = p - b.global_position
-		o.y = 0.0
-		var want: float = r0 + float(b.data.radius) + 0.4
-		var L := o.length()
-		if L > 0.001 and L < want:
-			push += o / L * (want - L) / want
+	_sep_t -= get_physics_process_delta_time()
+	if _sep_t <= 0.0:
+		_sep_t = randf_range(0.1, 0.14)
+		_sep_push = Vector3.ZERO
+		var p := global_position
+		var r0 := float(data.radius)
+		for b in raid.bug_neighbors(p):
+			if b == self:
+				continue
+			var o: Vector3 = p - b.global_position
+			o.y = 0.0
+			var want: float = r0 + float(b.data.radius) + 0.4
+			var L := o.length()
+			if L > 0.001 and L < want:
+				_sep_push += o / L * (want - L) / want
+	var push := _sep_push
 	if push == Vector3.ZERO:
 		return dir
 	var out := dir + push.limit_length(0.8)

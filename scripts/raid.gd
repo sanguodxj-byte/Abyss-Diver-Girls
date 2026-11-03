@@ -1288,7 +1288,13 @@ func _view_aspect_now() -> float:
 	return sz.x / sz.y
 
 
+var _view_frame := -1
 func _update_view() -> void:
+	# 宽高比每个渲染帧最多查一次（感知里会被频繁调用）
+	var fr := Engine.get_process_frames()
+	if fr == _view_frame and not _view_poly.is_empty():
+		return
+	_view_frame = fr
 	var asp := _view_aspect_now()
 	if absf(asp - _view_aspect) < 0.001 and not _view_poly.is_empty():
 		return
