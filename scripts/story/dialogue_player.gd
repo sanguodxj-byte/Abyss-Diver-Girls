@@ -130,6 +130,7 @@ func _build() -> void:
 	gt.fill_to = Vector2(0, 1)
 	shade.texture = gt
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_root.add_child(shade)
 
 	_stage = Control.new()
@@ -760,15 +761,15 @@ class PortraitPlace extends Control:
 				var c2 := Vector2(cx + s * hr * 2.55, sh_y + hr * 1.05)
 				var d2 := Vector2(cx + s * hr * 1.55, sh_y + hr * 1.55)
 				draw_colored_polygon(PackedVector2Array([a, b, c2, d2]), Color(0.175, 0.185, 0.21, 0.985))
-				draw_line(a, b, Color(accent.r, accent.g, accent.b, 0.30), 2.0, true)
+				draw_line(a, b, Color(accent.r, accent.g, accent.b, 0.30), 2.0, false)
 			draw_circle(Vector2(cx, hy), hr, Color(0.185, 0.195, 0.22, 0.985))
-			draw_arc(Vector2(cx, hy), hr * 1.10, PI * 1.02, PI * 1.98, 26, Color(accent.r, accent.g, accent.b, 0.45), 2.5, true)
+			draw_arc(Vector2(cx, hy), hr * 1.10, PI * 1.02, PI * 1.98, 26, Color(accent.r, accent.g, accent.b, 0.45), 2.5, false)
 			draw_line(Vector2(cx - hr * 0.62, hy + hr * 0.05), Vector2(cx + hr * 0.62, hy + hr * 0.05),
 				Color(accent.r, accent.g, accent.b, 0.35), 2.0, true)
-			draw_line(Vector2(cx, hy + hr * 1.70), Vector2(cx, h), Color(1, 1, 1, 0.05), 2.0, true)
+			draw_line(Vector2(cx, hy + hr * 1.70), Vector2(cx, h), Color(1, 1, 1, 0.05), 2.0, false)
 			draw_polyline(PackedVector2Array([Vector2(cx - hr * 0.60, hy + hr * 0.70), Vector2(cx, hy + hr * 1.62),
 				Vector2(cx + hr * 0.60, hy + hr * 0.70)]), Color(1, 1, 1, 0.08), 2.0, true)
-			draw_polyline(bust, Color(accent.r, accent.g, accent.b, 0.26), 2.0, true)
+			draw_polyline(bust, Color(accent.r, accent.g, accent.b, 0.26), 2.0, false)
 			# 无立绘文件时头顶画一枚菱形标记，是占位而不是角色本身的一部分
 			var top := Vector2(cx, hy - hr * 1.95)
 			draw_colored_polygon(PackedVector2Array([top + Vector2(0, -7), top + Vector2(7, 0), top + Vector2(0, 7), top + Vector2(-7, 0)]),

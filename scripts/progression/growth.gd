@@ -9,6 +9,8 @@ const SELF_PATH := "res://scripts/progression/growth.gd"
 const MAX_FACILITY := 5
 const PILOT_MAX := 12
 const CREW_MAX := 5
+## 部署仓（战斗队友）最高等级
+const POD_MAX_TIER := 3
 ## 主角在数据表里的角色 id；名字由玩家输入，状态存 player_name。
 const PROTAGONIST := "nao"
 const DEFAULT_PLAYER_NAME := "奈绪"
@@ -112,6 +114,19 @@ static func ensure_defaults() -> Dictionary:
 
 	var pname := str(s.get("player_name", "")).strip_edges()
 	s["player_name"] = pname if pname != "" else DEFAULT_PLAYER_NAME
+
+	# v0.6：主角能力强化与部署仓。旧存档没有这两个字段时补成全 0（未购买）。
+	var ab: Dictionary = s.get("abilities") if typeof(s.get("abilities")) == TYPE_DICTIONARY else {}
+	for id in _table("ABILITIES"):
+		ab[id] = clampi(int(ab.get(id, 0)), 0, int(_table("ABILITIES")[id].get("max", MAX_FACILITY)))
+	s["abilities"] = ab
+	var pods: Dictionary = s.get("pods") if typeof(s.get("pods")) == TYPE_DICTIONARY else {}
+	for id in _table("PODS"):
+		var pd: Dictionary = pods.get(id) if typeof(pods.get(id)) == TYPE_DICTIONARY else {}
+		pd["tier"] = clampi(int(pd.get("tier", 0)), 0, POD_MAX_TIER)
+		pd["on"] = bool(pd.get("on", true))
+		pods[id] = pd
+	s["pods"] = pods
 
 	var chapters: Array = s.get("chapters") if typeof(s.get("chapters")) == TYPE_ARRAY else []
 	var ch_keep: Array = []
@@ -844,6 +859,11 @@ static func stat_hook(stats: Dictionary, _loadout: Dictionary) -> void:
 		if lv > 0:
 			_add_stats(stats, _table("CREW")[cid].get("stat", {}), lv)
 	_add_stats(stats, meal_bonus(), 1.0)
+	var ab: Dictionary = s.get("abilities", {})
+	for aid in _table("ABILITIES"):
+		var alv := int(ab.get(aid, 0))
+		if alv > 0:
+			_add_stats(stats, _table("ABILITIES")[aid].get("stat", {}), alv)
 	stats["drain"] = maxf(0.02, float(stats.get("drain", 0.1)))
 	stats["hp"] = maxf(30.0, float(stats.get("hp", 30.0)))
 	stats["energy"] = maxf(30.0, float(stats.get("energy", 30.0)))
@@ -963,3 +983,224 @@ static func _on_request_fulfilled(req: Dictionary) -> void:
 		char_id = _who_char(str(req.get("who", "")))
 	if char_id != "":
 		grant_affinity(char_id, 1)
+
+
+# ---------------------------------------------------------------- 打捞杂物（技能页的升级材料）
+## 技能页展示的材料 id（数据表 MATERIALS 的顺序）
+static func material_ids() -> Array:
+	return _list("MATERIALS")
+
+
+static func material_count(id: String) -> int:
+	return _count_item(id)
+
+
+## 费用里每一项的缺口：[{"id", "need", "have"}]；money 用 id "money"。供界面把不够的材料标红。
+static func cost_parts(cost: Dictionary) -> Array:
+	var out: Array = []
+	if cost.is_empty():
+		return out
+	out.append({"id": "money", "need": int(cost.get("money", 0)), "have": _money()})
+	var items: Dictionary = cost.get("items", {})
+	for id in items:
+		out.append({"id": str(id), "need": int(items[id]), "have": _count_item(str(id))})
+	return out
+
+
+static func can_afford(cost: Dictionary) -> bool:
+	return not cost.is_empty() and _has_cost(cost)
+
+
+## 某件物品作为升级材料出现在哪些「下一级」费用里（仓库页提示用途）；返回显示名列表
+static func material_uses(item_id: String) -> Array:
+	var out: Array = []
+	for id in facility_ids():
+		if (facility_cost(id).get("items", {}) as Dictionary).has(item_id):
+			out.append("%s Lv%d" % [facility_name(id), facility_level(id) + 1])
+	for id in ability_ids():
+		if (ability_cost(id).get("items", {}) as Dictionary).has(item_id):
+			out.append("%s Lv%d" % [ability_name(id), ability_level(id) + 1])
+	for id in pod_ids():
+		if (pod_cost(id).get("items", {}) as Dictionary).has(item_id):
+			out.append("%s T%d" % [pod_name(id), pod_tier(id) + 1])
+	return out
+
+
+# ---------------------------------------------------------------- 主角能力强化（钱 + 杂物直接升级）
+static func ability_ids() -> Array:
+	return _table("ABILITIES").keys()
+
+
+static func ability_data(id: String) -> Dictionary:
+	return _table("ABILITIES").get(id, {})
+
+
+static func ability_name(id: String) -> String:
+	return str(ability_data(id).get("name", id))
+
+
+static func ability_max(id: String) -> int:
+	return int(ability_data(id).get("max", MAX_FACILITY))
+
+
+static func ability_level(id: String) -> int:
+	var ab: Dictionary = ensure_defaults().get("abilities", {})
+	return int(ab.get(id, 0))
+
+
+## 下一级费用；满级返回空字典
+static func ability_cost(id: String) -> Dictionary:
+	var costs: Array = ability_data(id).get("cost", [])
+	var lv := ability_level(id)
+	if lv >= ability_max(id) or lv >= costs.size():
+		return {}
+	return costs[lv]
+
+
+## 空串表示可以升级；否则是拒绝原因
+static func can_upgrade_ability(id: String) -> String:
+	if ability_data(id).is_empty():
+		return "未知能力"
+	var cost := ability_cost(id)
+	if cost.is_empty():
+		return "已满级"
+	if _money() < int(cost.get("money", 0)):
+		return "信用点不足"
+	if not _has_cost(cost):
+		return "材料不足"
+	return ""
+
+
+static func upgrade_ability(id: String) -> bool:
+	if can_upgrade_ability(id) != "":
+		return false
+	if not _pay_cost(ability_cost(id)):
+		return false
+	var s := ensure_defaults()
+	s.abilities[id] = ability_level(id) + 1
+	Audio.play_ui("grow_level")
+	Events.emit_custom("ability_upgraded", {"id": id, "level": int(s.abilities[id])})
+	_save()
+	return true
+
+
+## 模拟舱训练：花费固定费用给主角加经验
+static func training_cost() -> Dictionary:
+	return (_table("TRAINING").get("cost", {}) as Dictionary)
+
+
+static func training_xp() -> int:
+	return int(_table("TRAINING").get("xp", 0))
+
+
+static func can_train() -> String:
+	if pilot_level(PROTAGONIST) >= PILOT_MAX:
+		return "已满级"
+	var cost := training_cost()
+	if cost.is_empty():
+		return "未开放"
+	if _money() < int(cost.get("money", 0)):
+		return "信用点不足"
+	if not _has_cost(cost):
+		return "材料不足"
+	return ""
+
+
+static func train_protagonist() -> Dictionary:
+	if can_train() != "":
+		return {}
+	if not _pay_cost(training_cost()):
+		return {}
+	var r := add_pilot_xp(PROTAGONIST, training_xp())
+	_save()
+	return r
+
+
+# ---------------------------------------------------------------- 部署仓（战斗队友）
+static func pod_ids() -> Array:
+	return _table("PODS").keys()
+
+
+static func pod_data(id: String) -> Dictionary:
+	return _table("PODS").get(id, {})
+
+
+static func pod_name(id: String) -> String:
+	return str(pod_data(id).get("name", id))
+
+
+static func pod_pilot(id: String) -> String:
+	return str(pod_data(id).get("pilot", id))
+
+
+static func _pod_state(id: String) -> Dictionary:
+	var pods: Dictionary = ensure_defaults().get("pods", {})
+	return pods.get(id, {})
+
+
+## 0 = 未购买，1..3 = 已购等级
+static func pod_tier(id: String) -> int:
+	return int(_pod_state(id).get("tier", 0))
+
+
+static func pod_on(id: String) -> bool:
+	return pod_tier(id) > 0 and bool(_pod_state(id).get("on", true))
+
+
+## 下一级（购买 = tier 1）费用；满级返回空字典
+static func pod_cost(id: String) -> Dictionary:
+	var costs: Array = pod_data(id).get("cost", [])
+	var t := pod_tier(id)
+	if t >= POD_MAX_TIER or t >= costs.size():
+		return {}
+	return costs[t]
+
+
+static func can_buy_pod(id: String) -> String:
+	if pod_data(id).is_empty():
+		return "未知部署仓"
+	var cost := pod_cost(id)
+	if cost.is_empty():
+		return "已满级"
+	if _money() < int(cost.get("money", 0)):
+		return "信用点不足"
+	if not _has_cost(cost):
+		return "材料不足"
+	return ""
+
+
+## 购买（tier 0→1）或升级（→2、3）；扣钱和仓库杂物
+static func buy_pod(id: String) -> bool:
+	if can_buy_pod(id) != "":
+		return false
+	if not _pay_cost(pod_cost(id)):
+		return false
+	var s := ensure_defaults()
+	var pd: Dictionary = s.pods[id]
+	pd["tier"] = pod_tier(id) + 1
+	if int(pd.tier) == 1:
+		pd["on"] = true
+	Audio.play_ui("grow_upgrade")
+	Events.emit_custom("pod_upgraded", {"id": id, "pilot": pod_pilot(id), "tier": int(pd.tier)})
+	_save()
+	return true
+
+
+## 已购部署仓是否随本次出击
+static func set_pod_on(id: String, on: bool) -> bool:
+	if pod_tier(id) <= 0:
+		return false
+	var s := ensure_defaults()
+	(s.pods[id] as Dictionary)["on"] = on
+	_save()
+	return true
+
+
+## 给战斗系统的接口：本次出击随行的 AI 队友。每项 {"pilot": "rei", "tier": 1}（tier 1..3），没买时返回 []。
+## 顺序按数据表 PODS 的顺序。
+static func ally_squad() -> Array:
+	var out: Array = []
+	for id in pod_ids():
+		if pod_on(id):
+			out.append({"pilot": pod_pilot(id), "tier": pod_tier(id)})
+	return out

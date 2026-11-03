@@ -221,7 +221,7 @@ class AmmoColumn extends Control:
 
 	func _draw() -> void:
 		if tex == null:
-			draw_string(font, Vector2(4, size.y * 0.5), "—", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.3))
+			draw_string(font, Vector2(4, size.y * 0.5), "—", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.3))
 			return
 		var x := (size.x - bw) * 0.5
 		var od: bool = mech.overdrive_t > 0.0
@@ -243,7 +243,7 @@ class AmmoColumn extends Control:
 
 	func _vtext(s: String, c: Color) -> void:
 		for i in s.length():
-			draw_string(font, Vector2(size.x * 0.5 - 7, size.y * 0.35 + i * 18), s[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, c)
+			draw_string(font, Vector2(size.x * 0.5 - 7, size.y * 0.35 + i * 18), s[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, c)
 
 
 # ====================================================================== 技能槽
@@ -305,8 +305,8 @@ class SkillSlot extends Control:
 				pts.append(c + d * k)
 			draw_colored_polygon(pts, Color(0, 0, 0, 0.62))
 			var txt := "%.1f" % info.cd if info.cd < 10.0 else "%d" % int(info.cd)
-			draw_string_outline(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 18, 4, Color(0, 0, 0, 0.9))
-			draw_string(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 18, Color(1, 0.92, 0.75))
+			draw_string_outline(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, 4, Color(0, 0, 0, 0.9))
+			draw_string(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, Color(1, 0.92, 0.75))
 		if ready or info.active:
 			draw_texture_rect(t_ready, Rect2(o, Vector2(s, s)), false, Color(1, 1, 1, 0.35 + ready_flash * 0.65))
 		# 键帽

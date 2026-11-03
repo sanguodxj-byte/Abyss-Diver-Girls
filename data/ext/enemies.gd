@@ -9,7 +9,8 @@ extends RefCounted
 ##            ai / windup / strike / recover / charge_speed / charge_time / aggro / interrupt / armor / front_resist
 ##            blast_r / blast_dmg / pool_dur / pool_dps / fuse / burrow_time / erupt_r / pulse_r / pulse_heal / pulse_shield
 ##            volley / shell_time / keep / flee / hover / jam_r / jam_cost / armor_pierce / weak_back / weak_core / loot / phases
-## SPAWNS   每个战区的虫群分布：{战区 id: {"packs": {区块字符: 每 4900 平方米的虫群数}, "kinds": {种类: 权重}, "pack_size": [最少, 最多],
+## SPAWNS   每个战区的虫群分布（v0.6：十二种常规虫在地表五个战区都会出现，战区主题种类权重高、外来种类零星出现；
+##          raid.gd 另乘 BUG_DENSITY 并把每群第一只设为巡逻群首）：{战区 id: {"packs": {区块字符: 每 4900 平方米的虫群数}, "kinds": {种类: 权重}, "pack_size": [最少, 最多],
 ##          "script": 可选，路径，脚本里写 static func spawn(raid, drop: Vector3)，接管该战区的初始布置（可调用 raid.spawn_default_bugs(drop)）}}。
 ##          没有登记的战区按 raid.gd 里原有的分布生成。
 ## LOOT_TABLES  新敌人的残骸掉落表（掉落箱种类在敌人脚本里决定）。
@@ -121,27 +122,27 @@ const ENEMIES := {
 const SPAWNS := {
 	# 灰港市：城区街巷密度中等，跳虫与酸液虫为主，开阔地混少量啸翅虫。
 	"greyport": {"packs": {"D": 1.6, "R": 1.8, "I": 1.6, "H": 1.5, "Y": 1.0, "M": 1.8, "P": 1.2, "F": 0.8, "W": 0.7, "T": 0.9, "C": 1.3, "S": 2.2, "K": 0.0},
-		"kinds": {"ling": 46, "spitter": 24, "beetle": 18, "wasp": 12}, "pack_size": [2, 4]},
+		"kinds": {"ling": 40, "spitter": 22, "beetle": 15, "wasp": 10, "mantis": 4, "bomber": 4, "shielder": 3, "crystal_bug": 2, "burrower": 2, "mech_beetle": 2, "mortar": 2, "ironjaw": 1}, "pack_size": [2, 4]},
 	# 铁锈工业带：厂房掩体多、零件多，镰爪虫在编组站与厂区之间巡逻。
 	"ironbelt": {"packs": {"D": 1.2, "R": 1.5, "I": 2.2, "H": 1.4, "Y": 1.9, "M": 1.6, "P": 1.0, "F": 0.7, "W": 0.9, "T": 1.1, "C": 1.5, "S": 2.6, "K": 0.0},
-		"kinds": {"ling": 32, "spitter": 20, "beetle": 15, "mantis": 24, "shielder": 9, "ripper": 8, "aegis": 5}, "pack_size": [2, 4]},
+		"kinds": {"ling": 28, "spitter": 17, "beetle": 13, "mantis": 20, "shielder": 8, "mech_beetle": 5, "mortar": 3, "wasp": 3, "bomber": 2, "burrower": 2, "crystal_bug": 1, "ironjaw": 1, "ripper": 8, "aegis": 5}, "pack_size": [2, 4]},
 	# 尘土平原：视野开阔、虫群分散成小群，自爆虫贴着田埂冲过来。
 	"dustfield": {"packs": {"D": 1.1, "R": 1.5, "I": 0.6, "H": 0.4, "Y": 0.4, "M": 1.3, "P": 1.0, "F": 1.0, "W": 0.9, "T": 1.2, "C": 1.7, "S": 2.3, "K": 0.3},
-		"kinds": {"ling": 38, "spitter": 22, "beetle": 14, "bomber": 26, "lancer": 6}, "pack_size": [2, 3]},
+		"kinds": {"ling": 34, "spitter": 20, "beetle": 12, "bomber": 22, "wasp": 4, "burrower": 3, "mantis": 3, "shielder": 2, "mortar": 2, "crystal_bug": 1, "mech_beetle": 1, "ironjaw": 1, "lancer": 6}, "pack_size": [2, 3]},
 	# 赤湖新区：林地与湖畔，晶背虫与盾脉虫成群；巢母由 spawn_redlake.gd 布置。
 	"redlake": {"packs": {"D": 1.4, "R": 1.7, "I": 0.8, "H": 0.8, "Y": 0.5, "M": 1.4, "P": 1.6, "F": 1.2, "W": 0.9, "T": 1.8, "C": 1.6, "S": 2.4, "K": 0.0},
-		"kinds": {"ling": 30, "spitter": 22, "beetle": 15, "crystal_bug": 19, "shielder": 10, "wasp": 4, "overseer": 5}, "pack_size": [2, 4],
+		"kinds": {"ling": 26, "spitter": 20, "beetle": 13, "crystal_bug": 17, "shielder": 9, "wasp": 5, "mortar": 3, "mantis": 2, "bomber": 2, "burrower": 2, "mech_beetle": 1, "ironjaw": 1, "overseer": 5}, "pack_size": [2, 4],
 		"script": "res://scripts/enemies/spawn_redlake.gd"},
 	# 裂谷矿区：路线少、伏击点多，钻地虫与曲炮虫封锁干河谷，精英铁颚虫游荡。
 	"canyon": {"packs": {"D": 0.8, "R": 0.6, "I": 1.3, "H": 0.6, "Y": 0.9, "M": 1.5, "P": 0.4, "F": 0.4, "W": 1.4, "T": 0.8, "C": 1.9, "S": 2.7, "K": 0.0},
-		"kinds": {"ling": 10, "beetle": 15, "mantis": 17, "burrower": 21, "mech_beetle": 14, "mortar": 15, "ironjaw": 8, "lancer": 6, "ripper": 7}, "pack_size": [2, 3],
+		"kinds": {"ling": 10, "beetle": 14, "mantis": 15, "burrower": 19, "mech_beetle": 12, "mortar": 13, "ironjaw": 7, "spitter": 4, "crystal_bug": 3, "wasp": 2, "bomber": 2, "shielder": 2, "lancer": 6, "ripper": 7}, "pack_size": [2, 3],
 		"script": "res://scripts/enemies/spawn_canyon.gd"},
 
 }
 
 ## 零号深渊井的虫群分布：战区由地图团队登记后才并入（战区未登记时不产生指向不存在战区的分布）
 const ABYSS_SPAWN := {"packs": {"D": 0.0, "R": 0.0, "I": 1.4, "H": 0.0, "Y": 0.0, "M": 1.6, "P": 0.0, "F": 0.0, "W": 1.2, "T": 0.0, "C": 2.0, "S": 3.0, "K": 0.0},
-	"kinds": {"burrower": 22, "crystal_bug": 20, "ironjaw": 16, "mech_beetle": 14, "mortar": 14, "wasp": 14, "aegis": 6, "overseer": 4, "brood": 3, "colossus": 2}, "pack_size": [2, 4],
+	"kinds": {"burrower": 20, "crystal_bug": 18, "ironjaw": 14, "mech_beetle": 13, "mortar": 12, "wasp": 12, "mantis": 5, "bomber": 4, "shielder": 4, "spitter": 3, "beetle": 3, "ling": 2, "aegis": 6, "overseer": 4, "brood": 3, "colossus": 2}, "pack_size": [2, 4],
 	"script": "res://scripts/enemies/spawn_abyss.gd"}
 
 

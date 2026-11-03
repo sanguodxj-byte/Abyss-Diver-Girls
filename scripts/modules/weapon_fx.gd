@@ -94,7 +94,11 @@ static func chips(raid, p: Vector3, n := 14, c := Color(0.42, 0.4, 0.37), dir :=
 
 ## 瞬时点光（跟随位置，寿命结束自动释放）
 static func light(raid, p: Vector3, c: Color, energy := 3.0, rng := 5.0, dur := 0.12) -> void:
+	if raid.has_method("_flash_light"):
+		raid._flash_light(p, c, energy, rng, dur)
+		return
 	var l := OmniLight3D.new()
+	l.light_volumetric_fog_energy = 0.0
 	l.light_color = c
 	l.light_energy = energy
 	l.omni_range = rng

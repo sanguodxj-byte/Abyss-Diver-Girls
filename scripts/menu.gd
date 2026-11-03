@@ -24,14 +24,12 @@ var post_mat: ShaderMaterial
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = UI.theme()
-	var svc := SubViewportContainer.new()
-	svc.stretch = true
-	svc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 按窗口真实像素渲染（原来固定 1280×720 再放大，高分屏发糊）
+	var svc := UI.HiResView.new()
 	add_child(svc)
-	var sv := SubViewport.new()
+	var sv: SubViewport = svc.sv
 	sv.msaa_3d = Viewport.MSAA_4X
 	sv.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
-	svc.add_child(sv)
 	_build_scene(sv)
 	_build_ui()
 
@@ -149,6 +147,7 @@ func _build_ui() -> void:
 	gt.fill_to = Vector2(1, 0)
 	grad.texture = gt
 	grad.stretch_mode = TextureRect.STRETCH_SCALE
+	grad.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	grad.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 	grad.offset_right = 780
 	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE

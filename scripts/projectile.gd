@@ -17,6 +17,8 @@ var tail_len := 0.0
 var traveled := 0.0
 ## 命中音效 id；空串时按命中对象自动选 hit_chitin / hit_metal，"-" 为不发声（火焰等高频命中）
 var hit_sfx := ""
+## 开火者（玩家机甲 / 流浪者 / 队友）：命中虫子或机甲时记为它的仇恨来源，用于反击与击杀归属
+var source = null
 
 
 func _physics_process(delta: float) -> void:
@@ -38,6 +40,8 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 			return
 		var organic: bool = c.is_in_group("bugs") or c.is_in_group("nests")
+		if source != null and is_instance_valid(source) and "aggressor" in c:
+			c.aggressor = source
 		if c.has_method("take_damage"):
 			c.take_damage(dmg)
 		raid.impact(r.position, r.normal, color, c.has_method("take_damage"), vel)

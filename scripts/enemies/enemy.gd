@@ -162,7 +162,7 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	amt *= _weak_scale(from)
 	amt = maxf(amt, 1.0)
 	hp -= amt
-	state = "chase"
+	_aggro_on_hit()
 	flash_t = 0.07
 	_set_flash(true)
 	var push := clampf(amt / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
@@ -263,11 +263,12 @@ static func bomber_blast(raid, p: Vector3, rad: float, dmg: float, pool_time: fl
 	ART.burst(raid.fx, p + Vector3(0, 0.8, 0), {"amount": 22, "life": 0.6, "size": rad * 0.5, "vmin": rad * 1.2, "vmax": rad * 2.4, "spread": 90.0,
 		"gravity": Vector3(0, 3.0, 0), "damp": 5.0, "c0": Color(0.85, 1.0, 0.35, 0.9), "c1": Color(0.25, 0.45, 0.0, 0.0), "grow0": 0.6, "grow1": 1.6})
 	Audio.play_sfx("bug_bomber_attack", p + Vector3(0, 1.0, 0))
-	var m = raid.mech
-	if m != null and is_instance_valid(m) and not m.dead:
-		if Vector2(m.global_position.x - p.x, m.global_position.z - p.z).length() < rad + 0.8:
-			m.kick_v += Vector3(-1.6, 0.0, 0.0)
-			m.take_damage(dmg)
+	var foes: Array = raid.bug_foes() if raid.has_method("bug_foes") else [raid.mech]
+	for m in foes:
+		if m != null and is_instance_valid(m) and not m.dead:
+			if Vector2(m.global_position.x - p.x, m.global_position.z - p.z).length() < rad + 0.8:
+				m.kick_v += Vector3(-1.6, 0.0, 0.0)
+				m.take_damage(dmg)
 	if pool_time > 0.0:
 		var pool := Hazards.AcidPool.new()
 		raid.fx.add_child(pool)
@@ -289,13 +290,16 @@ func _hit_mech(dmg: float, knock := 0.0, reach := -1.0) -> bool:
 		var left := a * (1.0 - clampf(armor_pierce, 0.0, 1.0))
 		if left < a:
 			deal = dmg * (1.0 - left) / maxf(1.0 - a, 0.1)
+	if "aggressor" in m:
+		m.aggressor = self
 	m.take_damage(deal)
 	if knock > 0.0:
 		m.kick_v += Vector3(knock, 0.0, randf_range(-0.6, 0.6))
 	if raid:
 		var dir: Vector3 = (m.global_position - global_position).normalized()
 		raid.spark(m.global_position + Vector3(0, 1.3, 0) - dir * 0.7, Color(1.0, 0.7, 0.35), 9)
-		raid.shake = maxf(raid.shake, clampf(dmg / 90.0, 0.06, 0.3))
+		if m == raid.mech:
+			raid.shake = maxf(raid.shake, clampf(dmg / 90.0, 0.06, 0.3))
 	return true
 
 
@@ -303,7 +307,6 @@ func _sfx(what: String) -> void:
 	Audio.play_sfx("bug_%s_%s" % [sfx, what], global_position + Vector3(0, 0.9, 0))
 
 # ================= AI =================
-var _lod_acc := 0.0
 var enraged := false
 
 
@@ -312,25 +315,29 @@ func _physics_process(delta: float) -> void:
 		return
 	if guard_t > 0.0:
 		guard_t = maxf(0.0, guard_t - delta)
-	if _idle_lod(delta):
+	delta = _lod_dt(delta)
+	if delta <= 0.0:
 		return
+	_perc_t -= delta
+	if _perc_t <= 0.0:
+		_perc_t = _perceive_period() * randf_range(0.8, 1.2)
+		_perceive()
 	atk_cd = maxf(0.0, atk_cd - delta)
 	if flash_t > 0.0:
 		flash_t -= delta
 		if flash_t <= 0.0:
 			_set_flash(false)
-	if target == null and raid:
-		target = raid.mech
 	var to := Vector3.ZERO
 	var d := 999.0
-	var valid: bool = target != null and is_instance_valid(target) and not target.dead
+	var valid: bool = _alive(target)
 	if valid:
 		to = target.global_position - global_position
 		to.y = 0.0
 		d = to.length()
 	if state != _last_state:
 		if state == "chase" and _last_state == "idle":
-			_sfx("appear")
+			if lod == 0:
+				_sfx("appear")
 			atk_cd = maxf(atk_cd, 0.45)
 		_last_state = state
 	if act != "":
@@ -339,29 +346,14 @@ func _physics_process(delta: float) -> void:
 	_move(delta, dir)
 	_face(delta, to, dir)
 	# 地下潜行时一路扬起尘土：轨迹可读，玩家有时间离开
-	if underground and raid:
+	if underground and raid and lod == 0:
 		trail_t -= delta
 		if trail_t <= 0.0:
 			trail_t = 0.22
 			Hazards.dust_trail(raid, global_position)
-	var mv := clampf(Vector2(velocity.x, velocity.z).length() / maxf(float(data.speed), 0.1), 0.0, 1.0)
-	_animate(delta, mv)
-
-
-## 远处闲置的虫子降到低频更新：大地图上同时存在上百只，全部逐帧跑 AI 没有必要
-func _idle_lod(delta: float) -> bool:
-	if state != "idle" or act != "":
-		return false
-	if raid == null or not is_instance_valid(raid.mech):
-		return false
-	if global_position.distance_squared_to(raid.mech.global_position) > 75.0 * 75.0:
-		_lod_acc += delta
-		if _lod_acc < 0.5:
-			return true
-		_lod_acc = 0.0
-		if aggro > 0.0 and global_position.distance_to(raid.mech.global_position) > aggro:
-			return true
-	return false
+	if lod == 0:
+		var mv := clampf(Vector2(velocity.x, velocity.z).length() / maxf(float(data.speed), 0.1), 0.0, 1.0)
+		_animate(delta, mv)
 
 
 func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
@@ -370,12 +362,13 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 		enraged = true
 		atk_cd = minf(atk_cd, 0.4)
 	if not valid:
-		return _wander(delta)
+		if state == "chase":
+			_lose_target()
+		return _patrol(delta)
 	if state == "idle":
-		state = "chase"
+		return _patrol(delta)
 	if d > 62.0:
-		state = "idle"
-		home = global_position
+		_lose_target()
 		return Vector3.ZERO
 	var fwd := to / maxf(d, 0.01)
 	if ai == "burrower" and act == "burrow_move":
@@ -529,7 +522,7 @@ func _move(delta: float, dir: Vector3) -> void:
 		velocity.y = 0.0
 	else:
 		velocity.y = -1.0 if is_on_floor() else velocity.y - 30.0 * delta
-	move_and_slide()
+	_slide(delta)
 
 
 # ================= 动作时间轴：wind（前摇）→ 行动步骤 → recover（收招） =================

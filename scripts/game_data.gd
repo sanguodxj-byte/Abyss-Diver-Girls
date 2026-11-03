@@ -91,9 +91,9 @@ var stash: Array = []
 var cargo: Array = []      ## 下一次出击要带的东西
 var loadout := {}
 var raids := 0
-## 画质：0 流畅 / 1 高 / 2 极致（默认极致）
+## 画质：0 流畅 / 1 高 / 2 极致（新存档默认“高”：极致档 1.5 倍超采样 + MSAA4x + TAA + SSIL，中端显卡压力过大）
 const QUALITY_NAMES := ["流畅", "高", "极致"]
-var quality := 2
+var quality := 1
 var render_style := 0  # 0 写实 1 三渲二
 var map_id := "greyport"  ## 出击战区
 var extracts_ok := 0
@@ -432,7 +432,7 @@ func load_game() -> bool:
 	cargo = Array(d.get("cargo", []))
 	loadout = Dictionary(d.get("loadout", STARTER.duplicate()))
 	raids = int(d.get("raids", 0))
-	quality = int(d.get("quality", 2))
+	quality = int(d.get("quality", 1))
 	render_style = int(d.get("render_style", 0))
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
@@ -617,6 +617,31 @@ static func list_scripts(dir: String) -> Array:
 	var out: Array = seen.keys()
 	out.sort()
 	return out
+
+
+## 按画质档位调整战场环境的重型后处理（GPU 开销大头）。
+## 流畅：关体积雾 / SSIL，SSAO 降档，阴影 2048、硬阴影；高：体积雾 + SSAO，关 SSIL，阴影 4096；极致：全开，阴影 8192。
+func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void:
+	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	match quality:
+		0:
+			env.volumetric_fog_enabled = false
+			env.ssil_enabled = false
+			env.ssao_enabled = false
+			env.glow_enabled = true
+			RenderingServer.directional_shadow_atlas_set_size(2048, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			if sun:
+				sun.light_angular_distance = 0.0
+				sun.directional_shadow_max_distance = 55.0
+		1:
+			env.ssil_enabled = false
+			RenderingServer.directional_shadow_atlas_set_size(4096, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+		_:
+			env.ssil_enabled = not compat
+			RenderingServer.directional_shadow_atlas_set_size(8192, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
 
 
 ## 应用抗锯齿 / 渲染缩放到主视口。

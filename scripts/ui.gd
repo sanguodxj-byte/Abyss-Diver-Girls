@@ -1,5 +1,5 @@
 extends RefCounted
-## 统一的科幻工业风 UI 主题与小部件。
+## 统一的像素风科幻工业 UI 主题与小部件（像素字体 + 2 倍像素格贴图，见 scripts/pixel_ui.gd、tools/pixelize_ui.py）。
 ## 玩家方色板：金属黑灰 + 亮橙黄（铁血紫只给敌方）。所有控件使用 assets/ui 下的贴图九宫格，不保留引擎默认样式。
 
 const BG := Color(0.13, 0.13, 0.13, 0.92)
@@ -35,6 +35,9 @@ static func tex9(name: String, margin := 12, pad := 12, tint := Color(1, 1, 1)) 
 	sb.content_margin_top = pad * 0.75
 	sb.content_margin_bottom = pad * 0.75
 	sb.modulate_color = tint
+	# 像素风：中间区域按整像素平铺，避免最近邻拉伸造成像素宽窄不一
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
 	return sb
 
 
@@ -52,7 +55,8 @@ static func theme() -> Theme:
 	if _theme:
 		return _theme
 	var t := Theme.new()
-	t.default_font_size = 15
+	t.default_font = PixelUI.pixel_font()
+	t.default_font_size = 12
 	t.set_stylebox("panel", "PanelContainer", tex9("panel9", 14, 12))
 	t.set_stylebox("panel", "Panel", tex9("panel9", 14, 12))
 	t.set_color("font_color", "Label", TEXT)
@@ -102,7 +106,7 @@ static func theme() -> Theme:
 	t.set_color("font_selected_color", "TabContainer", ACCENT.lightened(0.2))
 	t.set_color("font_unselected_color", "TabContainer", MUTED)
 	t.set_color("font_hovered_color", "TabContainer", TEXT)
-	t.set_font_size("font_size", "TabContainer", 15)
+	t.set_font_size("font_size", "TabContainer", 12)
 	t.set_stylebox("background", "ProgressBar", tex9("bar_bg9", 4, 0))
 	t.set_stylebox("fill", "ProgressBar", tex9("bar_fill9", 4, 0))
 	t.set_color("font_color", "ProgressBar", TEXT)
@@ -120,7 +124,7 @@ static func theme() -> Theme:
 static func label(text := "", size := 15, c := TEXT, outline := false) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", PixelUI.snap(size))
 	l.add_theme_color_override("font_color", c)
 	if outline:
 		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
@@ -336,7 +340,7 @@ class Radar extends Control:
 		draw_circle(c, r, Color(0.035, 0.035, 0.04, 0.86))
 		_draw_terrain(c, r)
 		for k in [0.33, 0.66]:
-			draw_arc(c, r * k, 0, TAU, 48, Color(1.0, 0.72, 0.2, 0.12), 1.0, true)
+			draw_arc(c, r * k, 0, TAU, 48, Color(1.0, 0.72, 0.2, 0.12), 1.0, false)
 		draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(1.0, 0.72, 0.2, 0.08))
 		draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(1.0, 0.72, 0.2, 0.08))
 		# 扫描线
@@ -380,17 +384,17 @@ class Radar extends Control:
 		var side := Vector2(-f.y, f.x)
 		draw_colored_polygon(PackedVector2Array([c + f * 9, c - f * 5 + side * 6, c - f * 2, c - f * 5 - side * 6]), Color(1, 1, 1))
 		# 金属外圈 + 刻度（玩家方：黑灰 + 亮橙黄）
-		draw_arc(c, r + 1, 0, TAU, 72, Color(0.2, 0.21, 0.24), 8.0, true)
-		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.48, 0.5, 0.55), 1.2, true)
-		draw_arc(c, r - 3, 0, TAU, 72, Color(0, 0, 0, 0.8), 1.5, true)
+		draw_arc(c, r + 1, 0, TAU, 72, Color(0.2, 0.21, 0.24), 8.0, false)
+		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.48, 0.5, 0.55), 1.2, false)
+		draw_arc(c, r - 3, 0, TAU, 72, Color(0, 0, 0, 0.8), 1.5, false)
 		for k in 36:
 			var a := k * TAU / 36.0
 			var dd := Vector2(cos(a), sin(a))
 			var big := k % 3 == 0
 			draw_line(c + dd * (r - (3.0 if big else 1.0)), c + dd * (r + 4), Color(1.0, 0.69, 0.13) if k % 9 == 0 else Color(0.75, 0.76, 0.8, 0.7), 2.0 if big else 1.0)
-		draw_arc(c, r + 1, -0.9, -0.3, 12, Color(1.0, 0.69, 0.13), 3.0, true)
-		draw_arc(c, r + 1, 2.2, 2.8, 12, Color(1.0, 0.69, 0.13), 3.0, true)
-		draw_string(ThemeDB.fallback_font, c + Vector2(-4, -r + 14), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.72, 0.2, 0.6))
+		draw_arc(c, r + 1, -0.9, -0.3, 12, Color(1.0, 0.69, 0.13), 3.0, false)
+		draw_arc(c, r + 1, 2.2, 2.8, 12, Color(1.0, 0.69, 0.13), 3.0, false)
+		draw_string(ThemeDB.fallback_font, c + Vector2(-4, -r + 14), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.72, 0.2, 0.6))
 
 
 ## 大地图（M 打开）：整张地形图 + 区域名 + 坐标网格 + 撤离点 / 运输机 / 虫巢 / 自己
@@ -427,8 +431,8 @@ class BigMap extends Control:
 		var letters := "ABCDEFGHI"
 		var cs: float = side / 9.0
 		for i in 9:
-			draw_string(f, Vector2(rect.position.x + (i + 0.5) * cs - 4, rect.position.y - 16), letters[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.55))
-			draw_string(f, Vector2(rect.position.x - 24, rect.position.y + (i + 0.5) * cs + 5), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.55))
+			draw_string(f, Vector2(rect.position.x + (i + 0.5) * cs - 4, rect.position.y - 16), letters[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+			draw_string(f, Vector2(rect.position.x - 24, rect.position.y + (i + 0.5) * cs + 5), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
 		for i in 10:
 			var t: float = i * cs
 			draw_line(Vector2(rect.position.x + t, rect.position.y), Vector2(rect.position.x + t, rect.end.y), Color(1, 1, 1, 0.06), 1.0)
@@ -440,13 +444,13 @@ class BigMap extends Control:
 			var tw := f.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 			var tp := q - Vector2(tw * 0.5, -5)
 			for o in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
-				draw_string(f, tp + o, nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0, 0, 0, 0.75))
-			draw_string(f, tp, nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.95, 0.85, 0.85))
+				draw_string(f, tp + o, nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0, 0.75))
+			draw_string(f, tp, nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 0.95, 0.85, 0.85))
 		# 虫巢
 		for n in raid.get_tree().get_nodes_in_group("nests"):
 			var q := _w2m(n.global_position, rect)
 			draw_circle(q, 6.0, Color(0.95, 0.35, 0.85, 0.9))
-			draw_arc(q, 9.0, 0, TAU, 20, Color(0.95, 0.35, 0.85, 0.5), 1.5, true)
+			draw_arc(q, 9.0, 0, TAU, 20, Color(0.95, 0.35, 0.85, 0.5), 1.5, false)
 		# 撤离点 / 运输机
 		var zs: Array = raid.extracts.duplicate()
 		if raid.transport_zone and raid.transport_zone.active:
@@ -459,8 +463,8 @@ class BigMap extends Control:
 			dm.append(dm[0])
 			draw_polyline(dm, Color(0, 0, 0, 0.8), 1.5)
 			var label: String = str(z.title)
-			draw_string(f, q + Vector2(13, 5) + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0, 0, 0, 0.8))
-			draw_string(f, q + Vector2(13, 5), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+			draw_string(f, q + Vector2(13, 5) + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0, 0.8))
+			draw_string(f, q + Vector2(13, 5), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 		# 自己
 		var mp: Vector3 = raid.mech.global_position
 		var c := _w2m(mp, rect)
@@ -468,13 +472,13 @@ class BigMap extends Control:
 		var fv := Vector2(fwd.x, fwd.z).normalized()
 		var sd := Vector2(-fv.y, fv.x)
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
-		draw_arc(c, 10.0 + pulse * 6.0, 0, TAU, 24, Color(AMBER.r, AMBER.g, AMBER.b, 0.6 * (1.0 - pulse)), 2.0, true)
+		draw_arc(c, 10.0 + pulse * 6.0, 0, TAU, 24, Color(AMBER.r, AMBER.g, AMBER.b, 0.6 * (1.0 - pulse)), 2.0, false)
 		draw_colored_polygon(PackedVector2Array([c + fv * 11, c - fv * 6 + sd * 7, c - fv * 2, c - fv * 6 - sd * 7]), Color(0, 0, 0, 0.7))
 		draw_colored_polygon(PackedVector2Array([c + fv * 9, c - fv * 5 + sd * 6, c - fv * 2, c - fv * 5 - sd * 6]), AMBER)
 		# 标题 / 图例 / 比例尺
-		draw_string(f, Vector2(rect.position.x, rect.position.y - 40), "战区地图 · " + str(raid.MAP.name), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(1, 1, 1, 0.9))
+		draw_string(f, Vector2(rect.position.x, rect.position.y - 40), "战区地图 · " + str(raid.MAP.name), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(1, 1, 1, 0.9))
 		var cur: String = raid.district_at(mp)
-		draw_string(f, Vector2(rect.position.x + 230, rect.position.y - 40), "当前位置：" + cur, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, AMBER)
+		draw_string(f, Vector2(rect.position.x + 230, rect.position.y - 40), "当前位置：" + cur, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, AMBER)
 		var px_per_m := side / (H * 2.0)
 		var sb := Vector2(rect.end.x - 50.0 * px_per_m, rect.end.y + 24)
 		draw_line(sb, sb + Vector2(50.0 * px_per_m, 0), Color(1, 1, 1, 0.7), 2.0)
@@ -524,8 +528,8 @@ class Crosshair extends Control:
 		queue_redraw()
 
 	func _seg(a: Vector2, b: Vector2, c: Color, w: float) -> void:
-		draw_line(a, b, SHADOW, w + 2.0, true)
-		draw_line(a, b, c, w, true)
+		draw_line(a, b, SHADOW, w + 2.0, false)
+		draw_line(a, b, c, w, false)
 
 	func _draw() -> void:
 		var p := pos
@@ -547,9 +551,9 @@ class Crosshair extends Control:
 		var R := gap + 12.0
 		for k in 3:
 			var a0 := spin + k * TAU / 3.0
-			draw_arc(p, R, a0, a0 + 0.7, 10, Color(1, 1, 1, 0.22), 1.5, true)
+			draw_arc(p, R, a0, a0 + 0.7, 10, Color(1, 1, 1, 0.22), 1.5, false)
 			var tip := p + Vector2(cos(a0), sin(a0)) * R
-			draw_line(tip, tip + Vector2(cos(a0), sin(a0)) * 4.0, Color(1, 1, 1, 0.35), 1.5, true)
+			draw_line(tip, tip + Vector2(cos(a0), sin(a0)) * 4.0, Color(1, 1, 1, 0.35), 1.5, false)
 		# 弹着点（躯干真实朝向）+ 牵引线
 		var off := pip - p
 		var aligned := off.length() < 6.0
@@ -557,10 +561,10 @@ class Crosshair extends Control:
 			var n := int(off.length() / 7.0)
 			for i in n:
 				if i % 2 == 0:
-					draw_line(p + off * (float(i) / n), p + off * (float(i + 1) / n), Color(AMBER.r, AMBER.g, AMBER.b, 0.55), 1.5, true)
+					draw_line(p + off * (float(i) / n), p + off * (float(i + 1) / n), Color(AMBER.r, AMBER.g, AMBER.b, 0.55), 1.5, false)
 		var pc := AMBER if not aligned else Color(1.0, 0.85, 0.45)
-		draw_arc(pip, 5.5, 0, TAU, 20, SHADOW, 4.0, true)
-		draw_arc(pip, 5.5, 0, TAU, 20, pc, 2.0, true)
+		draw_arc(pip, 5.5, 0, TAU, 20, SHADOW, 4.0, false)
+		draw_arc(pip, 5.5, 0, TAU, 20, pc, 2.0, false)
 		if aligned:
 			draw_circle(pip, 2.0, pc)
 		if mech == null or not is_instance_valid(mech):
@@ -569,8 +573,8 @@ class Crosshair extends Control:
 		var dist := Vector2(mech.aim_point.x - mech.global_position.x, mech.aim_point.z - mech.global_position.z).length()
 		var f := ThemeDB.fallback_font
 		var tp := p + Vector2(gap + 8.0, gap + 14.0)
-		draw_string(f, tp + Vector2(1, 1), "%03dm" % int(dist), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, SHADOW)
-		draw_string(f, tp, "%03dm" % int(dist), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.7))
+		draw_string(f, tp + Vector2(1, 1), "%03dm" % int(dist), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, SHADOW)
+		draw_string(f, tp, "%03dm" % int(dist), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.7))
 		# 左右武器冷却弧
 		var cds: Dictionary = mech.arm_cd
 		var GD = Engine.get_main_loop().root.get_node("GameData")
@@ -584,6 +588,46 @@ class Crosshair extends Control:
 			var fr: float = clamp(cds.get(slot, 0.0) * rate, 0.0, 1.0)
 			var rr := gap + 5.0
 			var a0 := PI * 0.72 if i == 0 else -PI * 0.28
-			draw_arc(p, rr, a0, a0 + PI * 0.56, 14, Color(0, 0, 0, 0.35), 4.0, true)
-			draw_arc(p, rr, a0, a0 + PI * 0.56 * (1.0 - fr), 14, Color(AMBER.r, AMBER.g, AMBER.b, 0.9), 2.0, true)
+			draw_arc(p, rr, a0, a0 + PI * 0.56, 14, Color(0, 0, 0, 0.35), 4.0, false)
+			draw_arc(p, rr, a0, a0 + PI * 0.56 * (1.0 - fr), 14, Color(AMBER.r, AMBER.g, AMBER.b, 0.9), 2.0, false)
 			i += 1
+
+
+## 高清 3D 子视口：项目用 canvas_items 拉伸、基准分辨率 1280×720。
+## 普通的 SubViewportContainer(stretch=true) 只按 1280×720 渲染再放大到实际窗口，
+## 加上全局 Nearest 过滤，2K/4K 屏上就是又糊又锯齿。这里让子视口按窗口的真实像素渲染，再 1:1 贴回屏幕。
+class HiResView extends Control:
+	var box: SubViewportContainer
+	var sv: SubViewport
+
+	func _init() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_PASS
+		box = SubViewportContainer.new()
+		box.stretch = false
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		add_child(box)
+		sv = SubViewport.new()
+		sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		box.add_child(sv)
+
+	func _ready() -> void:
+		resized.connect(_fit)
+		get_viewport().size_changed.connect(_fit)
+		_fit.call_deferred()
+
+	## 逻辑像素 → 物理像素的倍率（窗口 2560 宽、基准 1280 时为 2）
+	func pixel_scale() -> float:
+		var k := get_viewport().get_final_transform().get_scale().x
+		return maxf(k, 0.25)
+
+	func _fit() -> void:
+		if not is_inside_tree():
+			return
+		var k := pixel_scale()
+		var px := Vector2i(maxi(1, int(round(size.x * k))), maxi(1, int(round(size.y * k))))
+		sv.size = px
+		box.size = Vector2(px)
+		box.scale = Vector2.ONE / k
+		box.position = Vector2.ZERO

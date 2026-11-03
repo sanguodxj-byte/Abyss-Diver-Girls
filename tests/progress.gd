@@ -230,6 +230,55 @@ func run() -> void:
 	if not check(Growth.pilot_level("nao") == 1 and Growth.crew_level("ajin") == 0 and Growth.meal_ready() == 0, "旧存档没有补齐驾驶员 / 好感 / 食堂默认值"):
 		return
 
+	# ---- v0.6 部署仓：旧存档没有 pods 字段 → ally_squad 为空；购买扣钱和杂物 → 返回队友；升级、随行开关、存档还原 ----
+	if not check(Growth.ally_squad().is_empty() and Growth.pod_tier("rei") == 0, "旧存档的部署仓不应有队友：%s" % [Growth.ally_squad()]):
+		return
+	GameData.money = 20000
+	for id in ["bolts", "wire", "circuit", "chitin", "bug_crystal", "hdd"]:
+		_stock(id, 10)
+	var pod_cost := Growth.pod_cost("rei")
+	var m0 := GameData.money
+	var bolts0 := GameData.stash.count("bolts")
+	if not check(Growth.buy_pod("rei"), "购买零的部署仓失败：%s" % Growth.can_buy_pod("rei")):
+		return
+	if not check(GameData.money == m0 - int(pod_cost.money) and GameData.stash.count("bolts") == bolts0 - int(pod_cost.items.get("bolts", 0)), "部署仓购买没有正确扣除信用点 / 杂物"):
+		return
+	var sq := Growth.ally_squad()
+	if not check(sq.size() == 1 and str(sq[0].pilot) == "rei" and int(sq[0].tier) == 1, "购买后 ally_squad 不对：%s" % [sq]):
+		return
+	if not check(Growth.buy_pod("rei") and Growth.buy_pod("kurumi"), "部署仓升级 / 第二个部署仓购买失败"):
+		return
+	sq = Growth.ally_squad()
+	if not check(sq.size() == 2 and int(sq[0].tier) == 2 and str(sq[1].pilot) == "kurumi" and int(sq[1].tier) == 1, "升级后 ally_squad 不对：%s" % [sq]):
+		return
+	Growth.set_pod_on("kurumi", false)
+	if not check(Growth.ally_squad().size() == 1, "关闭随行后胡桃仍在 ally_squad"):
+		return
+	Growth.set_pod_on("kurumi", true)
+	GameData.money = 0
+	if not check(Growth.can_buy_pod("rei") == "信用点不足" and not Growth.buy_pod("rei"), "钱不够时仍能升级部署仓"):
+		return
+	GameData.money = 20000
+	# ---- v0.6 主角能力强化：钱 + 杂物升级，数值进入机体合计 ----
+	var pre_ab := GameData.compute_stats(GameData.STARTER)
+	if not check(Growth.upgrade_ability("ab_frame"), "骨架补强升级失败：%s" % Growth.can_upgrade_ability("ab_frame")):
+		return
+	var post_ab := GameData.compute_stats(GameData.STARTER)
+	if not check(is_equal_approx(post_ab.hp, pre_ab.hp + 8.0), "骨架补强没有加 8 结构"):
+		return
+	var lv0 := Growth.pilot_level("nao")
+	var xp0 := Growth.pilot_xp("nao")
+	if not check(not Growth.train_protagonist().is_empty() and (Growth.pilot_level("nao") > lv0 or Growth.pilot_xp("nao") > xp0), "模拟舱训练没有加经验：%s" % Growth.can_train()):
+		return
+	GameData.save_game()
+	Progress.state = {}
+	if not check(GameData.load_game(), "读档失败（部署仓）"):
+		return
+	sq = Growth.ally_squad()
+	if not check(sq.size() == 2 and int(sq[0].tier) == 2 and Growth.ability_level("ab_frame") == 1, "部署仓 / 能力强化没有随存档还原：%s" % [sq]):
+		return
+	log_line("pods ok: squad=%s" % [sq])
+
 	# ---- 成长面板：五个分页都能构建，Esc 之外的关闭按钮存在 ----
 	var panel = PanelScript.new()
 	add_child(panel)

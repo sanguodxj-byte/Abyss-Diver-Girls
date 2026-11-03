@@ -64,7 +64,7 @@ func setup(k: String, r, tgt) -> void:
 	target = tgt
 	add_to_group("bugs")
 	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	collision_mask = 1 | 2 | 4 | 16 | 32   # 16 流浪者机甲 / 32 战斗队友机甲
 	var cs := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = data.radius
@@ -1129,53 +1129,270 @@ static func _vmat_solid(c: Color) -> StandardMaterial3D:
 	return m
 
 
+## 被噪音惊动（机甲开火、空投落地）：转入追击，目标是机甲
 func alert(pos: Vector3) -> void:
 	if state == "idle":
+		if raid and _alive(raid.mech):
+			target = raid.mech
 		state = "chase"
+		_alert_pack(target)
 
 
-var _sleep_acc := 0.0
+# ================= 感知 / 巡逻 / LOD =================
+## 虫群：一群里第一只是群首，其余成员跟在群首身后的固定站位上；群首在领地（home 周围 territory 米）里挑路点巡逻。
+## 发现目标（机甲、战斗队友、流浪者，距离进入 aggro）→ 整群转入追击；目标死亡或拉开到 LEASH 米外 → 回到巡逻。
+## LOD：离玩家机甲越远 AI 越低频（near：逐帧 / mid：10Hz / far：2Hz），远处不跑程序动画，移动用累计步长一次 move_and_slide。
+const LEASH := 55.0
+const LOD_NEAR := 55.0
+const LOD_MID := 95.0
+var pack_leader = null          ## 群首节点；null 表示自己就是群首（或散兵）
+var pack: Array = []            ## 群首持有的成员列表
+var follow_off := Vector3.ZERO  ## 跟随站位（群首局部坐标）
+var territory := 30.0           ## 巡逻半径
+var patrol_speed := 0.4         ## 巡逻速度（相对自身全速）
+var aggressor = null            ## 最近一次打中自己的单位（流浪者 / 队友 / 机甲）
+var lod := 0                    ## 0 近 / 1 中 / 2 远
+var _lod_acc := 0.0
+var _perc_t := 0.0
+var _wait_t := 0.0
+var _stuck_t := 0.0
+var _stuck_pos := Vector3.ZERO
+
+
+static func _alive(n) -> bool:
+	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true
+
+
+## 本帧要模拟的时间：近处返回 delta；中远处累计到节拍才返回累计值，其余帧返回 0（跳过）
+func _lod_dt(delta: float) -> float:
+	var busy: bool = act != "" or spawn_t > 0.0 or flash_t > 0.0
+	var d2 := 0.0
+	if raid and is_instance_valid(raid.mech):
+		d2 = global_position.distance_squared_to(raid.mech.global_position)
+	if busy or d2 < LOD_NEAR * LOD_NEAR:
+		lod = 0
+	elif d2 < LOD_MID * LOD_MID or state == "chase":
+		lod = 1
+	else:
+		lod = 2
+	if lod == 0:
+		if _lod_acc > 0.0:
+			delta += _lod_acc
+			_lod_acc = 0.0
+		return delta
+	_lod_acc += delta
+	var step := 0.1 if lod == 1 else 0.5
+	if _lod_acc < step:
+		return 0.0
+	var dt := minf(_lod_acc, 0.6)
+	_lod_acc = 0.0
+	return dt
+
+
+## 一次 move_and_slide 走完 dt：低频更新时按比例放大速度，碰撞照常结算。
+## 画面外（LOD 中 / 远）闲逛巡逻的虫不跑物理：直接平移，只用建筑占地格子挡一下（撞上就换路点），省掉绝大部分 move_and_slide
+func _slide(dt: float) -> void:
+	if lod > 0 and state == "idle" and act == "" and raid and raid.has_method("patrol_free"):
+		var step := Vector3(velocity.x, 0.0, velocity.z) * dt
+		if step.length_squared() < 0.0001:
+			return
+		var np := global_position + step
+		if raid.patrol_free(np, float(data.radius)) and absf(np.x) < raid.HALF - 4.0 and absf(np.z) < raid.HALF - 4.0:
+			global_position = np
+			return
+		# 自己已经压在建筑占地格子里（占地矩形比实际碰撞体略大）：走真实物理挤出去，否则会永远卡在原地
+		if raid.patrol_free(global_position, float(data.radius)):
+			wander_to = Vector3.ZERO
+			return
+	var pd := get_physics_process_delta_time()
+	if pd > 0.0 and dt > pd * 1.5:
+		var k := dt / pd
+		velocity.x *= k
+		velocity.z *= k
+		move_and_slide()
+		velocity.x /= k
+		velocity.z /= k
+	else:
+		move_and_slide()
+
+
+func _perceive_period() -> float:
+	return 0.25 if lod == 0 else (0.5 if lod == 1 else 1.0)
+
+
+## 感知：在可敌对单位（机甲 + 队友 + 流浪者，由 raid.bug_foes() 提供，数量很少）里挑目标
+func _perceive() -> void:
+	if raid == null or bool(data.get("boss", false)):
+		return
+	var foes: Array = raid.bug_foes() if raid.has_method("bug_foes") else ([raid.mech] if raid.mech else [])
+	var p := global_position
+	if state == "chase":
+		var best = target if _alive(target) else null
+		var bd := INF
+		if best != null:
+			bd = p.distance_to(best.global_position)
+			if bd > LEASH:
+				best = null
+				bd = INF
+		for f in foes:
+			if f == best or not _alive(f):
+				continue
+			var d := p.distance_to(f.global_position)
+			if d < aggro_range and d < bd - 6.0:
+				best = f
+				bd = d
+		if _alive(aggressor) and aggressor != best:
+			var da := p.distance_to(aggressor.global_position)
+			if da < LEASH and (best == null or da < bd + 4.0):
+				best = aggressor
+		if best == null:
+			_lose_target()
+		else:
+			target = best
+		return
+	if aggro_range <= 0.0:
+		return
+	var pick = null
+	var pd := aggro_range
+	for f in foes:
+		if not _alive(f):
+			continue
+		var d := p.distance_to(f.global_position)
+		if d < pd:
+			pd = d
+			pick = f
+	if pick == null and _alive(aggressor):
+		pick = aggressor
+	if pick != null:
+		target = pick
+		state = "chase"
+		_alert_pack(pick)
+	else:
+		target = null
+
+
+## 一只发现目标，40 米内闲着的同群成员一起扑上去
+func _alert_pack(tgt) -> void:
+	if not _alive(tgt):
+		return
+	var lead = pack_leader if _alive(pack_leader) else self
+	var members: Array = lead.pack.duplicate()
+	members.append(lead)
+	for m in members:
+		if m == self or not _alive(m) or m.state != "idle":
+			continue
+		if m.global_position.distance_to(global_position) < 40.0:
+			m.target = tgt
+			m.state = "chase"
+
+
+## 受击：没在追击（或目标已失效）时转向打自己的单位；玩家的子弹记为机甲
+func _aggro_on_hit() -> void:
+	if state == "chase" and _alive(target):
+		return
+	if _alive(aggressor):
+		target = aggressor
+	elif raid and _alive(raid.mech) and global_position.distance_to(raid.mech.global_position) < LEASH:
+		target = raid.mech
+	if _alive(target):
+		state = "chase"
+		_alert_pack(target)
+
+
+## 丢失目标：回到巡逻（领地不变，群首会走回自己的地盘）
+func _lose_target() -> void:
+	state = "idle"
+	target = null
+	aggressor = null
+	_wait_t = randf_range(0.6, 1.6)
+	wander_to = Vector3.ZERO
+
+
+## 巡逻：返回期望移动方向（长度 = 相对全速的比例）
+func _patrol(delta: float) -> Vector3:
+	var lead = pack_leader
+	if lead != null and not _alive(lead):
+		pack_leader = null
+		lead = null
+	var spd := maxf(float(data.speed), 0.1)
+	if lead != null:
+		if lead.state == "chase" and _alive(lead.target):
+			target = lead.target
+			state = "chase"
+			return Vector3.ZERO
+		var yaw: float = lead.visual.rotation.y if lead.visual else 0.0
+		var goal: Vector3 = lead.global_position + follow_off.rotated(Vector3.UP, yaw)
+		var w := goal - global_position
+		w.y = 0.0
+		var L := w.length()
+		var lead_v: float = float(lead.data.speed) * float(lead.patrol_speed)
+		if L > 9.0:
+			return w / L
+		if L > 1.4:
+			return w / L * clampf(lead_v / spd * 1.2, 0.25, 1.0)
+		return Vector3.ZERO
+	if _wait_t > 0.0:
+		_wait_t -= delta
+		return Vector3.ZERO
+	var w := wander_to - global_position
+	w.y = 0.0
+	_stuck_t += delta
+	if _stuck_t > 2.0:
+		var moved := global_position.distance_to(_stuck_pos)
+		_stuck_pos = global_position
+		_stuck_t = 0.0
+		if moved < 0.8 and wander_to != Vector3.ZERO:
+			wander_to = Vector3.ZERO
+	if wander_to == Vector3.ZERO or w.length() < 1.6:
+		wander_to = _next_waypoint()
+		_wait_t = randf_range(0.8, 3.2) if w.length() < 1.6 else 0.0
+		return Vector3.ZERO
+	return w.normalized() * patrol_speed
+
+
+func _next_waypoint() -> Vector3:
+	if raid and raid.has_method("patrol_point"):
+		return raid.patrol_point(home, territory, global_position)
+	return home + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
+
+
+func _sfx(what: String) -> void:
+	if sfx != "":
+		Audio.play_sfx("bug_%s_%s" % [sfx, what], global_position + Vector3(0, 0.8, 0))
+
 
 func _physics_process(delta: float) -> void:
-	# 性能：远处闲逛的虫子低频更新（大地图上同时存在上百只）
-	if state == "idle" and raid and is_instance_valid(raid.mech):
-		if global_position.distance_squared_to(raid.mech.global_position) > 75.0 * 75.0:
-			_sleep_acc += delta
-			if _sleep_acc < 0.5:
-				return
-			_sleep_acc = 0.0
-			if aggro_range > 0.0 and global_position.distance_to(raid.mech.global_position) > aggro_range:
-				return
+	delta = _lod_dt(delta)
+	if delta <= 0.0:
+		return
+	_perc_t -= delta
+	if _perc_t <= 0.0:
+		_perc_t = _perceive_period() * randf_range(0.8, 1.2)
+		_perceive()
+	if state != _last_state:
+		if state == "chase" and _last_state == "idle" and lod == 0:
+			_sfx("appear")
+		_last_state = state
 	atk_cd = max(0.0, atk_cd - delta)
 	if flash_t > 0.0:
 		flash_t -= delta
 		if flash_t <= 0.0:
 			_set_flash(false)
-	if target == null and raid:
-		target = raid.mech
 	var dir := Vector3.ZERO
-	var valid: bool = target != null and is_instance_valid(target) and not target.dead
+	var valid: bool = _alive(target)
 	var to := Vector3.ZERO
 	var d := 999.0
 	if valid:
 		to = target.global_position - global_position
 		to.y = 0.0
 		d = to.length()
+	if state == "chase" and not valid:
+		_lose_target()
 	if state == "idle":
-		if valid and d < aggro_range:
-			state = "chase"
-		wander_t -= delta
-		if wander_t <= 0.0:
-			wander_t = randf_range(2.0, 5.0)
-			wander_to = home + Vector3(randf_range(-6, 6), 0, randf_range(-6, 6))
-		var w := wander_to - global_position
-		w.y = 0.0
-		if w.length() > 1.0:
-			dir = w.normalized() * 0.35
+		dir = _patrol(delta)
 	elif state == "chase":
-		if not valid or d > 55.0:
-			state = "idle"
-			home = global_position
+		if d > LEASH + 5.0:
+			_lose_target()
 		else:
 			var fwd: Vector3 = to / max(d, 0.01)
 			if beh == "spitter":
@@ -1203,13 +1420,14 @@ func _physics_process(delta: float) -> void:
 	velocity.x = dir.x * spd
 	velocity.z = dir.z * spd
 	velocity.y = -1.0 if is_on_floor() else velocity.y - 30.0 * delta
-	move_and_slide()
+	_slide(delta)
 	var face := dir if dir.length() > 0.05 else to
 	if act != "":
 		face = act_dir
 	if face.length() > 0.05:
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-face.x, -face.z), clamp(10.0 * delta, 0.0, 1.0))
-	_animate(delta, Vector3(velocity.x, 0, velocity.z).length() / maxf(float(data.speed), 0.1))
+	if lod == 0:
+		_animate(delta, Vector3(velocity.x, 0, velocity.z).length() / maxf(float(data.speed), 0.1))
 
 
 func _begin(a: String, t: float, d: Vector3) -> void:
@@ -1251,10 +1469,12 @@ func _strike() -> void:
 		var to: Vector3 = target.global_position - global_position
 		to.y = 0.0
 		if to.length() < data.range + 1.4:
+			if "aggressor" in target:
+				target.aggressor = self
 			target.take_damage(data.dmg)
 			if raid:
 				raid.spark(target.global_position + Vector3(0, 1.4, 0) - to.normalized() * 0.8, Color(1.0, 0.75, 0.3), 10)
-				if beh == "beetle":
+				if beh == "beetle" and target == raid.mech:
 					raid.shake = max(raid.shake, 0.35)
 
 
@@ -1363,7 +1583,7 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	if hp <= 0.0:
 		return
 	hp -= amount
-	state = "chase"
+	_aggro_on_hit()
 	flash_t = 0.07
 	_set_flash(true)
 	# 受击后仰：越小的虫晃得越厉害

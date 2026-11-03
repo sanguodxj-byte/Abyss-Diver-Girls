@@ -223,3 +223,76 @@ const MEAL := {
 
 const WHO_CHAR := {"厨师阿堇": "ajin", "机械师米娅": "laojiao", "装甲工坊": "laojiao"}
 const GENERIC_GIFTS := {"coffee": 1, "toy": 1}
+
+## ---------------------------------------------------------------- 机库「技能」页签（v0.6）
+## MATERIALS   技能页显示的打捞杂物（升级材料）顺序；数量从仓库实时统计，花费时从仓库扣除。
+const MATERIALS := ["bolts", "wire", "circuit", "chitin", "bug_crystal", "hdd", "can_food", "water_tab", "coffee"]
+
+## ABILITIES   主角能力强化：花钱 + 杂物直接升级，只对主角（玩家）机体生效。
+##             {"name", "max", "stat": 每级叠加的机体数值, "effect": 每级文字（单级增量）,
+##              "cost": [第 1..max 级的费用 {"money", "items"}]}
+const ABILITIES := {
+	"ab_frame": {"name": "骨架补强", "max": 5, "stat": {"hp": 8.0}, "effect": "结构 +8",
+		"cost": [
+			{"money": 400, "items": {"bolts": 2}},
+			{"money": 700, "items": {"bolts": 3, "wire": 1}},
+			{"money": 1100, "items": {"bolts": 4, "chitin": 2}},
+			{"money": 1600, "items": {"chitin": 4, "circuit": 1}},
+			{"money": 2300, "items": {"chitin": 5, "bug_crystal": 1}},
+		]},
+	"ab_reactor": {"name": "反应堆调校", "max": 5, "stat": {"energy": 8.0}, "effect": "能源上限 +8",
+		"cost": [
+			{"money": 450, "items": {"wire": 2}},
+			{"money": 800, "items": {"wire": 2, "circuit": 1}},
+			{"money": 1200, "items": {"circuit": 2, "wire": 2}},
+			{"money": 1700, "items": {"circuit": 3, "bug_crystal": 1}},
+			{"money": 2400, "items": {"bug_crystal": 2, "hdd": 1}},
+		]},
+	"ab_servo": {"name": "伺服增压", "max": 5, "stat": {"speed": 0.15}, "effect": "速度 +0.15",
+		"cost": [
+			{"money": 500, "items": {"bolts": 2, "wire": 1}},
+			{"money": 850, "items": {"wire": 2, "circuit": 1}},
+			{"money": 1300, "items": {"circuit": 2, "bolts": 3}},
+			{"money": 1800, "items": {"circuit": 3, "hdd": 1}},
+			{"money": 2600, "items": {"hdd": 2, "bug_crystal": 1}},
+		]},
+	"ab_rack": {"name": "挂架扩容", "max": 5, "stat": {"cargo": 1.5, "load": 2.0}, "effect": "货舱 +1.5 · 承重 +2",
+		"cost": [
+			{"money": 400, "items": {"bolts": 3}},
+			{"money": 700, "items": {"bolts": 3, "chitin": 1}},
+			{"money": 1100, "items": {"chitin": 3, "wire": 1}},
+			{"money": 1600, "items": {"chitin": 4, "circuit": 1}},
+			{"money": 2200, "items": {"chitin": 5, "hdd": 1}},
+		]},
+	"ab_plating": {"name": "复合贴甲", "max": 5, "stat": {"armor": 0.012}, "effect": "护甲 +1.2%",
+		"cost": [
+			{"money": 600, "items": {"chitin": 2}},
+			{"money": 1000, "items": {"chitin": 3, "bolts": 2}},
+			{"money": 1500, "items": {"chitin": 4, "circuit": 1}},
+			{"money": 2100, "items": {"chitin": 5, "bug_crystal": 1}},
+			{"money": 2900, "items": {"bug_crystal": 2, "hdd": 1}},
+		]},
+}
+
+## TRAINING    模拟舱训练：花钱 + 杂物给主角直接加经验（每次固定 xp）。
+const TRAINING := {"xp": 120, "cost": {"money": 600, "items": {"hdd": 1, "coffee": 1}}}
+
+## PODS        部署仓（战斗队友）：每个仓装一名 AI 驾驶员，tier 1 = 购买，2..3 = 升级；tier 影响队友机甲强度。
+##             {"name", "pilot", "role", "cost": [tier 1..3 的费用], "tiers": [每级效果文字]}
+##             状态存 Progress.state.pods = {"rei": {"tier": 0..3, "on": 是否随行}}；战斗侧读 Growth.ally_squad()。
+const PODS := {
+	"rei": {"name": "部署仓 A · 零", "pilot": "rei", "role": "远程狙击 · 激光支援",
+		"cost": [
+			{"money": 1500, "items": {"bolts": 2, "wire": 2, "circuit": 1}},
+			{"money": 3200, "items": {"circuit": 3, "bug_crystal": 1}},
+			{"money": 5600, "items": {"bug_crystal": 3, "hdd": 2}},
+		],
+		"tiers": ["标准机体 · 单发激光", "强化机体 · 结构/火力提升", "王牌机体 · 全面强化"]},
+	"kurumi": {"name": "部署仓 B · 胡桃", "pilot": "kurumi", "role": "近战突击 · 前排抗伤",
+		"cost": [
+			{"money": 1200, "items": {"bolts": 3, "chitin": 2}},
+			{"money": 2900, "items": {"chitin": 4, "circuit": 2}},
+			{"money": 5200, "items": {"bug_crystal": 2, "chitin": 6, "hdd": 1}},
+		],
+		"tiers": ["标准机体 · 霰弹突击", "强化机体 · 结构/火力提升", "王牌机体 · 全面强化"]},
+}

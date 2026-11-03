@@ -14,7 +14,11 @@ const MV = preload("res://scripts/mech_visual.gd")
 const A = preload("res://scripts/art.gd")
 
 const HALF := 180.0
-const MAX_BUGS := 60
+const MAX_BUGS := 170          ## 全场虫数上限（Boss 不占名额）
+const INITIAL_BUGS := 150      ## 开局铺虫的上限：给 Boss 召唤与虫潮留出余量
+const BUG_DENSITY := 1.3       ## 分布表虫群密度的整体倍率（v0.6 起虫群数量约为原来的 2.5 倍）
+const FactionsScript = preload("res://scripts/factions/factions.gd")
+const WorldLinkScript = preload("res://scripts/world_link.gd")
 const CAM_OFFSET := Vector3(0, 43, 22)  # 2.5D 斜俯视（约 63°）
 
 var rng := RandomNumberGenerator.new()
@@ -48,10 +52,15 @@ var _combat_quiet := 0.0
 var _scan_t := 0.0
 var _seen_kinds := {}
 var _found_pois := {}
+var factions          ## 流浪者小队与战斗队友（scripts/factions/factions.gd）
+var world_link        ## 地图边缘转场（scripts/world_link.gd）
+var transit := {}     ## 从相邻战区转场进来时携带的状态（空 = 正常空投出击）
+var visited_maps: Array = []
 
 
-func start(lo: Dictionary, carry: Array) -> void:
+func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	rng.randomize()
+	transit = transit_state
 	loadout = lo.duplicate()
 	start_cargo = carry.duplicate()
 	world = Node3D.new()
@@ -63,7 +72,14 @@ func start(lo: Dictionary, carry: Array) -> void:
 	_build_environment()
 	_build_ground()
 	var drop := _build_map()
+	world_link = WorldLinkScript.new()
+	world_link.name = "WorldLink"
+	add_child(world_link)
+	world_link.setup(self)
+	if not transit.is_empty():
+		drop = world_link.entry_point(str(transit.get("edge", "")), drop)
 	_build_map_texture()
+	world_link.paint_map(map_tex)
 	_build_zone_ground()
 	_run_ext_build(drop)
 	_spawn_extracts(drop)
@@ -103,7 +119,15 @@ func start(lo: Dictionary, carry: Array) -> void:
 	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 	_add_ext_nodes()
 
-	_drop_sequence(drop)
+	factions = FactionsScript.new()
+	factions.name = "Factions"
+	add_child(factions)
+	factions.setup(self, drop)
+	if transit.is_empty():
+		visited_maps = [map_id]
+		_drop_sequence(drop)
+	else:
+		world_link.arrive(transit, drop)
 
 
 ## 行动扩展（GameData.RAID_SCRIPTS，来自 data\ext 各文件）。每个脚本可写两部分，都可省略：
@@ -319,6 +343,9 @@ func _build_environment() -> void:
 	fill.light_energy = 0.45
 	fill.shadow_enabled = false
 	add_child(fill)
+	GameData.apply_env_quality(env, sun)
+	# 场景里所有点光/聚光都不参与体积雾（见 _no_fog_light）
+	get_tree().node_added.connect(_no_fog_light)
 
 
 func _static_box(size: Vector3, pos: Vector3, c: Color, parent: Node3D = null, m: Material = null) -> StaticBody3D:
@@ -932,7 +959,19 @@ func _process(delta: float) -> void:
 	hud.refresh()
 
 
+## 已搜容器数：HUD 要用，但遍历全部容器很贵，0.5 秒缓存一次
+var _sc_cache := Vector2i.ZERO
+var _sc_ms := -100000
 func searched_count() -> Vector2i:
+	var now := Time.get_ticks_msec()
+	if now - _sc_ms < 500:
+		return _sc_cache
+	_sc_ms = now
+	_sc_cache = _searched_count()
+	return _sc_cache
+
+
+func _searched_count() -> Vector2i:
 	var done := 0
 	var all := 0
 	for b in get_tree().get_nodes_in_group("lootboxes"):
@@ -1184,12 +1223,12 @@ func put_into_box(index: int) -> void:
 
 # ================= 战斗 =================
 ## 生成一只敌人。种类数值来自 GameData.ENEMIES；条目带 script 时用它实例化（继承 bug.gd 的新种类与 Boss）
-func spawn_bug(kind: String, pos: Vector3):
-	if get_tree().get_nodes_in_group("bugs").size() >= MAX_BUGS:
-		return null
+func spawn_bug(kind: String, pos: Vector3, cap := MAX_BUGS):
 	var info: Dictionary = GameData.ENEMIES.get(kind, {})
 	if info.is_empty():
 		push_warning("未登记的敌人种类：%s" % kind)
+		return null
+	if not bool(info.get("boss", false)) and get_tree().get_nodes_in_group("bugs").size() >= cap:
 		return null
 	var b = load(str(info.script)).new() if info.has("script") else BugScript.new()
 	world.add_child(b)
@@ -1232,9 +1271,7 @@ func _proj(pos: Vector3, vel: Vector3, dmg: float, life: float, mask: int, c: Co
 	p.add_child(m)
 	if glow:
 		var g := MeshInstance3D.new()
-		var qm := QuadMesh.new()
-		qm.size = Vector2.ONE * size * 5.0
-		g.mesh = qm
+		g.mesh = _quad_cached(size * 5.0)
 		g.material_override = _glow_mat(c)
 		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		p.add_child(g)
@@ -1250,19 +1287,16 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 	p.vel = vel
 	p.dmg = dmg
 	p.life = life
-	p.mask = 1 | 4
+	p.mask = 1 | 4 | 16       ## 玩家子弹：地形 + 虫群 + 流浪者（打不到队友）
+	p.source = mech
 	p.color = c
 	var cm := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(core, core, core * 7.0)
-	cm.mesh = bm
+	cm.mesh = _box_cached(Vector3(core, core, core * 7.0))
 	cm.material_override = A.emit(Color(1.0, 0.95, 0.85), 9.0)
 	cm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.add_child(cm)
 	var t := MeshInstance3D.new()
-	var tb := BoxMesh.new()
-	tb.size = Vector3(w, w, 1.0)
-	t.mesh = tb
+	t.mesh = _box_cached(Vector3(w, w, 1.0))
 	t.material_override = _tracer_mat(c)
 	t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	t.scale = Vector3(1, 1, 0.01)
@@ -1270,9 +1304,7 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 	p.tail = t
 	p.tail_len = clampf(vel.length() * 0.065, 1.5, 5.5)
 	var g := MeshInstance3D.new()
-	var qm := QuadMesh.new()
-	qm.size = Vector2.ONE * w * 4.0
-	g.mesh = qm
+	g.mesh = _quad_cached(w * 4.0)
 	g.material_override = _glow_mat(c)
 	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.add_child(g)
@@ -1280,6 +1312,26 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 	p.global_position = pos
 	p.look_at(pos + vel, Vector3.UP)
 	return p
+
+
+## 子弹网格按尺寸缓存：每发子弹都新建网格资源很贵（v0.6 机甲小队同时开火时尤其明显）
+var _bullet_meshes := {}
+func _box_cached(sz: Vector3) -> BoxMesh:
+	var k := "b%.3f|%.3f|%.3f" % [sz.x, sz.y, sz.z]
+	if not _bullet_meshes.has(k):
+		var bm := BoxMesh.new()
+		bm.size = sz
+		_bullet_meshes[k] = bm
+	return _bullet_meshes[k]
+
+
+func _quad_cached(sz: float) -> QuadMesh:
+	var k := "q%.3f" % sz
+	if not _bullet_meshes.has(k):
+		var qm := QuadMesh.new()
+		qm.size = Vector2.ONE * sz
+		_bullet_meshes[k] = qm
+	return _bullet_meshes[k]
 
 
 const TRACER_SHADER := """
@@ -1329,7 +1381,8 @@ func spawn_projectile(origin: Vector3, dir: Vector3, m: Dictionary, friendly: bo
 	var life: float = float(m.range) / speed
 	match m.weapon:
 		"flamer":
-			var p = _proj(origin, dir * speed * randf_range(0.8, 1.1), m.dmg, life, 1 | 4, Color(1.0, randf_range(0.35, 0.6), 0.1), 0.35)
+			var p = _proj(origin, dir * speed * randf_range(0.8, 1.1), m.dmg, life, 1 | 4 | 16, Color(1.0, randf_range(0.35, 0.6), 0.1), 0.35)
+			p.source = mech
 			p.pierce = true
 			p.grow = 3.0
 			p.hit_sfx = "-"
@@ -1340,7 +1393,7 @@ func spawn_projectile(origin: Vector3, dir: Vector3, m: Dictionary, friendly: bo
 
 
 func spawn_spit(origin: Vector3, dir: Vector3, dmg: float) -> void:
-	var p = _proj(origin, dir * 16.0, dmg, 1.4, 1 | 2, Color(0.55, 1.0, 0.15), 0.4)
+	var p = _proj(origin, dir * 16.0, dmg, 1.4, 1 | 2 | 16 | 32, Color(0.55, 1.0, 0.15), 0.4)
 	p.hit_sfx = "hit_spit"
 	A.emitter(p, Vector3.ZERO, {"amount": 12, "life": 0.35, "size": 0.35, "spread": 180.0, "vmin": 0.2, "vmax": 0.6, "gravity": Vector3(0, -3, 0),
 		"c0": Color(0.6, 1.0, 0.2, 0.8), "c1": Color(0.2, 0.5, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
@@ -1350,7 +1403,7 @@ func launch_missiles(origin: Vector3, m: Dictionary) -> void:
 	for i in int(m.count):
 		var a := TAU * i / float(m.count)
 		var v := Vector3(cos(a) * 6.0, 9.0, sin(a) * 6.0)
-		var p = _proj(origin, v, m.dmg, 3.0, 1 | 4, Color(1.0, 0.4, 0.2), 0.25)
+		var p = _proj(origin, v, m.dmg, 3.0, 1 | 4 | 16, Color(1.0, 0.4, 0.2), 0.25)
 		p.homing = true
 		p.aoe = 3.2
 		# 导弹拖烟
@@ -1363,12 +1416,14 @@ func launch_missiles(origin: Vector3, m: Dictionary) -> void:
 
 func fire_laser(origin: Vector3, dir: Vector3, m: Dictionary) -> void:
 	var to := origin + dir * float(m.range)
-	var q := PhysicsRayQueryParameters3D.create(origin, to, 1 | 4)
+	var q := PhysicsRayQueryParameters3D.create(origin, to, 1 | 4 | 16)
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	var end := to
 	if not r.is_empty():
 		end = r.position
 		var organic: bool = r.collider.is_in_group("bugs") or r.collider.is_in_group("nests")
+		if "aggressor" in r.collider:
+			r.collider.aggressor = mech
 		if r.collider.has_method("take_damage"):
 			r.collider.take_damage(m.dmg)
 		spark(end, m.color, 18)
@@ -1402,7 +1457,16 @@ func _beam_mat(c: Color) -> StandardMaterial3D:
 	return _beam_cache[k]
 
 
-## 短暂的点光源闪烁（炮口火光、爆炸）
+## 点光/聚光不照亮体积雾。体积雾是 64×64 的 froxel 网格，在 ~48m 的镜头距离上每格约 20 像素，
+## 灯光（尤其是战斗中频繁闪烁的炮口火光、爆炸、闪烁的火桶）把一格格照亮后就成了大片半透明方格。
+## 阳光仍然进雾，大气感保留。
+func _no_fog_light(n: Node) -> void:
+	if n is OmniLight3D or n is SpotLight3D:
+		(n as Light3D).light_volumetric_fog_energy = 0.0
+
+
+## 短暂的点光源闪烁（炮口火光、爆炸、道具闪光）——全部走这个池，不再每发子弹 new 一盏灯
+const LIGHT_POOL_MAX := 10
 var _light_pool: Array = []
 func _flash_light(p: Vector3, c: Color, energy: float, rng_m: float, dur := 0.08) -> void:
 	var l: OmniLight3D = null
@@ -1411,10 +1475,13 @@ func _flash_light(p: Vector3, c: Color, energy: float, rng_m: float, dur := 0.08
 			l = x
 			break
 	if l == null:
-		if _light_pool.size() >= 8:
+		if _light_pool.size() >= LIGHT_POOL_MAX:
 			return
 		l = OmniLight3D.new()
 		l.shadow_enabled = false
+		# 不参与体积雾：体积雾的 froxel 网格在镜头距离上每格约 20 像素，
+		# 炮口火光/爆炸照亮它会在战斗中出现一片片半透明方格
+		l.light_volumetric_fog_energy = 0.0
 		fx.add_child(l)
 		_light_pool.append(l)
 	l.visible = true
@@ -1422,13 +1489,17 @@ func _flash_light(p: Vector3, c: Color, energy: float, rng_m: float, dur := 0.08
 	l.light_color = c
 	l.light_energy = energy
 	l.omni_range = rng_m
+	var old: Tween = l.get_meta("tw") if l.has_meta("tw") else null
+	if old != null and old.is_valid():
+		old.kill()
 	var tw := create_tween()
 	tw.tween_property(l, "light_energy", 0.0, dur)
 	tw.tween_callback(func(): l.visible = false)
+	l.set_meta("tw", tw)
 
 
 func explode(p: Vector3, radius: float, dmg: float, sfx := "explosion") -> void:
-	for b in get_tree().get_nodes_in_group("bugs") + get_tree().get_nodes_in_group("nests"):
+	for b in get_tree().get_nodes_in_group("bugs") + get_tree().get_nodes_in_group("nests") + get_tree().get_nodes_in_group("rovers"):
 		if is_instance_valid(b) and b.global_position.distance_to(p) < radius + 0.8:
 			b.take_damage(dmg)
 	explode_fx(p, radius, Color(1.0, 0.55, 0.2))
@@ -1499,18 +1570,39 @@ func on_player_hurt(amount: float) -> void:
 
 
 func on_bug_killed(b) -> void:
-	kills += 1
 	var p: Vector3 = b.global_position
-	Events.enemy_killed.emit(str(b.kind), p)
+	# 流浪者打死的虫不算玩家的击杀（不计数、不广播）；队友的击杀算进小队战绩
+	var by = b.get("aggressor")
+	if not (is_instance_valid(by) and by.is_in_group("rovers")):
+		kills += 1
+		Events.enemy_killed.emit(str(b.kind), p)
 	# 机械虫：油污 + 金属碎片（不是血）
 	var sc: float = b.data.scale
-	A.ground_decal(world, A.blob_tex(), Color(0.05, 0.05, 0.06, 0.85), 2.6 * sc, Vector3(p.x, 0.028, p.z))
+	_kill_decal(A.ground_decal(world, A.blob_tex(), Color(0.05, 0.05, 0.06, 0.85), 2.6 * sc, Vector3(p.x, 0.028, p.z)))
+	# 画面外的死亡（流浪者 / 队友在远处打死的虫）不放粒子
+	if mech != null and is_instance_valid(mech) and p.distance_squared_to(mech.global_position) > 60.0 * 60.0:
+		if rng.randf() < float(b.data.drop):
+			_place_box("bug", Vector3(p.x, 0, p.z))
+		return
 	A.burst(fx, p + Vector3(0, 0.8, 0), {"amount": 14, "life": 0.7, "size": 0.12 * sc, "additive": false, "vmin": 3.0, "vmax": 7.0, "gravity": Vector3(0, -18, 0), "damp": 0.6,
 		"c0": Color(0.3, 0.3, 0.33), "c1": Color(0.18, 0.18, 0.2, 0.0), "grow0": 1.0, "grow1": 0.8})
 	A.burst(fx, p + Vector3(0, 0.6, 0), {"amount": 8, "life": 0.5, "size": 0.25 * sc, "additive": false, "vmin": 1.5, "vmax": 3.5, "gravity": Vector3(0, -10, 0),
 		"c0": Color(0.04, 0.04, 0.05, 0.9), "c1": Color(0.04, 0.04, 0.05, 0.0), "grow0": 1.0, "grow1": 0.4})
 	if rng.randf() < float(b.data.drop):
 		_place_box("bug", Vector3(p.x, 0, p.z))
+
+
+## 尸体清理：虫子的油污 / 血迹贴花最多保留 MAX_KILL_DECALS 张，超出时淡掉最早的（v0.6 虫量翻倍后长局会堆上几百张）
+const MAX_KILL_DECALS := 90
+var _kill_decals: Array = []
+func _kill_decal(d: Node3D) -> void:
+	if d == null:
+		return
+	_kill_decals.append(d)
+	while _kill_decals.size() > MAX_KILL_DECALS:
+		var old = _kill_decals.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
 
 
 func on_nest_destroyed(n) -> void:
@@ -3184,44 +3276,143 @@ func _spawn_initial_bugs(drop: Vector3) -> void:
 
 
 ## 按分布表生成：packs = 区块字符 -> 每 4900 平方米的虫群数，kinds = 种类 -> 权重，pack_size = [最少, 最多]
+## 整体密度乘 BUG_DENSITY；先把全图的虫群计划排好再打乱生成，铺到 INITIAL_BUGS 上限时不会只剩地图一角有虫
 func _spawn_table_bugs(drop: Vector3, sp: Dictionary) -> void:
 	var packs: Dictionary = sp.get("packs", {})
 	var ps: Array = sp.get("pack_size", [2, 5])
+	var plan: Array = []
 	for j in 9:
 		for i in 9:
 			var t: String = zones[j][i]
 			var r := _cell_rect(i, j)
-			var ex: float = float(packs.get(t, 0.0)) * CELL * CELL / 4900.0
+			var ex: float = float(packs.get(t, 0.0)) * CELL * CELL / 4900.0 * BUG_DENSITY
 			var cnt := int(ex) + (1 if rng.randf() < ex - int(ex) else 0)
 			for k in cnt:
 				var c := _spot_in(r, 2.0)
 				if c == Vector3.INF or c.distance_to(drop) < 40.0:
 					continue
-				for m in rng.randi_range(int(ps[0]), int(ps[1])):
-					spawn_bug(GameData._weighted(sp.kinds, rng), c + Vector3(rng.randf_range(-3, 3), 0.5, rng.randf_range(-3, 3)))
+				var kinds: Array = []
+				for m in rng.randi_range(int(ps[0]), int(ps[1]) + 1):
+					kinds.append(GameData._weighted(sp.kinds, rng))
+				plan.append([c, kinds])
+	_spawn_plan(plan)
 
 
 func spawn_default_bugs(drop: Vector3) -> void:
 	var packs := {"D": 2.0, "R": 1.0, "I": 2.0, "H": 2.0, "Y": 1.6, "M": 3.0, "W": 0.9, "F": 0.9, "P": 1.2, "T": 1.0, "C": 1.4, "S": 3.0, "K": 0.0}
+	var plan: Array = []
 	for j in 9:
 		for i in 9:
 			var t: String = zones[j][i]
 			var r := _cell_rect(i, j)
-			var ex: float = float(packs.get(t, 0.0)) * CELL * CELL / 4900.0
+			var ex: float = float(packs.get(t, 0.0)) * CELL * CELL / 4900.0 * BUG_DENSITY
 			var cnt := int(ex) + (1 if rng.randf() < ex - int(ex) else 0)
 			for k in cnt:
 				var c := _spot_in(r, 2.0)
 				if c == Vector3.INF or c.distance_to(drop) < 40.0:
 					continue
-				var n := rng.randi_range(2, 5)
-				for m in n:
+				var kinds: Array = []
+				for m in rng.randi_range(2, 5):
 					var kind := "ling"
 					var rr := rng.randf()
 					if rr < 0.22:
 						kind = "spitter"
 					elif rr < (0.32 if t == "M" or t == "D" else 0.26):
 						kind = "beetle"
-					spawn_bug(kind, c + Vector3(rng.randf_range(-3, 3), 0.5, rng.randf_range(-3, 3)))
+					kinds.append(kind)
+				plan.append([c, kinds])
+	_spawn_plan(plan)
+
+
+## 按计划铺虫群：每群第一只是群首（自己巡逻），其余成员跟在群首身后的站位上；约五分之一的虫群是领地很大的游荡群
+func _spawn_plan(plan: Array) -> void:
+	for i in range(plan.size() - 1, 0, -1):
+		var k := rng.randi_range(0, i)
+		var tmp = plan[i]
+		plan[i] = plan[k]
+		plan[k] = tmp
+	for e: Array in plan:
+		var c: Vector3 = e[0]
+		var lead = null
+		var roam := rng.randf() < 0.22
+		var slow := INF
+		for kind: String in e[1]:
+			var b = spawn_bug(kind, c + Vector3(rng.randf_range(-3, 3), 0.5, rng.randf_range(-3, 3)), INITIAL_BUGS)
+			if b == null:
+				return
+			b.home = Vector3(c.x, 0, c.z)
+			slow = minf(slow, float(b.data.speed))
+			if lead == null:
+				lead = b
+				b.territory = rng.randf_range(60.0, 85.0) if roam else rng.randf_range(24.0, 40.0)
+			else:
+				b.pack_leader = lead
+				lead.pack.append(b)
+				var n: int = lead.pack.size()
+				var a := PI + (0.5 + 0.35 * n) * (1.0 if n % 2 == 0 else -1.0)
+				b.follow_off = Vector3(sin(a), 0, -cos(a)) * (2.6 + 0.9 * n)
+		if lead != null:
+			# 群首按全群最慢成员的步速巡逻，免得慢的掉队
+			lead.patrol_speed = clampf(slow * 0.42 / maxf(float(lead.data.speed), 0.1), 0.22, 0.6)
+
+
+# ---------- 派系与巡逻的公共查询 ----------
+## 虫群眼里的敌人：玩家机甲 + 战斗队友 + 流浪者（每个物理帧缓存一次）
+var _foes_frame := -1
+var _foes: Array = []
+func bug_foes() -> Array:
+	var f := Engine.get_physics_frames()
+	if f == _foes_frame:
+		return _foes
+	_foes_frame = f
+	_foes.clear()
+	if mech != null and is_instance_valid(mech) and not mech.dead:
+		_foes.append(mech)
+	for n in get_tree().get_nodes_in_group("npc_mechs"):
+		if is_instance_valid(n) and not n.dead:
+			_foes.append(n)
+	return _foes
+
+
+## 巡逻路点：home 周围 radius 米内一处空地（避开建筑占地、地图边缘与湖面）。占地矩形按 16 米格子分桶，查询很便宜
+const _PG := 16.0
+var _pgrid := {}
+func patrol_point(home: Vector3, radius: float, from: Vector3) -> Vector3:
+	if _pgrid.is_empty():
+		for b: Rect2 in blocks:
+			for gx in range(floori(b.position.x / _PG), floori(b.end.x / _PG) + 1):
+				for gz in range(floori(b.position.y / _PG), floori(b.end.y / _PG) + 1):
+					var key := Vector2i(gx, gz)
+					if not _pgrid.has(key):
+						_pgrid[key] = []
+					_pgrid[key].append(b)
+		_pgrid[Vector2i(99999, 99999)] = []
+	for t in 6:
+		var a := randf() * TAU
+		var d := sqrt(randf()) * radius
+		var p := home + Vector3(cos(a) * d, 0, sin(a) * d)
+		if absf(p.x) > HALF - 8.0 or absf(p.z) > HALF - 8.0:
+			continue
+		if in_lake(Vector2(p.x, p.z), 1.0) or not _patrol_free(p, 1.6):
+			continue
+		if t < 3 and p.distance_to(from) < 6.0:
+			continue
+		return Vector3(p.x, 0, p.z)
+	return Vector3(home.x, 0, home.z)
+
+
+func patrol_free(p: Vector3, r: float) -> bool:
+	if _pgrid.is_empty():
+		patrol_point(p, 0.0, p)
+	return _patrol_free(p, r)
+
+
+func _patrol_free(p: Vector3, r: float) -> bool:
+	var probe := Rect2(p.x - r, p.z - r, r * 2, r * 2)
+	for b: Rect2 in _pgrid.get(Vector2i(floori(p.x / _PG), floori(p.z / _PG)), []):
+		if b.intersects(probe):
+			return false
+	return true
 
 
 # ---------- 性能：静态装饰合批 ----------

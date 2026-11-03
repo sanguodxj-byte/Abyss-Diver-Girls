@@ -84,9 +84,13 @@ func setup(r) -> void:
 	gt.fill = GradientTexture2D.FILL_RADIAL
 	gt.fill_from = Vector2(0.5, 0.5)
 	gt.fill_to = Vector2(1.05, 0.5)
+	gt.width = 256
+	gt.height = 256
 	vignette = TextureRect.new()
 	vignette.texture = gt
 	vignette.stretch_mode = TextureRect.STRETCH_SCALE
+	# 项目全局 canvas 过滤是 Nearest：64×64 渐变被拉到全屏会变成 20×11 像素的半透明方格（战斗中受伤暗角亮起时最明显），这里必须线性过滤
+	vignette.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vignette.modulate.a = 0.0
@@ -99,9 +103,12 @@ func setup(r) -> void:
 	gt2.fill = GradientTexture2D.FILL_RADIAL
 	gt2.fill_from = Vector2(0.5, 0.5)
 	gt2.fill_to = Vector2(1.08, 0.5)
+	gt2.width = 256
+	gt2.height = 256
 	var vig2 := TextureRect.new()
 	vig2.texture = gt2
 	vig2.stretch_mode = TextureRect.STRETCH_SCALE
+	vig2.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	vig2.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vig2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(vig2)
@@ -585,10 +592,29 @@ func _fmt_time(t: float) -> String:
 	return "%02d:%02d" % [int(t) / 60, int(t) % 60]
 
 
+## 性能：文字/列表类信息 10 Hz 刷新即可，暗角、标记、准星仍逐帧更新。
+## 原来每帧给 warn_lbl 重设颜色覆盖会触发主题变更通知和重新排版，是 HUD 最大的开销。
+const TEXT_HZ := 10.0
+var _text_t := 0.0
+
+func _set_font_color(l: Label, c: Color) -> void:
+	if not l.has_meta("fc") or l.get_meta("fc") != c:
+		l.set_meta("fc", c)
+		l.add_theme_color_override("font_color", c)
+
+
 func refresh() -> void:
 	var m = raid.mech
 	if m == null:
 		return
+	_text_t -= get_process_delta_time()
+	if _text_t <= 0.0:
+		_text_t = 1.0 / TEXT_HZ
+		_refresh_text(m)
+	_refresh_fast(m)
+
+
+func _refresh_text(m) -> void:
 	info_lbl.text = "结构 %d%%   能源 %s\n货舱 %.0f/%.0f" % [int(m.hp / m.max_hp * 100.0), _fmt_time(m.energy_seconds_left()), m.cargo_weight(), m.cargo_cap()]
 	for slot in ammo_lbls:
 		var id: String = m.loadout.get(slot, "")
@@ -596,13 +622,13 @@ func refresh() -> void:
 	var sf: float = m.speed_mult()
 	if m.emergency > 0.0:
 		warn_lbl.text = "▲ 动力炉断电 · 应急电源剩余 %.1f 秒" % m.emergency
-		warn_lbl.add_theme_color_override("font_color", UI.BAD)
+		_set_font_color(warn_lbl, UI.BAD)
 	elif sf < 0.99:
 		warn_lbl.text = "超载减速 %d%% · 货物价值 ¥%d" % [int((1.0 - sf) * 100.0), GameData.value_of(m.cargo)]
-		warn_lbl.add_theme_color_override("font_color", UI.EN_C)
+		_set_font_color(warn_lbl, UI.EN_C)
 	else:
 		warn_lbl.text = "货物价值 ¥%d" % GameData.value_of(m.cargo)
-		warn_lbl.add_theme_color_override("font_color", UI.MUTED)
+		_set_font_color(warn_lbl, UI.MUTED)
 
 	time_lbl.text = _fmt_time(raid.time)
 	var sc: Vector2i = raid.searched_count()
@@ -642,6 +668,14 @@ func refresh() -> void:
 			h.get_child(1).text = lines[i][0]
 			h.get_child(2).text = lines[i][1]
 
+	for id in item_cards.keys():
+		var c: Dictionary = item_cards[id]
+		var n: int = m.cargo.count(id)
+		c.sub.text = "×%d" % n
+		c.panel.modulate.a = 1.0 if n > 0 else 0.45
+
+
+func _refresh_fast(m) -> void:
 	# 撤离读条
 	if raid.extract_target and not raid.ended:
 		extract_panel.visible = true
@@ -650,12 +684,6 @@ func refresh() -> void:
 		extract_bar.value = raid.extract_progress
 	else:
 		extract_panel.visible = false
-
-	for id in item_cards.keys():
-		var c: Dictionary = item_cards[id]
-		var n: int = m.cargo.count(id)
-		c.sub.text = "×%d" % n
-		c.panel.modulate.a = 1.0 if n > 0 else 0.45
 
 	var danger := 0.0
 	if m.emergency > 0.0:
