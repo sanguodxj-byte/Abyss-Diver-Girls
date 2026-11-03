@@ -1261,14 +1261,24 @@ func alert(pos: Vector3) -> void:
 		if raid and _alive(raid.mech):
 			target = raid.mech
 		state = "chase"
+		# 听到动静：朝声源方向搜过去，多给几秒「看不见也继续找」的宽限，找不到就去声源处查看
+		last_seen = pos
+		_unseen_t = -NOISE_GRACE
 		_alert_pack(target)
 
 
 # ================= 感知 / 巡逻 / LOD =================
 ## 虫群：一群里第一只是群首，其余成员跟在群首身后的固定站位上；群首在领地（home 周围 territory 米）里挑路点巡逻。
-## 发现目标（机甲、战斗队友、流浪者，距离进入 aggro）→ 整群转入追击；目标死亡或拉开到 LEASH 米外 → 回到巡逻。
+## 视野：目标（机甲、战斗队友、流浪者）在察觉距离内、且胸口高度的视线没被静态地形挡住，才算「看见」→ 整群转入追击。
+##   察觉距离 = raid.scaled_aggro(数据表 aggro)，封顶 raid.vision_range()（玩家视野 × 0.9）；看玩家机甲时再按屏幕方向收紧。
+## 受击锁定：被谁打就锁定谁（玩家子弹记为机甲），无视视野一路追，直到拉开到 raid.lose_range()（视野 × 1.5）才丢失；同群被叫醒的成员同样锁定。
+## 没锁定的追击：目标离开视线超过 UNSEEN_GIVEUP 秒或拉开到 lose_range → 丢失。丢失后先去最后看见目标的位置查看几秒，再回到巡逻。
+## 追击移动：直线可走就直线扑，被建筑挡住就沿导航网格（raid.nav）的 A* 路径绕；近处追击的虫之间有轻微的分离避让。
 ## LOD：离玩家机甲越远 AI 越低频（near：逐帧 / mid：10Hz / far：2Hz），远处不跑程序动画，移动用累计步长一次 move_and_slide。
-const LEASH := 55.0
+const LEASH := 55.0             ## 没有 raid（单独测试模型）时的后备丢失距离
+const UNSEEN_GIVEUP := 4.0      ## 没锁定的目标脱离视线多久后放弃
+const NOISE_GRACE := 3.0        ## 听到动静赶过去时额外的搜索宽限（秒）
+const INVESTIGATE_T := 5.0      ## 丢失目标后在最后位置附近查看的时长
 const LOD_NEAR := 55.0
 const LOD_MID := 95.0
 var pack_leader = null          ## 群首节点；null 表示自己就是群首（或散兵）
@@ -1285,6 +1295,16 @@ var _perc_t := 0.0
 var _wait_t := 0.0
 var _stuck_t := 0.0
 var _stuck_pos := Vector3.ZERO
+var lock_target = null          ## 受击锁定的目标（与 target 相同时视为锁定追击）
+var last_seen := Vector3.INF    ## 最后一次看见（或听见）目标的位置
+var _unseen_t := 0.0
+var _investigate := Vector3.INF
+var _investigate_t := 0.0
+var _chase_stuck_t := 0.0
+var _chase_stuck_pos := Vector3.ZERO
+var nav_agent = preload("res://scripts/nav_grid.gd").Agent.new()
+var _aggro_scaled := false
+var target_los := true          ## 最近一次感知时与当前目标之间有没有视线
 
 
 static func _alive(n) -> bool:
@@ -1326,16 +1346,16 @@ func _lod_dt(delta: float) -> float:
 ## 一次 move_and_slide 走完 dt：低频更新时按比例放大速度，碰撞照常结算。
 ## 画面外（LOD 中 / 远）闲逛巡逻的虫不跑物理：直接平移，只用建筑占地格子挡一下（撞上就换路点），省掉绝大部分 move_and_slide
 func _slide(dt: float) -> void:
-	if lod > 0 and state == "idle" and act == "" and raid and raid.has_method("patrol_free"):
+	if lod > 0 and state == "idle" and act == "" and raid and raid.has_method("ai_free"):
 		var step := Vector3(velocity.x, 0.0, velocity.z) * dt
 		if step.length_squared() < 0.0001:
 			return
 		var np := global_position + step
-		if raid.patrol_free(np, float(data.radius)) and absf(np.x) < raid.HALF - 4.0 and absf(np.z) < raid.HALF - 4.0:
+		if raid.ai_free(np, float(data.radius)) and absf(np.x) < raid.HALF - 4.0 and absf(np.z) < raid.HALF - 4.0:
 			global_position = np
 			return
-		# 自己已经压在建筑占地格子里（占地矩形比实际碰撞体略大）：走真实物理挤出去，否则会永远卡在原地
-		if raid.patrol_free(global_position, float(data.radius)):
+		# 自己已经压在不可走格子里（网格带通行间隙，比实际碰撞体略大）：走真实物理挤出去，否则会永远卡在原地
+		if raid.ai_free(global_position, float(data.radius)):
 			wander_to = Vector3.ZERO
 			return
 	var pd := get_physics_process_delta_time()
@@ -1354,92 +1374,222 @@ func _perceive_period() -> float:
 	return 0.25 if lod == 0 else (0.5 if lod == 1 else 1.0)
 
 
-## 感知：在可敌对单位（机甲 + 队友 + 流浪者，由 raid.bug_foes() 提供，数量很少）里挑目标
+## 察觉距离：第一次用到时按视野换算数据表的 aggro（setup 时 raid 的镜头还没建好）
+func _sight() -> float:
+	if not _aggro_scaled and raid and raid.has_method("scaled_aggro") and raid.camera != null:
+		_aggro_scaled = true
+		aggro_range = raid.scaled_aggro(aggro_range)
+	return aggro_range
+
+
+func _lose_dist() -> float:
+	return raid.lose_range() if raid and raid.has_method("lose_range") else LEASH
+
+
+## 能否看见 f（距离 d）：在察觉距离内（对玩家机甲按屏幕方向收紧）且视线不被地形挡住
+func _can_see(f, d: float) -> bool:
+	var r := _sight()
+	if r <= 0.0 or d >= r:
+		return false
+	if raid == null or not raid.has_method("has_los"):
+		return true
+	if f == raid.mech and d >= raid.vision_toward_player(global_position):
+		return false
+	return raid.has_los(global_position, f.global_position)
+
+
+## 感知：在可敌对单位（机甲 + 队友 + 流浪者，由 raid.bug_foes() 提供，数量很少）里挑目标。
+## 射线只对察觉距离内的候选打，按 LOD 节拍（0.25 / 0.5 / 1 秒）一次，150 只虫里真正打射线的只有近处几只
 func _perceive() -> void:
 	if raid == null or bool(data.get("boss", false)):
 		return
 	var foes: Array = raid.bug_foes() if raid.has_method("bug_foes") else ([raid.mech] if raid.mech else [])
 	var p := global_position
+	var lose := _lose_dist()
+	var period := _perceive_period()
 	if state == "chase":
 		var best = target if _alive(target) else null
 		var bd := INF
 		if best != null:
 			bd = p.distance_to(best.global_position)
-			if bd > LEASH:
+			if bd > lose:
 				best = null
 				bd = INF
+			elif best != lock_target:
+				# 没锁定：要一直看得见，脱离视线太久就放弃
+				target_los = _can_see(best, bd)
+				if target_los:
+					_unseen_t = 0.0
+					last_seen = best.global_position
+				else:
+					_unseen_t += period
+					if _unseen_t > UNSEEN_GIVEUP:
+						best = null
+						bd = INF
+			else:
+				last_seen = best.global_position
+				# 锁定追击不需要视线，但远程虫要知道隔没隔着墙（隔墙不开火、先绕过去）
+				target_los = bd < 30.0 and raid.has_method("has_los") and raid.has_los(p, best.global_position)
 		for f in foes:
 			if f == best or not _alive(f):
 				continue
 			var d := p.distance_to(f.global_position)
-			if d < aggro_range and d < bd - 6.0:
+			if d < bd - 6.0 and _can_see(f, d):
 				best = f
 				bd = d
+				_unseen_t = 0.0
+				target_los = true
+				last_seen = f.global_position
 		if _alive(aggressor) and aggressor != best:
 			var da := p.distance_to(aggressor.global_position)
-			if da < LEASH and (best == null or da < bd + 4.0):
+			if da < lose and (best == null or da < bd + 4.0):
 				best = aggressor
+				lock_target = aggressor
 		if best == null:
 			_lose_target()
 		else:
+			if best != target:
+				nav_agent.reset()
 			target = best
 		return
 	if aggro_range <= 0.0:
 		return
 	var pick = null
-	var pd := aggro_range
+	var pd := _sight()
 	for f in foes:
 		if not _alive(f):
 			continue
 		var d := p.distance_to(f.global_position)
-		if d < pd:
+		if d < pd and _can_see(f, d):
 			pd = d
 			pick = f
-	if pick == null and _alive(aggressor):
+	if pick == null and _alive(aggressor) and p.distance_to(aggressor.global_position) < lose:
 		pick = aggressor
+		lock_target = aggressor
 	if pick != null:
 		target = pick
 		state = "chase"
-		_alert_pack(pick)
+		target_los = pick != lock_target
+		_unseen_t = 0.0
+		last_seen = pick.global_position
+		nav_agent.reset()
+		_alert_pack(pick, pick == lock_target)
 	else:
 		target = null
 
 
-## 一只发现目标，40 米内闲着的同群成员一起扑上去
-func _alert_pack(tgt) -> void:
+## 一只发现目标，40 米内闲着的同群成员一起扑上去；lock 时成员也一起锁定（受击叫醒的整群都追到 1.5 倍视野外才放弃）
+func _alert_pack(tgt, lock := false) -> void:
 	if not _alive(tgt):
 		return
 	var lead = pack_leader if _alive(pack_leader) else self
 	var members: Array = lead.pack.duplicate()
 	members.append(lead)
 	for m in members:
-		if m == self or not _alive(m) or m.state != "idle":
+		if m == self or not _alive(m):
 			continue
-		if m.global_position.distance_to(global_position) < 40.0:
+		if m.global_position.distance_to(global_position) >= 40.0:
+			continue
+		if m.state == "idle":
 			m.target = tgt
 			m.state = "chase"
+			m._unseen_t = 0.0
+			m.last_seen = tgt.global_position
+			m.nav_agent.reset()
+			if lock:
+				m.lock_target = tgt
+		elif lock and m.target == tgt:
+			m.lock_target = tgt
 
 
-## 受击：没在追击（或目标已失效）时转向打自己的单位；玩家的子弹记为机甲
+## 受击：锁定打自己的单位（玩家的子弹记为机甲），无视视野追击。已经锁定着另一个活目标时不换，免得来回扭头
 func _aggro_on_hit() -> void:
-	if state == "chase" and _alive(target):
+	var atk = aggressor if _alive(aggressor) else (raid.mech if raid and _alive(raid.mech) else null)
+	if atk == null:
 		return
-	if _alive(aggressor):
-		target = aggressor
-	elif raid and _alive(raid.mech) and global_position.distance_to(raid.mech.global_position) < LEASH:
-		target = raid.mech
-	if _alive(target):
-		state = "chase"
-		_alert_pack(target)
+	if state == "chase" and _alive(target) and target == lock_target and target != atk:
+		return
+	if raid and global_position.distance_to(atk.global_position) > _lose_dist():
+		return
+	if target != atk:
+		nav_agent.reset()
+	target = atk
+	lock_target = atk
+	last_seen = atk.global_position
+	_unseen_t = 0.0
+	state = "chase"
+	_alert_pack(atk, true)
 
 
-## 丢失目标：回到巡逻（领地不变，群首会走回自己的地盘）
+## 丢失目标：回到巡逻（领地不变，群首会走回自己的地盘）；先去最后看见目标的地方查看几秒
 func _lose_target() -> void:
 	state = "idle"
 	target = null
 	aggressor = null
+	lock_target = null
+	_unseen_t = 0.0
 	_wait_t = randf_range(0.6, 1.6)
 	wander_to = Vector3.ZERO
+	nav_agent.reset()
+	if last_seen != Vector3.INF and pack_leader == null:
+		_investigate = Vector3(last_seen.x, 0.0, last_seen.z)
+		_investigate_t = INVESTIGATE_T
+		_wait_t = 0.3
+	last_seen = Vector3.INF
+
+
+## 导航重算周期：近处 0.5 秒，中 / 远处更慢（错开由 Agent 内的随机系数完成）
+func _nav_period() -> float:
+	return 0.5 if lod == 0 else (1.0 if lod == 1 else 2.0)
+
+
+## 朝 goal 移动的方向：直线可走就直线，否则沿 A* 路径；飞行 / 潜地等子类可以覆盖 _uses_nav() 关掉
+func _nav_dir(goal: Vector3, delta: float) -> Vector3:
+	if not _uses_nav() or raid == null or raid.get("nav") == null:
+		var w := goal - global_position
+		w.y = 0.0
+		return w.normalized() if w.length_squared() > 0.0001 else Vector3.ZERO
+	return nav_agent.steer(raid.nav, global_position, goal, delta, false, _nav_period())
+
+
+func _uses_nav() -> bool:
+	return not bool(data.get("boss", false))
+
+
+## 追击时朝目标走的方向：直线 / 绕路 + 卡住检测（1.5 秒挪不到 0.6 米就强制重新寻路）+ 近处同伴分离
+func _chase_dir(fwd: Vector3, d: float, delta: float) -> Vector3:
+	if d < 2.5 or not _alive(target):
+		return fwd
+	var dir := _nav_dir(target.global_position, delta)
+	_chase_stuck_t += delta
+	if _chase_stuck_t > 1.5:
+		if global_position.distance_to(_chase_stuck_pos) < 0.6:
+			nav_agent.stuck()
+		_chase_stuck_pos = global_position
+		_chase_stuck_t = 0.0
+	return _separate(dir)
+
+
+## 局部避让：只在近处（LOD 0）追击时算，推开贴得太近的同伴，不改变总体朝向
+func _separate(dir: Vector3) -> Vector3:
+	if lod != 0 or raid == null or not raid.has_method("bug_neighbors"):
+		return dir
+	var push := Vector3.ZERO
+	var p := global_position
+	var r0 := float(data.radius)
+	for b in raid.bug_neighbors(p):
+		if b == self:
+			continue
+		var o: Vector3 = p - b.global_position
+		o.y = 0.0
+		var want: float = r0 + float(b.data.radius) + 0.4
+		var L := o.length()
+		if L > 0.001 and L < want:
+			push += o / L * (want - L) / want
+	if push == Vector3.ZERO:
+		return dir
+	var out := dir + push.limit_length(0.8)
+	return out.normalized() * maxf(dir.length(), 0.3) if out.length_squared() > 0.0001 else dir
 
 
 ## 巡逻：返回期望移动方向（长度 = 相对全速的比例）
@@ -1461,13 +1611,23 @@ func _patrol(delta: float) -> Vector3:
 		var L := w.length()
 		var lead_v: float = float(lead.data.speed) * float(lead.patrol_speed)
 		if L > 9.0:
-			return w / L
+			return _nav_dir(goal, delta)
 		if L > 1.4:
 			return w / L * clampf(lead_v / spd * 1.2, 0.25, 1.0)
 		return Vector3.ZERO
 	if _wait_t > 0.0:
 		_wait_t -= delta
 		return Vector3.ZERO
+	# 丢失目标后：去最后看见目标的地方查看
+	if _investigate_t > 0.0:
+		_investigate_t -= delta
+		var wi := _investigate - global_position
+		wi.y = 0.0
+		if wi.length() < 2.0:
+			_investigate_t = 0.0
+			_wait_t = randf_range(0.8, 1.6)
+			return Vector3.ZERO
+		return _nav_dir(_investigate, delta) * 0.7
 	var w := wander_to - global_position
 	w.y = 0.0
 	_stuck_t += delta
@@ -1479,12 +1639,15 @@ func _patrol(delta: float) -> Vector3:
 			wander_to = Vector3.ZERO
 	if wander_to == Vector3.ZERO or w.length() < 1.6:
 		wander_to = _next_waypoint()
+		nav_agent.reset()
 		_wait_t = randf_range(0.8, 3.2) if w.length() < 1.6 else 0.0
 		return Vector3.ZERO
-	return w.normalized() * patrol_speed
+	return _nav_dir(wander_to, delta) * patrol_speed
 
 
 func _next_waypoint() -> Vector3:
+	if raid and raid.has_method("ai_patrol_point"):
+		return raid.ai_patrol_point(home, territory, global_position)
 	if raid and raid.has_method("patrol_point"):
 		return raid.patrol_point(home, territory, global_position)
 	return home + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
@@ -1525,23 +1688,25 @@ func _physics_process(delta: float) -> void:
 	if state == "idle":
 		dir = _patrol(delta)
 	elif state == "chase":
-		if d > LEASH + 5.0:
+		if d > _lose_dist() + 5.0:
 			_lose_target()
 		else:
 			var fwd: Vector3 = to / max(d, 0.01)
 			if beh == "spitter":
+				# 隔着墙不吐酸：没视线就绕过去找射击位置
+				var los := target_los
 				if d < 8.0:
 					dir = -fwd
-				elif d < data.range:
+				elif d < data.range and los:
 					dir = fwd.cross(Vector3.UP) * strafe * 0.5
 				else:
-					dir = fwd
-				if d < data.range and atk_cd <= 0.0 and act == "":
+					dir = _chase_dir(fwd, d, delta)
+				if d < data.range and los and atk_cd <= 0.0 and act == "":
 					atk_cd = data.rate
 					_begin("wind", 0.45, fwd)
 			else:
 				if d > data.range * 0.8:
-					dir = fwd
+					dir = _chase_dir(fwd, d, delta)
 				if d < data.range + 0.8 and atk_cd <= 0.0 and act == "":
 					atk_cd = data.rate
 					_begin("wind", 0.2 if beh == "ling" else 0.45, fwd)

@@ -343,6 +343,7 @@ func _physics_process(delta: float) -> void:
 	if act != "":
 		_tick_act(delta)
 	var dir := _think(delta, to, d, valid)
+	dir = _nav_adjust(dir, to, d, delta)
 	_move(delta, dir)
 	_face(delta, to, dir)
 	# 地下潜行时一路扬起尘土：轨迹可读，玩家有时间离开
@@ -367,7 +368,7 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 		return _patrol(delta)
 	if state == "idle":
 		return _patrol(delta)
-	if d > 62.0:
+	if d > _lose_dist() + 5.0:
 		_lose_target()
 		return Vector3.ZERO
 	var fwd := to / maxf(d, 0.01)
@@ -451,6 +452,21 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 				return Vector3.ZERO
 			return fwd if d > float(data.range) else fwd * 0.3
 	return _approach(fwd, d, float(data.range) * 0.8, 2.0)
+
+
+## 追击寻路：_think 给出的是「朝目标」的理想方向；朝目标靠近（与目标方向夹角小）时换成导航方向——
+## 直线可走照旧直线，被建筑挡住就沿 A* 绕。后退、绕圈、横移和各种动作（冲刺、俯冲、潜地）保持原样
+func _nav_adjust(dir: Vector3, to: Vector3, d: float, delta: float) -> Vector3:
+	if state != "chase" or act != "" or underground or d < 2.5 or not _alive(target) or bool(data.get("boss", false)):
+		return dir
+	var L := dir.length()
+	if L < 0.05 or dir.dot(to / maxf(d, 0.01)) < 0.5 * L:
+		return dir
+	return _chase_dir(to / maxf(d, 0.01), d, delta) * L
+
+
+func _uses_nav() -> bool:
+	return not bool(data.get("boss", false)) and not underground
 
 
 ## 接近目标：远则直线靠近，进入 weapon 距离后停下；太近则后退一点
