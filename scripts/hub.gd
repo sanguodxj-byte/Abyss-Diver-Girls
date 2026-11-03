@@ -1,7 +1,7 @@
 extends Control
 ## 飞空艇「信天翁号」主界面：二级菜单（整备 / 交易 / 降落 / 技能 / 仓库 / 图鉴）
 ## v0.7 版式参考「逃离塔科夫」主界面结构（保留本作像素风与世界观）：
-##   顶部 36px 细状态栏（舰名 · 驾驶员等级与经验 · 主角团 · 电台 · 战绩 · 杂物 · 资金 · 舰时 · 画质），
+##   顶部 36px 细状态栏（舰名 · 驾驶员等级与经验 · 主角团 · 战绩 · 杂物 · 资金 · 舰时 · 画质），
 ##   底部 48px 等宽主导航栏（当前页琥珀顶线高亮），中间内容区外边距 12、栏间距 8。
 ##   整备 = 装备槽列 + 3D 机甲 + 仓库网格 + 属性汇总条；仓库 = 大网格 + 分类筛选 + 物品详情；
 ##   交易 = 商人头像卡横排 → 商人货架网格 / 玩家仓库网格 / 交易确认栏；降落 = 战区地图 → 确认携带 → 出发；
@@ -180,42 +180,36 @@ const MERCHANTS := {
 	"ajin": {
 		"name": "阿堇",
 		"role": "黑市杂货与生活物资商",
-		"line": "「热食罐头、净水片，先把肚子填饱再去拼命。」",
 		"desc": "在废土穿浅色毛衣且不沾灰。掌管生活物资与日常消耗品走私，计算细致分文不差。",
 		"items": ["can_food", "biscuit", "water_tab", "coffee", "fuel_cell", "repair_kit"]
 	},
 	"xiaoman": {
 		"name": "小满",
 		"role": "战地军火与废铁倒爷",
-		"line": "「刚从战区扒回来的，枪管还热乎呢。」",
 		"desc": "在战区废墟扒装备起家的二道贩子。脾气冲、心气高，专营成品枪械与实战常规武器模块。",
 		"items": ["arm_mg", "arm_shotgun", "arm_flamer", "arm_laser", "wire", "bolts"]
 	},
 	"shiori": {
 		"name": "诗织",
 		"role": "违禁生物与深渊样本商",
-		"line": "「甲壳、虫晶……活的样本价钱另算。」",
 		"desc": "覆灭研究所的幸存学者。收购异化甲壳与虫晶活体样本，出售特种生物制剂与异化插件。",
 		"items": ["chitin", "bug_crystal", "coolant_pack", "surge_cell"]
 	},
 	"karasu": {
 		"name": "鸦",
 		"role": "重型装甲与特种弹药匠",
-		"line": "「装甲不够厚，就别怪虫子的牙太利。」",
 		"desc": "地下工坊老铁匠。追求极端防护厚度与大口径穿甲杀伤，专营防爆装甲与重型工业模块。",
 		"items": ["core_heavy", "legs_tread", "back_shield", "extract_barrier"]
 	},
 	"nihong": {
 		"name": "霓虹",
 		"role": "旧时代电子残骸与黑客情报商",
-		"line": "「硬盘里的东西，比你想的值钱多了~」",
 		"desc": "防空洞基站网瘾电波系。解码旧时代黑匣子与火控芯片，提供战区雷达情报与战术诱饵。",
 		"items": ["circuit", "hdd", "sonic_decoy", "beacon", "extract_flare"]
 	},
 	"gin": {
 		"name": "银",
 		"role": "灰烬商会账房与高危悬赏庄家",
-		"line": "「风险越高，报酬越高。签字吧。」",
 		"desc": "灰烬走私财团未成年买办。左眼佩戴黄铜单片镜，专营高危死地悬赏与顶级特种机甲配额。",
 		"items": ["credit_s", "credit_l", "gold", "gen_crystal", "legs_hover", "back_missile", "energy_rod"]
 	}
@@ -523,17 +517,7 @@ func _build_top_bar() -> void:
 	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	mid.clip_contents = true
 	th.add_child(mid)
-	var dot := ColorRect.new()
-	dot.color = UI.ACCENT
-	dot.custom_minimum_size = Vector2(4, 4)
-	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mid.add_child(dot)
-	mid.add_child(UI.label("电台", 12, UI.INFO))
-	var line := UI.label(GameData.DISPATCH_LINES[randi() % GameData.DISPATCH_LINES.size()], 12, K.CREAM_DIM)
-	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.clip_text = true
-	line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	mid.add_child(line)
+	# 顶栏只留状态信息，不显示任何台词
 
 	th.add_child(K.icon_rect(K.small_icon("raid"), 16))
 	record_lbl = UI.label("", 12, K.CREAM_DIM)
@@ -786,7 +770,6 @@ func _build_maintenance_view(parent: Control) -> void:
 	mv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	mh.add_child(mv)
 	mv.add_child(UI.label("米娅 · 机库整备师", 12, UI.INFO))
-	mv.add_child(UI.label("「又磕坏了？……放着，我来。」", 12, K.CREAM_DIM))
 	var ab := K.hbox(6)
 	v.add_child(ab)
 	_btn(ab, "领取应急机架", _starter_frame).custom_minimum_size.y = 28
@@ -1128,7 +1111,7 @@ func _select_merchant_silent(m_id: String) -> void:
 	var md: Dictionary = MERCHANTS.get(m_id, {})
 	merchant_name_lbl.text = md.get("name", "")
 	merchant_role_lbl.text = md.get("role", "")
-	merchant_desc_lbl.text = "%s %s" % [md.get("line", ""), md.get("desc", "")]
+	merchant_desc_lbl.text = str(md.get("desc", ""))
 	merchant_portrait.set_char(m_id, 40)
 	if shop_title_lbl:
 		shop_title_lbl.text = "货架 · %s" % md.get("name", "")
@@ -2184,8 +2167,6 @@ func _show_codex(tab: String, id: String) -> void:
 					g.append(("部署仓 T%d" % Growth.pod_tier(pid)) if Growth.pod_tier(pid) > 0 else "部署仓 未购置")
 			if Growth.crew_ids().has(id):
 				g.append("好感 Lv%d / %d" % [Growth.crew_level(id), Growth.CREW_MAX])
-			if MERCHANTS.has(id):
-				g.append(str(MERCHANTS[id].get("line", "")))
 			codex_growth_lbl.text = "  ·  ".join(g)
 		"module":
 			var m: Dictionary = GameData.MODULES.get(id, {})

@@ -75,6 +75,15 @@ func setup(k: String, r, tgt) -> void:
 	strafe = 1.0 if randf() < 0.5 else -1.0
 	anim_t = randf() * 10.0
 	_build_visual()
+	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影
+	# 小零件单独记账：中远距离直接隐藏，省下大量零碎绘制
+	for mi in parts:
+		if is_instance_valid(mi):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if mi.mesh != null:
+				var ext: Vector3 = mi.mesh.get_aabb().size * mi.scale
+				if maxf(ext.x, maxf(ext.y, ext.z)) < 0.2:
+					detail.append(mi)
 
 
 ## 两点之间放一段锥形肢节（圆柱 UV：v 沿长度，贴图的关节环/刚毛会顺着肢节走）
@@ -1152,6 +1161,8 @@ var territory := 30.0           ## 巡逻半径
 var patrol_speed := 0.4         ## 巡逻速度（相对自身全速）
 var aggressor = null            ## 最近一次打中自己的单位（流浪者 / 队友 / 机甲）
 var lod := 0                    ## 0 近 / 1 中 / 2 远
+var detail: Array = []          ## 中远距离隐藏的小零件
+var _detail_on := true
 var _lod_acc := 0.0
 var _perc_t := 0.0
 var _wait_t := 0.0
@@ -1175,6 +1186,12 @@ func _lod_dt(delta: float) -> float:
 		lod = 1
 	else:
 		lod = 2
+	var want_detail := lod == 0
+	if want_detail != _detail_on:
+		_detail_on = want_detail
+		for mi in detail:
+			if is_instance_valid(mi):
+				mi.visible = want_detail
 	if lod == 0:
 		if _lod_acc > 0.0:
 			delta += _lod_acc

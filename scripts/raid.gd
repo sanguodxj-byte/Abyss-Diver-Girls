@@ -305,7 +305,7 @@ func _build_environment() -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 1.6
 	env.ssao_intensity = 2.2
-	env.ssil_enabled = RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	env.ssil_enabled = false
 	env.ssil_radius = 4.0
 	env.ssil_intensity = 0.8
 	env.ssao_detail = 0.6
@@ -314,7 +314,7 @@ func _build_environment() -> void:
 	env.fog_light_color = Color(0.52, 0.5, 0.44)
 	env.fog_density = 0.004
 	env.fog_sky_affect = 0.0
-	env.volumetric_fog_enabled = true
+	env.volumetric_fog_enabled = false
 	env.volumetric_fog_density = 0.008
 	env.volumetric_fog_albedo = Color(0.82, 0.8, 0.74)
 	env.volumetric_fog_anisotropy = 0.5

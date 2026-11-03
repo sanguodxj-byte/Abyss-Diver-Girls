@@ -68,13 +68,7 @@ var SHOP := ["fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back
 
 const STARTER := {"core": "core_scout", "legs": "legs_biped", "arm_l": "arm_mg", "arm_r": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}
 
-var DISPATCH_LINES := [
-	"调度员莉娜：「下面的风今天往东刮，虫子闻不到你。大概。」",
-	"机械师米娅：「左臂我给你校过了，别再拿它砸虫子。」",
-	"厨师阿堇：「罐头，罐头，还是罐头。带点新鲜的回来？」",
-	"领航员小满：「运输机随叫随到——只要你别在虫群中间叫。」",
-	"调度员莉娜：「记住，电池见底之前必须到撤离点。没有例外。」",
-]
+var DISPATCH_LINES: Array = []
 
 var REQUEST_POOL := [
 	{"id": "can_food", "count": 3, "reward": 450, "who": "厨师阿堇"},
@@ -650,21 +644,26 @@ func apply_quality(vp: Viewport = null) -> void:
 	if vp == null:
 		vp = get_tree().root
 	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	# 像素风画面不需要超采样与 TAA：三档只在 MSAA 与各向异性上区分，避免 1.5 倍分辨率叠加 4x MSAA
 	match quality:
 		0:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			vp.use_taa = false
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+			vp.scaling_3d_scale = 1.0
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+		1:
 			vp.msaa_3d = Viewport.MSAA_2X
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			vp.use_taa = false
-			vp.scaling_3d_scale = 1.0
-		1:
-			vp.msaa_3d = Viewport.MSAA_4X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
-			vp.use_taa = not compat
-			vp.scaling_3d_scale = 1.0
-		_:
-			vp.msaa_3d = Viewport.MSAA_4X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if compat else Viewport.SCREEN_SPACE_AA_DISABLED
-			vp.use_taa = not compat
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 1.5
-	vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
+			vp.scaling_3d_scale = 0.9
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
+		_:
+			vp.msaa_3d = Viewport.MSAA_2X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			vp.use_taa = false
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+			vp.scaling_3d_scale = 0.85
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
