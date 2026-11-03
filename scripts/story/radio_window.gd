@@ -217,7 +217,7 @@ func window_rect() -> Rect2:
 ## 无线电头像：有文件时按正方形裁切，缺文件时画剪影占位
 class AvatarMark extends Control:
 	var tex: Texture2D
-	var accent := Color(1.0, 0.69, 0.13)
+	var accent := Color(0.72, 0.5, 0.09)
 
 	func set_char(cid: String, expr: String) -> void:
 		tex = AP.avatar(cid, expr) if cid != "" else null
@@ -260,7 +260,7 @@ class AvatarMark extends Control:
 class SignalBars extends Control:
 	var t := 0.0
 	var active := true
-	var accent := Color(1.0, 0.78, 0.42)
+	var accent := Color(0.74, 0.57, 0.3)
 
 	func reset() -> void:
 		t = 0.0

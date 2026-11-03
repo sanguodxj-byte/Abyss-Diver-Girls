@@ -220,7 +220,7 @@ func _build_status() -> void:
 		L.add_child(col)
 		col.setup(m, slot)
 		ammo_cols[slot] = col
-		var al := UI.label("", 12, Color(1, 0.86, 0.5), true)
+		var al := UI.label("", 12, Color(0.75, 0.64, 0.36), true)
 		al.position = Vector2(cx - 22, base_y - rail_h - 44)
 		al.size = Vector2(44, 16)
 		al.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -271,7 +271,7 @@ func _build_status() -> void:
 	L.add_child(holo)
 	holo.setup(m)
 	var core_id: String = raid.loadout.get("core", "")
-	frame_lbl = UI.label((GameData.item_name(core_id) if core_id != "" else "无躯干"), 11, Color(1, 0.8, 0.4))
+	frame_lbl = UI.label((GameData.item_name(core_id) if core_id != "" else "无躯干"), 11, Color(0.74, 0.58, 0.28))
 	frame_lbl.position = Vector2(22, base_y + 1)
 	L.add_child(frame_lbl)
 	info_lbl = UI.label("", 12, UI.TEXT)

@@ -160,7 +160,7 @@ func _build_ui() -> void:
 	hud.draw.connect(_draw_hud)
 	add_child(hud)
 
-	# 标题：生成的金属艺术字（中文 / 英文两版），带扫光
+	# 标题：生成的金属艺术字（中文 / 英文两版），带投影
 	title_rect = TextureRect.new()
 	title_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	title_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
@@ -346,18 +346,13 @@ var title_lang := ""
 const MENU_CFG := "user://menu.cfg"
 const TITLE_FX := """
 shader_type canvas_item;
-// 标题扫光：一道斜向高光每 7 秒掠过金属面，只作用在不透明处；外加柔和投影
-uniform float t = 0.0;
+// 标题：金属原图 + 下方柔和投影，画面静止不叠加任何扫光
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	vec2 px = TEXTURE_PIXEL_SIZE * vec2(6.0, 9.0);
 	float sh = texture(TEXTURE, UV - px).a;
-	float ph = fract(t / 7.0) * 2.6 - 0.8;
-	float band = UV.x + UV.y * 0.35 - ph;
-	float glint = exp(-band * band * 260.0) * 0.55 + exp(-band * band * 30.0) * 0.12;
-	vec3 col = c.rgb + vec3(1.0, 0.9, 0.72) * glint * c.a;
 	vec4 shadow = vec4(0.0, 0.0, 0.0, sh * 0.45);
-	COLOR = mix(shadow, vec4(col, 1.0), c.a);
+	COLOR = mix(shadow, vec4(c.rgb, 1.0), c.a);
 }
 """
 
@@ -708,8 +703,6 @@ func _process(delta: float) -> void:
 	t += delta
 	if post_mat:
 		post_mat.set_shader_parameter("t", fmod(t, 10.0))
-	if title_mat:
-		title_mat.set_shader_parameter("t", fmod(t, 70.0))
 	var sway := sin(t * 0.35) * 0.6 + sin(t * 0.13) * 0.4
 	# 贴窗视角：镜头几乎贴着玻璃，窗框和仪表台只占画面边缘
 	cam.position = Vector3(0.75 + sin(t * 0.07) * 0.04, 1.82 + sin(t * 0.4) * 0.02, 1.1)

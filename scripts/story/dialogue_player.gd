@@ -653,7 +653,7 @@ class PortraitPlace extends Control:
 	var view: SubViewport
 	var vid: VideoStreamPlayer
 	var rect: TextureRect
-	var accent := Color(1.0, 0.69, 0.13)
+	var accent := Color(0.72, 0.5, 0.09)
 
 	func _ready() -> void:
 		view = SubViewport.new()
@@ -788,7 +788,7 @@ class PortraitPlace extends Control:
 ## 台词进度：细线上的一枚菱形标记，随台词序号右移
 class LineGauge extends Control:
 	var frac := 0.0
-	var accent := Color(1.0, 0.69, 0.13)
+	var accent := Color(0.72, 0.5, 0.09)
 
 	func set_frac(f: float) -> void:
 		if absf(f - frac) > 0.001:
@@ -808,7 +808,7 @@ class LineGauge extends Control:
 ## 配音指示：有配音播放时四根竖条起伏，没有配音时只剩一条暗线
 class VoiceBars extends Control:
 	var t := 0.0
-	var accent := Color(1.0, 0.8, 0.45)
+	var accent := Color(0.74, 0.59, 0.32)
 
 	func _process(d: float) -> void:
 		t += d

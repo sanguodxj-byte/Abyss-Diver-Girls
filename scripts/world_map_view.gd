@@ -15,7 +15,7 @@ signal map_locked(id: String)
 
 const META_PATH := "res://assets/ui/worldmap/worldmap.json"
 const ZOOMS := [0.25, 0.5, 1.0, 2.0, 3.0]
-const AMBER := Color(1.0, 0.69, 0.13)
+const AMBER := Color(0.72, 0.5, 0.09)
 const CREAM := Color(0.86, 0.84, 0.75)
 const DIM := Color(0.55, 0.54, 0.47)
 const INK := Color(0.03, 0.03, 0.04)

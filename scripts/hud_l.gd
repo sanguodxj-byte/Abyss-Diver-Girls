@@ -14,7 +14,7 @@ static func _pc(f: float) -> Color:
 	if f > 0.75:
 		return Color(0.55, 0.86, 1.0)
 	if f > 0.5:
-		return Color(1.0, 0.86, 0.3)
+		return Color(0.74, 0.62, 0.2)
 	if f > 0.25:
 		return Color(1.0, 0.55, 0.15)
 	return Color(1.0, 0.2, 0.14)
@@ -118,7 +118,7 @@ void fragment() {
 		if f > 0.75:
 			return Color(0.55, 0.86, 1.0)
 		if f > 0.5:
-			return Color(1.0, 0.86, 0.3)
+			return Color(0.74, 0.62, 0.2)
 		if f > 0.25:
 			return Color(1.0, 0.55, 0.15)
 		return Color(1.0, 0.2, 0.14)
@@ -239,7 +239,7 @@ class AmmoColumn extends Control:
 			draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.55))
 			_vtext("损毁", Color(1.0, 0.3, 0.2))
 		elif mech.reload_t[slot] > 0.0 and int(Time.get_ticks_msec() / 250) % 2 == 0:
-			_vtext("装填", Color(1.0, 0.75, 0.2))
+			_vtext("装填", Color(0.74, 0.55, 0.14))
 
 	func _vtext(s: String, c: Color) -> void:
 		for i in s.length():
@@ -285,11 +285,11 @@ class SkillSlot extends Control:
 		if ready and not was_ready:
 			ready_flash = 1.0
 		was_ready = ready
-		var ic := Color(1.0, 0.72, 0.16) if ready else Color(0.5, 0.5, 0.52)
+		var ic := Color(0.74, 0.53, 0.11) if ready else Color(0.5, 0.5, 0.52)
 		if not info.ok:
 			ic = Color(0.3, 0.3, 0.32)
 		if info.active:
-			ic = Color(1.0, 0.9, 0.55)
+			ic = Color(0.76, 0.68, 0.4)
 		var isz := 42.0
 		draw_texture_rect(icon, Rect2(o + Vector2((s - isz) * 0.5, (s - isz) * 0.5 - 2), Vector2(isz, isz)), false, ic)
 		# 扇形冷却遮罩（12 点方向起顺时针退去）
@@ -334,4 +334,4 @@ class EnergyStrip extends Control:
 			a = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.015)
 		for i in n:
 			var on := float(i) / float(n) < f
-			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), Color(1.0, 0.72, 0.16, a) if on else Color(1, 1, 1, 0.06))
+			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), Color(0.74, 0.53, 0.11, a) if on else Color(1, 1, 1, 0.06))

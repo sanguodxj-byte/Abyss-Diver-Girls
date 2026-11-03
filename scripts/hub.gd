@@ -475,7 +475,7 @@ func _build_top_bar() -> void:
 	var ship := K.hbox(6)
 	ship.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	th.add_child(ship)
-	ship.add_child(UI.label("信天翁号", 12, Color(1.0, 0.8, 0.42)))
+	ship.add_child(UI.label("信天翁号", 12, Color(0.74, 0.58, 0.3)))
 	ship.add_child(UI.label("ALBATROSS · BAY 03", 12, K.CREAM_DIM))
 	_vsep(th)
 
@@ -493,7 +493,7 @@ func _build_top_bar() -> void:
 			nv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			var nh := K.hbox(6)
 			nv.add_child(nh)
-			lead_name_lbl = UI.label("", 12, Color(1.0, 0.85, 0.45))
+			lead_name_lbl = UI.label("", 12, Color(0.74, 0.61, 0.32))
 			lead_name_lbl.clip_text = true
 			lead_name_lbl.custom_minimum_size = Vector2(56, 0)
 			lead_name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -528,7 +528,7 @@ func _build_top_bar() -> void:
 	th.add_child(junk_lbl)
 	_vsep(th)
 	th.add_child(K.icon_rect(K.small_icon("money"), 16))
-	money_lbl = UI.label("", 12, Color(1.0, 0.85, 0.4))
+	money_lbl = UI.label("", 12, Color(0.74, 0.61, 0.28))
 	money_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	th.add_child(money_lbl)
 	_vsep(th)
@@ -650,9 +650,9 @@ func _item_tip(e: Dictionary) -> Control:
 	r.solid = true
 	v.add_child(r)
 	v.add_child(K.kv("重量", "%.1f kg" % float(it.get("w", 0))))
-	v.add_child(K.kv("价值", "¥ %s" % _fmt_money(int(it.get("v", 0))), Color(1.0, 0.85, 0.4)))
+	v.add_child(K.kv("价值", "¥ %s" % _fmt_money(int(it.get("v", 0))), Color(0.74, 0.61, 0.28)))
 	if e.has("price"):
-		v.add_child(K.kv("售价", "¥ %s" % _fmt_money(int(e.price)), Color(1.0, 0.85, 0.4)))
+		v.add_child(K.kv("售价", "¥ %s" % _fmt_money(int(e.price)), Color(0.74, 0.61, 0.28)))
 	v.add_child(K.kv("仓库", "×%d" % GameData.count_in_stash(id)))
 	if cat == "module":
 		var m: Dictionary = GameData.module(id)
@@ -980,7 +980,7 @@ func _build_trade_view(parent: Control) -> void:
 	pv.custom_minimum_size = Vector2(200, 0)
 	pv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dh.add_child(pv)
-	deal_price_lbl = UI.label("", 24, Color(1.0, 0.85, 0.4))
+	deal_price_lbl = UI.label("", 24, Color(0.74, 0.61, 0.28))
 	deal_price_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pv.add_child(deal_price_lbl)
 	deal_after_lbl = UI.label("", 12, K.CREAM_DIM)
@@ -1023,7 +1023,7 @@ func _build_trade_view(parent: Control) -> void:
 	rh.add_child(rvv)
 	request_lbl = K.wrap("", K.CREAM)
 	rvv.add_child(request_lbl)
-	request_reward_lbl = UI.label("", 24, Color(1.0, 0.85, 0.4))
+	request_reward_lbl = UI.label("", 24, Color(0.74, 0.61, 0.28))
 	rvv.add_child(request_reward_lbl)
 	var sub := K.primary("提交委托", 34)
 	sub.custom_minimum_size.x = 132
@@ -1331,7 +1331,7 @@ func _deploy_show(n: int) -> void:
 		var sn := "nav9_on" if st == "on" else ("nav9_n" if st == "done" else "nav9_p")
 		b.add_theme_stylebox_override("normal", K.px9(sn, 12, 12, 8, 4))
 		b.add_theme_stylebox_override("hover", K.px9("nav9_on" if st == "on" else "nav9_h", 12, 12, 8, 4))
-		b.add_theme_color_override("font_color", Color(1.0, 0.82, 0.42) if st == "on" else (K.CREAM if st == "done" else K.CREAM_DIM))
+		b.add_theme_color_override("font_color", Color(0.74, 0.59, 0.3) if st == "on" else (K.CREAM if st == "done" else K.CREAM_DIM))
 
 
 func _map_quest(id: String) -> String:
@@ -1523,7 +1523,7 @@ func _refresh_salvage() -> void:
 		return
 	for c in salvage_box.get_children():
 		c.queue_free()
-	salvage_box.add_child(K.kv("信用点", "¥ %s" % _fmt_money(GameData.money), Color(1.0, 0.85, 0.4)))
+	salvage_box.add_child(K.kv("信用点", "¥ %s" % _fmt_money(GameData.money), Color(0.74, 0.61, 0.28)))
 	var tot := 0
 	var es: Array = []
 	for id in Growth.material_ids():
@@ -2487,7 +2487,7 @@ func _refresh_trade_list() -> void:
 		for c in account_box.get_children():
 			account_box.remove_child(c)
 			c.queue_free()
-		account_box.add_child(K.kv("信用点", "¥ %s" % _fmt_money(GameData.money), Color(1.0, 0.85, 0.4)))
+		account_box.add_child(K.kv("信用点", "¥ %s" % _fmt_money(GameData.money), Color(0.74, 0.61, 0.28)))
 		account_box.add_child(K.kv("仓库物品", "%d 件" % GameData.stash.size()))
 		account_box.add_child(K.kv("仓库估值", "¥ %s" % _fmt_money(GameData.value_of(GameData.stash))))
 		var junk := 0
@@ -2618,7 +2618,7 @@ func _on_stash_selected(i: int) -> void:
 		stash_kv_box.remove_child(c)
 		c.queue_free()
 	stash_kv_box.add_child(K.kv("重量", "%.1f kg" % float(it.w)))
-	stash_kv_box.add_child(K.kv("价值", "¥ %s" % _fmt_money(int(it.v)), Color(1.0, 0.85, 0.4)))
+	stash_kv_box.add_child(K.kv("价值", "¥ %s" % _fmt_money(int(it.v)), Color(0.74, 0.61, 0.28)))
 	stash_kv_box.add_child(K.kv("库存", "×%d" % GameData.count_in_stash(selected_stash)))
 	stash_kv_box.add_child(K.kv("合计重量", "%.1f kg" % (float(it.w) * GameData.count_in_stash(selected_stash))))
 	if it.cat == "module":

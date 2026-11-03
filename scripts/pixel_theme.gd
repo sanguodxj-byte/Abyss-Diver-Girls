@@ -5,7 +5,7 @@ const FONT := "res://assets/fonts/fusion-pixel-12px-zh_hans.ttf"
 const PXDIR := "res://assets/ui/px/"
 static var _px9 := {}
 
-const ACCENT := Color(0.95, 0.66, 0.13)
+const ACCENT := Color(0.72, 0.5, 0.09)
 const TEXT := Color(0.91, 0.9, 0.86)
 const MUTED := Color(0.62, 0.61, 0.58)
 const BG := Color(0.07, 0.07, 0.08)

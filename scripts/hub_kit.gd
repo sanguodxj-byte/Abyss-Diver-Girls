@@ -33,8 +33,8 @@ const CELL_RAR := [Color(0.15, 0.152, 0.14), Color(0.11, 0.2, 0.12), Color(0.1, 
 const OK_C := Color(0.45, 0.85, 0.4)
 const NG_C := Color(0.95, 0.35, 0.3)
 
-const AMBER := Color(1.0, 0.69, 0.13)
-const AMBER_DK := Color(0.59, 0.38, 0.05)
+const AMBER := Color(0.72, 0.5, 0.09)
+const AMBER_DK := Color(0.42, 0.27, 0.04)
 const RULE := Color(1, 1, 1, 0.14)
 const DIM := Color(0.48, 0.5, 0.54)
 
@@ -372,7 +372,7 @@ static func cost_row(parts: Array, item_name: Callable) -> HFlowContainer:
 			t = "¥%s" % _money_text(int(p.need))
 		else:
 			t = "%s %d/%d" % [str(item_name.call(str(p.id))), int(p.have), int(p.need)]
-		f.add_child(UI.label(t, 12, (Color(1.0, 0.85, 0.4) if str(p.id) == "money" else UI.TEXT) if ok else UI.BAD))
+		f.add_child(UI.label(t, 12, (Color(0.74, 0.61, 0.28) if str(p.id) == "money" else UI.TEXT) if ok else UI.BAD))
 	return f
 
 
@@ -514,7 +514,7 @@ class Rule extends Control:
 class Pips extends Control:
 	var level := 0
 	var max_level := 5
-	var on_c := Color(1.0, 0.69, 0.13)
+	var on_c := Color(0.72, 0.5, 0.09)
 
 	func _init(mx := 5) -> void:
 		max_level = mx
@@ -536,7 +536,7 @@ class Pips extends Control:
 ## 像素进度条（经验）
 class PixBar extends Control:
 	var frac := 0.0
-	var color := Color(1.0, 0.69, 0.13)
+	var color := Color(0.72, 0.5, 0.09)
 
 	func _init(h := 8) -> void:
 		custom_minimum_size = Vector2(40, h)
@@ -642,7 +642,7 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 	var by := r.end.y - 3 - font.get_descent(12)
 	if e.has("price"):
 		var pt := "¥%s" % _money_text(int(e.price))
-		var pc := Color(1.0, 0.82, 0.4) if not e.get("bad", false) else Color(1.0, 0.55, 0.48)
+		var pc := Color(0.74, 0.59, 0.29) if not e.get("bad", false) else Color(1.0, 0.55, 0.48)
 		ci.draw_string(font, Vector2(r.position.x + 4, by + 1), pt, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, Color(0, 0, 0, 0.85))
 		ci.draw_string(font, Vector2(r.position.x + 3, by), pt, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, pc)
 	elif int(e.get("count", 1)) > 1:
@@ -989,12 +989,12 @@ class NavButton extends Button:
 		var K = load("res://scripts/hub_kit.gd")
 		add_theme_stylebox_override("normal", K.px9("nav9_n", 12, 12, 6, 4))
 		add_theme_stylebox_override("hover", K.px9("nav9_p" if down else "nav9_h", 12, 12, 6, 4))
-		add_theme_stylebox_override("pressed", K.px9("nav9_p" if down else "nav9_on", 12, 12, 6, 4))
-		add_theme_stylebox_override("hover_pressed", K.px9("nav9_p" if down else "nav9_on", 12, 12, 6, 4))
+		add_theme_stylebox_override("pressed", K.px9("nav9_p", 12, 12, 6, 4))
+		add_theme_stylebox_override("hover_pressed", K.px9("nav9_p", 12, 12, 6, 4))
 
 	func _tint() -> void:
 		var on := button_pressed
-		cn_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.4) if on else Color(0.86, 0.84, 0.75))
+		cn_lbl.add_theme_color_override("font_color", Color(0.74, 0.58, 0.28) if on else Color(0.86, 0.84, 0.75))
 		en_lbl.add_theme_color_override("font_color", Color(0.75, 0.55, 0.2) if on else Color(0.45, 0.44, 0.39))
 		if icon_rect:
 			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.78, 0.78, 0.74)

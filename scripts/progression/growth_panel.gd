@@ -108,7 +108,7 @@ func _build() -> void:
 	mark.color = UI.ACCENT
 	mark.custom_minimum_size = Vector2(4, 0)
 	head.add_child(mark)
-	var title := UI.label("信天翁号 · 整备与航程", 26, Color(1.0, 0.9, 0.7))
+	var title := UI.label("信天翁号 · 整备与航程", 26, Color(0.74, 0.67, 0.52))
 	head.add_child(title)
 	var sub := UI.label("ABYSS DIVER GIRLS", 11, UI.MUTED)
 	sub.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -116,7 +116,7 @@ func _build() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
-	_money_lbl = UI.label("", 18, Color(1.0, 0.85, 0.4))
+	_money_lbl = UI.label("", 18, Color(0.74, 0.61, 0.28))
 	head.add_child(_money_lbl)
 	var close_btn := _button("关闭", close)
 	close_btn.custom_minimum_size = Vector2(84, 36)
@@ -148,8 +148,8 @@ func _build() -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.add_theme_stylebox_override("normal", UI.box(Color(1, 1, 1, 0.04), Color(1, 1, 1, 0.12), 1, 0, UI.ACCENT, 0, 10))
 		b.add_theme_stylebox_override("hover", UI.box(Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.28), 1, 0, UI.ACCENT, 0, 10))
-		b.add_theme_stylebox_override("pressed", UI.box(Color(1.0, 0.6, 0.15, 0.2), Color(1.0, 0.72, 0.34), 1, 0, UI.ACCENT, 3, 10))
-		b.add_theme_color_override("font_pressed_color", Color(1.0, 0.86, 0.56))
+		b.add_theme_stylebox_override("pressed", UI.box(Color(0.62, 0.37, 0.09, 0.2), Color(0.74, 0.53, 0.25), 1, 0, UI.ACCENT, 3, 10))
+		b.add_theme_color_override("font_pressed_color", Color(0.75, 0.63, 0.41))
 		b.pressed.connect(_switch_tab.bind(str(t[0])))
 		nav.add_child(b)
 		_tab_buttons[str(t[0])] = b
@@ -334,7 +334,7 @@ func _build_meal() -> void:
 	var cost: Dictionary = Growth.meal_cost()
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
-	h.add_child(_label("出击食堂", 19, Color(1.0, 0.9, 0.7)))
+	h.add_child(_label("出击食堂", 19, Color(0.74, 0.67, 0.52)))
 	h.add_child(_label("厨房 Lv.%d" % lv if lv > 0 else "厨房未建造", 13, UI.MUTED))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -365,7 +365,7 @@ func _build_facility(id: String) -> void:
 	var reason: String = Growth.can_upgrade(id)
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
-	h.add_child(_label(Growth.facility_name(id), 19, Color(1.0, 0.9, 0.7)))
+	h.add_child(_label(Growth.facility_name(id), 19, Color(0.74, 0.67, 0.52)))
 	h.add_child(_label("Lv.%d / %d" % [lv, mx], 13, UI.MUTED))
 	h.add_child(_pips(lv, mx))
 	var sp := Control.new()
@@ -414,7 +414,7 @@ func _build_research() -> void:
 		var done := reason == "已完成"
 		var v := _card(Color(0.4, 1.0, 0.6, 0.45) if done else Color(1, 1, 1, 0.12))
 		var h := _row(v)
-		h.add_child(_label(str(d.get("name", rid)), 18, Color(1.0, 0.9, 0.7)))
+		h.add_child(_label(str(d.get("name", rid)), 18, Color(0.74, 0.67, 0.52)))
 		var status_color := UI.GOOD if done else (UI.ACCENT if reason == "" else (UI.BAD if reason in ["材料不足", "信用点不足"] else UI.MUTED))
 		var status_text := "已完成" if done else ("可研究" if reason == "" else reason)
 		h.add_child(_label(status_text, 13, status_color))
@@ -461,7 +461,7 @@ func _build_pilot(id: String) -> void:
 	var is_active := id == active
 	var v := _card(UI.ACCENT_DIM if is_active else Color(1, 1, 1, 0.12))
 	var h := _row(v)
-	h.add_child(_label(str(d.get("name", id)), 21, Color(1.0, 0.9, 0.7)))
+	h.add_child(_label(str(d.get("name", id)), 21, Color(0.74, 0.67, 0.52)))
 	h.add_child(_label("Lv.%d" % lv, 14, UI.MUTED))
 	if is_active:
 		h.add_child(_label("出击中", 13, UI.GOOD))
@@ -535,7 +535,7 @@ func _build_crew_card(id: String) -> void:
 	var need: int = Growth.crew_need(lv)
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.12))
 	var h := _row(v)
-	h.add_child(_label(str(d.get("name", id)), 20, Color(1.0, 0.9, 0.7)))
+	h.add_child(_label(str(d.get("name", id)), 20, Color(0.74, 0.67, 0.52)))
 	h.add_child(_label("好感 Lv.%d" % lv, 13, UI.MUTED))
 	h.add_child(_pips(lv, 5))
 	h.add_child(_label("已满" if need <= 0 else "%d / %d" % [points, need], 12, UI.MUTED))
@@ -583,7 +583,7 @@ func _build_voyage() -> void:
 	var cur: Dictionary = _chapter(Growth.current_chapter())
 	var th := _row(top)
 	th.add_child(_label("当前章节", 13, UI.MUTED))
-	th.add_child(_label(str(cur.get("title", "—")), 18, Color(1.0, 0.9, 0.7)))
+	th.add_child(_label(str(cur.get("title", "—")), 18, Color(0.74, 0.67, 0.52)))
 	var ph := _row(top, 8)
 	ph.add_child(_label("进度", 12, UI.MUTED))
 	var bar := _pips(done, maxi(1, total), UI.ACCENT, maxi(1, total))
@@ -604,7 +604,7 @@ func _build_voyage() -> void:
 		var mark := _label("◆" if status != "未解锁" else "◇", 15, col)
 		mark.custom_minimum_size = Vector2(20, 0)
 		h.add_child(mark)
-		h.add_child(_label(str(ch.title), 17, Color(1.0, 0.9, 0.7) if status != "未解锁" else UI.MUTED))
+		h.add_child(_label(str(ch.title), 17, Color(0.74, 0.67, 0.52) if status != "未解锁" else UI.MUTED))
 		var sp := Control.new()
 		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(sp)

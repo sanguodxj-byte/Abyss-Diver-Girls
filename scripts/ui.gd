@@ -7,15 +7,15 @@ const PixelTheme = preload("res://scripts/pixel_theme.gd")
 const BG := Color(0.13, 0.13, 0.13, 0.92)
 const BG2 := Color(0.2, 0.2, 0.2, 0.95)
 const LINE := Color(1, 1, 1, 0.08)
-const ACCENT := Color(1.0, 0.69, 0.13)
-const ACCENT_DIM := Color(1.0, 0.69, 0.13, 0.4)
-const INFO := Color(1.0, 0.84, 0.5)
+const ACCENT := Color(0.72, 0.5, 0.09)
+const ACCENT_DIM := Color(0.72, 0.5, 0.09, 0.4)
+const INFO := Color(0.74, 0.6, 0.34)
 const TEXT := Color(0.93, 0.93, 0.92)
 const MUTED := Color(0.62, 0.62, 0.62)
 const GOOD := Color(0.4, 1.0, 0.6)
 const BAD := Color(1.0, 0.38, 0.32)
 const HP_C := Color(0.95, 0.35, 0.3)
-const EN_C := Color(1.0, 0.78, 0.25)
+const EN_C := Color(0.74, 0.56, 0.16)
 
 static var _theme: Theme
 
@@ -278,14 +278,14 @@ class Radar extends Control:
 		draw_circle(c, r, Color(0.035, 0.035, 0.04, 0.86))
 		_draw_terrain(c, r)
 		for k in [0.33, 0.66]:
-			draw_arc(c, r * k, 0, TAU, 48, Color(1.0, 0.72, 0.2, 0.12), 1.0, false)
-		draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(1.0, 0.72, 0.2, 0.08))
-		draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(1.0, 0.72, 0.2, 0.08))
+			draw_arc(c, r * k, 0, TAU, 48, Color(0.74, 0.53, 0.13, 0.12), 1.0, false)
+		draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(0.74, 0.53, 0.13, 0.08))
+		draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(0.74, 0.53, 0.13, 0.08))
 		# 扫描线
 		var t := Time.get_ticks_msec() * 0.0015
 		for i in 12:
 			var a := t - i * 0.04
-			draw_line(c, c + Vector2(cos(a), sin(a)) * r, Color(1.0, 0.72, 0.2, 0.12 * (1.0 - i / 12.0)), 2.0)
+			draw_line(c, c + Vector2(cos(a), sin(a)) * r, Color(0.74, 0.53, 0.13, 0.12 * (1.0 - i / 12.0)), 2.0)
 		var mp: Vector3 = raid.mech.global_position
 		# 容器
 		for b in raid.get_tree().get_nodes_in_group("lootboxes"):
@@ -293,7 +293,7 @@ class Radar extends Control:
 				continue
 			var p := _to_screen(b.global_position - mp, r)
 			if p.length() < r - 3:
-				draw_rect(Rect2(c + p - Vector2(2, 2), Vector2(4, 4)), Color(1.0, 0.85, 0.4, 0.75))
+				draw_rect(Rect2(c + p - Vector2(2, 2), Vector2(4, 4)), Color(0.74, 0.61, 0.28, 0.75))
 		# 虫巢
 		for n in raid.get_tree().get_nodes_in_group("nests"):
 			var p := _to_screen(n.global_position - mp, r)
@@ -329,16 +329,16 @@ class Radar extends Control:
 			var a := k * TAU / 36.0
 			var dd := Vector2(cos(a), sin(a))
 			var big := k % 3 == 0
-			draw_line(c + dd * (r - (3.0 if big else 1.0)), c + dd * (r + 4), Color(1.0, 0.69, 0.13) if k % 9 == 0 else Color(0.75, 0.76, 0.8, 0.7), 2.0 if big else 1.0)
-		draw_arc(c, r + 1, -0.9, -0.3, 12, Color(1.0, 0.69, 0.13), 3.0, false)
-		draw_arc(c, r + 1, 2.2, 2.8, 12, Color(1.0, 0.69, 0.13), 3.0, false)
-		draw_string(ThemeDB.fallback_font, c + Vector2(-4, -r + 14), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.72, 0.2, 0.6))
+			draw_line(c + dd * (r - (3.0 if big else 1.0)), c + dd * (r + 4), Color(0.72, 0.5, 0.09) if k % 9 == 0 else Color(0.75, 0.76, 0.8, 0.7), 2.0 if big else 1.0)
+		draw_arc(c, r + 1, -0.9, -0.3, 12, Color(0.72, 0.5, 0.09), 3.0, false)
+		draw_arc(c, r + 1, 2.2, 2.8, 12, Color(0.72, 0.5, 0.09), 3.0, false)
+		draw_string(ThemeDB.fallback_font, c + Vector2(-4, -r + 14), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.74, 0.53, 0.13, 0.6))
 
 
 ## 大地图（M 打开）：整张地形图 + 区域名 + 坐标网格 + 撤离点 / 运输机 / 虫巢 / 自己
 class BigMap extends Control:
 	var raid
-	const AMBER := Color(1.0, 0.69, 0.13)
+	const AMBER := Color(0.72, 0.5, 0.09)
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -435,7 +435,7 @@ class Crosshair extends Control:
 	var bloom := 0.0
 	var spin := 0.0
 	var _init_done := false
-	const AMBER := Color(1.0, 0.69, 0.13)
+	const AMBER := Color(0.72, 0.5, 0.09)
 	const SHADOW := Color(0, 0, 0, 0.55)
 
 	func _init() -> void:
@@ -500,7 +500,7 @@ class Crosshair extends Control:
 			for i in n:
 				if i % 2 == 0:
 					draw_line(p + off * (float(i) / n), p + off * (float(i + 1) / n), Color(AMBER.r, AMBER.g, AMBER.b, 0.55), 1.5, false)
-		var pc := AMBER if not aligned else Color(1.0, 0.85, 0.45)
+		var pc := AMBER if not aligned else Color(0.74, 0.61, 0.32)
 		draw_arc(pip, 5.5, 0, TAU, 20, SHADOW, 4.0, false)
 		draw_arc(pip, 5.5, 0, TAU, 20, pc, 2.0, false)
 		if aligned:
