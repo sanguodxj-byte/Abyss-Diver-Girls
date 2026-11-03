@@ -68,6 +68,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	fx = Node3D.new()
 	add_child(fx)
 	map_id = GameData.map_id
+	var t_build := Time.get_ticks_usec()
 	_load_map()
 	_build_environment()
 	_build_ground()
@@ -85,6 +86,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_spawn_extracts(drop)
 	_spawn_initial_bugs(drop)
 	_bake_static()
+	print("[raid] map build %s: %d ms, world nodes %d, blocks %d" % [map_id, (Time.get_ticks_usec() - t_build) / 1000, _count_nodes(world), blocks.size()])
 
 	mech = MechScript.new()
 	mech.raid = self
@@ -3457,6 +3459,15 @@ func _bake_static() -> void:
 		world.add_child(mmi)
 		removed += g.items.size()
 	print("[raid] baked %d static meshes into multimeshes" % removed)
+
+
+## 统计子树节点数（地图生成性能日志用；queue_free 待删的不算）
+func _count_nodes(n: Node) -> int:
+	var c := 1
+	for ch in n.get_children():
+		if not ch.is_queued_for_deletion():
+			c += _count_nodes(ch)
+	return c
 
 
 func _apply_style() -> void:
