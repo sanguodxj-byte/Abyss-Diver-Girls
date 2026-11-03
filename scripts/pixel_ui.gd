@@ -4,6 +4,7 @@ extends Node
 ## - 任何控件上的字号覆盖在入树时统一吸附到 12 / 24 / 36
 ## - 关闭全局字体抗锯齿，保证硬边
 
+const PixelTheme = preload("res://scripts/pixel_theme.gd")
 const FONT_PATH := "res://assets/fonts/fusion-pixel-12px-zh_hans.ttf"
 const BASE := 12
 const FONT_KEYS := ["font_size", "normal_font_size", "bold_font_size", "italics_font_size", "mono_font_size", "title_font_size"]
@@ -35,6 +36,8 @@ func _enter_tree() -> void:
 	var f := pixel_font()
 	ThemeDB.fallback_font = f
 	ThemeDB.fallback_font_size = BASE
+	# 全局主题挂到根窗口，菜单、机库、HUD、设置页一起继承像素控件样式
+	get_tree().root.theme = PixelTheme.build()
 	get_tree().node_added.connect(_on_node_added)
 
 

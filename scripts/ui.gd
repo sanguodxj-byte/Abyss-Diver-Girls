@@ -2,6 +2,8 @@ extends RefCounted
 ## 统一的像素风科幻工业 UI 主题与小部件（像素字体 + 2 倍像素格贴图，见 scripts/pixel_ui.gd、tools/pixelize_ui.py）。
 ## 玩家方色板：金属黑灰 + 亮橙黄（铁血紫只给敌方）。所有控件使用 assets/ui 下的贴图九宫格，不保留引擎默认样式。
 
+const PixelTheme = preload("res://scripts/pixel_theme.gd")
+
 const BG := Color(0.13, 0.13, 0.13, 0.92)
 const BG2 := Color(0.2, 0.2, 0.2, 0.95)
 const LINE := Color(1, 1, 1, 0.08)
@@ -52,72 +54,8 @@ static func box(bg := BG, _border := LINE, _bw := 1, _top := 0, _top_c := ACCENT
 
 
 static func theme() -> Theme:
-	if _theme:
-		return _theme
-	var t := Theme.new()
-	t.default_font = PixelUI.pixel_font()
-	t.default_font_size = 12
-	t.set_stylebox("panel", "PanelContainer", tex9("panel9", 14, 12))
-	t.set_stylebox("panel", "Panel", tex9("panel9", 14, 12))
-	t.set_color("font_color", "Label", TEXT)
-	t.set_color("font_outline_color", "Label", Color(0, 0, 0, 0.85))
-	t.set_constant("outline_size", "Label", 0)
-	t.set_constant("line_spacing", "Label", 2)
-	for k in [["normal", "btn_n"], ["hover", "btn_h"], ["pressed", "btn_p"], ["disabled", "btn_d"], ["focus", "btn_h"]]:
-		t.set_stylebox(k[0], "Button", tex9(k[1], 10, 12))
-	t.set_stylebox("focus", "Button", StyleBoxEmpty.new())
-	t.set_color("font_color", "Button", TEXT)
-	t.set_color("font_hover_color", "Button", Color(1, 0.9, 0.62))
-	t.set_color("font_pressed_color", "Button", ACCENT.lightened(0.3))
-	t.set_color("font_focus_color", "Button", TEXT)
-	t.set_color("font_disabled_color", "Button", Color(0.45, 0.45, 0.48))
-	t.set_stylebox("panel", "ItemList", tex9("list9", 8, 6))
-	t.set_stylebox("focus", "ItemList", StyleBoxEmpty.new())
-	t.set_stylebox("selected", "ItemList", tex9("sel9", 6, 4))
-	t.set_stylebox("selected_focus", "ItemList", tex9("sel9", 6, 4))
-	t.set_stylebox("hovered", "ItemList", tex9("hover9", 6, 4))
-	t.set_stylebox("hovered_selected", "ItemList", tex9("sel9", 6, 4))
-	t.set_stylebox("hovered_selected_focus", "ItemList", tex9("sel9", 6, 4))
-	t.set_stylebox("cursor", "ItemList", StyleBoxEmpty.new())
-	t.set_stylebox("cursor_unfocused", "ItemList", StyleBoxEmpty.new())
-	t.set_color("font_color", "ItemList", TEXT)
-	t.set_color("font_selected_color", "ItemList", Color(1, 0.94, 0.78))
-	t.set_color("font_hovered_color", "ItemList", Color(1, 0.94, 0.78))
-	t.set_color("guide_color", "ItemList", Color(1, 1, 1, 0.04))
-	t.set_constant("v_separation", "ItemList", 6)
-	t.set_constant("h_separation", "ItemList", 8)
-	t.set_constant("icon_margin", "ItemList", 8)
-	for sbn in ["VScrollBar", "HScrollBar"]:
-		t.set_stylebox("scroll", sbn, tex9("scroll9", 4, 3))
-		t.set_stylebox("scroll_focus", sbn, tex9("scroll9", 4, 3))
-		t.set_stylebox("grabber", sbn, tex9("grab9", 4, 3))
-		t.set_stylebox("grabber_highlight", sbn, tex9("grab9_h", 4, 3))
-		t.set_stylebox("grabber_pressed", sbn, tex9("grab9_h", 4, 3))
-	t.set_stylebox("panel", "PopupMenu", tex9("panel9", 14, 8))
-	t.set_stylebox("hover", "PopupMenu", tex9("sel9", 6, 4))
-	t.set_color("font_color", "PopupMenu", TEXT)
-	t.set_color("font_hover_color", "PopupMenu", Color(1, 0.94, 0.78))
-	t.set_constant("v_separation", "PopupMenu", 8)
-	t.set_stylebox("panel", "TabContainer", tex9("panel9", 14, 10))
-	t.set_stylebox("tab_selected", "TabContainer", tex9("btn_p", 10, 10))
-	t.set_stylebox("tab_unselected", "TabContainer", tex9("btn_n", 10, 10))
-	t.set_stylebox("tab_hovered", "TabContainer", tex9("btn_h", 10, 10))
-	t.set_stylebox("tab_focus", "TabContainer", StyleBoxEmpty.new())
-	t.set_color("font_selected_color", "TabContainer", ACCENT.lightened(0.2))
-	t.set_color("font_unselected_color", "TabContainer", MUTED)
-	t.set_color("font_hovered_color", "TabContainer", TEXT)
-	t.set_font_size("font_size", "TabContainer", 12)
-	t.set_stylebox("background", "ProgressBar", tex9("bar_bg9", 4, 0))
-	t.set_stylebox("fill", "ProgressBar", tex9("bar_fill9", 4, 0))
-	t.set_color("font_color", "ProgressBar", TEXT)
-	t.set_stylebox("panel", "TooltipPanel", tex9("panel9", 14, 8))
-	t.set_color("font_color", "TooltipLabel", TEXT)
-	for le in ["LineEdit", "SpinBox"]:
-		t.set_stylebox("normal", le, tex9("list9", 8, 6))
-		t.set_stylebox("focus", le, tex9("sel9", 6, 6))
-	t.set_stylebox("panel", "PanelContainer", tex9("panel9", 14, 12))
-	_theme = t
-	return t
+	# 所有界面统一走像素主题（scripts\pixel_theme.gd）
+	return PixelTheme.build()
 
 
 # ---------------------------------------------------------------- 小部件

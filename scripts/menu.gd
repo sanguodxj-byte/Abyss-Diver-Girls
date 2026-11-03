@@ -582,17 +582,62 @@ func _build_settings() -> void:
 	var d := _dialog("游戏设置", "// 03")
 	settings_panel = d[0]
 	var v: VBoxContainer = d[1]
+	settings_panel.custom_minimum_size = Vector2(640, 430)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(row)
+
+	# 左：分页导航
+	var nav := VBoxContainer.new()
+	nav.add_theme_constant_override("separation", 4)
+	nav.custom_minimum_size = Vector2(108, 0)
+	row.add_child(nav)
+
+	# 右：页面内容
+	var body := PanelContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(body)
+	var pages := {}
+	for key in ["画面", "声音", "其他"]:
+		var pg := VBoxContainer.new()
+		pg.add_theme_constant_override("separation", 8)
+		pg.visible = false
+		body.add_child(pg)
+		pages[key] = pg
+
+	var nav_btns := {}
+	var show_page := func(key: String):
+		for k in pages:
+			pages[k].visible = k == key
+		for k in nav_btns:
+			nav_btns[k].add_theme_color_override("font_color", UI.ACCENT if k == key else UI.TEXT)
+	for key in ["画面", "声音", "其他"]:
+		var b := Button.new()
+		b.text = key
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.custom_minimum_size = Vector2(108, 32)
+		b.focus_mode = Control.FOCUS_NONE
+		b.pressed.connect(func(): show_page.call(key))
+		nav.add_child(b)
+		nav_btns[key] = b
+	show_page.call("画面")
+
+	# ---- 画面 ----
+	var pg: VBoxContainer = pages["画面"]
 	var fs := CheckButton.new()
 	fs.text = "全屏"
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 	fs.toggled.connect(func(on): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED))
-	v.add_child(fs)
+	pg.add_child(fs)
 	var vs := CheckButton.new()
 	vs.text = "垂直同步"
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
-	v.add_child(vs)
-	v.add_child(_field_label("画质"))
+	pg.add_child(vs)
+	pg.add_child(_field_label("画质"))
 	var q := OptionButton.new()
 	for i in GameData.QUALITY_NAMES.size():
 		q.add_item(GameData.QUALITY_NAMES[i], i)
@@ -601,8 +646,8 @@ func _build_settings() -> void:
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
 		GameData.save_game())
-	v.add_child(q)
-	v.add_child(_field_label("画面风格"))
+	pg.add_child(q)
+	pg.add_child(_field_label("画面风格"))
 	var st := OptionButton.new()
 	st.add_item("写实光影", 0)
 	st.add_item("三渲二（卡通描边）", 1)
@@ -612,8 +657,24 @@ func _build_settings() -> void:
 		GameData.save_game()
 		if toon:
 			toon.set_enabled(i == 1))
-	v.add_child(st)
-	v.add_child(_field_label("标题语言"))
+	pg.add_child(st)
+
+	# ---- 声音 ----
+	pg = pages["声音"]
+	for bus in [["Master", "主音量"], ["Music", "音乐"], ["SFX", "音效"], ["Voice", "语音"]]:
+		pg.add_child(_field_label(bus[1]))
+		var vol := HSlider.new()
+		vol.min_value = 0
+		vol.max_value = 1
+		vol.step = 0.05
+		vol.value = Audio.get_volume(bus[0])
+		vol.custom_minimum_size = Vector2(0, 22)
+		vol.value_changed.connect(func(x): Audio.set_volume(bus[0], x))
+		pg.add_child(vol)
+
+	# ---- 其他 ----
+	pg = pages["其他"]
+	pg.add_child(_field_label("标题语言"))
 	var tl := OptionButton.new()
 	tl.add_item("中文", 0)
 	tl.add_item("English", 1)
@@ -625,16 +686,8 @@ func _build_settings() -> void:
 		cf.set_value("menu", "title_lang", title_lang)
 		cf.save(MENU_CFG)
 		_apply_title_lang())
-	v.add_child(tl)
-	for bus in [["Master", "主音量"], ["Music", "音乐"], ["SFX", "音效"], ["Voice", "语音"]]:
-		v.add_child(_field_label(bus[1]))
-		var vol := HSlider.new()
-		vol.min_value = 0
-		vol.max_value = 1
-		vol.step = 0.05
-		vol.value = Audio.get_volume(bus[0])
-		vol.value_changed.connect(func(x): Audio.set_volume(bus[0], x))
-		v.add_child(vol)
+	pg.add_child(tl)
+
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)
