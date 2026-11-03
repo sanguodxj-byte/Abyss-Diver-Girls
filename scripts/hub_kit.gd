@@ -842,6 +842,59 @@ class IconCell extends Control:
 
 
 ## 底部主导航按钮：等宽，像素图标 + 中文标题 / 小号大写英文；四态贴图 nav9_n（常态）/ nav9_h（悬停）/ nav9_p（按下瞬间）/ nav9_on（当前页）
+## 底部居中的大圆钮：像素化圆盘 + 亮金环，按下与选中时内圈点亮
+class DeployButton extends Button:
+	const RING := Color(0.95, 0.66, 0.13)
+	const RING_HOT := Color(1.0, 0.82, 0.38)
+	const FACE := Color(0.09, 0.09, 0.1)
+	const FACE_ON := Color(0.16, 0.14, 0.09)
+	var _hot := false
+
+	func _init(cn := "出击") -> void:
+		text = cn
+		toggle_mode = true
+		focus_mode = Control.FOCUS_NONE
+		custom_minimum_size = Vector2(104, 104)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+			add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		mouse_entered.connect(func(): _hot = true; queue_redraw())
+		mouse_exited.connect(func(): _hot = false; queue_redraw())
+		toggled.connect(func(_on): queue_redraw())
+		button_down.connect(func(): queue_redraw())
+		button_up.connect(func(): queue_redraw())
+
+	func _disc(c: Vector2, r: float, col: Color) -> void:
+		var y := -r
+		while y < r:
+			var w: float = sqrt(maxf(r * r - y * y, 0.0))
+			w = floor(w / 2.0) * 2.0
+			draw_rect(Rect2(c.x - w, c.y + y, w * 2.0, 2.0), col)
+			y += 2.0
+
+	func _draw() -> void:
+		var c := size * 0.5
+		var r: float = minf(size.x, size.y) * 0.5 - 2.0
+		var lit := _hot or button_pressed or button_down
+		_disc(c, r, RING_HOT if lit else RING)
+		_disc(c, r - 3.0, Color(0.04, 0.04, 0.05))
+		_disc(c, r - 5.0, FACE_ON if button_pressed else FACE)
+		# 刻度：环上四个方向的短齿
+		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
+			var d := Vector2(cos(a), sin(a))
+			var t := c + d * (r - 1.5)
+			draw_rect(Rect2(t.x - 3, t.y - 3, 6, 6), Color(0.04, 0.04, 0.05))
+		var f = load("res://assets/fonts/fusion-pixel-12px-zh_hans.ttf")
+		var fs := 24
+		var tw: float = f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var col := RING_HOT if lit else Color(0.95, 0.93, 0.86)
+		draw_string(f, Vector2(c.x - tw * 0.5, c.y + 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		var en := "SORTIE"
+		var ew: float = f.get_string_size(en, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		draw_string(f, Vector2(c.x - ew * 0.5, c.y + 26), en, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.7, 0.66, 0.55))
+
+
 class NavButton extends Button:
 	var en := ""
 	var cn_lbl: Label

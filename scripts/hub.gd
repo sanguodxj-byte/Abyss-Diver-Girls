@@ -328,7 +328,7 @@ func _ready() -> void:
 	var content := Control.new()
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.offset_top = K.TOP_H
-	content.offset_bottom = -K.BOT_H
+	content.offset_bottom = -K.BOT_H - 64
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
 	# 舱壁像素背景（各页签微差：交易 = 货舱集装箱、降落 = 作战室地图桌、技能 = 工坊、仓库 = 货架、图鉴 = 档案室）；
@@ -346,7 +346,6 @@ func _ready() -> void:
 	_build_deploy_view(content)
 	_build_skills_view(content)
 	_build_stash_view(content)
-	_build_codex_view(content)
 
 	_build_top_bar()
 	_build_bottom_bar()
@@ -486,9 +485,6 @@ func _build_top_bar() -> void:
 		av.mouse_filter = Control.MOUSE_FILTER_STOP
 		av.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		av.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		av.gui_input.connect(func(e: InputEvent):
-			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-				_open_codex_char(cid))
 		crew_avatars[cid] = av
 		th.add_child(av)
 		if cid == Growth.PROTAGONIST:
@@ -564,14 +560,39 @@ func _build_bottom_bar() -> void:
 	var h := K.hbox(4)
 	bar.add_child(h)
 	var grp := ButtonGroup.new()
-	for td in [["maintenance", "整备", "LOADOUT"], ["trade", "交易", "TRADERS"], ["deploy", "降落", "DEPLOY"],
-			["skills", "技能", "HIDEOUT"], ["stash", "仓库", "STASH"], ["codex", "图鉴", "HANDBOOK"]]:
+	# 左二 / 中间出击圆钮 / 右二，两组等宽展开，整体左右对称
+	var left := K.hbox(4)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.alignment = BoxContainer.ALIGNMENT_END
+	h.add_child(left)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(136, 0)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(gap)
+	var right := K.hbox(4)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.alignment = BoxContainer.ALIGNMENT_BEGIN
+	h.add_child(right)
+	for td in [["maintenance", "整备", "LOADOUT", left], ["trade", "交易", "TRADERS", left],
+			["skills", "技能", "HIDEOUT", right], ["stash", "仓库", "STASH", right]]:
 		var key: String = td[0]
 		var btn = K.NavButton.new(td[1], td[2], "nav_" + key)
 		btn.button_group = grp
 		btn.pressed.connect(func(): _switch_tab(key))
 		nav_buttons[key] = btn
-		h.add_child(btn)
+		td[3].add_child(btn)
+
+	# 圆形出击钮：压在底栏中线上，直径 104，向上探出底栏
+	var dep = K.DeployButton.new("出击")
+	dep.button_group = grp
+	dep.pressed.connect(func(): _switch_tab("deploy"))
+	nav_buttons["deploy"] = dep
+	dep.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	dep.offset_left = -52
+	dep.offset_right = 52
+	dep.offset_top = -104
+	dep.offset_bottom = 0
+	add_child(dep)
 
 
 func _switch_tab(tab_key: String) -> void:
