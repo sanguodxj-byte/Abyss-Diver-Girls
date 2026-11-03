@@ -2458,6 +2458,9 @@ func refresh() -> void:
 		if who == "":
 			who = str((Growth.tables().get("WHO_CHAR", {}) as Dictionary).get(str(rq.who), "lina"))
 		request_avatar.set_char(who, 96)
+	elif request_lbl:
+		request_lbl.text = "—"
+		request_reward_lbl.text = ""
 
 	if codex_tree and codex_items.is_empty():
 		_populate_codex_list()

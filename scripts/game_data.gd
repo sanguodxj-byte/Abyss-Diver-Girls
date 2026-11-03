@@ -2,6 +2,7 @@ extends Node
 ## 全局数据：物品库、机甲模块库、仓库、装配、存档；启动时把 data\ext 下各团队的扩展数据并入核心表。
 
 const MapsData = preload("res://scripts/maps.gd")
+const Growth = preload("res://scripts/progression/growth.gd")
 const AudioReg = preload("res://scripts/audio/audio_registry.gd")
 
 const SAVE_FILE := "salvage_save.json"
@@ -79,6 +80,51 @@ var REQUEST_POOL := [
 	{"id": "toy", "count": 1, "reward": 400, "who": "艇上的孩子们"},
 	{"id": "bug_crystal", "count": 1, "reward": 900, "who": "轮机长"},
 ]
+
+## 商人任务线：按顺序逐条推进，完成当前条目后同一商人的下一条接上；全部走完再换下一位商人
+const QUEST_ORDER := ["ajin", "xiaoman", "shiori", "karasu", "nihong", "gin"]
+const QUEST_NAMES := {"ajin": "阿堇", "xiaoman": "小满", "shiori": "诗织", "karasu": "鸦", "nihong": "霓虹", "gin": "银"}
+const QUEST_CHAINS := {
+	"ajin": [
+		{"id": "can_food", "count": 3, "reward": 300, "aff": 1},
+		{"id": "biscuit", "count": 4, "reward": 380, "aff": 1},
+		{"id": "water_tab", "count": 3, "reward": 450, "aff": 2},
+		{"id": "coffee", "count": 1, "reward": 620, "aff": 2},
+		{"id": "can_food", "count": 6, "reward": 820, "aff": 3},
+	],
+	"xiaoman": [
+		{"id": "wire", "count": 4, "reward": 350, "aff": 1},
+		{"id": "bolts", "count": 8, "reward": 430, "aff": 1},
+		{"id": "arm_mg", "count": 1, "reward": 700, "aff": 2},
+		{"id": "arm_shotgun", "count": 1, "reward": 900, "aff": 3},
+	],
+	"shiori": [
+		{"id": "chitin", "count": 5, "reward": 400, "aff": 1},
+		{"id": "bug_crystal", "count": 2, "reward": 620, "aff": 2},
+		{"id": "coolant_pack", "count": 1, "reward": 720, "aff": 2},
+		{"id": "bug_crystal", "count": 4, "reward": 1150, "aff": 3},
+	],
+	"karasu": [
+		{"id": "bolts", "count": 10, "reward": 460, "aff": 1},
+		{"id": "wire", "count": 6, "reward": 540, "aff": 1},
+		{"id": "back_shield", "count": 1, "reward": 1000, "aff": 2},
+		{"id": "core_heavy", "count": 1, "reward": 1650, "aff": 3},
+	],
+	"nihong": [
+		{"id": "circuit", "count": 3, "reward": 430, "aff": 1},
+		{"id": "hdd", "count": 1, "reward": 660, "aff": 2},
+		{"id": "sonic_decoy", "count": 1, "reward": 720, "aff": 2},
+		{"id": "circuit", "count": 6, "reward": 980, "aff": 3},
+	],
+	"gin": [
+		{"id": "credit_s", "count": 2, "reward": 520, "aff": 1},
+		{"id": "gold", "count": 1, "reward": 900, "aff": 2},
+		{"id": "credit_l", "count": 2, "reward": 1250, "aff": 2},
+		{"id": "gen_crystal", "count": 1, "reward": 1900, "aff": 3},
+	],
+}
+## 各商人已完成的任务条数
+var quests := {}
 
 var money := 1500
 var stash: Array = []
@@ -357,8 +403,21 @@ func map_data(id: String) -> Dictionary:
 
 
 # ---------- 后勤委托 ----------
+func current_quest() -> Dictionary:
+	for m in QUEST_ORDER:
+		var i := int(quests.get(m, 0))
+		var chain: Array = QUEST_CHAINS.get(m, [])
+		if i < chain.size():
+			var q: Dictionary = chain[i].duplicate()
+			q["who"] = QUEST_NAMES.get(m, m)
+			q["merchant"] = m
+			q["char"] = m
+			return q
+	return {}
+
+
 func new_request() -> void:
-	request = REQUEST_POOL[randi() % REQUEST_POOL.size()].duplicate()
+	request = current_quest()
 
 func count_in_stash(id: String) -> int:
 	return stash.count(id)
@@ -370,6 +429,11 @@ func fulfill_request() -> bool:
 		stash.erase(request.id)
 	money += int(request.reward)
 	var done := request.duplicate()
+	var m := str(request.get("merchant", ""))
+	if m != "":
+		quests[m] = int(quests.get(m, 0)) + 1
+		if int(done.get("aff", 0)) > 0:
+			Growth.grant_affinity(m, int(done.aff))
 	new_request()
 	Events.request_fulfilled.emit(done)
 	save_game()
@@ -409,7 +473,7 @@ func save_game() -> void:
 	if f == null:
 		return
 	f.store_string(JSON.stringify({"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
-		"raids": raids, "extracts_ok": extracts_ok, "request": request, "quality": quality, "render_style": render_style, "map_id": map_id,
+		"raids": raids, "extracts_ok": extracts_ok, "request": request, "quests": quests, "quality": quality, "render_style": render_style, "map_id": map_id,
 		"seen_enemies": seen_enemies, "sections": sec}))
 
 func load_game() -> bool:
@@ -421,6 +485,7 @@ func load_game() -> bool:
 	var d = JSON.parse_string(f.get_as_text())
 	if typeof(d) != TYPE_DICTIONARY:
 		return false
+	quests = Dictionary(d.get("quests", {}))
 	money = int(d.get("money", 1500))
 	stash = Array(d.get("stash", []))
 	cargo = Array(d.get("cargo", []))
@@ -431,7 +496,7 @@ func load_game() -> bool:
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
 	request = Dictionary(d.get("request", {}))
-	if request.is_empty():
+	if request.is_empty() or not d.has("quests"):
 		new_request()
 	seen_enemies = Array(d.get("seen_enemies", []))
 	var sec = d.get("sections", {})
