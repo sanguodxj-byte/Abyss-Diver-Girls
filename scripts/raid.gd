@@ -1383,7 +1383,15 @@ func rebuild_nav() -> void:
 ## 能否站在 p（半径 r）：有导航网格时按网格（真实碰撞体），否则按建筑占地矩形
 func ai_free(p: Vector3, r: float, is_mech := false) -> bool:
 	if nav != null:
-		return nav.is_free(p, is_mech)
+		if not nav.is_free(p, is_mech):
+			return false
+		# 比网格通行间隙更胖的单位：再查四个方向上多出来的那一截，免得直接平移时半个身子嵌进墙里
+		var extra: float = r - (nav.R_MECH if is_mech else nav.R_BUG)
+		if extra > 0.05:
+			for o in [Vector3(extra, 0, 0), Vector3(-extra, 0, 0), Vector3(0, 0, extra), Vector3(0, 0, -extra)]:
+				if not nav.is_free(p + o, is_mech):
+					return false
+		return true
 	return patrol_free(p, r)
 
 

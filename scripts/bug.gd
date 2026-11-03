@@ -1351,6 +1351,10 @@ func _lod_dt(delta: float) -> float:
 ## 一次 move_and_slide 走完 dt：低频更新时按比例放大速度，碰撞照常结算。
 ## 画面外（LOD 中 / 远）闲逛巡逻的虫不跑物理：直接平移，只用建筑占地格子挡一下（撞上就换路点），省掉绝大部分 move_and_slide
 func _slide(dt: float) -> void:
+	# 保险：被挤穿地面（重叠的碰撞体解穿透时往下推）就拉回地表，不让虫子在地下一直掉
+	if global_position.y < -4.0:
+		global_position.y = 0.5
+		velocity.y = 0.0
 	if lod > 0 and state == "idle" and act == "" and raid and raid.has_method("ai_free"):
 		var step := Vector3(velocity.x, 0.0, velocity.z) * dt
 		if step.length_squared() < 0.0001:
@@ -1561,7 +1565,8 @@ func _nav_dir(goal: Vector3, delta: float) -> Vector3:
 		var w := goal - global_position
 		w.y = 0.0
 		return w.normalized() if w.length_squared() > 0.0001 else Vector3.ZERO
-	return nav_agent.steer(raid.nav, global_position, goal, delta, false, _nav_period())
+	# 体型大的虫（半径 > 1 米）走机甲那张间隙更宽的网格，免得被引进挤不过去的窄缝（代价：也会绕开只挡机甲的河岸）
+	return nav_agent.steer(raid.nav, global_position, goal, delta, float(data.radius) > 1.0, _nav_period())
 
 
 func _uses_nav() -> bool:
