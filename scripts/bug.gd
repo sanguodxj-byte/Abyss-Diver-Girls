@@ -75,15 +75,12 @@ func setup(k: String, r, tgt) -> void:
 	strafe = 1.0 if randf() < 0.5 else -1.0
 	anim_t = randf() * 10.0
 	_build_visual()
+	# 静态零件按材质合批：一只虫近百个网格压到十几个，动画部件（腿/颚/镰/翼等）保持独立
+	_batch_static()
 	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影
-	# 小零件单独记账：中远距离直接隐藏，省下大量零碎绘制
 	for mi in parts:
 		if is_instance_valid(mi):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if mi.mesh != null:
-				var ext: Vector3 = mi.mesh.get_aabb().size * mi.scale
-				if maxf(ext.x, maxf(ext.y, ext.z)) < 0.2:
-					detail.append(mi)
 
 
 ## 两点之间放一段锥形肢节（圆柱 UV：v 沿长度，贴图的关节环/刚毛会顺着肢节走）
@@ -327,6 +324,126 @@ static func _ball() -> SphereMesh:
 	s.radial_segments = 24
 	_sm["ball"] = s
 	return s
+
+
+## 静态零件合批：同材质的零件并成一个网格，动画部件所在的子树整段跳过
+func _batch_static() -> void:
+	var skip := {}
+	var roots: Array = []
+	# 动画部件集合分散在基类与 enemy 子类，按属性名动态取，缺属性返回 null
+	for prop in ["legs", "jaws", "scythes", "wings", "plates", "crystals", "sacs", "crown", "turret"]:
+		var v = get(prop)
+		if v is Array:
+			for n in v:
+				if is_instance_valid(n) and n is Node:
+					roots.append(n)
+		elif v is Node:
+			roots.append(v)
+	for e in spinners:
+		roots.append(e[0] if e is Array else e)
+	for prop in ["sac", "gun", "gun_tip", "gun_glow", "abdomen", "core_mi"]:
+		var v2 = get(prop)
+		if is_instance_valid(v2) and v2 is Node:
+			roots.append(v2)
+	for n in roots:
+		skip[n.get_instance_id()] = true
+	for c in visual.get_children():
+		if c is Node3D:
+			_batch_container(c, skip)
+	# 动画根节点自身挂的网格只随根节点整体运动，可以直接合批；再往下的子节点不动
+	for n in roots:
+		if is_instance_valid(n) and n is Node3D:
+			_batch_direct(n)
+
+
+func _batch_direct(root: Node3D) -> void:
+	var buckets := {}
+	for ch in root.get_children():
+		if ch is MeshInstance3D:
+			var mi: MeshInstance3D = ch
+			if mi.mesh == null or mi.material_override == null:
+				continue
+			var key := str(mi.material_override.get_instance_id())
+			if not buckets.has(key):
+				buckets[key] = {"mat": mi.material_override, "list": []}
+			buckets[key]["list"].append(mi)
+	for key in buckets:
+		var b: Dictionary = buckets[key]
+		var list: Array = b["list"]
+		if list.size() < 2:
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for mi in list:
+			for si in mi.mesh.get_surface_count():
+				st.append_from(mi.mesh, si, mi.transform)
+		st.index()
+		var merged := MeshInstance3D.new()
+		merged.mesh = st.commit()
+		merged.material_override = b["mat"]
+		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(merged)
+		parts.append(merged)
+		for mi in list:
+			parts.erase(mi)
+			mi.queue_free()
+
+
+func _batch_container(top: Node3D, skip: Dictionary) -> void:
+	var buckets := {}
+	var singles: Array = []
+	var stack: Array = [top]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and n != top:
+			var mi: MeshInstance3D = n
+			if mi.mesh != null and mi.material_override != null and is_instance_valid(mi):
+				var ext: Vector3 = mi.mesh.get_aabb().size * mi.get_global_transform().basis.get_scale()
+				var small: bool = maxf(ext.x, maxf(ext.y, ext.z)) < 0.2
+				var key := "%d%s" % [mi.material_override.get_instance_id(), "|d" if small else ""]
+				if not buckets.has(key):
+					buckets[key] = {"mat": mi.material_override, "small": small, "list": []}
+				buckets[key]["list"].append(mi)
+			continue
+		if skip.has(n.get_instance_id()):
+			continue
+		for ch in n.get_children():
+			stack.append(ch)
+	for key in buckets:
+		var b: Dictionary = buckets[key]
+		var list: Array = b["list"]
+		if list.size() < 2:
+			singles.append(list[0])
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for mi in list:
+			var xf := _rel_xf(mi, top)
+			for si in mi.mesh.get_surface_count():
+				st.append_from(mi.mesh, si, xf)
+		st.index()
+		var merged := MeshInstance3D.new()
+		merged.mesh = st.commit()
+		merged.material_override = b["mat"]
+		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		top.add_child(merged)
+		parts.append(merged)
+		if b["small"]:
+			detail.append(merged)
+			merged.visible = _detail_on
+		for mi in list:
+			parts.erase(mi)
+			mi.queue_free()
+
+
+func _rel_xf(n: Node3D, top: Node3D) -> Transform3D:
+	var xf := Transform3D.IDENTITY
+	var cur: Node = n
+	while cur != null and cur != top:
+		if cur is Node3D:
+			xf = (cur as Node3D).transform * xf
+		cur = cur.get_parent()
+	return xf
 
 
 func _p(parent: Node3D, mesh: Mesh, m: Material, pos: Vector3, rot := Vector3.ZERO, scl := Vector3.ONE, shadow := true) -> MeshInstance3D:
