@@ -857,24 +857,32 @@ func _build_maintenance_view(parent: Control) -> void:
 		stat_rows[k[0]] = [bar, val]
 
 
-# ============================================================ 2. 交易视图：商人卡片横排 → 货架 / 仓库 / 交易确认栏
+# ============================================================ 2. 交易视图（单页：商人条 / 货架 / 仓库 / 成交栏 / 委托 / 账户）
 func _build_trade_view(parent: Control) -> void:
 	var v_t := _view(parent, "trade")
+	trade_deal_root = Control.new()
+	trade_deal_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_at(trade_deal_root, v_t, FILL, [0, 0, 0, 0])
+	# 单页布局：两个旧根指向同一节点，切换逻辑保持可用
+	trade_list_root = trade_deal_root
 
-	# ---- 商人列表
-	trade_list_root = Control.new()
-	trade_list_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_at(trade_list_root, v_t, FILL, [0, 0, 0, 0])
-	var tp := _tpanel(trade_list_root, "商人", "Traders", [0.0, 0.0, 1.0, 0.0], [K.M, K.GAP, -K.M, K.GAP + 340])
-	var row := K.hbox(8)
+	const DEAL_H := 70.0
+	const BOT_H := 140.0
+	const TOP_H2 := 104.0
+
+	# ---- 商人条：头像 + 名称 + 身份 + 好感 + 供货
+	var hdr := K.frame(6)
+	_at(hdr, trade_deal_root, [0.0, 0.0, 1.0, 0.0], [K.M, K.GAP, -K.M, K.GAP + TOP_H2])
+	var row := K.hbox(6)
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tp[1].add_child(row)
+	hdr.add_child(row)
 	for m_id in K.MERCHANT_IDS:
 		var md: Dictionary = MERCHANTS[m_id]
 		var b := Button.new()
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		b.focus_mode = Control.FOCUS_NONE
 		b.add_theme_stylebox_override("normal", K.px9("merchant9", 12, 12, 6))
 		b.add_theme_stylebox_override("hover", K.px9("merchant9_h", 12, 12, 6))
 		b.add_theme_stylebox_override("pressed", K.px9("merchant9_on", 12, 12, 6))
@@ -882,141 +890,46 @@ func _build_trade_view(parent: Control) -> void:
 		b.pressed.connect(func(): _select_merchant(m_id))
 		row.add_child(b)
 		merchant_cards[m_id] = b
+		merchant_buttons[m_id] = b
 		var mc := MarginContainer.new()
 		mc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		for kk in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-			mc.add_theme_constant_override(kk, 8)
+			mc.add_theme_constant_override(kk, 6)
 		b.add_child(mc)
-		var cv := K.vbox(4)
-		cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mc.add_child(cv)
-		var av = K.Avatar.new(128, m_id, "n")
-		av.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		cv.add_child(av)
-		var plate := PanelContainer.new()
-		plate.add_theme_stylebox_override("panel", K.px9("nameplate9", 10, 6, 14, 0))
-		plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cv.add_child(plate)
-		var nl := UI.label(md.name, 24, Color(0.1, 0.065, 0.02))
-		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		plate.add_child(nl)
-		var rl := K.wrap(md.role, K.CREAM_DIM)
-		rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		rl.custom_minimum_size = Vector2(150, 30)
-		cv.add_child(rl)
-		var r := K.Rule.new()
-		r.solid = true
-		cv.add_child(r)
-		var aff := K.hbox(6)
+		var hh := K.hbox(8)
+		hh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mc.add_child(hh)
+		var av = K.Avatar.new(44, m_id, "n")
+		av.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hh.add_child(av)
+		merchant_avatars[m_id] = av
+		var vv := K.vbox(2)
+		vv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hh.add_child(vv)
+		var nl := UI.label(md.name, 12, UI.ACCENT)
+		vv.add_child(nl)
+		var rl := UI.label(md.role, 12, K.CREAM_DIM)
+		rl.clip_text = true
+		rl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		vv.add_child(rl)
+		var aff := K.hbox(4)
 		aff.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		aff.set_meta("merchant", m_id)
-		cv.add_child(aff)
+		vv.add_child(aff)
 		var stock := UI.label("", 12, K.CREAM_DIM)
-		stock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cv.add_child(stock)
+		vv.add_child(stock)
 		b.set_meta("aff", aff)
 		b.set_meta("stock", stock)
 		for c in [nl, rl, stock]:
 			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	var rq := _tpanel(trade_list_root, "后勤委托", "Request", FILL, [K.M, K.GAP * 2 + 340, -K.M - 380 - K.GAP, -K.GAP])
-	var rqv: VBoxContainer = rq[1]
-	var rc := K.card(false, 10)
-	rqv.add_child(rc)
-	var rh := K.hbox(12)
-	rc.add_child(rh)
-	request_avatar = K.Avatar.new(96, "lina", "on")
-	rh.add_child(request_avatar)
-	var rvv := K.vbox(6)
-	rvv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rh.add_child(rvv)
-	request_lbl = K.wrap("", K.CREAM)
-	rvv.add_child(request_lbl)
-	request_reward_lbl = UI.label("", 24, Color(1.0, 0.85, 0.4))
-	rvv.add_child(request_reward_lbl)
-	var rsp := Control.new()
-	rsp.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rqv.add_child(rsp)
-	var sub := K.primary("提交委托", 36)
-	sub.set_meta("sfx", "")
-	sub.pressed.connect(func():
-		if GameData.fulfill_request():
-			Audio.play_ui("request_complete")
-			refresh()
-		else:
-			Audio.play_ui("ui_denied"))
-	rqv.add_child(sub)
+	var gt := K.GAP * 2 + TOP_H2
+	var gb := -(K.GAP * 3 + DEAL_H + BOT_H)
 
-	var ac := _tpanel(trade_list_root, "账户", "Account", RIGHT, [-K.M - 380, K.GAP * 2 + 340, -K.M, -K.GAP])
-	account_box = K.vbox(6)
-	ac[1].add_child(account_box)
-	var asp := Control.new()
-	asp.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	ac[1].add_child(asp)
-	var sj := Button.new()
-	sj.text = "出售全部食物与杂物"
-	sj.custom_minimum_size = Vector2(0, 32)
-	sj.set_meta("sfx", "")
-	sj.pressed.connect(_sell_junk)
-	ac[1].add_child(sj)
-
-	# ---- 与某位商人交易
-	trade_deal_root = Control.new()
-	trade_deal_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_at(trade_deal_root, v_t, FILL, [0, 0, 0, 0])
-	var hdr := K.frame(6)
-	_at(hdr, trade_deal_root, [0.0, 0.0, 1.0, 0.0], [K.M, K.GAP, -K.M, K.GAP + 66])
-	var hh := K.hbox(10)
-	hdr.add_child(hh)
-	var back := Button.new()
-	back.text = "← 商人列表"
-	back.custom_minimum_size = Vector2(112, 40)
-	back.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(func():
-		_trade_show("list")
-		Audio.play_ui("ui_tab"))
-	hh.add_child(back)
-	_vsep(hh, 40)
-	for m_id in K.MERCHANT_IDS:
-		var mb := Button.new()
-		mb.toggle_mode = true
-		mb.focus_mode = Control.FOCUS_NONE
-		mb.custom_minimum_size = Vector2(52, 52)
-		mb.flat = true
-		mb.tooltip_text = "%s · %s" % [MERCHANTS[m_id].name, MERCHANTS[m_id].role]
-		mb.pressed.connect(func(): _select_merchant(m_id))
-		var av = K.Avatar.new(40, m_id)
-		av.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		mb.add_child(av)
-		merchant_buttons[m_id] = mb
-		merchant_avatars[m_id] = av
-		hh.add_child(mb)
-	_vsep(hh, 40)
-	merchant_portrait = K.Avatar.new(40, "ajin", "on")
-	merchant_portrait.visible = false
-	hh.add_child(merchant_portrait)
-	var mv := K.vbox(2)
-	mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hh.add_child(mv)
-	var nh := K.hbox(10)
-	mv.add_child(nh)
-	merchant_name_lbl = UI.label("", 24, UI.ACCENT)
-	nh.add_child(merchant_name_lbl)
-	merchant_role_lbl = UI.label("", 12, UI.INFO)
-	merchant_role_lbl.size_flags_vertical = Control.SIZE_SHRINK_END
-	nh.add_child(merchant_role_lbl)
-	merchant_desc_lbl = UI.label("", 12, K.CREAM_DIM)
-	merchant_desc_lbl.clip_text = true
-	merchant_desc_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	mv.add_child(merchant_desc_lbl)
-
-	const DEAL_H := 76.0
-	var gt := K.GAP * 2 + 66
-	var sp := _tpanel(trade_deal_root, "货架", "Offers", [0.0, 0.0, 0.5, 1.0], [K.M, gt, -K.GAP * 0.5, -K.GAP * 2 - DEAL_H])
+	# ---- 货架
+	var sp := _tpanel(trade_deal_root, "货架", "Offers", [0.0, 0.0, 0.5, 1.0], [K.M, gt, -K.GAP * 0.5, gb])
 	shop_count_lbl = sp[2]
 	shop_title_lbl = sp[0].get_meta("title_lbl")
 	shop_list = _grid_widget(60, "shop")
@@ -1030,7 +943,8 @@ func _build_trade_view(parent: Control) -> void:
 		_sell_selected()
 	sp[1].add_child(_scroll(shop_list))
 
-	var pp := _tpanel(trade_deal_root, "我的仓库", "Stash", [0.5, 0.0, 1.0, 1.0], [K.GAP * 0.5, gt, -K.M, -K.GAP * 2 - DEAL_H])
+	# ---- 我的仓库
+	var pp := _tpanel(trade_deal_root, "我的仓库", "Stash", [0.5, 0.0, 1.0, 1.0], [K.GAP * 0.5, gt, -K.M, gb])
 	trade_stash_grid = _grid_widget(60, "tstash")
 	trade_stash_grid.item_selected.connect(func(i):
 		if i < trade_stash_ids.size():
@@ -1043,9 +957,9 @@ func _build_trade_view(parent: Control) -> void:
 	trade_stash_grid.on_drop = func(d: Dictionary): _buy(int(d.index))
 	pp[1].add_child(_scroll(trade_stash_grid))
 
-	# 交易确认栏
+	# ---- 成交栏
 	var deal := K.frame(8)
-	_at(deal, trade_deal_root, [0.0, 1.0, 1.0, 1.0], [K.M, -K.GAP - DEAL_H, -K.M, -K.GAP])
+	_at(deal, trade_deal_root, [0.0, 1.0, 1.0, 1.0], [K.M, -K.GAP * 2 - BOT_H - DEAL_H, -K.M, -K.GAP * 2 - BOT_H])
 	var dh := K.hbox(12)
 	deal.add_child(dh)
 	deal_cell = K.IconCell.new(56)
@@ -1063,7 +977,7 @@ func _build_trade_view(parent: Control) -> void:
 	dv.add_child(deal_info_lbl)
 	_vsep(dh, 48)
 	var pv := K.vbox(2)
-	pv.custom_minimum_size = Vector2(220, 0)
+	pv.custom_minimum_size = Vector2(200, 0)
 	pv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dh.add_child(pv)
 	deal_price_lbl = UI.label("", 24, Color(1.0, 0.85, 0.4))
@@ -1073,7 +987,7 @@ func _build_trade_view(parent: Control) -> void:
 	deal_after_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pv.add_child(deal_after_lbl)
 	buy_btn = K.primary("买入", 44)
-	buy_btn.custom_minimum_size.x = 120
+	buy_btn.custom_minimum_size.x = 110
 	buy_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	buy_btn.add_theme_font_size_override("font_size", 24)
 	buy_btn.set_meta("sfx", "")
@@ -1085,7 +999,7 @@ func _build_trade_view(parent: Control) -> void:
 	dh.add_child(buy_btn)
 	sell_btn = Button.new()
 	sell_btn.text = "卖出"
-	sell_btn.custom_minimum_size = Vector2(120, 44)
+	sell_btn.custom_minimum_size = Vector2(110, 44)
 	sell_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	sell_btn.add_theme_font_size_override("font_size", 24)
 	sell_btn.set_meta("sfx", "")
@@ -1095,14 +1009,54 @@ func _build_trade_view(parent: Control) -> void:
 		else:
 			Audio.play_ui("ui_denied"))
 	dh.add_child(sell_btn)
-	_trade_show("list")
+
+	# ---- 底部：后勤委托 + 账户
+	var rq := _tpanel(trade_deal_root, "后勤委托", "Request", [0.0, 1.0, 1.0, 1.0], [K.M, -K.GAP - BOT_H, -K.M - 380 - K.GAP, -K.GAP])
+	var rh := K.hbox(10)
+	rq[1].add_child(rh)
+	request_avatar = K.Avatar.new(56, "ajin", "on")
+	request_avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rh.add_child(request_avatar)
+	var rvv := K.vbox(2)
+	rvv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rvv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rh.add_child(rvv)
+	request_lbl = K.wrap("", K.CREAM)
+	rvv.add_child(request_lbl)
+	request_reward_lbl = UI.label("", 24, Color(1.0, 0.85, 0.4))
+	rvv.add_child(request_reward_lbl)
+	var sub := K.primary("提交委托", 34)
+	sub.custom_minimum_size.x = 132
+	sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sub.set_meta("sfx", "")
+	sub.pressed.connect(func():
+		if GameData.fulfill_request():
+			Audio.play_ui("request_complete")
+			refresh()
+		else:
+			Audio.play_ui("ui_denied"))
+	rh.add_child(sub)
+
+	var ac := _tpanel(trade_deal_root, "账户", "Account", [1.0, 1.0, 1.0, 1.0], [-K.M - 380, -K.GAP - BOT_H, -K.M, -K.GAP])
+	account_box = K.vbox(2)
+	ac[1].add_child(account_box)
+	var asp := Control.new()
+	asp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	ac[1].add_child(asp)
+	var sj := Button.new()
+	sj.text = "出售全部食物与杂物"
+	sj.custom_minimum_size = Vector2(0, 28)
+	sj.set_meta("sfx", "")
+	sj.pressed.connect(_sell_junk)
+	ac[1].add_child(sj)
+
+	_select_merchant_silent(cur_merchant)
 
 
 func _trade_show(mode: String) -> void:
 	trade_mode = mode
-	if trade_list_root:
-		trade_list_root.visible = mode == "list"
-		trade_deal_root.visible = mode == "deal"
+	if trade_deal_root:
+		trade_deal_root.visible = true
 
 
 func _select_merchant_silent(m_id: String) -> void:
@@ -1113,10 +1067,14 @@ func _select_merchant_silent(m_id: String) -> void:
 		merchant_buttons[k].button_pressed = (k == m_id)
 		merchant_avatars[k].set_state("on" if k == m_id else "n")
 	var md: Dictionary = MERCHANTS.get(m_id, {})
-	merchant_name_lbl.text = md.get("name", "")
-	merchant_role_lbl.text = md.get("role", "")
-	merchant_desc_lbl.text = str(md.get("desc", ""))
-	merchant_portrait.set_char(m_id, 40)
+	if merchant_name_lbl:
+		merchant_name_lbl.text = md.get("name", "")
+	if merchant_role_lbl:
+		merchant_role_lbl.text = md.get("role", "")
+	if merchant_desc_lbl:
+		merchant_desc_lbl.text = str(md.get("desc", ""))
+	if merchant_portrait:
+		merchant_portrait.set_char(m_id, 40)
 	if shop_title_lbl:
 		shop_title_lbl.text = "货架 · %s" % md.get("name", "")
 	if shop_list:
