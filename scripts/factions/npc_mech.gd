@@ -35,6 +35,7 @@ var _stuck_pos := Vector3.ZERO
 var _detour := Vector3.ZERO
 var _detour_t := 0.0
 var _sfx_gap := {"arm_l": 0, "arm_r": 0}
+var nav_agent = preload("res://scripts/nav_grid.gd").Agent.new()   ## 沿导航网格（机甲间隙）绕开建筑
 var _near := false
 var _anim_acc := 0.0
 
@@ -218,23 +219,23 @@ static func _ok(n) -> bool:
 
 ## 画面外（LOD 中 / 远）不跑物理：直接平移，用建筑占地格子挡一下（撞上就沿侧面绕），近处照常 move_and_slide
 func _slide(dt: float) -> void:
-	if lod > 0 and raid and raid.has_method("patrol_free"):
+	if lod > 0 and raid and raid.has_method("ai_free"):
 		var step := Vector3(velocity.x, 0.0, velocity.z) * dt
 		if step.length_squared() < 0.0001:
 			return
 		var np := global_position + step
 		var H: float = raid.HALF - 4.0
-		if raid.patrol_free(np, 1.2) and absf(np.x) < H and absf(np.z) < H:
+		if raid.ai_free(np, 1.2, true) and absf(np.x) < H and absf(np.z) < H:
 			global_position = np
 			return
-		if raid.patrol_free(global_position, 1.2):
+		if raid.ai_free(global_position, 1.2, true):
 			if _detour_t <= 0.0:
 				_detour = step.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
 				_detour_t = randf_range(0.8, 1.5)
 			# 沿侧面挪一步；两侧都堵（墙角）就交给下面的真实物理去滑
 			for side in [_detour, -_detour]:
 				var alt: Vector3 = global_position + side * step.length()
-				if raid.patrol_free(alt, 1.2) and absf(alt.x) < H and absf(alt.z) < H:
+				if raid.ai_free(alt, 1.2, true) and absf(alt.x) < H and absf(alt.z) < H:
 					global_position = alt
 					return
 		# 已经压在建筑占地格子里（或贴着地图边）：退回真实物理 move_and_slide，不然会原地踏步
@@ -250,6 +251,19 @@ func _slide(dt: float) -> void:
 		move_and_slide()
 
 
+## 流浪者的视野与虫群一致：察觉距离封顶 raid.vision_range()（看玩家机甲时按屏幕方向收紧），且要有视线
+func _sees(t, d: float) -> bool:
+	if raid == null or not raid.has_method("vision_range"):
+		return d < 44.0
+	var r: float = raid.vision_toward_player(global_position) if t == raid.mech else raid.vision_range()
+	return d < r and raid.has_los(global_position, t.global_position)
+
+
+## 已经在打的目标、打过自己的单位：不要求视线，拉开到 raid.lose_range()（视野 × 1.5）才放掉
+func _lose_r() -> float:
+	return raid.lose_range() if raid and raid.has_method("lose_range") else 46.0
+
+
 ## 挑目标：流浪者在玩家 / 队友 / 近处虫子里挑最近的（对玩家略有偏好），队友只打离玩家不远的虫子和流浪者
 func _choose_target() -> void:
 	var p := global_position
@@ -260,20 +274,24 @@ func _choose_target() -> void:
 		var m = raid.mech
 		if _ok(m):
 			var d: float = p.distance_to(m.global_position)
-			if d < 44.0:
+			var known: bool = (ai_target == m or aggressor == m) and d < _lose_r()
+			if known or _sees(m, d):
 				best = m
 				# 小队里单号成员专盯玩家机甲（队友和虫子吸走全部火力时玩家也照样挨打）
 				bs = d * (0.45 if slot_i % 2 == 1 else 0.8)
 		for a in get_tree().get_nodes_in_group("allies"):
 			if _ok(a):
 				var d: float = p.distance_to(a.global_position)
-				if d < 40.0 and d < bs:
+				var known: bool = (ai_target == a or aggressor == a) and d < _lose_r()
+				if d < bs and (known or _sees(a, d)):
 					best = a
 					bs = d
 		# 盯玩家的成员只在虫子贴脸（8 米内）时才回头打虫
 		var bug_r: float = 8.0 if (slot_i % 2 == 1 and best == m) else 34.0
+		if raid.has_method("vision_range"):
+			bug_r = minf(bug_r, raid.vision_range())
 		var b = raid.nearest_bug(p, bug_r)
-		if b != null and p.distance_to(b.global_position) < bs:
+		if b != null and p.distance_to(b.global_position) < bs and (b == ai_target or _sees(b, p.distance_to(b.global_position))):
 			best = b
 			bs = p.distance_to(b.global_position)
 	else:
@@ -291,13 +309,13 @@ func _choose_target() -> void:
 	var hunter: bool = faction == "rover" and slot_i % 2 == 1 and best == raid.mech
 	if _ok(aggressor) and aggressor != best and not hunter:
 		var da: float = p.distance_to(aggressor.global_position)
-		if da < 50.0 and da * 0.7 < bs:
+		if da < _lose_r() and da * 0.7 < bs:
 			best = aggressor
 			bs = da * 0.7
 	# 粘住当前目标：新目标不明显更近就不换，免得来回扭头
 	if cur_ok and best != ai_target and best != null:
 		var dc: float = p.distance_to(ai_target.global_position)
-		if dc < 46.0 and dc < bs + 6.0:
+		if dc < _lose_r() and dc < bs + 6.0:
 			best = ai_target
 	ai_target = best
 	_los = true
@@ -321,7 +339,7 @@ func _steer(delta: float) -> Vector3:
 			_strafe_t = randf_range(1.5, 3.5)
 			_strafe = -_strafe
 		if not _los or d > keep + 4.0:
-			want = fwd
+			want = _nav_to(ai_target.global_position, delta)
 		elif d < keep - 4.0:
 			want = -fwd * 0.7
 		else:
@@ -337,7 +355,7 @@ func _steer(delta: float) -> Vector3:
 		w.y = 0.0
 		var L := w.length()
 		if L > 2.5:
-			want = w / L * clampf(goal_scale * minf(L / 6.0, 1.0), 0.0, 1.0)
+			want = _nav_to(goal, delta) * clampf(goal_scale * minf(L / 6.0, 1.0), 0.0, 1.0)
 	# 卡住（贴墙）时向侧面绕一段
 	if _detour_t > 0.0:
 		_detour_t -= delta
@@ -346,11 +364,21 @@ func _steer(delta: float) -> Vector3:
 		_stuck_t += delta
 		if _stuck_t > 1.4:
 			if p.distance_to(_stuck_pos) < 0.8:
+				nav_agent.stuck()
 				_detour = want.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
 				_detour_t = randf_range(0.9, 1.6)
 			_stuck_pos = p
 			_stuck_t = 0.0
 	return want
+
+
+## 朝 to 走的方向：直线可走就直线，被建筑挡住就沿导航网格（机甲间隙）的 A* 路径绕；悬浮腿也照样受建筑碰撞，同样寻路
+func _nav_to(to: Vector3, delta: float) -> Vector3:
+	if raid == null or raid.get("nav") == null:
+		var w := to - global_position
+		w.y = 0.0
+		return w.normalized() if w.length_squared() > 0.0001 else Vector3.ZERO
+	return nav_agent.steer(raid.nav, global_position, to, delta, true, 0.5 if lod == 0 else 1.0)
 
 
 func _weapon_range() -> float:
