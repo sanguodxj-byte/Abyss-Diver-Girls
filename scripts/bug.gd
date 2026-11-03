@@ -1277,7 +1277,7 @@ func alert(pos: Vector3) -> void:
 ## 视野：目标（机甲、战斗队友、流浪者）在察觉距离内、且胸口高度的视线没被静态地形挡住，才算「看见」→ 整群转入追击。
 ##   察觉距离 = raid.scaled_aggro(数据表 aggro)，封顶 raid.vision_range()（玩家视野 × 0.9）；看玩家机甲时再按屏幕方向收紧。
 ## 受击锁定：被谁打就锁定谁（玩家子弹记为机甲），无视视野一路追，直到拉开到 raid.lose_range()（视野 × 1.5）才丢失；同群被叫醒的成员同样锁定。
-## 没锁定的追击：目标离开视线超过 UNSEEN_GIVEUP 秒或拉开到 lose_range → 丢失。丢失后先去最后看见目标的位置查看几秒，再回到巡逻。
+## 没锁定的追击：发现之后只要视线不断、没拉开到 lose_range 就一直跟；视线断开超过 UNSEEN_GIVEUP 秒或拉开到 lose_range → 丢失。丢失后先去最后看见目标的位置查看几秒，再回到巡逻。
 ## 追击移动：直线可走就直线扑，被建筑挡住就沿导航网格（raid.nav）的 A* 路径绕；近处追击的虫之间有轻微的分离避让。
 ## LOD：离玩家机甲越远 AI 越低频（near：逐帧 / mid：10Hz / far：2Hz），远处不跑程序动画，移动用累计步长一次 move_and_slide。
 const LEASH := 55.0             ## 没有 raid（单独测试模型）时的后备丢失距离
@@ -1426,7 +1426,8 @@ func _perceive() -> void:
 				bd = INF
 			elif best != lock_target:
 				# 没锁定：要一直看得见，脱离视线太久就放弃
-				target_los = _can_see(best, bd)
+				# 已经交上手的目标：只要在丢失距离内、视线没断就一直盯着（察觉要进视野，跟踪放宽到 1.5 倍）
+				target_los = raid.has_los(p, best.global_position) if raid.has_method("has_los") else true
 				if target_los:
 					_unseen_t = 0.0
 					last_seen = best.global_position

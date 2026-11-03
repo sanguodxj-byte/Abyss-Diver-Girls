@@ -5,7 +5,8 @@ extends "res://tests/lib/test_base.gd"
 
 const ARENA := Vector3(760, 0, 760)
 ## 炮击型要放进它的射程里才会开火
-const SPAWN_D := {"mortar": 26.0, "wasp": 10.0, "shielder": 11.0}
+## 曲炮虫放在 16 米：敌人视野封顶为玩家视野的 0.9 倍，机甲正下方（屏幕下边最近）只有约 17.6 米
+const SPAWN_D := {"mortar": 16.0, "wasp": 10.0, "shielder": 11.0}
 const REGULARS := ["mantis", "bomber", "crystal_bug", "burrower", "mech_beetle", "wasp", "shielder", "mortar", "ironjaw"]
 const BOSSES := ["broodmother", "king_beetle", "abyss_queen"]
 const ARENA_AI := {"mantis": "lancer", "bomber": "bomber", "crystal_bug": "shell", "burrower": "burrower",
