@@ -592,6 +592,16 @@ func _build_settings() -> void:
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	v.add_child(vs)
+	v.add_child(_field_label("画质"))
+	var q := OptionButton.new()
+	for i in GameData.QUALITY_NAMES.size():
+		q.add_item(GameData.QUALITY_NAMES[i], i)
+	q.selected = GameData.quality
+	q.item_selected.connect(func(i):
+		GameData.quality = i
+		GameData.apply_quality(get_viewport())
+		GameData.save_game())
+	v.add_child(q)
 	v.add_child(_field_label("画面风格"))
 	var st := OptionButton.new()
 	st.add_item("写实光影", 0)
@@ -616,14 +626,15 @@ func _build_settings() -> void:
 		cf.save(MENU_CFG)
 		_apply_title_lang())
 	v.add_child(tl)
-	v.add_child(_field_label("主音量"))
-	var vol := HSlider.new()
-	vol.min_value = 0
-	vol.max_value = 1
-	vol.step = 0.05
-	vol.value = Audio.get_volume("Master")
-	vol.value_changed.connect(func(x): Audio.set_volume("Master", x))
-	v.add_child(vol)
+	for bus in [["Master", "主音量"], ["Music", "音乐"], ["SFX", "音效"], ["Voice", "语音"]]:
+		v.add_child(_field_label(bus[1]))
+		var vol := HSlider.new()
+		vol.min_value = 0
+		vol.max_value = 1
+		vol.step = 0.05
+		vol.value = Audio.get_volume(bus[0])
+		vol.value_changed.connect(func(x): Audio.set_volume(bus[0], x))
+		v.add_child(vol)
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)

@@ -1,7 +1,7 @@
 extends Control
 ## 飞空艇「信天翁号」主界面：二级菜单（整备 / 交易 / 降落 / 技能 / 仓库 / 图鉴）
 ## v0.7 版式参考「逃离塔科夫」主界面结构（保留本作像素风与世界观）：
-##   顶部 36px 细状态栏（舰名 · 驾驶员等级与经验 · 主角团 · 战绩 · 杂物 · 资金 · 舰时 · 画质），
+##   顶部 36px 细状态栏（舰名 · 驾驶员等级与经验 · 主角团 · 战绩 · 杂物 · 资金 · 舰时），
 ##   底部 48px 等宽主导航栏（当前页琥珀顶线高亮），中间内容区外边距 12、栏间距 8。
 ##   整备 = 装备槽列 + 3D 机甲 + 仓库网格 + 属性汇总条；仓库 = 大网格 + 分类筛选 + 物品详情；
 ##   交易 = 商人头像卡横排 → 商人货架网格 / 玩家仓库网格 / 交易确认栏；降落 = 战区地图 → 确认携带 → 出发；
@@ -541,20 +541,6 @@ func _build_top_bar() -> void:
 	clock_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	th.add_child(clock_lbl)
 
-	var qb := Button.new()
-	qb.text = "画质 %s" % GameData.QUALITY_NAMES[GameData.quality]
-	qb.tooltip_text = "流畅：MSAA 2x + FXAA\n高：MSAA 4x + FXAA + TAA\n极致：MSAA 4x + TAA + 1.5 倍超采样"
-	qb.custom_minimum_size = Vector2(76, 24)
-	qb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	qb.focus_mode = Control.FOCUS_NONE
-	qb.pressed.connect(func():
-		GameData.quality = (GameData.quality + 1) % 3
-		GameData.apply_quality(get_viewport())
-		if hangar_vp:
-			GameData.apply_quality(hangar_vp)
-		qb.text = "画质 %s" % GameData.QUALITY_NAMES[GameData.quality]
-		GameData.save_game())
-	th.add_child(qb)
 	_update_clock()
 
 
