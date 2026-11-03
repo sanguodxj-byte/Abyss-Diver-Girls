@@ -87,6 +87,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_spawn_extracts(drop)
 	_spawn_initial_bugs(drop)
 	_bake_static()
+	rebuild_nav()   # 导航网格：所有静态几何体都建好之后栅格化（碰撞后处理改动布局后会再调一次）
 
 	mech = MechScript.new()
 	mech.raid = self
@@ -1255,6 +1256,174 @@ func alert_noise(p: Vector3, radius: float) -> void:
 	for b in get_tree().get_nodes_in_group("bugs"):
 		if b.global_position.distance_to(p) < radius:
 			b.alert(p)
+
+
+# ================= AI：视野 / 导航 =================
+## 玩家视野：镜头在默认（最远）一档 ZOOM_MAX 时，把视锥四条屏幕边投到地面（y = 0），得到机甲周围的可见梯形。
+##   斜俯视下梯形不对称：机甲到屏幕下边最近（约 19.6 米），到上边约 27.4 米，到左右边约 36 米（1280x720，FOV 36°）。
+##   player_view_range() 取「上边与左右边里较近的那条」= 机甲正前方到屏幕上边的距离，作为玩家视野的标量（约 27.4 米）。
+## 敌人视野：vision_range() = VISION_FACTOR × 玩家视野（约 24.7 米），是所有敌人察觉距离的上限；
+##   看的对象是玩家机甲时再按方向收紧到 VISION_FACTOR × 该方向的屏幕边距离（vision_toward）——
+##   站在机甲下方（屏幕下边只有 19.6 米）的虫最多 17.6 米就能看到，保证「敌人看到你之前你一定先在屏幕上看到它」。
+## 受击锁定：被打的敌人锁定攻击者一路追，直到距离超过 lose_range() = LOSE_FACTOR × vision_range()（约 37 米）才丢失。
+const VISION_FACTOR := 0.9
+const LOSE_FACTOR := 1.5
+const AGGRO_REF := 20.0     ## 数据表里的察觉距离按「20 米 = 满视野」换算：aggro × vision / 20，再封顶到 vision（保留各虫种远近的差别）
+const EYE_H := 1.5          ## 视线射线的高度（胸口）
+var nav                     ## 导航网格（scripts/nav_grid.gd），rebuild_nav() 生成
+var _view_poly := PackedVector2Array()   ## 可见梯形（相对机甲的 XZ 偏移）
+var _view_aspect := -1.0
+var _view_range := 0.0
+
+
+## 镜头宽高比：有窗口时取实际视口，无界面运行时按项目设置的 1280x720
+func _view_aspect_now() -> float:
+	var sz := Vector2(1280, 720)
+	if DisplayServer.get_name() != "headless" and is_inside_tree():
+		var r := get_viewport().get_visible_rect().size
+		if r.x > 1.0 and r.y > 1.0:
+			sz = r
+	else:
+		sz = Vector2(float(ProjectSettings.get_setting("display/window/size/viewport_width", 1280)), float(ProjectSettings.get_setting("display/window/size/viewport_height", 720)))
+	return sz.x / sz.y
+
+
+func _update_view() -> void:
+	var asp := _view_aspect_now()
+	if absf(asp - _view_aspect) < 0.001 and not _view_poly.is_empty():
+		return
+	_view_aspect = asp
+	var fov: float = camera.fov if camera else 36.0
+	var off: Vector3 = CAM_OFFSET * ZOOM_MAX
+	var f := -off.normalized()
+	var right := f.cross(Vector3.UP).normalized()
+	var up := right.cross(f)
+	var tv := tan(deg_to_rad(fov * 0.5))   # Camera3D 默认 KEEP_HEIGHT：fov 是竖直视角
+	var th := tv * asp
+	_view_poly = PackedVector2Array()
+	for c in [Vector2(-1, 1), Vector2(1, 1), Vector2(1, -1), Vector2(-1, -1)]:   # 左上、右上、右下、左下
+		var d: Vector3 = f + right * c.x * th + up * c.y * tv
+		var t := -off.y / minf(d.y, -0.01)
+		var g: Vector3 = off + d * t
+		_view_poly.append(Vector2(g.x, g.z))
+	_view_range = minf(_view_extent(Vector2(0, -1)), minf(_view_extent(Vector2(1, 0)), _view_extent(Vector2(-1, 0))))
+
+
+## 从机甲沿 XZ 方向 dir 走到屏幕边的距离
+func _view_extent(dir: Vector2) -> float:
+	var best := INF
+	for i in 4:
+		var a: Vector2 = _view_poly[i]
+		var b: Vector2 = _view_poly[(i + 1) % 4]
+		var e := b - a
+		var den := dir.x * e.y - dir.y * e.x
+		if absf(den) < 1e-6:
+			continue
+		var t := (a.x * e.y - a.y * e.x) / den
+		var s := (a.x * dir.y - a.y * dir.x) / den
+		if t > 0.0 and s >= -1e-4 and s <= 1.0001:
+			best = minf(best, t)
+	return best if best < INF else 0.0
+
+
+## 玩家视野（米）：默认最远镜头下，机甲到屏幕上边 / 左右边中较近者
+func player_view_range() -> float:
+	_update_view()
+	return _view_range
+
+
+## 敌人视野上限（米）
+func vision_range() -> float:
+	return player_view_range() * VISION_FACTOR
+
+
+## 锁定目标的丢失距离（米）
+func lose_range() -> float:
+	return vision_range() * LOSE_FACTOR
+
+
+## 站在 p 的敌人最远多少米能看到玩家机甲：按方向收紧到该方向屏幕边距离 × VISION_FACTOR，再封顶 vision_range()
+func vision_toward_player(p: Vector3) -> float:
+	_update_view()
+	if mech == null:
+		return vision_range()
+	var d := Vector2(p.x - mech.global_position.x, p.z - mech.global_position.z)
+	if d.length_squared() < 0.01:
+		return vision_range()
+	return minf(vision_range(), _view_extent(d.normalized()) * VISION_FACTOR)
+
+
+## 数据表里的察觉距离换算成实际察觉距离（见 AGGRO_REF）；<= 0 的（不主动索敌）保持不变
+func scaled_aggro(raw: float) -> float:
+	if raw <= 0.0:
+		return raw
+	var v := vision_range()
+	return minf(raw * v / AGGRO_REF, v)
+
+
+## 视线：两点胸口高度之间有没有静态地形（碰撞层 1）挡着
+func has_los(a: Vector3, b: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(a + Vector3(0, EYE_H, 0), b + Vector3(0, EYE_H, 0), 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## 重新栅格化导航网格。地图建完时调用一次；碰撞后处理（合并 / 删除碰撞体）之后也应调用它
+func rebuild_nav() -> void:
+	nav = preload("res://scripts/nav_grid.gd").new()
+	nav.build(self, HALF)
+	print("[raid] nav grid %dx%d (%.1fm) from %d shapes in %.0f ms" % [nav.n, nav.n, nav.CELL, nav.shape_count, nav.build_ms])
+
+
+## 能否站在 p（半径 r）：有导航网格时按网格（真实碰撞体），否则按建筑占地矩形
+func ai_free(p: Vector3, r: float, is_mech := false) -> bool:
+	if nav != null:
+		return nav.is_free(p, is_mech)
+	return patrol_free(p, r)
+
+
+## 巡逻路点：优先挑从 from 直线走得到的空地，其次挑网格上可站的空地（巡逻时再沿 A* 走过去）
+func ai_patrol_point(home: Vector3, radius: float, from: Vector3) -> Vector3:
+	if nav == null:
+		return patrol_point(home, radius, from)
+	var fallback := Vector3.INF
+	for t in 8:
+		var p := patrol_point(home, radius, from)
+		if not nav.is_free(p):
+			continue
+		if nav.line_clear(from, p):
+			return p
+		if fallback == Vector3.INF:
+			fallback = p
+	if fallback != Vector3.INF:
+		return fallback
+	return Vector3(home.x, 0, home.z)
+
+
+## 局部避让用的空间哈希：每个物理帧最多建一次（只放追击中的近处虫），按 4 米格子分桶
+const _SEP := 4.0
+var _sep_frame := -1
+var _sep := {}
+func bug_neighbors(p: Vector3) -> Array:
+	var f := Engine.get_physics_frames()
+	if f != _sep_frame:
+		_sep_frame = f
+		_sep.clear()
+		for b in get_tree().get_nodes_in_group("bugs"):
+			if b.state == "chase" and b.lod == 0:
+				var k := Vector2i(floori(b.global_position.x / _SEP), floori(b.global_position.z / _SEP))
+				if _sep.has(k):
+					_sep[k].append(b)
+				else:
+					_sep[k] = [b]
+	var out: Array = []
+	var cx := floori(p.x / _SEP)
+	var cz := floori(p.z / _SEP)
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var a = _sep.get(Vector2i(cx + dx, cz + dz))
+			if a != null:
+				out.append_array(a)
+	return out
 
 
 func _proj(pos: Vector3, vel: Vector3, dmg: float, life: float, mask: int, c: Color, size: float, glow := true):
