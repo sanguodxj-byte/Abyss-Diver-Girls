@@ -83,6 +83,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_build_zone_ground()
 	_run_ext_build(drop)
 	_spawn_extracts(drop)
+	preload("res://scripts/collision_opt.gd").optimize(self)   # 碰撞后处理：小件去碰撞、窄缝合并、防卡死（见脚本说明）
 	_spawn_initial_bugs(drop)
 	_bake_static()
 
