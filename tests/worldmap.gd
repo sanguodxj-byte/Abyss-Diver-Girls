@@ -1,11 +1,12 @@
 extends "res://tests/lib/test_base.gd"
 ## 降落页像素大地图一致性：godot --headless --path . -- --worldmap
-## 1. 拼接：worldmap.json 里每个战区方块的位置符合 scripts/world_link.gd 的 LINKS 邻接（相邻 = 一个方块 + 环路带）。
+## 1. 拼接：worldmap.json 里每个战区方块的位置符合 scripts/world_link.gd 的 LINKS 邻接（v0.8 城市群：相邻战区直接共用边界，
+##    方块位置 = 城市群布局 scripts/world_city.gd 的世界坐标 − 大地图范围左上角）。
 ## 2. 逐战区用游戏自己的生成代码（tools/worldmap/export_raid.gd，raid.gd 子类、固定种子）真实生成一遍，与底图 wm_1m.png 比对：
 ##    · 撤离候选点、遗迹中心 / 类型、地标位置与大地图元数据一致（坐标映射 = 方块原点 + 世界坐标 + 180）；
 ##    · 每 4 米抽样：游戏里是水面（in_wet）的点在底图上是水色，是道路的点是路面色，远离河湖的点不是水色；
 ##    · 转场口：同一种子生成的位置落在元数据记录的范围内，去向与 LINKS 一致；
-##    · 建筑：底图上画成建筑的像素，大部分在这一局实际生成的建筑占地里（建筑每局随机，按多种子占用 ≥50% 绘制）。
+##    · 建筑：城市群布局里的建筑轮廓（确定性）在底图上画成了屋顶，并且这一局真的盖了（落在这一局的大型占地矩形里）。
 ## 3. 界面：降落页第 1 步是大地图，单击战区方块选中（GameData.map_id 跟着变），未解锁的点不动；缩放档位与坐标映射正确。
 ## 有界面运行时额外截图：hubwm_1_default / 2_hover / 3_zoom1 / 4_zoom2 / 5_locked。
 
@@ -13,11 +14,16 @@ const START := "hub"
 const TIMEOUT := 300.0
 const ExportRaid = preload("res://tools/worldmap/export_raid.gd")
 const WorldLink = preload("res://scripts/world_link.gd")
+const WC = preload("res://scripts/world_city.gd")
 const SEED := 5
 
 const WATER := [Color8(45, 75, 140), Color8(24, 36, 70), Color8(102, 166, 255)]
 const ROAD := [Color8(52, 53, 48), Color8(64, 66, 57), Color8(120, 122, 110), Color8(130, 103, 90), Color8(115, 86, 85),
 	Color8(205, 135, 20), Color8(140, 138, 120), Color8(8, 8, 10), Color8(46, 41, 40), Color8(160, 160, 145), Color8(90, 51, 35)]   ## 路面 / 路缘 / 中线 / 桥 / 平交道口铁轨
+const ROOF := [Color8(118, 120, 126), Color8(143, 143, 147), Color8(89, 79, 85), Color8(150, 40, 35), Color8(187, 149, 143), Color8(90, 24, 22),
+	Color8(102, 103, 89), Color8(140, 138, 120), Color8(64, 66, 57), Color8(150, 97, 13), Color8(205, 135, 20), Color8(110, 70, 14),
+	Color8(90, 51, 35), Color8(130, 103, 90), Color8(57, 19, 20), Color8(78, 80, 72), Color8(120, 122, 110), Color8(52, 53, 48),
+	Color8(137, 118, 122), Color8(171, 166, 166), Color8(106, 100, 108), Color8(136, 131, 132), Color8(73, 69, 70), Color8(8, 8, 10)]   ## 屋顶主色 / 亮边 / 暗边 / 描边
 const DIRV := {"N": Vector2(0, -1), "S": Vector2(0, 1), "E": Vector2(1, 0), "W": Vector2(-1, 0)}
 
 var meta := {}
@@ -82,6 +88,18 @@ func _check_layout() -> void:
 			var rb := Rect2(float(meta.maps[ids[j]].x), float(meta.maps[ids[j]].y), meta.tile, meta.tile)
 			if ra.intersects(rb):
 				p("方块重叠：%s / %s" % [ids[i], ids[j]])
+	# 地表战区：方块位置就是城市群世界坐标
+	var wr: Array = meta.get("world_rect", [])
+	if wr.size() == 4:
+		for id: String in ids:
+			if not WC.is_surface(id):
+				continue
+			var o := WC.origin(id)
+			var want := Vector2(o.x - 180.0 - float(wr[0]), o.y - 180.0 - float(wr[1]))
+			if not want.is_equal_approx(Vector2(float(meta.maps[id].x), float(meta.maps[id].y))):
+				p("%s 方块位置 %s 与城市群世界坐标不符（应为 %s）" % [id, Vector2(float(meta.maps[id].x), float(meta.maps[id].y)), want])
+	else:
+		p("worldmap.json 缺少 world_rect")
 
 
 func _px(m: Dictionary, x: float, z: float) -> Color:
@@ -193,36 +211,38 @@ func _check_map(mid: String) -> void:
 		p("%s 道路抽样只有 %.1f%% 在底图上是路面色（%d 点）" % [tag, fr * 100.0, n_r])
 	if fd < 0.995:
 		p("%s 陆地抽样有 %.1f%% 在底图上画成了水" % [tag, (1.0 - fd) * 100.0])
-	# 底图上画成建筑（屋顶色）的像素在这一局建筑占地里的比例
+	# 城市群布局里的建筑轮廓：底图上是屋顶（不是路 / 水 / 空地），且这一局真的盖了（在大型占地矩形里）
 	var roof := 0
+	var drawn := 0
 	var hit := 0
-	var occ_big := Marshalls.base64_to_raw(_occ_b64(mid))
-	var zz := 0
-	while zz < 360:
-		var xx := 0
-		while xx < 360:
-			if occ_big.size() == 360 * 360 and occ_big[zz * 360 + xx] >= 12:
+	for b: Dictionary in WC.zone_layout(mid).bldgs:
+		var u := Vector2(cos(b.ang), sin(b.ang))
+		var v := Vector2(-sin(b.ang), cos(b.ang))
+		var sx: float = b.sx
+		var sz: float = b.sz
+		var a := -sx * 0.5 + 1.5
+		while a < sx * 0.5 - 1.4:
+			var c := -sz * 0.5 + 1.5
+			while c < sz * 0.5 - 1.4:
+				var q: Vector2 = b.c + u * a + v * c
 				roof += 1
-				if big[zz * 360 + xx] == 1:
+				var col := _px(m, q.x, q.y)
+				if _in(col, ROOF):
+					drawn += 1
+				var gi := clampi(int(q.y + 180.0), 0, 359) * 360 + clampi(int(q.x + 180.0), 0, 359)
+				if big[gi] == 1:
 					hit += 1
-			xx += 2
-		zz += 2
+				c += 2.0
+			a += 2.0
 	var fb := float(hit) / maxf(1.0, roof)
-	if roof > 0 and fb < 0.6:
-		p("%s 大地图建筑像素只有 %.0f%% 落在本局（种子 %d）的建筑占地里" % [tag, fb * 100.0, SEED])
-	log_line("%s 水 %d/%d 路 %d/%d 陆 %d/%d 建筑 %d/%d(%.0f%%) 转场口 %s" % [tag, ok_w, n_w, ok_r, n_r, ok_d, n_d, hit, roof, fb * 100.0, gm.keys()])
+	var fdr := float(drawn) / maxf(1.0, roof)
+	if roof > 0 and fb < 0.9:
+		p("%s 布局建筑只有 %.0f%% 在本局（种子 %d）的建筑占地里" % [tag, fb * 100.0, SEED])
+	if roof > 0 and fdr < 0.95:
+		p("%s 布局建筑只有 %.0f%% 在大地图上画成了屋顶" % [tag, fdr * 100.0])
+	log_line("%s 水 %d/%d 路 %d/%d 陆 %d/%d 建筑 实建 %d/%d 画出 %d/%d 转场口 %s" % [tag, ok_w, n_w, ok_r, n_r, ok_d, n_d, hit, roof, drawn, roof, gm.keys()])
 	raid.queue_free()
 	await frames(1)
-
-
-## 导出数据里的多种子建筑占用（tools/worldmap/data 不进 Godot 资源，直接按文件路径读）
-func _occ_b64(mid: String) -> String:
-	var path := ProjectSettings.globalize_path("res://tools/worldmap/data/%s.json" % mid)
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return ""
-	var d: Dictionary = JSON.parse_string(f.get_as_text())
-	return str(d.get("occ_big_b64", ""))
 
 
 func _check_ui() -> void:
@@ -303,7 +323,7 @@ func _check_ui() -> void:
 	ev.position = wm.size * 0.5
 	wm._gui_input(ev)
 	var mv := InputEventMouseMotion.new()
-	mv.position = wm.size * 0.5 + Vector2(60, 40)
+	mv.position = wm.size * 0.5 - Vector2(60, 40)   # 往左上拖（选中战区居中时上沿可能已贴边，往下拖会被夹住）
 	wm._gui_input(mv)
 	ev = ev.duplicate()
 	ev.pressed = false
