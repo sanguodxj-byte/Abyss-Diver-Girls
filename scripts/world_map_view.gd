@@ -413,4 +413,4 @@ func _draw() -> void:
 		if st:
 			draw_texture_rect(st, Rect2(at.floor(), Vector2(24, 24)), false)
 	if zoom_lbl:
-		zoom_lbl.text = "比例 %s  · 1 像素 = %s 米   拖动平移 · 滚轮缩放" % ["×%s" % str(z), str(snappedf(1.0 / z, 0.01))]
+		zoom_lbl.text = "比例 %s  · 1 像素 = %s 米" % ["×%s" % str(z), str(snappedf(1.0 / z, 0.01))]

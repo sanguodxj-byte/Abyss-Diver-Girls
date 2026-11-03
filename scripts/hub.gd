@@ -722,7 +722,7 @@ func _build_maintenance_view(parent: Control) -> void:
 			return null if cur == "" else {"kind": "slot", "slot": slot, "id": cur}
 		b.tip_fn = func():
 			var cur: String = GameData.loadout.get(slot, "")
-			return null if cur == "" else _item_tip({"id": cur, "hint": "点击更换 · 拖到仓库卸下"})
+			return null if cur == "" else _item_tip({"id": cur})
 		v.add_child(b)
 		var m := MarginContainer.new()
 		m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -810,7 +810,6 @@ func _build_maintenance_view(parent: Control) -> void:
 	maint_grid.accept_drop = func(d: Dictionary): return str(d.get("kind", "")) == "slot"
 	maint_grid.on_drop = func(d: Dictionary): _unequip(str(d.slot))
 	rv.add_child(_scroll(maint_grid))
-	rv.add_child(UI.label("双击装备 · 拖动到左侧槽位 · 右键更多", 12, Color(0.4, 0.4, 0.36)))
 
 	# 中下：属性汇总条
 	var sp := K.frame(6)
@@ -866,7 +865,7 @@ func _build_trade_view(parent: Control) -> void:
 	trade_list_root = Control.new()
 	trade_list_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_at(trade_list_root, v_t, FILL, [0, 0, 0, 0])
-	var tp := _tpanel(trade_list_root, "商人", "Traders", [0.0, 0.0, 1.0, 0.0], [K.M, K.GAP, -K.M, K.GAP + 340], "选择一位商人开始交易")
+	var tp := _tpanel(trade_list_root, "商人", "Traders", [0.0, 0.0, 1.0, 0.0], [K.M, K.GAP, -K.M, K.GAP + 340])
 	var row := K.hbox(8)
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tp[1].add_child(row)
@@ -1030,7 +1029,6 @@ func _build_trade_view(parent: Control) -> void:
 		_trade_pick_sell(str(d.id))
 		_sell_selected()
 	sp[1].add_child(_scroll(shop_list))
-	sp[1].add_child(UI.label("单击查看 · 双击直接买入 · 把仓库物品拖到这里出售", 12, Color(0.4, 0.4, 0.36)))
 
 	var pp := _tpanel(trade_deal_root, "我的仓库", "Stash", [0.5, 0.0, 1.0, 1.0], [K.GAP * 0.5, gt, -K.M, -K.GAP * 2 - DEAL_H])
 	trade_stash_grid = _grid_widget(60, "tstash")
@@ -1044,7 +1042,6 @@ func _build_trade_view(parent: Control) -> void:
 	trade_stash_grid.accept_drop = func(d: Dictionary): return str(d.get("kind", "")) == "shop"
 	trade_stash_grid.on_drop = func(d: Dictionary): _buy(int(d.index))
 	pp[1].add_child(_scroll(trade_stash_grid))
-	pp[1].add_child(UI.label("单击选择要出售的物品 · 双击直接出售 · 把货架商品拖到这里买入", 12, Color(0.4, 0.4, 0.36)))
 
 	# 交易确认栏
 	var deal := K.frame(8)
@@ -1058,7 +1055,7 @@ func _build_trade_view(parent: Control) -> void:
 	dv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dh.add_child(dv)
-	deal_name_lbl = UI.label("选择一件商品或仓库物品", 12, K.CREAM)
+	deal_name_lbl = UI.label("—", 12, K.CREAM)
 	dv.add_child(deal_name_lbl)
 	deal_info_lbl = UI.label("", 12, K.CREAM_DIM)
 	deal_info_lbl.clip_text = true
@@ -1172,9 +1169,9 @@ func _update_deal() -> void:
 	sell_btn.disabled = trade_side != "sell"
 	if id == "":
 		deal_cell.set_entry({})
-		deal_name_lbl.text = "选择一件商品（买入）或仓库物品（卖出）"
+		deal_name_lbl.text = "—"
 		deal_name_lbl.add_theme_color_override("font_color", K.CREAM_DIM)
-		deal_info_lbl.text = "商人收购价 = 物品价值；商人售价为价值 ×1.25。"
+		deal_info_lbl.text = ""
 		deal_price_lbl.text = ""
 		deal_after_lbl.text = "余额 ¥ %s" % _fmt_money(GameData.money)
 		return
@@ -2402,7 +2399,7 @@ func refresh() -> void:
 		if id == "":
 			nl.text = "— 空槽 —"
 			nl.add_theme_color_override("font_color", Color(0.42, 0.42, 0.38))
-			stl.text = "点击或拖入模块"
+			stl.text = "空位"
 			slot_cells[slot].set_entry({})
 		else:
 			var m: Dictionary = GameData.module(id)
@@ -2562,7 +2559,7 @@ func _populate_maint_grid() -> void:
 	for e in es:
 		maint_ids.append(e.id)
 		if GameData.is_module(str(e.id)):
-			e["hint"] = "双击装备 · 拖到左侧槽位"
+			e["hint"] = ""
 	maint_grid.set_entries(es)
 	if maint_count_lbl:
 		maint_count_lbl.text = "%d 件 · %.1f kg" % [GameData.stash.size(), GameData.weight_of(GameData.stash)]
@@ -2576,7 +2573,7 @@ func _populate_deploy_stash() -> void:
 	for e in _stack(GameData.stash):
 		var it := GameData.item(e.id)
 		if it.cat == "use" or it.cat == "food":
-			e["hint"] = "双击或拖到右侧装入货舱"
+			e["hint"] = ""
 			es.append(e)
 			deploy_stash_ids.append(e.id)
 	deploy_stash_list.empty_text = "仓库里没有消耗品或食物。"
@@ -2590,7 +2587,7 @@ func _populate_cargo() -> void:
 	cargo_ids.clear()
 	for e in es:
 		cargo_ids.append(e.id)
-		e["hint"] = "双击或拖回左侧退回仓库"
+		e["hint"] = ""
 	cargo_list.empty_text = "货舱是空的：从左侧装入消耗品与食物。"
 	cargo_list.set_entries(es)
 
@@ -2605,7 +2602,7 @@ func _refresh_shop() -> void:
 		if not GameData.ITEMS.has(id):
 			continue
 		var p := _price(id)
-		es.append({"id": id, "price": p, "bad": GameData.money < p, "hint": "双击买入 · ¥%s" % _fmt_money(p)})
+		es.append({"id": id, "price": p, "bad": GameData.money < p, "hint": "¥%s" % _fmt_money(p)})
 		shop_ids.append(id)
 	shop_list.set_entries(es)
 	if selected_shop >= 0 and selected_shop < shop_ids.size():
@@ -2617,7 +2614,7 @@ func _refresh_shop() -> void:
 		trade_stash_ids.clear()
 		for e in ts:
 			trade_stash_ids.append(e.id)
-			e["hint"] = "收购价 ¥%s · 双击卖出" % _fmt_money(int(GameData.item(e.id).v))
+			e["hint"] = "收购价 ¥%s" % _fmt_money(int(GameData.item(e.id).v))
 		trade_stash_grid.set_entries(ts)
 		if trade_side == "sell":
 			trade_stash_grid.select(trade_stash_ids.find(selected_stash))
