@@ -930,6 +930,7 @@ class DeployButton extends Button:
 			_disc(c, r - 5.0, AMBER_DK)
 			_disc(c, r - 7.0, fill)
 		else:
+			_disc(c, r, LINE2 if _hot else LINE)
 			_disc(c, r - 2.0, fill)
 			_dashed_ring(c, r, AMBER.lightened(0.2) if _hot else AMBER)
 		# 四个方向的短齿，像素感与页签描边呼应
