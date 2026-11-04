@@ -10,6 +10,8 @@ extends RefCounted
 ## 寻路预算：每个物理帧最多算 PATHS_PER_FRAME 条新路径，超出的请求返回 null 让调用方下一帧再来（150+ 只虫同时重算也不会卡帧）；
 ##   同一起点格 → 终点格的结果缓存约 1 秒（同群挤在一起的虫会命中缓存）。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const CELL := 1.5              ## 格子边长（米）
 const R_BUG := 0.8             ## 虫子的通行间隙：格心离障碍不足这个距离就不可走（0.8 保证 0.25 米的薄墙也一定落到格心上）
 const R_MECH := 1.15           ## 机甲的通行间隙（机甲胶囊半径 1.0）
@@ -17,6 +19,7 @@ const BLOCK_MIN_Y := 0.35      ## 顶面低于这个高度的形状（地面、�
 const BLOCK_MAX_Y := 1.8       ## 底面高于这个高度的形状（悬空构件）不挡路
 const EDGE := 4.0              ## 地图边缘这一圈不可走（单位本来就被限制在 HALF - 4 以内）
 const PATHS_PER_FRAME := 6
+const PATH_US_PER_FRAME := 3000   ## 每个物理帧寻路（A* + 拉直）最多花这么多微秒，超出的请求顺延到下一帧
 const CACHE_FRAMES := 60
 
 var half := 180.0
@@ -33,6 +36,7 @@ var paths_computed := 0        ## 统计：累计真正跑过的 A* 次数（测
 var _cache := {}
 var _budget_frame := -1
 var _budget := 0
+var _spent_us := 0
 
 
 ## 从 root（raid）下的静态碰撞体建网格
@@ -73,6 +77,8 @@ func build(root: Node, half_size: float) -> void:
 			solid_mech[k] = 1 if (border or dist_mech[k] < R_MECH) else 0
 	astar_bug = _make_astar(solid_bug)
 	astar_mech = _make_astar(solid_mech)
+	_runs_bug = _label_runs(solid_bug)
+	_runs_mech = _label_runs(solid_mech)
 	_cache.clear()
 	build_ms = (Time.get_ticks_usec() - t0) / 1000.0
 
@@ -283,20 +289,127 @@ func request_path(from: Vector3, to: Vector3, mech := false):
 	if f != _budget_frame:
 		_budget_frame = f
 		_budget = PATHS_PER_FRAME
-	if _budget <= 0:
+		_spent_us = 0
+	if _budget <= 0 or _spent_us >= PATH_US_PER_FRAME:
 		return null
+	var _t_begin := Time.get_ticks_usec()
 	_budget -= 1
 	paths_computed += 1
 	var a: AStarGrid2D = astar_mech if mech else astar_bug
+	# 终点与起点不连通时，允许部分路径的 A* 会把起点所在的整片连通区域全部展开（大图上单次可达上百毫秒，是追击时卡帧尖刺的主因）。
+	# 先用连通区域标号判断；不连通就直接换成起点区域里离终点最近（同一 octile 距离）的格子，结果与部分路径一致，但只展开到那一格
+	var runs: Array = _runs_mech if mech else _runs_bug
+	if not runs.is_empty():
+		var k0 := _comp_of(runs, c0)
+		if k0 >= 0 and _comp_of(runs, c1) != k0:
+			var alt := _closest_in_comp(runs, k0, c1)
+			if alt.x >= 0:
+				c1 = alt
+	var _pt := Prof.t0()
 	var raw: PackedVector2Array = a.get_point_path(c0, c1, true)
+	Prof.add("nav.astar", _pt)
 	var pts := PackedVector3Array()
 	for q in raw:
 		pts.append(Vector3(q.x, 0.0, q.y))
+	_pt = Prof.t0()
 	pts = _smooth(from, pts, mech)
+	Prof.add("nav.smooth", _pt)
 	if _cache.size() > 600:
 		_cache.clear()
 	_cache[key] = [f, pts]
+	_spent_us += Time.get_ticks_usec() - _t_begin
 	return pts
+
+
+## 连通区域标号（按行的可走区段做并查集，4 邻接：对角移动要求两侧都可走，连通性与 4 邻接相同）。
+## 结果每行一个 PackedInt32Array：[起列, 止列, 区域号, ...]，查询时在该行区段里找
+var _runs_bug: Array = []
+var _runs_mech: Array = []
+
+
+func _label_runs(solid: PackedByteArray) -> Array:
+	var rows: Array = []
+	var parent := PackedInt32Array()
+	var prev := PackedInt32Array()
+	for j in n:
+		var row := PackedInt32Array()
+		var i := 0
+		var base := j * n
+		while i < n:
+			if solid[base + i] != 0:
+				i += 1
+				continue
+			var s0 := i
+			while i < n and solid[base + i] == 0:
+				i += 1
+			var id := parent.size()
+			parent.append(id)
+			row.append(s0)
+			row.append(i - 1)
+			row.append(id)
+			# 与上一行重叠的区段合并
+			var q := 0
+			while q < prev.size():
+				if prev[q] <= i - 1 and prev[q + 1] >= s0:
+					var ra := _uf_find(parent, id)
+					var rb := _uf_find(parent, prev[q + 2])
+					if ra != rb:
+						parent[maxi(ra, rb)] = mini(ra, rb)
+				q += 3
+		rows.append(row)
+		prev = row
+	for row: PackedInt32Array in rows:
+		var q := 2
+		while q < row.size():
+			row[q] = _uf_find(parent, row[q])
+			q += 3
+	return rows
+
+
+static func _uf_find(parent: PackedInt32Array, x: int) -> int:
+	while parent[x] != x:
+		parent[x] = parent[parent[x]]
+		x = parent[x]
+	return x
+
+
+func _comp_of(runs: Array, c: Vector2i) -> int:
+	if c.y < 0 or c.y >= runs.size():
+		return -1
+	var row: PackedInt32Array = runs[c.y]
+	var q := 0
+	while q < row.size():
+		if c.x < row[q]:
+			return -1
+		if c.x <= row[q + 1]:
+			return row[q + 2]
+		q += 3
+	return -1
+
+
+## 区域 comp 里离 c 最近的格子（octile 距离，与 A* 的估价一致）；按行距由近到远找，行距本身已超过当前最优就停
+func _closest_in_comp(runs: Array, comp: int, c: Vector2i) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var bd := INF
+	for dy in n:
+		if float(dy) >= bd:
+			break
+		for sgn in ([0] if dy == 0 else [-1, 1]):
+			var j: int = c.y + dy * sgn
+			if j < 0 or j >= runs.size():
+				continue
+			var row: PackedInt32Array = runs[j]
+			var q := 0
+			while q < row.size():
+				if row[q + 2] == comp:
+					var x := clampi(c.x, row[q], row[q + 1])
+					var ax := absi(x - c.x)
+					var d := float(maxi(ax, dy)) + 0.41421356 * float(mini(ax, dy))
+					if d < bd:
+						bd = d
+						best = Vector2i(x, j)
+				q += 3
+	return best
 
 
 ## 拉直：从当前点出发，跳到最远的、直线可达的路点（最多往前看 12 个）
@@ -350,7 +463,9 @@ class Agent:
 		timer -= delta
 		var moved := goal == Vector3.INF or Vector2(goal.x - to.x, goal.z - to.z).length_squared() > 9.0
 		if timer <= 0.0 or (moved and not direct):
+			var _pt := Prof.t0()
 			direct = not force_path and nav.line_clear(pos, to, mech)
+			Prof.add("nav.line_clear", _pt)
 			if direct:
 				path = PackedVector3Array()
 				goal = to
