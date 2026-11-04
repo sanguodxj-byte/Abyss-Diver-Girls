@@ -166,27 +166,8 @@ func _measure_state(tag: String, sites: Array, embeds: Array) -> Dictionary:
 		await _steer(e.pos + e.dir * 6.0, 1.5)
 		if Vector2(m.global_position.x - p0.x, m.global_position.z - p0.z).length() < 0.6:
 			ds += 1
-			if _arg("debug", "0") == "1":
-				log_line("deep stuck at %s (start %s) y=%.2f floor=%s cls=%s free=%s" % [m.global_position, p0, m.global_position.y, m.is_on_floor(),
-					U.classify(m, Vector2(e.dir.x, e.dir.z)), U._free(m, m.global_position, U._cap_small)])
-				_press_toward(e.pos + e.dir * 6.0)
-				await get_tree().physics_frame
-				await get_tree().physics_frame
-				for k in m.get_slide_collision_count():
-					var sc: KinematicCollision3D = m.get_slide_collision(k)
-					log_line("   slide: %s n=%s depth=%.3f pos=%s" % [sc.get_collider(), sc.get_normal(), sc.get_depth(), sc.get_position()])
-				var q := PhysicsShapeQueryParameters3D.new()
-				var cap := CapsuleShape3D.new()
-				cap.radius = 1.0
-				cap.height = 2.8
-				q.shape = cap
-				q.transform = Transform3D(Basis.IDENTITY, m.global_position + Vector3(0, 1.4, 0))
-				q.collision_mask = 0xFFFF
-				q.exclude = [m.get_rid()]
-				for h in m.get_world_3d().direct_space_state.intersect_shape(q, 8):
-					log_line("   overlap: %s layer=%d" % [h.collider, h.collider.collision_layer if "collision_layer" in h.collider else -1])
-				log_line("   vel=%s dir=%s" % [m.velocity, e.dir])
-				_release()
+			if tag == "opt_unstuck":
+				log_line("%s deep stuck at %s cls=%s" % [tag, m.global_position.snapped(Vector3.ONE * 0.1), U.classify(m, Vector2(e.dir.x, e.dir.z))])
 	r["deep_stuck"] = ds
 	# 窄坑：地图外临时搭一个内宽 2.3m 的四面围墙小坑，机甲在坑里按住右
 	r["pocket_stuck"] = await _pocket_test()
@@ -250,13 +231,6 @@ func _drive(start: Vector3, target: Vector3) -> Dictionary:
 					wedged = true
 		if wedged:
 			wedge += 1
-			if _arg("debug", "0") == "1" and wedge % 40 == 1:
-				var info: Array = []
-				for k in m.get_slide_collision_count():
-					var sc: KinematicCollision3D = m.get_slide_collision(k)
-					var col = sc.get_collider()
-					info.append("%s L%d n=%s" % [col.name, col.collision_layer if "collision_layer" in col else -1, sc.get_normal().snapped(Vector3.ONE * 0.01)])
-				log_line("wedge at %s : %s" % [m.global_position.snapped(Vector3.ONE * 0.1), ", ".join(info)])
 		if Vector2(p.x - target.x, p.z - target.z).length() < 2.0:
 			passed = true
 			break
