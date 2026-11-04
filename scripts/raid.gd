@@ -97,7 +97,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	preload("res://scripts/collision_opt.gd").optimize(self)   # 碰撞后处理：小件去碰撞、窄缝合并、防卡死（见脚本说明）
 	_spawn_initial_bugs(drop)
 	_tmark("extracts+bugs")
-	_bake_static()
+	_bake_static(drop)
 	_tmark("bake")
 	rebuild_nav()   # 导航网格：所有静态几何体都建好之后栅格化（碰撞后处理改动布局后会再调一次）
 	_tmark("nav")
@@ -406,31 +406,20 @@ func _bldg_body(size: Vector3, pos: Vector3) -> StaticBody3D:
 	return sb
 
 
+## 重复小件交给分块合批（render_batch.gd：按分块 + 网格 + 去色材质收成 MultiMesh，外观懒构建）
 func _multimesh(mesh: Mesh, m: Material, xforms: Array, shadow := true) -> void:
-	# 按 60m 分块，保证视锥裁剪有效（大地图性能）
-	var buckets := {}
-	for t: Transform3D in xforms:
-		var key := Vector2i(floori(t.origin.x / 60.0), floori(t.origin.z / 60.0))
-		if not buckets.has(key):
-			buckets[key] = []
-		buckets[key].append(t)
-	for key in buckets:
-		_multimesh_one(mesh, m, buckets[key], shadow)
+	_rb().add_inst(mesh, m, xforms, shadow)
 
 
-func _multimesh_one(mesh: Mesh, m: Material, xforms: Array, shadow := true) -> void:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = xforms.size()
-	for i in xforms.size():
-		mm.set_instance_transform(i, xforms[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = m
-	if not shadow:
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	world.add_child(mmi)
+var _rbatch: Node3D = null
+
+
+func _rb() -> Node3D:
+	if _rbatch == null or not is_instance_valid(_rbatch):
+		_rbatch = preload("res://scripts/render_batch.gd").new()
+		_rbatch.name = "RenderChunks"
+		world.add_child(_rbatch)
+	return _rbatch
 
 
 func _rand_basis(tilt := 25.0) -> Basis:
@@ -3830,48 +3819,39 @@ func _patrol_free(p: Vector3, r: float) -> bool:
 
 
 # ---------- 性能：静态装饰合批 ----------
-## 把挂在静态体上的大量重复小网格（窗户、窗框、墙肋……）合并成分块 MultiMesh，节点数降一个数量级
-func _bake_static() -> void:
+## 静态外观全部交给分块合批：world 下（只经过无脚本、无分组、自动命名的 Node3D / StaticBody3D）的静态网格
+## 从节点树摘掉，按 分块 + 材质 合成 ArrayMesh；碰撞体留在原处不动。开局只建视野内的分块，其余懒构建。
+func _bake_static(drop: Vector3) -> void:
 	_flush_inst()
-	var groups := {}
+	var rb := _rb()
 	var stack: Array = [world]
+	var removed := 0
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		for ch in n.get_children():
+			if ch == rb or ch.get_script() != null or not ch.get_groups().is_empty():
+				continue
 			if ch is MeshInstance3D:
-				var par: Node = ch.get_parent()
-				if not (par == world or (par is StaticBody3D and not par.is_in_group("lootboxes"))):
-					continue
 				var mi: MeshInstance3D = ch
-				if mi.material_overlay != null or mi.mesh == null:
+				if not mi.visible or mi.material_overlay != null or mi.transparency > 0.0 or mi.visibility_range_end > 0.0 \
+						or mi.get_child_count() > 0 or not rb.mergeable(mi.mesh) or _has_surface_override(mi):
 					continue
-				var t: Transform3D = mi.global_transform
-				var key := [mi.mesh.get_rid(), mi.material_override.get_rid() if mi.material_override else RID(), mi.cast_shadow, floori(t.origin.x / 48.0), floori(t.origin.z / 48.0)]
-				var ks := str(key)
-				if not groups.has(ks):
-					groups[ks] = {"mesh": mi.mesh, "mat": mi.material_override, "shadow": mi.cast_shadow, "items": []}
-				groups[ks].items.append([mi, t])
-			elif ch is Node3D and not (ch is CPUParticles3D) and not ch.is_in_group("lootboxes") and not ch.is_in_group("bugs"):
+				rb.add_mesh(mi.mesh, mi.material_override, mi.global_transform, mi.cast_shadow)
+				mi.get_parent().remove_child(mi)
+				mi.queue_free()
+				removed += 1
+			elif (ch.get_class() == "Node3D" or ch.get_class() == "StaticBody3D") and ch.visible and str(ch.name).begins_with("@"):
 				stack.append(ch)
-	var removed := 0
-	for ks in groups:
-		var g: Dictionary = groups[ks]
-		if g.items.size() < 4:
-			continue
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = g.mesh
-		mm.instance_count = g.items.size()
-		for i in g.items.size():
-			mm.set_instance_transform(i, g.items[i][1])
-			g.items[i][0].queue_free()
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.material_override = g.mat
-		mmi.cast_shadow = g.shadow
-		world.add_child(mmi)
-		removed += g.items.size()
-	print("[raid] baked %d static meshes into multimeshes" % removed)
+	var f: Vector3 = mech.global_position if mech and is_instance_valid(mech) else drop
+	rb.update_focus(f, rb.STREAM_R, -1)
+	print("[raid] batched %d static meshes + %d instances into %d chunks (%d built)" % [removed, rb.stats.inst, rb._chunks.size(), rb.stats.built])
+
+
+func _has_surface_override(mi: MeshInstance3D) -> bool:
+	for i in mi.get_surface_override_material_count():
+		if mi.get_surface_override_material(i) != null:
+			return true
+	return false
 
 
 ## 地图生成分段耗时（毫秒，按阶段累计；打印在 map build 日志下一行）

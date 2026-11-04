@@ -14,6 +14,7 @@ uniform float rust : hint_range(0.0, 1.0) = 0.25;      // 锈迹流痕
 uniform float panel_scale = 1.6;                        // 面板接缝密度（0 关闭）
 uniform float stripes = 0.0;                            // 1 = 黄黑警示条纹
 uniform float detail_scale = 1.0;
+uniform int tint_mode = 0;                            // 静态合批：0 不用；1 底色乘 MultiMesh 实例自定义数据；2 乘顶点色 gba（r 仍是边缘遮罩）
 uniform float takes_damage = 0.0;                      // 1 = 随机甲受损程度出现烧蚀/弹痕
 global uniform float mech_damage;
 uniform vec4 bare_metal : source_color = vec4(0.62, 0.62, 0.6, 1.0);
@@ -31,6 +32,7 @@ varying vec3 lnrm;
 varying vec3 wpos;
 varying vec3 wnrm;
 varying float edge;
+varying vec3 tint;
 
 void vertex() {
 	lpos = VERTEX;
@@ -38,6 +40,7 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	edge = 1.0 - COLOR.r;
+	tint = tint_mode == 1 ? INSTANCE_CUSTOM.rgb : (tint_mode == 2 ? COLOR.gba : vec3(1.0));
 }
 
 vec3 tri_w(vec3 n) {
@@ -56,7 +59,7 @@ void fragment() {
 	float n_hi = tri(noise_hi, p * 2.2, w);
 	float n_sc = tri(noise_hi, p * vec3(9.0, 1.2, 9.0), w); // 拉长的划痕噪声
 
-	vec3 col = base_color.rgb * (0.9 + 0.16 * n_lo) * (0.98 + 0.03 * n_hi);
+	vec3 col = base_color.rgb * tint * (0.9 + 0.16 * n_lo) * (0.98 + 0.03 * n_hi);
 	if (use_albedo_tex > 0.5) {
 		vec3 tp = wpos * albedo_tex_scale;
 		vec3 tw = tri_w(wnrm);
