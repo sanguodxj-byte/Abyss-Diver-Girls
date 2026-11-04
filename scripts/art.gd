@@ -719,7 +719,46 @@ static func ground_decal(parent: Node3D, tex: Texture2D, c: Color, size: float, 
 
 
 ## 一次性爆发粒子，播完自动销毁。
+## 一次性粒子池：枪口火光 / 命中火花 / 硝烟每秒上百个，每个都新建粒子节点 + 网格 + 曲线 + 渐变很贵（节点进出场景树、渲染资源创建与释放）。
+## 同一父节点、同一组参数（方向除外）的粒子播完后回池，下次直接移位重播；网格 / 曲线 / 渐变按参数缓存共用
+const BURST_POOL_MAX := 24
+static var _burst_pool := {}
+static var _burst_res := {}
+
+
+static func _burst_res_get(key: String, make: Callable) -> Resource:
+	var r = _burst_res.get(key)
+	if r == null:
+		r = make.call()
+		_burst_res[key] = r
+	return r
+
+
+static func _burst_done(p: CPUParticles3D) -> void:
+	if not is_instance_valid(p):
+		return
+	var key: String = p.get_meta("_bk", "")
+	var pool: Array = _burst_pool.get(key, [])
+	if key == "" or pool.size() >= BURST_POOL_MAX or not p.is_inside_tree():
+		p.queue_free()
+		return
+	pool.append(p)
+	_burst_pool[key] = pool
+
+
 static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3D:
+	var o := opts.duplicate()
+	o.erase("dir")
+	var key := "%d|%s" % [parent.get_instance_id(), o]
+	var pool: Array = _burst_pool.get(key, [])
+	while not pool.is_empty():
+		var q = pool.pop_back()
+		if is_instance_valid(q) and q.is_inside_tree() and q.get_parent() == parent:
+			q.flatness = 0.0
+			q.direction = opts.get("dir", Vector3.UP)
+			q.global_position = pos
+			q.restart()
+			return q
 	var p := CPUParticles3D.new()
 	p.one_shot = true
 	p.explosiveness = opts.get("explosive", 0.95)
@@ -727,10 +766,14 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.lifetime = opts.get("life", 0.5)
 	p.local_coords = false
-	var qm := QuadMesh.new()
-	qm.size = Vector2.ONE * opts.get("size", 0.3)
-	qm.material = particle_mat(opts.get("tex", soft_dot()), opts.get("additive", true))
-	p.mesh = qm
+	var tex: Texture2D = opts.get("tex", soft_dot())
+	var add: bool = opts.get("additive", true)
+	var sz: float = opts.get("size", 0.3)
+	p.mesh = _burst_res_get("q%d|%s|%s" % [tex.get_instance_id(), add, sz], func():
+		var qm := QuadMesh.new()
+		qm.size = Vector2.ONE * sz
+		qm.material = particle_mat(tex, add)
+		return qm)
 	p.direction = opts.get("dir", Vector3.UP)
 	p.spread = opts.get("spread", 180.0)
 	p.initial_velocity_min = opts.get("vmin", 3.0)
@@ -740,22 +783,27 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	p.damping_max = opts.get("damp", 2.0)
 	p.scale_amount_min = opts.get("smin", 0.6)
 	p.scale_amount_max = opts.get("smax", 1.2)
-	var curve := Curve.new()
-	curve.add_point(Vector2(0, opts.get("grow0", 1.0)))
-	curve.add_point(Vector2(1, opts.get("grow1", 0.0)))
-	p.scale_amount_curve = curve
-	var g := Gradient.new()
+	var g0: float = opts.get("grow0", 1.0)
+	var g1: float = opts.get("grow1", 0.0)
+	p.scale_amount_curve = _burst_res_get("c%s|%s" % [g0, g1], func():
+		var curve := Curve.new()
+		curve.add_point(Vector2(0, g0))
+		curve.add_point(Vector2(1, g1))
+		return curve)
 	var c0: Color = opts.get("c0", Color(1, 0.8, 0.4))
 	var c1: Color = opts.get("c1", Color(c0.r, c0.g * 0.4, 0.0, 0.0))
-	g.set_color(0, c0)
-	g.set_color(1, c1)
-	p.color_ramp = g
+	p.color_ramp = _burst_res_get("g%s|%s" % [c0, c1], func():
+		var g := Gradient.new()
+		g.set_color(0, c0)
+		g.set_color(1, c1)
+		return g)
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	p.emission_sphere_radius = opts.get("radius", 0.1)
 	parent.add_child(p)
 	p.global_position = pos
 	p.emitting = true
-	p.finished.connect(p.queue_free)
+	p.set_meta("_bk", key)
+	p.finished.connect(_burst_done.bind(p))
 	return p
 
 
