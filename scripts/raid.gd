@@ -70,6 +70,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	fx = Node3D.new()
 	add_child(fx)
 	map_id = GameData.map_id
+	var t_build := Time.get_ticks_usec()
 	_load_map()
 	_build_environment()
 	_build_ground()
@@ -89,6 +90,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_spawn_initial_bugs(drop)
 	_bake_static()
 	rebuild_nav()   # 导航网格：所有静态几何体都建好之后栅格化（碰撞后处理改动布局后会再调一次）
+	print("[raid] map build %s: %d ms, world nodes %d, blocks %d" % [map_id, (Time.get_ticks_usec() - t_build) / 1000, _count_nodes(world), blocks.size()])
 
 	mech = MechScript.new()
 	mech.raid = self
@@ -141,6 +143,8 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 ##     行动结束时随行动场景一起释放（天气、动态事件、局内通讯小窗等持续逻辑写在这里）
 func _run_ext_build(drop: Vector3) -> void:
 	for path in GameData.RAID_SCRIPTS:
+		if str(path).ends_with("/landmarks.gd"):
+			_keep_clear.clear()   # 地标原位一直留空到地标脚本自己落位
 		var s: Script = load(str(path))
 		if s == null:
 			push_error("行动扩展脚本无法加载：%s" % path)
@@ -149,6 +153,7 @@ func _run_ext_build(drop: Vector3) -> void:
 			if m.name == "build":
 				s.call("build", self, drop)
 				break
+	_keep_clear.clear()
 
 
 func _add_ext_nodes() -> void:
@@ -547,11 +552,51 @@ func _rect_for(center: Vector3, size: Vector3) -> Rect2:
 	return Rect2(center.x - size.x * 0.5, center.z - size.z * 0.5, size.x, size.z)
 
 
+## 占地查询：blocks 按 12 米格子分桶（外部脚本直接往 blocks 里追加也会在下次查询时补进索引）
+const _BK := 12.0
+var _bk := {}
+var _bk_n := 0
+
+
+func _bk_sync() -> void:
+	if blocks.size() < _bk_n:
+		_bk.clear()
+		_bk_n = 0
+	while _bk_n < blocks.size():
+		var b: Rect2 = blocks[_bk_n]
+		for gx in range(floori(b.position.x / _BK), floori(b.end.x / _BK) + 1):
+			for gz in range(floori(b.position.y / _BK), floori(b.end.y / _BK) + 1):
+				var key := Vector2i(gx, gz)
+				if _bk.has(key):
+					_bk[key].append(_bk_n)
+				else:
+					_bk[key] = PackedInt32Array([_bk_n])
+		_bk_n += 1
+
+
+## 地图生成摆杂物期间要留空的区域：转场口通道、地标原位（Rect2 / Vector3(x, z, r)）
+var _keep_clear: Array = []
+
+
 func _blocked(p: Vector3, r: float, terrain := true) -> bool:
+	_bk_sync()
+	if not _keep_clear.is_empty():
+		var pr := Rect2(p.x - r, p.z - r, r * 2, r * 2)
+		for kc in _keep_clear:
+			if kc is Rect2:
+				if (kc as Rect2).intersects(pr):
+					return true
+			elif Vector2(p.x, p.z).distance_to(Vector2(kc.x, kc.y)) < kc.z + r:
+				return true
 	var probe := Rect2(p.x - r, p.z - r, r * 2, r * 2)
-	for b in blocks:
-		if b.intersects(probe):
-			return true
+	for gx in range(floori(probe.position.x / _BK), floori(probe.end.x / _BK) + 1):
+		for gz in range(floori(probe.position.y / _BK), floori(probe.end.y / _BK) + 1):
+			var lst = _bk.get(Vector2i(gx, gz))
+			if lst == null:
+				continue
+			for i: int in lst:
+				if blocks[i].intersects(probe):
+					return true
 	if terrain:
 		var q := Vector2(p.x, p.z)
 		if on_road(q, r - 0.5) or in_river(q, r + 2.0):
@@ -713,12 +758,13 @@ func _crashed_ship(c: Vector3) -> void:
 	_add_flicker(l)
 
 
-func _building(p: Vector3, size: Vector3) -> void:
+func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 	# 废弃城区楼房：暖灰混凝土外墙 + 深色勒脚 + 转角壁柱 + 窗框窗台 + 带女儿墙的沥青屋顶 + 屋顶设备
 	var c := Color(0.5, 0.46, 0.4).lerp(Color(0.42, 0.38, 0.33), rng.randf())
 	if rng.randf() < 0.3:
 		c = Color(0.46, 0.4, 0.33)  # 少数砖黄色楼
 	var sb := _static_box(size, p + Vector3(0, size.y * 0.5, 0), c, null, A.concrete(c))
+	sb.rotation.y = -yaw
 	var hy := size.y * 0.5
 	var hx := size.x * 0.5
 	var hz := size.z * 0.5
@@ -1843,23 +1889,31 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ================= 大地图：道路 + 区块 =================
 const Maps = preload("res://scripts/maps.gd")
+const WC = preload("res://scripts/world_city.gd")
 const CELL := 40.0
 const DISTRICT_NAMES := Maps.ZONE_NAMES
 var map_id := "greyport"
 var MAP: Dictionary = {}
-var zones: Array = []
-var roads: Array = []          ## {v, c, a, b, w, dirt}
-var river_pts := PackedVector2Array()
+var zones: Array = []            ## 9×9 区块字符表（数据原样；实际区块边界见 zone_at，是不规则的）
+var layout: Dictionary = {}      ## 当前战区窗口的城市群布局（scripts/world_city.gd zone_layout，战区本地坐标）
+var roads: Array = []            ## 旧版轴对齐网格路（v0.8 起不再使用，保留为空表）
+var curves: Array = []           ## 全部道路（折线）：{pts: 加密点, d: 同 pts, w, dirt, kind, bridge}
+var rivers: Array = []           ## 河道：{pts, w, dry}
+var river_pts := PackedVector2Array()   ## 兼容：最宽的一条河
 var river_w := 0.0
 var river_dry := true
-var ridge_pts: Array = []      ## Vector2：山脊巨石
-var curves: Array = []         ## {pts: PackedVector2Array, d: 加密点, w, dirt}
-var lakes: Array = []          ## Vector3(x, z, r)
-var rail_lines: Array = []     ## [Vector2, Vector2]
+var ridge_pts: Array = []        ## Vector2：山脊巨石
+var lakes: Array = []            ## Vector3(x, z, r)
+var rail_lines: Array = []       ## [Vector2, Vector2]
+var rail_polys: Array = []       ## 铁路折线 PackedVector2Array
 var map_labels: Array = []
 var poi_centers: Array = []
-var poi_ids: Array = []        ## 与 poi_centers 一一对应的 POI 类型 id
+var poi_ids: Array = []          ## 与 poi_centers 一一对应的 POI 类型 id
+var bldg_polys: Array = []       ## [PackedVector2Array, 区块字符]：这一局实际建起来的建筑轮廓（地形图用）
 var cur_district := ""
+var _rg: WC.SegGrid              ## 道路线段索引
+var _wg: WC.SegGrid              ## 河道线段索引
+var _road_len := PackedFloat32Array()   ## 道路累计长度（随机取路面点用）
 
 
 func _e(k: int) -> float:
@@ -1869,36 +1923,55 @@ func _e(k: int) -> float:
 func _load_map() -> void:
 	MAP = GameData.map_data(map_id)
 	zones = MAP.zones
+	layout = WC.zone_layout(map_id)
 	roads.clear()
-	for r: Array in MAP.roads:
-		var a: float = _e(r[2]) - 6.0 if r[2] > 0 else -HALF - 8.0
-		var b: float = _e(r[3]) + 6.0 if r[3] < 9 else HALF + 8.0
-		roads.append({"v": r[0], "c": _e(r[1]), "a": a, "b": b, "w": r[4], "dirt": r[5]})
-	river_pts = PackedVector2Array()
-	for q: Array in MAP.river.pts:
-		river_pts.append(Vector2(q[0], q[1]))
-	river_w = MAP.river.w
-	river_dry = MAP.river.dry
 	curves.clear()
-	for cv: Array in MAP.get("curves", []):
-		var pp := PackedVector2Array()
-		for q: Array in cv[2]:
-			pp.append(Vector2(q[0], q[1]))
-		curves.append({"pts": pp, "d": _dense(pp, 2.0), "w": cv[0], "dirt": cv[1]})
-	lakes.clear()
-	for l: Array in MAP.get("lakes", []):
-		lakes.append(Vector3(l[0], l[1], l[2]))
+	_rg = WC.SegGrid.new()
+	_rg.cell = 12.0
+	_rg.reach = 12.0
+	_road_len = PackedFloat32Array()
+	var acc := 0.0
+	for r: Dictionary in layout.roads:
+		var pts: PackedVector2Array = r.pts
+		curves.append({"pts": pts, "d": pts, "w": float(r.w), "dirt": bool(r.dirt), "kind": str(r.kind), "bridge": bool(r.bridge)})
+		_rg.add_poly(pts, float(r.w) * 0.5, curves.size() - 1)
+		for k in pts.size() - 1:
+			acc += pts[k].distance_to(pts[k + 1])
+		_road_len.append(acc)
+	rivers.clear()
+	_wg = WC.SegGrid.new()
+	_wg.cell = 16.0
+	_wg.reach = 16.0
+	river_pts = PackedVector2Array()
+	river_w = 0.0
+	river_dry = true
+	for r: Dictionary in layout.rivers:
+		var pts: PackedVector2Array = r.pts
+		if pts.size() < 2:
+			continue
+		rivers.append({"pts": pts, "w": float(r.w), "dry": bool(r.dry)})
+		_wg.add_poly(pts, float(r.w) * 0.5, rivers.size() - 1)
+		if float(r.w) > river_w or (river_dry and not r.dry):
+			river_pts = pts
+			river_w = float(r.w)
+			river_dry = bool(r.dry)
+	lakes = (layout.lakes as Array).duplicate()
 	rail_lines.clear()
-	for line: Array in MAP.rails:
+	rail_polys.clear()
+	for line: PackedVector2Array in layout.rails:
+		rail_polys.append(line)
 		for k in line.size() - 1:
-			rail_lines.append([Vector2(line[k][0], line[k][1]), Vector2(line[k + 1][0], line[k + 1][1])])
+			rail_lines.append([line[k], line[k + 1]])
 	map_labels = MAP.labels
 
 
+## 区块字符：城市群布局的区块栅格（2 米），边界是不规则的
 func zone_at(p: Vector3) -> String:
-	var i := clampi(int((p.x + HALF) / CELL), 0, 8)
-	var j := clampi(int((p.z + HALF) / CELL), 0, 8)
-	return zones[j][i]
+	var n: int = layout.r_n
+	var o: Vector2 = layout.r_o
+	var x := clampi(floori((p.x - o.x) / WC.RAST), 0, n - 1)
+	var y := clampi(floori((p.z - o.y) / WC.RAST), 0, n - 1)
+	return char(layout.rast[y * n + x])
 
 
 ## 当前所在地名：最近的地图标注
@@ -1913,40 +1986,29 @@ func district_at(p: Vector3) -> String:
 	return best
 
 
-func _road_rect(r: Dictionary, pad := 0.0) -> Rect2:
-	var hw: float = r.w * 0.5 + pad
-	if r.v:
-		return Rect2(r.c - hw, r.a, hw * 2.0, r.b - r.a)
-	return Rect2(r.a, r.c - hw, r.b - r.a, hw * 2.0)
-
-
+## 是否在路面上（pad > 0 外扩，< 0 内缩）
 func on_road(p: Vector2, pad := 0.0) -> bool:
-	for r: Dictionary in roads:
-		if _road_rect(r, pad).has_point(p):
-			return true
-	return on_curve(p, pad)
+	return _rg != null and _rg.edge_dist(p) < pad
 
 
 func on_curve(p: Vector2, pad := 0.0) -> bool:
-	for cv: Dictionary in curves:
-		if _pdist(cv.pts, p) < cv.w * 0.5 + pad:
-			return true
-	return false
+	return on_road(p, pad)
 
 
 func _pdist(pts: PackedVector2Array, p: Vector2) -> float:
-	var best := INF
-	for k in pts.size() - 1:
-		var a := pts[k]
-		var b := pts[k + 1]
-		var ab := b - a
-		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-		best = minf(best, p.distance_to(a + ab * t))
-	return best
+	return WC.poly_dist(pts, p)
 
 
+## 到最近河道中心线的距离
 func river_dist(p: Vector2) -> float:
-	return _pdist(river_pts, p)
+	var best := INF
+	if _wg == null:
+		return best
+	var lst = _wg.grid.get(Vector2i(floori(p.x / _wg.cell), floori(p.y / _wg.cell)))
+	if lst != null:
+		for i: int in lst:
+			best = minf(best, WC.seg_dist(p, _wg.a[i], _wg.b[i]))
+	return best
 
 
 func in_lake(p: Vector2, pad := 0.0) -> bool:
@@ -1958,66 +2020,46 @@ func in_lake(p: Vector2, pad := 0.0) -> bool:
 
 ## 河道（含干河床）或湖：不摆建筑
 func in_river(p: Vector2, pad := 0.0) -> bool:
-	return (river_pts.size() > 1 and river_dist(p) < river_w * 0.5 + pad) or in_lake(p, pad)
+	return (_wg != null and _wg.edge_dist(p) < pad) or in_lake(p, pad)
 
 
 ## 真有水的地方
 func in_wet(p: Vector2, pad := 0.0) -> bool:
-	return (not river_dry and river_pts.size() > 1 and river_dist(p) < river_w * 0.5 + pad) or in_lake(p, pad)
+	if in_lake(p, pad):
+		return true
+	if _wg == null:
+		return false
+	var lst = _wg.grid.get(Vector2i(floori(p.x / _wg.cell), floori(p.y / _wg.cell)))
+	if lst == null:
+		return false
+	for i: int in lst:
+		if not rivers[_wg.tag[i]].dry and WC.seg_dist(p, _wg.a[i], _wg.b[i]) - _wg.hw[i] < pad:
+			return true
+	return false
 
 
-## 边线内缩：有道路就让出半个路宽 + 人行道，否则 2m（地图外缘 8m）
-func _inset(vert: bool, k: int, s0: float, s1: float) -> float:
-	if k == 0 or k == 9:
-		return 8.0
-	var line := _e(k)
-	for r: Dictionary in roads:
-		if r.v == vert and absf(r.c - line) < 0.1 and r.a < s1 - 1.0 and r.b > s0 + 1.0:
-			return r.w * 0.5 + 1.2
-	return 2.0
-
-
+## 9×9 数据格子的范围（虫群分布表、空投点等按格子统计的逻辑仍用它；格子里实际的区块见 zone_at）
 func _cell_rect(i: int, j: int) -> Rect2:
-	var x0 := _e(i)
-	var x1 := _e(i + 1)
-	var z0 := _e(j)
-	var z1 := _e(j + 1)
-	var l := _inset(true, i, z0, z1)
-	var rr := _inset(true, i + 1, z0, z1)
-	var t := _inset(false, j, x0, x1)
-	var b := _inset(false, j + 1, x0, x1)
-	return Rect2(x0 + l, z0 + t, (x1 - rr) - (x0 + l), (z1 - b) - (z0 + t))
-
-
-## 同类型且中间没有道路的相邻格子合成一个街区
-func _group(i0: int, j0: int, seen: Dictionary) -> Array:
-	var t: String = zones[j0][i0]
-	var out: Array = []
-	var stack: Array = [Vector2i(i0, j0)]
-	seen[Vector2i(i0, j0)] = true
-	while not stack.is_empty():
-		var c: Vector2i = stack.pop_back()
-		out.append(c)
-		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			var n := c + d
-			if n.x < 0 or n.y < 0 or n.x > 8 or n.y > 8 or seen.has(n) or zones[n.y][n.x] != t:
-				continue
-			var road := false
-			if d.x != 0:
-				road = _inset(true, maxi(c.x, n.x), _e(c.y), _e(c.y + 1)) > 2.5
-			else:
-				road = _inset(false, maxi(c.y, n.y), _e(c.x), _e(c.x + 1)) > 2.5
-			if road:
-				continue
-			seen[n] = true
-			stack.append(n)
-	return out
+	return Rect2(_e(i) + 2.0, _e(j) + 2.0, CELL - 4.0, CELL - 4.0)
 
 
 func _spot_in(r: Rect2, rad: float, tries := 40) -> Vector3:
 	for t in tries:
 		var p := Vector3(rng.randf_range(r.position.x + rad, r.end.x - rad), 0, rng.randf_range(r.position.y + rad, r.end.y - rad))
 		if not _blocked(p, rad):
+			return p
+	return Vector3.INF
+
+
+## 凸多边形里的随机空地
+func _spot_in_poly(poly: PackedVector2Array, rad: float, tries := 30) -> Vector3:
+	var r := WC._poly_rect(poly)
+	for t in tries:
+		var q := Vector2(rng.randf_range(r.position.x, r.end.x), rng.randf_range(r.position.y, r.end.y))
+		if not WC.in_convex(poly, q):
+			continue
+		var p := Vector3(q.x, 0, q.y)
+		if absf(p.x) < HALF - 4.0 and absf(p.z) < HALF - 4.0 and not _blocked(p, rad):
 			return p
 	return Vector3.INF
 
@@ -2032,61 +2074,50 @@ func _loot_in(r: Rect2, n: int, weights: Dictionary) -> void:
 		blocks.append(Rect2(p.x - 1, p.z - 1, 2, 2))
 
 
-func _fill(t: String, r: Rect2) -> void:
-	if r.size.x < 8.0 or r.size.y < 8.0:
+## 旋转矩形登记占地：轴对齐时一块，斜放时切成约 4 米的小块（每块取外接矩形），避免整个外接矩形把街道也占掉
+func _obb_blocks(c: Vector2, ang: float, sx: float, sz: float) -> void:
+	var s2 := absf(sin(ang * 2.0))
+	if s2 < 0.17:
+		var q := fposmod(ang + PI * 0.25, PI)
+		if q > PI * 0.5:
+			blocks.append(Rect2(c.x - sz * 0.5, c.y - sx * 0.5, sz, sx))
+		else:
+			blocks.append(Rect2(c.x - sx * 0.5, c.y - sz * 0.5, sx, sz))
 		return
-	match t:
-		"D": _fill_downtown(r)
-		"R": _fill_residential(r)
-		"I": _fill_industrial(r)
-		"M": _fill_military(r)
-		"W": _fill_wasteland(r)
-		"F": _fill_farm(r)
-		"P": _fill_park(r)
-		"H": _fill_harbor(r)
-		"Y": _fill_railyard(r)
-		"T": _fill_forest(r)
-		"C": _fill_craters(r)
-		"S": _fill_hive(r)
-		"K": _fill_cliff(r)
+	var u := Vector2(cos(ang), sin(ang))
+	var v := Vector2(-sin(ang), cos(ang))
+	var nx := maxi(1, ceili(sx / 4.5))
+	var nz := maxi(1, ceili(sz / 4.5))
+	var cx := sx / nx
+	var cz := sz / nz
+	var ex := (absf(u.x) * cx + absf(v.x) * cz) * 0.5 * 0.92
+	var ez := (absf(u.y) * cx + absf(v.y) * cz) * 0.5 * 0.92
+	for i in nx:
+		for j in nz:
+			var q: Vector2 = c + u * (-sx * 0.5 + (i + 0.5) * cx) + v * (-sz * 0.5 + (j + 0.5) * cz)
+			blocks.append(Rect2(q.x - ex, q.y - ez, ex * 2.0, ez * 2.0))
 
 
 func _build_map() -> Vector3:
+	_shield_spots()
 	_build_roads()
-	_build_curves()
 	_build_river()
 	_build_lakes()
 	_build_rails()
 	_build_ridges()
 	poi_centers.clear()
 	poi_ids.clear()
-	var auto := 0
-	for c: Array in MAP.pois:
-		var r := _cell_rect(c[0], c[1])
-		poi_centers.append(Vector3(r.get_center().x, 0, r.get_center().y))
-		if c.size() > 2:
-			poi_ids.append(str(c[2]))
-		else:
-			poi_ids.append(Maps.POI_ORDER[auto % Maps.POI_ORDER.size()])
-			auto += 1
+	for p: Dictionary in layout.pois:
+		poi_centers.append(Vector3(p.c.x, 0, p.c.y))
+		poi_ids.append(str(p.id))
+	# 遗迹院落自己的摆放不受留空区约束
+	var kc := _keep_clear
+	_keep_clear = []
 	_build_pois()
-	var seen := {}
-	for j in 9:
-		for i in 9:
-			if seen.has(Vector2i(i, j)):
-				continue
-			var t: String = zones[j][i]
-			var grp := _group(i, j, seen)
-			var mn := Vector2i(9, 9)
-			var mx := Vector2i(-1, -1)
-			for c: Vector2i in grp:
-				mn = Vector2i(mini(mn.x, c.x), mini(mn.y, c.y))
-				mx = Vector2i(maxi(mx.x, c.x), maxi(mx.y, c.y))
-			if grp.size() == (mx.x - mn.x + 1) * (mx.y - mn.y + 1) and grp.size() <= 6:
-				_fill(t, _cell_rect(mn.x, mn.y).merge(_cell_rect(mx.x, mx.y)))
-			else:
-				for c: Vector2i in grp:
-					_fill(t, _cell_rect(c.x, c.y))
+	_keep_clear = kc
+	_build_blocks()
+	_build_fields()
+	_scatter()
 	# 道路上的废弃车辆 / 火桶
 	for k in 96:
 		var p := _road_point(2.5)
@@ -2096,23 +2127,44 @@ func _build_map() -> Vector3:
 		var p := _road_point(1.5)
 		if not _blocked(p, 1.5, false) and not in_river(Vector2(p.x, p.z), 3.0) and absf(p.x) < HALF - 8 and absf(p.z) < HALF - 8:
 			_fire_barrel(p)
-	return _drop_point()
+	return _drop_point()   # _keep_clear 保留到扩展脚本里的地标落位前（_run_ext_build）
 
 
+## 转场口通道与地标原位：这一段生成杂物时避开（转场口位置是确定的，见 world_city.gd gate_along）
+func _shield_spots() -> void:
+	_keep_clear.clear()
+	for edge: String in WorldLinkScript.LINKS.get(map_id, {}):
+		var al := WC.gate_along(map_id, edge)
+		var hs: float = WorldLinkScript.HALF_SPAN + 2.0
+		match edge:
+			"N": _keep_clear.append(Rect2(al - hs, -HALF - 4.0, hs * 2.0, 40.0))
+			"S": _keep_clear.append(Rect2(al - hs, HALF - 36.0, hs * 2.0, 40.0))
+			"W": _keep_clear.append(Rect2(-HALF - 4.0, al - hs, 40.0, hs * 2.0))
+			_: _keep_clear.append(Rect2(HALF - 36.0, al - hs, 40.0, hs * 2.0))
+	for e in MAP.get("landmarks", []):
+		if not bool(e.get("water", false)):
+			_keep_clear.append(Vector3(float(e.get("x", 0)), float(e.get("z", 0)), float(e.get("clear", 7.0)) + 1.0))
+
+
+## 随机路面点（按道路长度加权）
 func _road_point(edge: float) -> Vector3:
-	var n := roads.size() + curves.size()
-	var i := rng.randi() % n
-	if i < roads.size():
-		var r: Dictionary = roads[i]
-		var along := clampf(rng.randf_range(r.a, r.b), -HALF + 10, HALF - 10)
-		var off := rng.randf_range(-1.0, 1.0) * maxf(0.0, r.w * 0.5 - edge)
-		return Vector3(r.c + off, 0, along) if r.v else Vector3(along, 0, r.c + off)
-	var cv: Dictionary = curves[i - roads.size()]
-	var d: PackedVector2Array = cv.d
-	var j := rng.randi_range(1, d.size() - 2)
-	var t := (d[j + 1] - d[j - 1]).normalized()
-	var q := d[j] + Vector2(-t.y, t.x) * rng.randf_range(-1.0, 1.0) * maxf(0.0, cv.w * 0.5 - edge)
-	return Vector3(q.x, 0, q.y)
+	if curves.is_empty():
+		return _free_spot(2.0)
+	for t in 8:
+		var total: float = _road_len[_road_len.size() - 1]
+		var x := rng.randf() * total
+		var i := _road_len.bsearch(x)
+		i = clampi(i, 0, curves.size() - 1)
+		var cv: Dictionary = curves[i]
+		var d: PackedVector2Array = cv.d
+		if d.size() < 3:
+			continue
+		var j := rng.randi_range(1, d.size() - 2)
+		var tg := (d[j + 1] - d[j - 1]).normalized()
+		var q := d[j] + Vector2(-tg.y, tg.x) * rng.randf_range(-1.0, 1.0) * maxf(0.0, cv.w * 0.5 - edge)
+		if absf(q.x) < HALF - 6.0 and absf(q.y) < HALF - 6.0:
+			return Vector3(q.x, 0, q.y)
+	return _free_spot(2.0)
 
 
 func _drop_point() -> Vector3:
@@ -2123,9 +2175,11 @@ func _drop_point() -> Vector3:
 			if zones[j][i] in ["R", "W", "F", "P", "T"] and (i <= 1 or j <= 1 or i >= 7 or j >= 7):
 				safe_cells.append(Vector2i(i, j))
 	for t in 40:
+		if safe_cells.is_empty():
+			break
 		var c: Vector2i = safe_cells[rng.randi() % safe_cells.size()]
 		var p := _spot_in(_cell_rect(c.x, c.y), 4.0)
-		if p != Vector3.INF:
+		if p != Vector3.INF and not (zone_at(p) in ["K", "S"]):
 			return p
 	return _free_spot(4.0)
 
@@ -2134,7 +2188,8 @@ func _drop_point() -> Vector3:
 const MAP_PX := 720
 const ZONE_TINT := {"W": Color(0.33, 0.3, 0.23), "F": Color(0.4, 0.35, 0.2), "R": Color(0.36, 0.33, 0.3), "D": Color(0.27, 0.28, 0.31),
 	"I": Color(0.33, 0.29, 0.24), "H": Color(0.25, 0.29, 0.31), "Y": Color(0.3, 0.27, 0.25), "M": Color(0.27, 0.31, 0.22), "P": Color(0.23, 0.32, 0.19),
-	"T": Color(0.17, 0.24, 0.15), "C": Color(0.25, 0.22, 0.19), "S": Color(0.27, 0.19, 0.28), "K": Color(0.2, 0.17, 0.15)}
+	"T": Color(0.17, 0.24, 0.15), "C": Color(0.25, 0.22, 0.19), "S": Color(0.27, 0.19, 0.28), "K": Color(0.2, 0.17, 0.15), "L": Color(0.21, 0.27, 0.23),
+	"A": Color(0.12, 0.2, 0.28), "B": Color(0.5, 0.45, 0.36)}
 var map_tex: ImageTexture
 
 
@@ -2147,7 +2202,6 @@ func _img_line(img: Image, a: Vector2, b: Vector2, w: float, c: Color, step := 1
 		var q := Vector2i(int((p.x + HALF) * k) - s / 2, int((p.y + HALF) * k) - s / 2)
 		img.fill_rect(Rect2i(q, Vector2i(s, s)), c)
 
-
 func _img_disc(img: Image, c: Vector2, rad: float, col: Color) -> void:
 	var k := MAP_PX / (HALF * 2.0)
 	var cx := (c.x + HALF) * k
@@ -2158,53 +2212,84 @@ func _img_disc(img: Image, c: Vector2, rad: float, col: Color) -> void:
 		if y >= 0 and y < MAP_PX:
 			img.fill_rect(Rect2i(int(cx - hw), y, int(hw * 2.0) + 1, 1), col)
 
+## 凸多边形填色（世界坐标）
+func _img_poly(img: Image, poly: PackedVector2Array, col: Color) -> void:
+	var k := MAP_PX / (HALF * 2.0)
+	var pp := PackedVector2Array()
+	for q in poly:
+		pp.append(Vector2((q.x + HALF) * k, (q.y + HALF) * k))
+	var r := WC._poly_rect(pp)
+	var m := pp.size()
+	for y in range(maxi(0, int(r.position.y)), mini(MAP_PX - 1, int(r.end.y)) + 1):
+		var yc := y + 0.5
+		var x0 := INF
+		var x1 := -INF
+		for i in m:
+			var a := pp[i]
+			var b := pp[(i + 1) % m]
+			if (a.y <= yc) != (b.y <= yc):
+				var x := a.x + (yc - a.y) / (b.y - a.y) * (b.x - a.x)
+				x0 = minf(x0, x)
+				x1 = maxf(x1, x)
+		if x1 >= x0:
+			var xa := clampi(roundi(x0), 0, MAP_PX)
+			var xb := clampi(roundi(x1), 0, MAP_PX)
+			if xb > xa:
+				img.fill_rect(Rect2i(xa, y, xb - xa, 1), col)
+
+
+func _img_poly_line(img: Image, pts: PackedVector2Array, w: float, c: Color) -> void:
+	for i in pts.size() - 1:
+		_img_line(img, pts[i], pts[i + 1], w, c)
+
 
 func _build_map_texture() -> void:
 	var img := Image.create(MAP_PX, MAP_PX, false, Image.FORMAT_RGBA8)
 	var k := MAP_PX / (HALF * 2.0)
-	for j in 9:
-		for i in 9:
-			var c: Color = ZONE_TINT[zones[j][i]]
-			img.fill_rect(Rect2i(int((_e(i) + HALF) * k), int((_e(j) + HALF) * k), int(CELL * k) + 1, int(CELL * k) + 1), c)
-	# 农田垄线 / 公园树点
-	for j in 9:
-		for i in 9:
-			var r := _cell_rect(i, j)
-			if zones[j][i] == "F":
-				var z := r.position.y + 2.0
-				while z < r.end.y:
-					_img_line(img, Vector2(r.position.x + 2, z), Vector2(r.end.x - 2, z), 0.6, Color(0.33, 0.28, 0.16), 2.0)
-					z += 4.4
+	# 区块底色：2 米栅格放大
+	var n: int = layout.r_n
+	var pad := int(roundf(-(layout.r_o.x + HALF) / WC.RAST))
+	var m := int(HALF * 2.0 / WC.RAST)
+	var base := Image.create(m, m, false, Image.FORMAT_RGBA8)
+	for y in m:
+		for x in m:
+			base.set_pixel(x, y, ZONE_TINT.get(char(layout.rast[(y + pad) * n + x + pad]), ZONE_TINT.W))
+	base.resize(MAP_PX, MAP_PX, Image.INTERPOLATE_NEAREST)
+	img.blit_rect(base, Rect2i(0, 0, MAP_PX, MAP_PX), Vector2i.ZERO)
+	# 农田垄线（顺着田块朝向）
+	for fd: Dictionary in layout.fields:
+		var poly: PackedVector2Array = fd.poly
+		if poly.size() < 3:
+			continue
+		var u := Vector2(cos(fd.ang), sin(fd.ang))
+		var v := Vector2(-sin(fd.ang), cos(fd.ang))
+		var lo := INF
+		var hi := -INF
+		for q in poly:
+			lo = minf(lo, q.dot(v))
+			hi = maxf(hi, q.dot(v))
+		var t := lo + 2.0
+		while t < hi:
+			var seg := _line_in_poly(poly, v * t, u)
+			if seg.size() == 2 and zone_at(Vector3((seg[0].x + seg[1].x) * 0.5, 0, (seg[0].y + seg[1].y) * 0.5)) == "F":
+				_img_line(img, seg[0], seg[1], 0.6, Color(0.33, 0.28, 0.16), 2.0)
+			t += 4.4
 	# 河流
-	if river_pts.size() > 1:
-		for i in river_pts.size() - 1:
-			_img_line(img, river_pts[i], river_pts[i + 1], river_w + 4.0, Color(0.22, 0.2, 0.17) if not river_dry else Color(0.36, 0.32, 0.25))
-		for i in river_pts.size() - 1:
-			_img_line(img, river_pts[i], river_pts[i + 1], river_w, Color(0.17, 0.3, 0.37) if not river_dry else Color(0.5, 0.45, 0.35))
+	for r: Dictionary in rivers:
+		_img_poly_line(img, r.pts, r.w + 4.0, Color(0.22, 0.2, 0.17) if not r.dry else Color(0.36, 0.32, 0.25))
+	for r: Dictionary in rivers:
+		_img_poly_line(img, r.pts, r.w, Color(0.17, 0.3, 0.37) if not r.dry else Color(0.5, 0.45, 0.35))
 	# 湖
 	for l: Vector3 in lakes:
 		_img_disc(img, Vector2(l.x, l.y), l.z + 2.0, Color(0.22, 0.2, 0.17))
 	for l: Vector3 in lakes:
 		_img_disc(img, Vector2(l.x, l.y), l.z, Color(0.17, 0.3, 0.37))
-	# 道路
+	# 道路：先画路缘，再画路面
 	for cv: Dictionary in curves:
-		var pp: PackedVector2Array = cv.pts
-		for i in pp.size() - 1:
-			_img_line(img, pp[i], pp[i + 1], cv.w, Color(0.47, 0.41, 0.31) if cv.dirt else Color(0.53, 0.51, 0.47))
+		_img_poly_line(img, cv.pts, cv.w, Color(0.47, 0.41, 0.31) if cv.dirt else Color(0.53, 0.51, 0.47))
 	for cv: Dictionary in curves:
-		if cv.dirt:
-			continue
-		var pp: PackedVector2Array = cv.pts
-		for i in pp.size() - 1:
-			_img_line(img, pp[i], pp[i + 1], cv.w - 2.4, Color(0.42, 0.405, 0.38) if cv.w >= 11.0 else Color(0.38, 0.37, 0.35))
-	for r: Dictionary in roads:
-		var rr := _road_rect(r)
-		var ir := Rect2i(int((rr.position.x + HALF) * k), int((rr.position.y + HALF) * k), int(rr.size.x * k), int(rr.size.y * k))
-		if r.dirt:
-			img.fill_rect(ir, Color(0.47, 0.41, 0.31))
-		else:
-			img.fill_rect(ir, Color(0.53, 0.51, 0.47))
-			img.fill_rect(ir.grow(-int(1.2 * k)), Color(0.42, 0.405, 0.38) if r.w >= 11.0 else Color(0.38, 0.37, 0.35))
+		if not cv.dirt:
+			_img_poly_line(img, cv.pts, cv.w - 2.4, Color(0.42, 0.405, 0.38) if cv.w >= 11.0 else Color(0.38, 0.37, 0.35))
 	# 桥
 	for b: Array in bridges:
 		_img_line(img, b[0], b[1], b[2] + 1.5, Color(0.12, 0.12, 0.13))
@@ -2212,41 +2297,67 @@ func _build_map_texture() -> void:
 	# 铁轨
 	for l: Array in rail_lines:
 		_img_line(img, l[0], l[1], 3.0, Color(0.2, 0.18, 0.17))
+	for l: Array in rail_lines:
 		_img_line(img, l[0], l[1], 1.0, Color(0.5, 0.45, 0.4))
 	# 山脊
 	for p: Vector2 in ridge_pts:
 		_img_line(img, p, p, 5.0, Color(0.18, 0.15, 0.12))
 		_img_line(img, p + Vector2(-0.6, -0.6), p + Vector2(-0.6, -0.6), 3.0, Color(0.42, 0.37, 0.3))
-	# 建筑 / 障碍
-	var big: Array = []
-	var small: Array = []
+	# 小型障碍（占地矩形）
 	for r: Rect2 in blocks:
-		(big if r.get_area() > 10.0 else small).append(r)
-	for r: Rect2 in small:
-		img.fill_rect(Rect2i(int((r.position.x + HALF) * k), int((r.position.y + HALF) * k), maxi(2, int(r.size.x * k)), maxi(2, int(r.size.y * k))), Color(0.16, 0.155, 0.15))
-	for r: Rect2 in big:
-		var rr := Rect2i(int((r.position.x + HALF) * k), int((r.position.y + HALF) * k), maxi(3, int(r.size.x * k)), maxi(3, int(r.size.y * k)))
-		img.fill_rect(rr, Color(0.09, 0.09, 0.1))
-		img.fill_rect(rr.grow(-1), Color(0.6, 0.58, 0.54))
+		if r.get_area() <= 10.0:
+			img.fill_rect(Rect2i(int((r.position.x + HALF) * k), int((r.position.y + HALF) * k), maxi(2, int(r.size.x * k)), maxi(2, int(r.size.y * k))), Color(0.16, 0.155, 0.15))
+	# 建筑：实际轮廓（斜放的楼按真实朝向画）
+	for e: Array in bldg_polys:
+		_img_poly(img, e[0], Color(0.09, 0.09, 0.1))
+	for e: Array in bldg_polys:
+		_img_poly(img, WC.inset(e[0], 0.9), Color(0.6, 0.58, 0.54))
 	for e in [Rect2i(0, 0, MAP_PX, 3), Rect2i(0, MAP_PX - 3, MAP_PX, 3), Rect2i(0, 0, 3, MAP_PX), Rect2i(MAP_PX - 3, 0, 3, MAP_PX)]:
 		img.fill_rect(e, Color(0.05, 0.05, 0.05))
 	map_tex = ImageTexture.create_from_image(img)
 
 
+## 直线 o + d·t 与凸多边形的交段（两个端点；不相交返回空）
+func _line_in_poly(poly: PackedVector2Array, o: Vector2, d: Vector2) -> PackedVector2Array:
+	var t0 := -INF
+	var t1 := INF
+	var m := poly.size()
+	var ccw := WC.poly_area_signed(poly) > 0.0
+	for i in m:
+		var p := poly[i]
+		var e := poly[(i + 1) % m] - p
+		var nn := Vector2(-e.y, e.x) if ccw else Vector2(e.y, -e.x)
+		var num := (o - p).dot(nn)
+		var den := d.dot(nn)
+		if absf(den) < 1e-6:
+			if num < 0.0:
+				return PackedVector2Array()
+			continue
+		var t := -num / den
+		if den > 0.0:
+			t0 = maxf(t0, t)
+		else:
+			t1 = minf(t1, t)
+	if t0 >= t1 or t0 == -INF:
+		return PackedVector2Array()
+	return PackedVector2Array([o + d * t0, o + d * t1])
+
+
 ## 地表分区贴图：R 铺装 / G 草地 / B 耕地 / A 碎石工业地坪，地面着色器按世界坐标采样后混合
 const ZONE_GROUND := {"D": Color(1, 0, 0, 0.25), "R": Color(0.45, 0.35, 0, 0), "I": Color(0.15, 0, 0, 1), "H": Color(0.35, 0, 0, 0.85),
 	"Y": Color(0, 0.05, 0, 1), "M": Color(0.35, 0.05, 0, 0.7), "P": Color(0, 1, 0, 0), "F": Color(0, 0.12, 1, 0), "W": Color(0, 0.14, 0, 0),
-	"T": Color(0, 0.85, 0.15, 0), "C": Color(0, 0, 0.25, 0.55), "S": Color(0, 0.1, 0, 0.25), "K": Color(0, 0, 0, 0.45)}
+	"T": Color(0, 0.85, 0.15, 0), "C": Color(0, 0, 0.25, 0.55), "S": Color(0, 0.1, 0, 0.25), "K": Color(0, 0, 0, 0.45), "L": Color(0, 0.55, 0.2, 0),
+	"A": Color(0, 0.1, 0.15, 0), "B": Color(0, 0, 0.3, 0.2)}
 func _build_zone_ground() -> void:
 	var n := 90
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	for y in n:
 		for x in n:
 			var wp := Vector3(-HALF + (x + 0.5) * 4.0, 0, -HALF + (y + 0.5) * 4.0)
-			var c: Color = ZONE_GROUND[zone_at(wp)]
+			var c: Color = ZONE_GROUND.get(zone_at(wp), ZONE_GROUND.W)
 			if in_wet(Vector2(wp.x, wp.z), 6.0):
 				c = Color(0, 0.1, 0.15, 0)
-			elif river_pts.size() > 1 and in_river(Vector2(wp.x, wp.z), 6.0):
+			elif in_river(Vector2(wp.x, wp.z), 6.0):
 				c = Color(0, 0, 0, 0.2)
 			img.set_pixel(x, y, c)
 	img.resize(180, 180, Image.INTERPOLATE_BILINEAR)
@@ -2257,88 +2368,108 @@ func _build_zone_ground() -> void:
 	gm.set_shader_parameter("zone_on", 1.0)
 
 
-func _runs(a: float, b: float, gaps: Array) -> Array:
-	gaps.sort_custom(func(x, y): return x.x < y.x)
-	var out: Array = []
-	var s := a
-	for g: Vector2 in gaps:
-		if g.y <= s or g.x >= b:
-			continue
-		if g.x > s:
-			out.append(Vector2(s, g.x))
-		s = maxf(s, g.y)
-	if s < b:
-		out.append(Vector2(s, b))
-	return out
+# ---------- 道路（全部折线，合并成少数几个网格） ----------
+## 把一组条带加进 SurfaceTool（pts 中心线，w 宽，off 横向偏移，y 高度）
+func _st_strip(st: SurfaceTool, pts: PackedVector2Array, w: float, off: float, y: float) -> void:
+	if pts.size() < 2:
+		return
+	var L := PackedVector3Array()
+	var R := PackedVector3Array()
+	for i in pts.size():
+		var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+		var nn := Vector2(-t.y, t.x)
+		var c := pts[i] + nn * off
+		L.append(Vector3(c.x + nn.x * w * 0.5, y, c.y + nn.y * w * 0.5))
+		R.append(Vector3(c.x - nn.x * w * 0.5, y, c.y - nn.y * w * 0.5))
+	for i in pts.size() - 1:
+		for v in [L[i], R[i], L[i + 1], R[i], R[i + 1], L[i + 1]]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(v.x, v.z) * 0.1)
+			st.add_vertex(v)
+
+
+func _st_commit(st: SurfaceTool, m: Material, count: int) -> void:
+	if count == 0:
+		return
+	st.generate_tangents()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world.add_child(mi)
 
 
 func _build_roads() -> void:
 	var ASPH := A.concrete(Color(0.24, 0.23, 0.22), false)
 	var ASPH2 := A.concrete(Color(0.28, 0.27, 0.26), false)
 	var DIRT := A.concrete(Color(0.42, 0.36, 0.27), false)
+	var RUT := A.concrete(Color(0.3, 0.25, 0.19), false)
 	var WALK := A.concrete(Color(0.5, 0.48, 0.45), true)
 	var LINE := A.paint(Color(0.72, 0.66, 0.45), 0.0, 0.9, {"wear": 0.85, "dust": 0.6, "panel_scale": 0.0})
+	var st_a := SurfaceTool.new()
+	var st_b := SurfaceTool.new()
+	var st_d := SurfaceTool.new()
+	var st_r := SurfaceTool.new()
+	var st_w := SurfaceTool.new()
+	for st in [st_a, st_b, st_d, st_r, st_w]:
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var na := 0
+	var nb := 0
+	var nd := 0
+	var nw := 0
 	var dashes: Array = []
-	var walks: Array = []
-	for ri in roads.size():
-		var r: Dictionary = roads[ri]
-		var v: bool = r.v
-		var c: float = r.c
-		var w: float = r.w
-		var L: float = r.b - r.a
-		var mid: float = (r.a + r.b) * 0.5
-		var yy := (0.034 if v else 0.03) - (0.008 if r.dirt else 0.0) + (0.0 if w >= 11.0 else 0.002)
-		var inner := w - (0.0 if r.dirt else 2.4)
-		var size := Vector3(inner, 0.06, L) if v else Vector3(L, 0.06, inner)
-		var pos := Vector3(c, yy, mid) if v else Vector3(mid, yy, c)
-		A.add(world, A.bevel_box(size, 0.01), DIRT if r.dirt else (ASPH if w >= 11.0 else ASPH2), pos, Vector3.ZERO, Vector3.ONE, false)
-		if r.dirt:
-			# 车辙
-			for sd in [-1.0, 1.0]:
-				var rs := Vector3(0.5, 0.02, L) if v else Vector3(L, 0.02, 0.5)
-				var rp := Vector3(c + sd * 1.3, yy + 0.035, mid) if v else Vector3(mid, yy + 0.035, c + sd * 1.3)
-				A.add(world, A.bevel_box(rs, 0.0), A.concrete(Color(0.3, 0.25, 0.19), false), rp, Vector3.ZERO, Vector3.ONE, false)
+	for ci in curves.size():
+		var cv: Dictionary = curves[ci]
+		var d: PackedVector2Array = cv.d
+		var w: float = cv.w
+		if cv.dirt:
+			_st_strip(st_d, d, w, 0.0, 0.05 + (0.004 if w >= 8.0 else 0.0))
+			for sd in [-1.3, 1.3]:
+				_st_strip(st_r, d, 0.5, sd, 0.058)
+			nd += 1
 			continue
-		var gaps: Array = []
-		for o: Dictionary in roads:
-			if o == r or o.v == v or o.dirt:
-				continue
-			if o.a <= c + w * 0.5 and c - w * 0.5 <= o.b:
-				gaps.append(Vector2(o.c - o.w * 0.5, o.c + o.w * 0.5))
+		# 宽路（主干道）略高一层，路口处压住支路
+		if w >= 10.0:
+			_st_strip(st_a, d, w, 0.0, 0.068)
+			na += 1
+		else:
+			_st_strip(st_b, d, w, 0.0, 0.064)
+			nb += 1
+		# 人行道：跨过其他道路处断开
 		for sd in [-1.0, 1.0]:
-			for run: Vector2 in _runs(r.a, r.b, gaps.duplicate()):
-				var ln := run.y - run.x
-				if ln < 0.5:
-					continue
-				var off: float = c + sd * (w * 0.5 - 0.6)
-				var nch := maxi(1, int(ln / 4.0))
-				var cl := ln / nch
-				for ci in nch:
-					var m := run.x + (ci + 0.5) * cl
-					var mp := Vector2(off, m) if v else Vector2(m, off)
-					if on_curve(mp, 0.2):
-						continue
-					walks.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1.1, 0.16, cl + 0.02) if v else Vector3(cl + 0.02, 0.16, 1.1)), Vector3(off, 0.08, m) if v else Vector3(m, 0.08, off)))
-		if w >= 11.0:
-			var x: float = r.a + 2.0
-			while x < r.b - 2.0:
-				var near := false
-				for g: Vector2 in gaps:
-					if x > g.x - 3.0 and x < g.y + 3.0:
-						near = true
-				if not near and rng.randf() < 0.85 and not on_curve(Vector2(c, x) if v else Vector2(x, c), 0.0):
-					dashes.append(Transform3D(Basis.IDENTITY.scaled(Vector3(0.22, 0.02, 2.2) if v else Vector3(2.2, 0.02, 0.22)), Vector3(c, 0.07, x) if v else Vector3(x, 0.07, c)))
-				x += 5.0
+			var off: float = sd * (w * 0.5 - 0.55)
+			var run := PackedVector2Array()
+			for i in d.size():
+				var t := (d[mini(i + 1, d.size() - 1)] - d[maxi(i - 1, 0)]).normalized()
+				var sp: Vector2 = d[i] + Vector2(-t.y, t.x) * off
+				var ok := _rg.edge_dist(sp, ci) > -0.3 and absf(sp.x) < HALF + 10.0 and absf(sp.y) < HALF + 10.0
+				if ok:
+					run.append(d[i])
+				if (not ok or i == d.size() - 1) and run.size() >= 2:
+					_st_strip(st_w, run, 1.1, off, 0.15)
+					nw += 1
+				if not ok:
+					run = PackedVector2Array()
+		if w >= 10.0:
+			var acc := 0.0
+			for i in d.size() - 1:
+				acc += d[i].distance_to(d[i + 1])
+				if acc >= 5.0:
+					acc = 0.0
+					var t := (d[i + 1] - d[i]).normalized()
+					if _rg.edge_dist(d[i], ci) > 1.0 and rng.randf() < 0.85:
+						dashes.append(Transform3D(Basis(Vector3.UP, atan2(t.x, t.y)).scaled(Vector3(0.22, 0.02, 2.2)), Vector3(d[i].x, 0.08, d[i].y)))
+	_st_commit(st_a, ASPH, na)
+	_st_commit(st_b, ASPH2, nb)
+	_st_commit(st_d, DIRT, nd)
+	_st_commit(st_r, RUT, nd)
+	_st_commit(st_w, WALK, nw)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.0), LINE, dashes, false)
-	_multimesh(A.bevel_box(Vector3.ONE, 0.0), WALK, walks, false)
 	# 路面坑洼 / 油渍
-	for k in (160 if roads.size() > 0 else 0):
-		var r: Dictionary = roads[rng.randi() % roads.size()]
-		var along := rng.randf_range(maxf(r.a, -HALF), minf(r.b, HALF))
-		var off: float = rng.randf_range(-0.35, 0.35) * r.w
-		var p := Vector3(r.c + off, 0.075, along) if r.v else Vector3(along, 0.075, r.c + off)
-		var d := A.ground_decal(world, A.blob_tex(), Color(0.05, 0.05, 0.05, rng.randf_range(0.3, 0.6)), rng.randf_range(1.0, 3.0), p)
-		d.rotation.y = rng.randf() * TAU
+	for k in (160 if not curves.is_empty() else 0):
+		var p := _road_point(1.0)
+		var dd := A.ground_decal(world, A.blob_tex(), Color(0.05, 0.05, 0.05, rng.randf_range(0.3, 0.6)), rng.randf_range(1.0, 3.0), Vector3(p.x, 0.075, p.z))
+		dd.rotation.y = rng.randf() * TAU
 
 
 # ---------- 河流 / 干河床 / 桥 ----------
@@ -2355,7 +2486,6 @@ func _dense(pts: PackedVector2Array, step: float) -> PackedVector2Array:
 			out.append(a.lerp(b, float(i) / n))
 	out.append(pts[pts.size() - 1])
 	return out
-
 
 func _strip_mesh(pts: PackedVector2Array, w: float, y: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
@@ -2375,60 +2505,83 @@ func _strip_mesh(pts: PackedVector2Array, w: float, y: float) -> ArrayMesh:
 	st.generate_tangents()
 	return st.commit()
 
-
-## 道路中心线与河道的交点（用于架桥 / 河堤留口）
-func _road_on(p: Vector2, pad: float) -> Dictionary:
-	for r: Dictionary in roads:
-		if r.dirt and river_dry:
-			continue
-		if _road_rect(r, pad).has_point(p):
-			return r
-	for cv: Dictionary in curves:
-		if _pdist(cv.pts, p) < cv.w * 0.5 + pad:
-			return cv
-	return {}
+## 落在已建桥面上（河堤留口用）
+func _on_bridge(p: Vector2, pad: float) -> bool:
+	for b: Array in bridges:
+		if WC.seg_dist(p, b[0], b[1]) < float(b[2]) * 0.5 + pad:
+			return true
+	return false
 
 
 func _build_river() -> void:
 	bridges.clear()
-	if river_pts.size() < 2:
-		return
-	var pts := _dense(river_pts, 2.0)
-	if river_dry:
+	for r: Dictionary in rivers:
+		_build_one_river(r)
+
+
+func _build_one_river(r: Dictionary) -> void:
+	var rp: PackedVector2Array = r.pts
+	var rw: float = r.w
+	var pts := _dense(rp, 2.0)
+	if r.dry:
 		# 干河床：浅色沙砾河底 + 深色河岸带 + 卵石
 		var mi := MeshInstance3D.new()
-		mi.mesh = _strip_mesh(pts, river_w + 5.0, 0.012)
+		mi.mesh = _strip_mesh(pts, rw + 5.0, 0.012)
 		mi.material_override = A.concrete(Color(0.36, 0.31, 0.24), false)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(mi)
 		var bed := MeshInstance3D.new()
-		bed.mesh = _strip_mesh(pts, river_w, 0.02)
+		bed.mesh = _strip_mesh(pts, rw, 0.02)
 		bed.material_override = A.concrete(Color(0.6, 0.55, 0.44), false)
 		bed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(bed)
 		var stones: Array = []
 		for i in pts.size():
+			if absf(pts[i].x) > HALF + 4.0 or absf(pts[i].y) > HALF + 4.0:
+				continue
 			for k in 3:
 				var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
-				var p := pts[i] + Vector2(-t.y, t.x) * rng.randf_range(-0.5, 0.5) * river_w
+				var p := pts[i] + Vector2(-t.y, t.x) * rng.randf_range(-0.5, 0.5) * rw
 				var sc := rng.randf_range(0.15, 0.55)
 				stones.append(Transform3D(_rand_basis(30).scaled(Vector3(sc * 1.3, sc * 0.5, sc)), Vector3(p.x, sc * 0.1, p.y)))
 		_multimesh(A.sphere(0.5, -1, 8), A.concrete(Color(0.58, 0.54, 0.48), false), stones, false)
 		for k in 18:
-			var i := rng.randi_range(4, pts.size() - 5)
+			var i := rng.randi_range(4, maxi(4, pts.size() - 5))
+			if i >= pts.size():
+				break
 			var p := pts[i]
 			var q := Vector3(p.x + rng.randf_range(-4, 4), 0, p.y + rng.randf_range(-4, 4))
-			if not on_road(Vector2(q.x, q.z), 3.0) and not _blocked(q, 2.0, false):
+			if absf(q.x) < HALF - 3.0 and absf(q.z) < HALF - 3.0 and not on_road(Vector2(q.x, q.z), 3.0) and not _blocked(q, 2.0, false):
 				_boulder(q, rng.randf_range(1.2, 2.4))
 		return
+	# 桥：允许架桥的道路与铁路跨过湿河道处
+	var segs: Array = []
+	for cv: Dictionary in curves:
+		if not cv.bridge:
+			continue
+		var pp: PackedVector2Array = cv.pts
+		for i in pp.size() - 1:
+			segs.append([pp[i], pp[i + 1], cv.w])
+	for line: PackedVector2Array in rail_polys:
+		for i in line.size() - 1:
+			segs.append([line[i], line[i + 1], 4.6])
+	for sg: Array in segs:
+		for k in rp.size() - 1:
+			var hit = Geometry2D.segment_intersects_segment(sg[0], sg[1], rp[k], rp[k + 1])
+			if hit == null or absf(hit.x) > HALF + 6.0 or absf(hit.y) > HALF + 6.0:
+				continue
+			var rd := (rp[k + 1] - rp[k]).normalized()
+			var dir: Vector2 = (sg[1] - sg[0]).normalized()
+			var span := (rw + 6.0) / maxf(absf(dir.cross(rd)), 0.35) + 4.0
+			_bridge(hit, dir, sg[2], span)
 	# 湿河道：泥岸 → 水面 → 混凝土护堤（两侧，过桥处留口）
 	var mud := MeshInstance3D.new()
-	mud.mesh = _strip_mesh(pts, river_w + 6.0, 0.014)
+	mud.mesh = _strip_mesh(pts, rw + 6.0, 0.014)
 	mud.material_override = A.concrete(Color(0.22, 0.2, 0.17), false)
 	mud.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world.add_child(mud)
 	var water := MeshInstance3D.new()
-	water.mesh = _strip_mesh(pts, river_w, 0.05)
+	water.mesh = _strip_mesh(pts, rw, 0.05)
 	water.material_override = _water_mat()
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world.add_child(water)
@@ -2437,17 +2590,18 @@ func _build_river() -> void:
 	bank.collision_mask = 0
 	world.add_child(bank)
 	var curbs: Array = []
-	var seg := 4.0
-	var cpts := _dense(river_pts, seg)
+	var cpts := _dense(rp, 4.0)
 	for i in cpts.size() - 1:
 		var a := cpts[i]
 		var b := cpts[i + 1]
 		var m := (a + b) * 0.5
+		if absf(m.x) > HALF + 8.0 or absf(m.y) > HALF + 8.0:
+			continue
 		var t := (b - a).normalized()
 		var ang := atan2(t.x, t.y)
 		for sd in [-1.0, 1.0]:
-			var p: Vector2 = m + Vector2(-t.y, t.x) * sd * (river_w * 0.5 + 0.4)
-			if not _road_on(p, 1.5).is_empty():
+			var p: Vector2 = m + Vector2(-t.y, t.x) * sd * (rw * 0.5 + 0.4)
+			if _on_bridge(p, 1.5) or in_lake(p, 0.5):
 				continue
 			var bs := Basis(Vector3.UP, ang)
 			curbs.append(Transform3D(bs.scaled(Vector3(0.9, 0.7, a.distance_to(b) + 0.15)), Vector3(p.x, 0.35, p.y)))
@@ -2458,28 +2612,13 @@ func _build_river() -> void:
 			cs.transform = Transform3D(bs, Vector3(p.x, 1.5, p.y))
 			bank.add_child(cs)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.05), A.concrete(Color(0.5, 0.48, 0.45), true), curbs)
-	# 桥：道路中心线与河道相交处（网格路 + 自由路）
-	var segs: Array = []
-	for r: Dictionary in roads:
-		segs.append([Vector2(r.c, r.a) if r.v else Vector2(r.a, r.c), Vector2(r.c, r.b) if r.v else Vector2(r.b, r.c), r.w])
-	for cv: Dictionary in curves:
-		var pp: PackedVector2Array = cv.pts
-		for i in pp.size() - 1:
-			segs.append([pp[i], pp[i + 1], cv.w])
-	for sg: Array in segs:
-		for k in river_pts.size() - 1:
-			var hit = Geometry2D.segment_intersects_segment(sg[0], sg[1], river_pts[k], river_pts[k + 1])
-			if hit == null:
-				continue
-			var rd := (river_pts[k + 1] - river_pts[k]).normalized()
-			var dir: Vector2 = (sg[1] - sg[0]).normalized()
-			var span := (river_w + 6.0) / maxf(absf(dir.cross(rd)), 0.35) + 4.0
-			_bridge(hit, dir, sg[2], span)
 	# 河面漂浮物 / 沉船
 	for k in 6:
-		var i := rng.randi_range(3, pts.size() - 4)
+		var i := rng.randi_range(3, maxi(3, pts.size() - 4))
+		if i + 1 >= pts.size():
+			break
 		var p := pts[i]
-		if _road_on(p, 6.0).is_empty():
+		if absf(p.x) < HALF - 4.0 and absf(p.y) < HALF - 4.0 and not _on_bridge(p, 6.0):
 			var t := (pts[i + 1] - pts[i - 1]).normalized()
 			var hull := Node3D.new()
 			world.add_child(hull)
@@ -2518,7 +2657,6 @@ func _bridge(hp: Vector2, dir: Vector2, w: float, span: float) -> void:
 			var pp: Vector2 = hp + side + dir * (-span * 0.5 + span * (q + 0.5) / 5.0)
 			blocks.append(Rect2(pp.x - 0.6, pp.y - 0.6, 1.2, 1.2))
 
-
 func _water_mat() -> StandardMaterial3D:
 	var WM := StandardMaterial3D.new()
 	WM.albedo_color = Color(0.07, 0.1, 0.1)
@@ -2532,7 +2670,6 @@ func _water_mat() -> StandardMaterial3D:
 	WM.uv1_triplanar = true
 	WM.uv1_world_triplanar = true
 	return WM
-
 
 # ---------- 湖 ----------
 func _build_lakes() -> void:
@@ -2585,8 +2722,6 @@ func _build_lakes() -> void:
 	REED.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_multimesh(A.cyl(0.0, 1.0, 0.04, 3), REED, reeds, false)
 
-
-# ---------- 自由走向道路 ----------
 func _strip_off(pts: PackedVector2Array, w: float, off: float, y: float) -> ArrayMesh:
 	var q := PackedVector2Array()
 	for i in pts.size():
@@ -2594,91 +2729,31 @@ func _strip_off(pts: PackedVector2Array, w: float, off: float, y: float) -> Arra
 		q.append(pts[i] + Vector2(-t.y, t.x) * off)
 	return _strip_mesh(q, w, y)
 
-
-func _in_grid_road(p: Vector2, pad := 0.0) -> bool:
-	for r: Dictionary in roads:
-		if _road_rect(r, pad).has_point(p):
-			return true
-	return false
-
-
-func _build_curves() -> void:
-	if curves.is_empty():
-		return
-	var ASPH := A.concrete(Color(0.25, 0.24, 0.23), false)
-	var DIRT := A.concrete(Color(0.42, 0.36, 0.27), false)
-	var RUT := A.concrete(Color(0.3, 0.25, 0.19), false)
-	var WALK := A.concrete(Color(0.5, 0.48, 0.45), true)
-	var LINE := A.paint(Color(0.72, 0.66, 0.45), 0.0, 0.9, {"wear": 0.85, "dust": 0.6, "panel_scale": 0.0})
-	var dashes: Array = []
-	for cv: Dictionary in curves:
-		var d: PackedVector2Array = cv.d
-		var w: float = cv.w
-		var mi := MeshInstance3D.new()
-		mi.mesh = _strip_mesh(d, w if cv.dirt else w - 2.4, 0.066 if not cv.dirt else 0.05)
-		mi.material_override = DIRT if cv.dirt else ASPH
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		world.add_child(mi)
-		if cv.dirt:
-			for sd in [-1.3, 1.3]:
-				var rm := MeshInstance3D.new()
-				rm.mesh = _strip_off(d, 0.5, sd, 0.056)
-				rm.material_override = RUT
-				rm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				world.add_child(rm)
-			continue
-		# 人行道：跨过网格路口处断开
-		for sd in [-1.0, 1.0]:
-			var run := PackedVector2Array()
-			for i in d.size():
-				var t := (d[mini(i + 1, d.size() - 1)] - d[maxi(i - 1, 0)]).normalized()
-				var sp: Vector2 = d[i] + Vector2(-t.y, t.x) * sd * (w * 0.5 - 0.6)
-				var ok := not _in_grid_road(sp, -0.5)
-				if ok:
-					run.append(d[i])
-				if (not ok or i == d.size() - 1) and run.size() >= 2:
-					var wm := MeshInstance3D.new()
-					wm.mesh = _strip_off(run, 1.1, sd * (w * 0.5 - 0.6), 0.15)
-					wm.material_override = WALK
-					wm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-					world.add_child(wm)
-				if not ok:
-					run = PackedVector2Array()
-		if w >= 10.0:
-			var acc := 0.0
-			for i in d.size() - 1:
-				acc += d[i].distance_to(d[i + 1])
-				if acc >= 5.0:
-					acc = 0.0
-					var t := (d[i + 1] - d[i]).normalized()
-					if not _in_grid_road(d[i], 1.0) and rng.randf() < 0.85:
-						dashes.append(Transform3D(Basis(Vector3.UP, atan2(t.x, t.y)).scaled(Vector3(0.22, 0.02, 2.2)), Vector3(d[i].x, 0.08, d[i].y)))
-	_multimesh(A.bevel_box(Vector3.ONE, 0.0), LINE, dashes, false)
-
-
 # ---------- 铁轨 ----------
 func _build_rails() -> void:
-	if rail_lines.is_empty():
+	if rail_polys.is_empty():
 		return
 	var ties: Array = []
 	var rails: Array = []
-	for l: Array in rail_lines:
-		var a: Vector2 = l[0]
-		var b: Vector2 = l[1]
-		var t := (b - a).normalized()
-		var ang := atan2(t.x, t.y)
-		var bs := Basis(Vector3.UP, ang)
-		var n := int(a.distance_to(b) / 0.9)
-		for i in n:
-			var p := a.lerp(b, (i + 0.5) / n)
-			ties.append(Transform3D(bs.scaled(Vector3(2.6, 0.12, 0.28)), Vector3(p.x, 0.07, p.y)))
-		var m := (a + b) * 0.5
-		for sd in [-0.72, 0.72]:
-			var q: Vector2 = m + Vector2(-t.y, t.x) * sd
-			rails.append(Transform3D(bs.scaled(Vector3(0.1, 0.14, a.distance_to(b))), Vector3(q.x, 0.18, q.y)))
-		# 道砟
-		var ballast := A.bevel_box(Vector3(3.6, 0.08, a.distance_to(b)), 0.02)
-		A.add(world, ballast, A.concrete(Color(0.36, 0.34, 0.32), false), Vector3(m.x, 0.03, m.y), Vector3(0, rad_to_deg(ang), 0), Vector3.ONE, false)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for line: PackedVector2Array in rail_polys:
+		_st_strip(st, line, 3.6, 0.0, 0.07)
+		for k in line.size() - 1:
+			var a := line[k]
+			var b := line[k + 1]
+			var t := (b - a).normalized()
+			var ang := atan2(t.x, t.y)
+			var bs := Basis(Vector3.UP, ang)
+			var n := maxi(1, int(a.distance_to(b) / 0.9))
+			for i in n:
+				var p := a.lerp(b, (i + 0.5) / n)
+				ties.append(Transform3D(bs.scaled(Vector3(2.6, 0.12, 0.28)), Vector3(p.x, 0.1, p.y)))
+			var m := (a + b) * 0.5
+			for sd in [-0.72, 0.72]:
+				var q: Vector2 = m + Vector2(-t.y, t.x) * sd
+				rails.append(Transform3D(bs.scaled(Vector3(0.1, 0.14, a.distance_to(b) + 0.05)), Vector3(q.x, 0.2, q.y)))
+	_st_commit(st, A.concrete(Color(0.36, 0.34, 0.32), false), 1)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.02), A.paint(Color(0.3, 0.24, 0.18), 0.0, 0.9, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0}), ties, false)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.0), A.metal(Color(0.42, 0.38, 0.34)), rails, false)
 
@@ -2691,260 +2766,600 @@ func _wagon(p: Vector3, horiz: bool) -> void:
 		A.add(sb, A.bevel_box(Vector3(2.0, 0.6, 1.6) if horiz else Vector3(1.6, 0.6, 2.0), 0.1), A.metal(), Vector3(sd, -1.75, 0) if horiz else Vector3(0, -1.75, sd))
 	blocks.append(_rect_for(p, size + Vector3(1, 0, 1)))
 
-
 # ---------- 山脊 ----------
 func _build_ridges() -> void:
 	ridge_pts.clear()
-	for line: Array in MAP.ridges:
-		var pp := PackedVector2Array()
-		for q: Array in line:
-			pp.append(Vector2(q[0], q[1]))
-		for p: Vector2 in _dense(pp, 3.2):
+	for line: PackedVector2Array in layout.ridges:
+		for p: Vector2 in line:
 			if on_road(p, 4.0):
 				continue
 			var q := Vector3(p.x + rng.randf_range(-1.5, 1.5), 0, p.y + rng.randf_range(-1.5, 1.5))
+			if _blocked(q, 3.0, false):
+				continue
 			_boulder(q, rng.randf_range(2.8, 5.0))
 			ridge_pts.append(Vector2(q.x, q.z))
 			if rng.randf() < 0.5:
 				var q2 := q + Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(-4, 4))
-				if not on_road(Vector2(q2.x, q2.z), 3.0):
+				if not on_road(Vector2(q2.x, q2.z), 3.0) and not _blocked(q2, 2.0, false):
 					_boulder(q2, rng.randf_range(1.5, 3.0))
 					ridge_pts.append(Vector2(q2.x, q2.z))
 
 
-## 把区块切成 n x n 地块（中间留巷道）
-## 按目标地块尺寸切分，跳过压到道路 / 河道的地块
-func _lots(r: Rect2, lot: float, gap: float) -> Array:
-	var out: Array = []
-	var nx := maxi(1, roundi((r.size.x + gap) / (lot + gap)))
-	var ny := maxi(1, roundi((r.size.y + gap) / (lot + gap)))
-	var w := (r.size.x - gap * (nx - 1)) / nx
-	var h := (r.size.y - gap * (ny - 1)) / ny
-	for a in nx:
-		for b in ny:
-			var l := Rect2(r.position.x + a * (w + gap), r.position.y + b * (h + gap), w, h)
-			var bad := false
-			var lc := l.get_center()
-			for q in [lc, l.position, l.end, Vector2(l.position.x, l.end.y), Vector2(l.end.x, l.position.y),
-					Vector2(lc.x, l.position.y), Vector2(lc.x, l.end.y), Vector2(l.position.x, lc.y), Vector2(l.end.x, lc.y)]:
-				if in_river(q, 1.5) or on_road(q, 0.5):
-					bad = true
-			if not bad:
-				out.append(l)
-	return out
-
-
-func _is_poi_cell(r: Rect2) -> bool:
-	for c: Vector3 in poi_centers:
-		if r.has_point(Vector2(c.x, c.z)):
-			return true
-	return false
-
-
-func _fill_downtown(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	for lot: Rect2 in _lots(r, 17.0, 6.0):
-		if poi and lot.has_point(r.get_center()):
+# ---------- 城区：街块与建筑 ----------
+## 每局随机的部分：楼的外观细节、少数坍塌成残体、空地块里的车与碎石、院墙、工业区储罐与集装箱、军营围墙
+func _build_blocks() -> void:
+	# 建筑（轮廓来自城市群布局，与大地图一致）
+	for b: Dictionary in layout.bldgs:
+		_layout_building(b)
+	# 街块里的杂物与围合
+	for blk: Dictionary in layout.blocks:
+		var poly: PackedVector2Array = blk.poly
+		var c := WC.centroid(poly)
+		if absf(c.x) > HALF - 4.0 or absf(c.y) > HALF - 4.0:
 			continue
-		var roll := rng.randf()
-		if poi and roll < 0.5:
-			continue
-		if roll < 0.72:
-			# 一到两栋高楼
-			if rng.randf() < 0.5:
-				var sz := Vector3(lot.size.x - rng.randf_range(1.5, 4.0), rng.randf_range(9.0, 22.0), lot.size.y - rng.randf_range(1.5, 4.0))
-				var p := Vector3(lot.get_center().x, 0, lot.get_center().y)
-				_building(p, sz)
-				blocks.append(_rect_for(p, sz))
+		match str(blk.ch):
+			"D": _block_downtown(blk)
+			"R": _block_residential(blk)
+			"I": _block_industrial(blk)
+			"H": _block_harbor(blk)
+			"Y": _block_railyard(blk)
+			"M": _block_military(blk)
+
+
+## 按布局记录实例化一栋建筑（门脸朝向临街面）
+func _layout_building(b: Dictionary) -> void:
+	var c: Vector2 = b.c
+	var p := Vector3(c.x, 0, c.y)
+	var ang: float = b.ang
+	var sx: float = b.sx
+	var sz: float = b.sz
+	var h: float = b.h
+	match str(b.kind):
+		"house", "farm":
+			_house(p, Vector3(sx, h, sz), ang)
+			_obb_blocks(c, ang, sx + 1.0, sz + 1.0)
+		"wh":
+			_warehouse(p, Vector3(sx, h, sz), Color(-1, 0, 0), ang)
+			_obb_blocks(c, ang, sx + 2.0, sz + 2.0)
+		"barn":
+			_warehouse(p, Vector3(sx, h, sz), Color(0.42, 0.24, 0.17), ang)
+			_obb_blocks(c, ang, sx + 2.0, sz + 2.0)
+		_:
+			if b.ch == "D" and rng.randf() < 0.14:
+				# 坍塌的楼：矮残体 + 碎块堆
+				var s2 := Vector3(sx * rng.randf_range(0.55, 0.8), rng.randf_range(2.5, 4.5), sz * rng.randf_range(0.55, 0.8))
+				_building(p, s2, ang)
+				_obb_blocks(c, ang, s2.x, s2.z)
+				var u := Vector2(cos(ang), sin(ang))
+				var rp := c + u * (s2.x * 0.5 + 1.5)
+				_rubble_pile(Vector3(rp.x, 0, rp.y), 2.5)
+				h = s2.y
 			else:
-				for half in [-1.0, 1.0]:
-					var sz := Vector3(lot.size.x * 0.5 - 1.6, rng.randf_range(7.0, 16.0), lot.size.y - rng.randf_range(2.0, 4.0))
-					var p := Vector3(lot.get_center().x + half * lot.size.x * 0.25, 0, lot.get_center().y)
-					_building(p, sz)
-					blocks.append(_rect_for(p, sz))
-		elif roll < 0.86:
-			# 坍塌的楼：矮残体 + 碎块堆
-			var sz := Vector3(lot.size.x * rng.randf_range(0.5, 0.8), rng.randf_range(2.5, 4.5), lot.size.y * rng.randf_range(0.5, 0.8))
-			var p := Vector3(lot.get_center().x, 0, lot.get_center().y)
-			_building(p, sz)
-			blocks.append(_rect_for(p, sz))
-			_rubble_pile(p + Vector3(sz.x * 0.5 + 1.5, 0, 0), 2.5)
-		else:
-			# 停车场 / 广场
-			for k in rng.randi_range(2, 5):
-				var p := _spot_in(lot, 2.5)
-				if p != Vector3.INF:
-					_wreck_car(p)
-	_loot_in(r, 7, {"supply": 30, "tool": 30, "military": 22, "safe": 18})
+				_building(p, Vector3(sx, h, sz), ang)
+				_obb_blocks(c, ang, sx, sz)
+	bldg_polys.append([WC.obb_corners(c, ang, sx, sz), str(b.ch)])
 
 
-func _fill_residential(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	for lot: Rect2 in _lots(r, 15.0, 4.0):
-		if poi and lot.get_center().distance_to(r.get_center()) < 22.0:
-			continue
-		var roll := rng.randf()
-		var p := Vector3(lot.get_center().x + rng.randf_range(-1.5, 1.5), 0, lot.get_center().y + rng.randf_range(-1.5, 1.5))
-		if roll < 0.7:
-			var sz := Vector3(min(lot.size.x - 4.0, rng.randf_range(6.0, 9.0)), rng.randf_range(3.2, 6.4), min(lot.size.y - 4.0, rng.randf_range(6.0, 9.0)))
-			_house(p, sz)
-			blocks.append(_rect_for(p, sz + Vector3(1, 0, 1)))
-			# 院墙（不完整）
-			_yard_walls(lot)
-		elif roll < 0.85:
-			_yard_walls(lot)
-			_rubble_pile(p, 2.0)
-		else:
+func _block_downtown(blk: Dictionary) -> void:
+	# 内院 / 空地块：停车场里的废车
+	for k in rng.randi_range(0, 2):
+		var p := _spot_in_poly(blk.poly, 2.5)
+		if p != Vector3.INF:
 			_wreck_car(p)
-	_loot_in(r, 7, {"supply": 50, "tool": 35, "military": 5, "safe": 10})
+	if rng.randf() < 0.3:
+		var p := _spot_in_poly(blk.poly, 2.0)
+		if p != Vector3.INF:
+			_rubble_pile(p, 2.0)
+			blocks.append(Rect2(p.x - 1.5, p.z - 1.5, 3, 3))
 
 
-func _fill_industrial(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	var halves := [Rect2(r.position, Vector2(r.size.x, r.size.y * 0.5 - 3.0)), Rect2(r.position + Vector2(0, r.size.y * 0.5 + 3.0), Vector2(r.size.x, r.size.y * 0.5 - 3.0))]
-	if r.size.y < 56.0:
-		halves = [r]
-	for hi in halves.size():
-		var h: Rect2 = halves[hi]
-		if poi and h.grow(-2).has_point(r.get_center() + Vector2(0, -6 if hi == 0 else 6)):
+func _block_residential(blk: Dictionary) -> void:
+	# 独栋小楼的院墙（不完整，顺着楼的朝向）
+	var poly: PackedVector2Array = blk.poly
+	var M := A.concrete(Color(0.56, 0.53, 0.48), false)
+	var inner := WC.inset(poly, 0.6)
+	if inner.size() < 3:
+		return
+	var m := inner.size()
+	for i in m:
+		if rng.randf() < 0.45:
 			continue
-		if rng.randf() < 0.75:
-			var sz := Vector3(h.size.x * rng.randf_range(0.45, 0.62), rng.randf_range(7.0, 10.0), h.size.y * rng.randf_range(0.6, 0.85))
-			var p := Vector3(h.position.x + sz.x * 0.5 + 3.0, 0, h.get_center().y)
-			if _blocked(p, minf(sz.x, sz.z) * 0.45):
-				continue
-			_warehouse(p, sz)
-			blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-		for k in rng.randi_range(1, 3):
-			var p := _spot_in(Rect2(h.position.x + h.size.x * 0.55, h.position.y, h.size.x * 0.45, h.size.y), 4.0)
-			if p != Vector3.INF:
-				_tank(p, rng.randf_range(2.6, 4.0), rng.randf_range(5.0, 9.0))
-		for k in rng.randi_range(1, 3):
-			var p := _spot_in(h, 3.5)
-			if p != Vector3.INF:
-				_container(p, rng.randf_range(0, 180), [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35)][rng.randi() % 4])
-				blocks.append(Rect2(p.x - 3.5, p.z - 3.5, 7, 7))
-	if rng.randf() < 0.7:
-		var p := _spot_in(r, 2.5)
+		var a := inner[i]
+		var b := inner[(i + 1) % m]
+		var L := a.distance_to(b)
+		if L < 4.0:
+			continue
+		var seg_len := L * rng.randf_range(0.3, 0.7)
+		var t0 := rng.randf_range(0.0, L - seg_len)
+		var dir := (b - a) / L
+		var mid := a + dir * (t0 + seg_len * 0.5)
+		var p := Vector3(mid.x, 0.62, mid.y)
+		if _blocked(p, 0.8, false) or on_road(mid, 0.5):
+			continue
+		var wl := _static_box(Vector3(seg_len, 1.25, 0.35), p, Color.WHITE, null, M)
+		wl.rotation.y = -atan2(dir.y, dir.x)
+		_obb_blocks(mid, atan2(dir.y, dir.x), seg_len, 0.6)
+	if rng.randf() < 0.25:
+		var p := _spot_in_poly(poly, 2.5)
+		if p != Vector3.INF:
+			_wreck_car(p)
+
+
+func _block_industrial(blk: Dictionary) -> void:
+	var poly: PackedVector2Array = blk.poly
+	var ang: float = blk.ang
+	for k in rng.randi_range(1, 3):
+		var p := _spot_in_poly(poly, 4.2)
+		if p != Vector3.INF:
+			_tank(p, rng.randf_range(2.6, 4.0), rng.randf_range(5.0, 9.0))
+	for k in rng.randi_range(1, 3):
+		var p := _spot_in_poly(poly, 3.6)
+		if p != Vector3.INF:
+			var rot := rad_to_deg(-ang) + (0.0 if rng.randf() < 0.6 else 90.0)
+			_container(p, rot, [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35)][rng.randi() % 4])
+			_obb_blocks(Vector2(p.x, p.z), deg_to_rad(-rot) + PI * 0.5, 6.4, 2.8)
+	if rng.randf() < 0.45:
+		var p := _spot_in_poly(poly, 2.5)
 		if p != Vector3.INF:
 			_chimney(p)
-	_fence_ring(r, 2.4, 0.35)
-	_loot_in(r, 6, {"supply": 15, "tool": 55, "military": 20, "safe": 10})
+	_fence_poly(poly, 2.4, 0.35)
 
 
-func _fill_military(r: Rect2) -> void:
+func _block_harbor(blk: Dictionary) -> void:
+	var poly: PackedVector2Array = blk.poly
+	var ang: float = blk.ang
+	var cols := [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35), Color(0.5, 0.2, 0.2)]
+	# 集装箱堆场：顺着街块朝向成排、两层
+	for k in roundi(WC.poly_area(poly) / 220.0):
+		var p := _spot_in_poly(poly, 3.6, 12)
+		if p == Vector3.INF:
+			continue
+		var rot := rad_to_deg(-ang) + (90.0 if rng.randf() < 0.7 else 0.0)
+		_container(p, rot, cols[rng.randi() % cols.size()])
+		if rng.randf() < 0.45:
+			_container(p + Vector3(0, 2.4, 0), rot + rng.randf_range(-4, 4), cols[rng.randi() % cols.size()])
+		_obb_blocks(Vector2(p.x, p.z), deg_to_rad(-rot) + PI * 0.5, 6.4, 2.8)
+	# 岸桥吊机
+	if rng.randf() < 0.4:
+		var p := _spot_in_poly(poly, 5.0, 20)
+		if p != Vector3.INF:
+			var M := A.paint(Color(0.75, 0.45, 0.12), 0.5, 0.55, {"rust": 0.8, "wear": 0.6, "panel_scale": 0.8})
+			var root := Node3D.new()
+			world.add_child(root)
+			root.position = p
+			root.rotation.y = -ang
+			for lx in [-3.5, 3.5]:
+				for lz in [-3.5, 3.5]:
+					_static_box(Vector3(0.7, 14.0, 0.7), Vector3(lx, 7.0, lz), Color.WHITE, root, M)
+			A.add(root, A.bevel_box(Vector3(8.0, 1.2, 26.0), 0.1), M, Vector3(0, 14.4, 4.0))
+			A.add(root, A.bevel_box(Vector3(3.0, 2.2, 3.0), 0.1), A.paint(Color(0.3, 0.3, 0.32), 0.4, 0.6), Vector3(0, 13.0, 9.0))
+			blocks.append(Rect2(p.x - 5.0, p.z - 5.0, 10.0, 10.0))
+
+
+func _block_railyard(blk: Dictionary) -> void:
+	# 停在编组站铁轨上的车厢
+	var poly: PackedVector2Array = blk.poly
+	for l: Array in rail_lines:
+		var a: Vector2 = l[0]
+		var b: Vector2 = l[1]
+		var m := (a + b) * 0.5
+		if not WC.in_convex(WC.inset(poly, -6.0), m) or rng.randf() > 0.45:
+			continue
+		var t := (b - a).normalized()
+		var p := Vector3(m.x, 0, m.y)
+		if _blocked(p, 1.0, false):
+			continue
+		var horiz := absf(t.x) > absf(t.y)
+		_wagon(p, horiz)
+	var q := _spot_in_poly(poly, 3.0, 20)
+	if q != Vector3.INF and rng.randf() < 0.5:
+		_watchtower(q)
+
+
+func _block_military(blk: Dictionary) -> void:
 	var M_HESCO := A.paint(Color(0.55, 0.5, 0.38), 0.0, 0.95, {"wear": 0.3, "dust": 0.7, "grime": 0.6, "panel_scale": 0.4})
-	# 防爆墙围栏，四面留门
-	var inner := r.grow(-3.0)
-	for side in 4:
-		var horiz := side < 2
-		var length: float = inner.size.x if horiz else inner.size.y
+	var poly: PackedVector2Array = WC.inset(blk.poly, 1.5)
+	if poly.size() < 3 or WC.poly_area(poly) < 300.0:
+		return
+	var m := poly.size()
+	# 防爆墙围栏：沿街块边，每条边留一个门
+	for i in m:
+		var a := poly[i]
+		var b := poly[(i + 1) % m]
+		var L := a.distance_to(b)
+		if L < 4.0:
+			continue
+		var dir := (b - a) / L
 		var seg := 2.2
-		var n := int(length / seg)
+		var n := int(L / seg)
 		var gate := rng.randi_range(int(n * 0.3), int(n * 0.7))
 		for k in n:
 			if absi(k - gate) <= 1 or rng.randf() < 0.06:
 				continue
-			var t := -length * 0.5 + (k + 0.5) * seg
-			var pos: Vector3
-			if horiz:
-				pos = Vector3(inner.get_center().x + t, 1.2, inner.position.y if side == 0 else inner.end.y)
-			else:
-				pos = Vector3(inner.position.x if side == 2 else inner.end.x, 1.2, inner.get_center().y + t)
-			var sb := _static_box(Vector3(seg - 0.1, 2.4, 1.2) if horiz else Vector3(1.2, 2.4, seg - 0.1), pos, Color.WHITE, null, M_HESCO)
-			blocks.append(_rect_for(pos, Vector3(seg, 1, 1.4) if horiz else Vector3(1.4, 1, seg)))
-			sb.rotation_degrees.y = rng.randf_range(-2, 2)
-	var core := inner.grow(-5.0)
-	# 营房 + 掩体 + 瞭望塔
+			var q := a + dir * ((k + 0.5) * L / n)
+			var pos := Vector3(q.x, 1.2, q.y)
+			if on_road(q, 0.3) or _blocked(pos, 0.4, false):
+				continue
+			var sb := _static_box(Vector3(L / n - 0.1, 2.4, 1.2), pos, Color.WHITE, null, M_HESCO)
+			sb.rotation.y = -atan2(dir.y, dir.x)
+			_obb_blocks(q, atan2(dir.y, dir.x), L / n, 1.4)
+	var core := WC.inset(poly, 5.0)
+	if core.size() < 3:
+		return
 	for k in 2:
-		var p := _spot_in(core, 9.0)
-		if p == Vector3.INF:
-			continue
-		var sz := Vector3(rng.randf_range(14, 20), 3.6, 6.5) if rng.randf() < 0.5 else Vector3(6.5, 3.6, rng.randf_range(14, 20))
-		_building(p, sz)
-		blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-	for k in 2:
-		var p := _spot_in(core, 4.0)
+		var p := _spot_in_poly(core, 4.0)
 		if p != Vector3.INF:
 			_bunker(p)
-	for corner in [inner.position, inner.end]:
-		_watchtower(Vector3(corner.x + (4 if corner == inner.position else -4), 0, corner.y + (4 if corner == inner.position else -4)))
+	for i in [0, m / 2]:
+		var cp: Vector2 = poly[i].lerp(WC.centroid(poly), 0.12)
+		if not _blocked(Vector3(cp.x, 0, cp.y), 1.5, false):
+			_watchtower(Vector3(cp.x, 0, cp.y))
 	for k in rng.randi_range(2, 4):
-		var p := _spot_in(core, 2.5)
+		var p := _spot_in_poly(core, 2.5)
 		if p != Vector3.INF:
 			_sandbags(p, rng.randf() * 180.0)
-	_loot_in(core, 6, {"supply": 10, "tool": 15, "military": 60, "safe": 15})
-	var b = spawn_bug("beetle", Vector3(core.get_center().x, 0.5, core.get_center().y))
+	var lc := WC.centroid(core)
+	spawn_bug("beetle", Vector3(lc.x, 0.5, lc.y))
 
 
-func _fill_wasteland(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	for k in roundi(rng.randi_range(8, 14) * r.get_area() / 4900.0):
-		var p := _spot_in(r, 3.0)
-		if p == Vector3.INF or (poi and Vector2(p.x, p.z).distance_to(r.get_center()) < 20.0):
+## 沿凸多边形边的铁丝网围栏（随机留缺口）
+func _fence_poly(poly: PackedVector2Array, hgt: float, gap_chance: float) -> void:
+	var inner := WC.inset(poly, 1.0)
+	var m := inner.size()
+	if m < 3:
+		return
+	var MF := A.paint(Color(0.32, 0.31, 0.29), 0.6, 0.6, {"panel_scale": 3.0, "rust": 0.6, "wear": 0.3})
+	var MP := A.metal(Color(0.3, 0.29, 0.27))
+	for i in m:
+		var a := inner[i]
+		var b := inner[(i + 1) % m]
+		var L := a.distance_to(b)
+		var n := int(L / 4.0)
+		if n < 1:
 			continue
-		var roll := rng.randf()
-		if roll < 0.4:
-			_boulder(p, rng.randf_range(1.5, 4.5))
-		elif roll < 0.65:
-			var size := Vector3(rng.randf_range(6, 12), rng.randf_range(1.4, 3.0), 0.8) if rng.randf() < 0.5 else Vector3(0.8, rng.randf_range(1.4, 3.0), rng.randf_range(6, 12))
-			var sb := _static_box(size, p + Vector3(0, size.y * 0.5, 0), Color(0.52, 0.48, 0.44))
-			blocks.append(_rect_for(p, size))
-		elif roll < 0.8:
-			_dead_tree(p)
-		elif roll < 0.9:
-			_wreck_car(p)
-		else:
-			var sz := Vector3(rng.randf_range(5, 9), rng.randf_range(2.0, 4.0), rng.randf_range(5, 9))
-			_building(p, sz)
-			blocks.append(_rect_for(p, sz))
-	_loot_in(r, 3, {"supply": 40, "tool": 40, "military": 12, "safe": 8})
+		var dir := (b - a) / L
+		for k in n:
+			if rng.randf() < gap_chance:
+				continue
+			var q := a + dir * ((k + 0.5) * L / n)
+			var pos := Vector3(q.x, hgt * 0.5, q.y)
+			if _blocked(pos, 0.6) or absf(q.x) > HALF - 2.0 or absf(q.y) > HALF - 2.0:
+				continue
+			var sb := _static_box(Vector3(L / n, hgt, 0.12), pos, Color.WHITE, null, MF)
+			A.add(sb, A.cyl(0.07, hgt + 0.4, 0.07, 6), MP, Vector3(-L / n * 0.5, 0.2, 0))
+			sb.rotation.y = -atan2(dir.y, dir.x)
+			_obb_blocks(q, atan2(dir.y, dir.x), L / n, 0.4)
 
 
-func _fill_farm(r: Rect2) -> void:
-	# 枯死作物垄
+# ---------- 农田 ----------
+func _build_fields() -> void:
 	var stalks: Array = []
-	var field := r.grow(-6.0)
-	var fz := field.position.y
-	while fz < field.end.y:
-		var fx := field.position.x
-		while fx < field.end.x:
-			if rng.randf() < 0.8:
-				var hh := rng.randf_range(0.5, 1.1)
-				if not in_river(Vector2(fx, fz), 1.0):
-					stalks.append(Transform3D(_rand_basis(18).scaled(Vector3(1, hh, 1)), Vector3(fx + rng.randf_range(-0.2, 0.2), hh * 0.5, fz)))
-			fx += 0.7
-		fz += 2.2
+	for fd: Dictionary in layout.fields:
+		var poly: PackedVector2Array = fd.poly
+		if poly.size() < 3:
+			continue
+		var u := Vector2(cos(fd.ang), sin(fd.ang))
+		var v := Vector2(-sin(fd.ang), cos(fd.ang))
+		var lo := Vector2(INF, INF)
+		var hi := Vector2(-INF, -INF)
+		for q in poly:
+			lo = Vector2(minf(lo.x, q.dot(u)), minf(lo.y, q.dot(v)))
+			hi = Vector2(maxf(hi.x, q.dot(u)), maxf(hi.y, q.dot(v)))
+		var t := lo.y + 2.0
+		while t < hi.y:
+			var seg := _line_in_poly(poly, v * t, u)
+			if seg.size() == 2:
+				var L := seg[0].distance_to(seg[1])
+				var n := int(L / 0.7)
+				for i in n:
+					if rng.randf() > 0.8:
+						continue
+					var q := seg[0].lerp(seg[1], (i + 0.5) / n)
+					if absf(q.x) > HALF or absf(q.y) > HALF:
+						continue
+					if zone_at(Vector3(q.x, 0, q.y)) != "F" or in_river(q, 1.0) or on_road(q, 0.5):
+						continue
+					var hh := rng.randf_range(0.5, 1.1)
+					stalks.append(Transform3D(_rand_basis(18).scaled(Vector3(1, hh, 1)), Vector3(q.x, hh * 0.5, q.y)))
+			t += 2.2
+		# 草垛
+		for k in rng.randi_range(2, 5):
+			var p := _spot_in_poly(poly, 1.6)
+			if p != Vector3.INF and zone_at(p) == "F":
+				var hs := _static_box(Vector3(1.6, 1.3, 2.4), p + Vector3(0, 0.6, 0), Color.WHITE, null, A.paint(Color(0.58, 0.5, 0.3), 0.0, 1.0, {"wear": 0.0, "dust": 0.5, "panel_scale": 0.0}))
+				hs.rotation_degrees.y = rng.randf() * 180
+				blocks.append(_rect_for(p, Vector3(2.4, 1, 2.4)))
 	var STALK := StandardMaterial3D.new()
 	STALK.albedo_color = Color(0.5, 0.44, 0.27)
 	STALK.roughness = 1.0
 	STALK.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_multimesh(A.cyl(0.0, 1.0, 0.05, 3), STALK, stalks, false)
-	# 农舍 + 谷仓 + 草垛
-	var p := _spot_in(r, 7.0)
-	if p != Vector3.INF:
-		var sz := Vector3(8, 4.5, 7)
-		_house(p, sz)
-		blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-	p = _spot_in(r, 9.0)
-	if p != Vector3.INF:
-		var sz := Vector3(12, 6.5, 9)
-		_warehouse(p, sz, Color(0.42, 0.24, 0.17))
-		blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-	for k in rng.randi_range(3, 6):
-		var q := _spot_in(r, 1.6)
-		if q != Vector3.INF:
-			var hs := _static_box(Vector3(1.6, 1.3, 2.4), q + Vector3(0, 0.6, 0), Color.WHITE, null, A.paint(Color(0.58, 0.5, 0.3), 0.0, 1.0, {"wear": 0.0, "dust": 0.5, "panel_scale": 0.0}))
-			hs.rotation_degrees.y = rng.randf() * 180
-			blocks.append(_rect_for(q, Vector3(2.4, 1, 2.4)))
-	_fence_ring(r, 1.2, 0.5)
-	_loot_in(r, 4, {"supply": 60, "tool": 30, "military": 4, "safe": 6})
+
+
+# ---------- 自然地表与散布物：按 3 米抖动格点逐点看区块字符决定摆什么 ----------
+## 每平方米的战利品容器密度（与旧版按格子 n / 4900 一致）
+const LOOT_RATE := {"D": 7, "R": 7, "I": 6, "H": 6, "Y": 5, "M": 0, "W": 3, "F": 4, "P": 3, "T": 3, "C": 4, "S": 3, "K": 0, "L": 2}
+const LOOT_W := {"D": {"supply": 30, "tool": 30, "military": 22, "safe": 18}, "R": {"supply": 50, "tool": 35, "military": 5, "safe": 10},
+	"I": {"supply": 15, "tool": 55, "military": 20, "safe": 10}, "H": {"supply": 30, "tool": 45, "military": 15, "safe": 10},
+	"Y": {"supply": 25, "tool": 50, "military": 15, "safe": 10}, "W": {"supply": 40, "tool": 40, "military": 12, "safe": 8},
+	"F": {"supply": 60, "tool": 30, "military": 4, "safe": 6}, "P": {"supply": 55, "tool": 25, "military": 8, "safe": 12},
+	"T": {"supply": 50, "tool": 30, "military": 10, "safe": 10}, "C": {"supply": 15, "tool": 25, "military": 50, "safe": 10},
+	"S": {"supply": 20, "tool": 20, "military": 35, "safe": 25}, "L": {"supply": 45, "tool": 35, "military": 10, "safe": 10}}
+
+
+func _scatter() -> void:
+	var trunks: Array = []
+	var crowns: Array = []
+	var dead_crowns: Array = []
+	var rims: Array = []
+	var pods: Array = []
+	var reeds: Array = []
+	var tree_body := StaticBody3D.new()
+	tree_body.collision_layer = 1
+	world.add_child(tree_body)
+	var BARK := A.paint(Color(0.22, 0.17, 0.13), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.3, "wear": 0.0})
+	var HEDGE := A.paint(Color(0.22, 0.24, 0.14), 0.0, 1.0, {"wear": 0.0, "dust": 0.4, "panel_scale": 0.0, "grime": 0.8})
+	var BENCH := A.paint(Color(0.32, 0.25, 0.18), 0.0, 0.9, {"wear": 0.5, "dust": 0.5, "panel_scale": 0.0})
+	# 悬崖岩体：5.5 米格点上层叠大岩块（不可通行），K 区边缘的岩块矮一些、稀一些
+	_scatter_cliffs()
+	# 公园中心：雕像基座 + 环形步道
+	for c2: Vector2 in layout.parks:
+		var c := Vector3(c2.x, 0, c2.y)
+		if absf(c.x) < HALF - 12.0 and absf(c.z) < HALF - 12.0 and zone_at(c) == "P" and not _blocked(c, 8.0):
+			_park_statue(c)
+	# 虫巢：每片菌毯区一座虫巢（按数据格子分组）
+	_hive_nests()
+	var step := 3.0
+	var gz := -HALF + 1.5
+	while gz < HALF - 1.0:
+		var gx := -HALF + 1.5
+		while gx < HALF - 1.0:
+			var p := Vector3(gx + rng.randf_range(-1.2, 1.2), 0, gz + rng.randf_range(-1.2, 1.2))
+			gx += step
+			if absf(p.x) > HALF - 3.0 or absf(p.z) > HALF - 3.0:
+				continue
+			var ch := zone_at(p)
+			var roll := rng.randf()
+			# 战利品
+			var lr: float = float(LOOT_RATE.get(ch, 0)) / 4900.0 * step * step
+			if roll < lr:
+				if not _blocked(p, 1.4):
+					_place_box(GameData._weighted(LOOT_W.get(ch, LOOT_W.W), rng), p)
+					blocks.append(Rect2(p.x - 1, p.z - 1, 2, 2))
+				continue
+			roll = rng.randf()
+			match ch:
+				"T":
+					if roll < 0.36 and not _blocked(p, 1.1):
+						if rng.randf() < 0.12:
+							_dead_tree(p)
+							blocks.append(Rect2(p.x - 0.5, p.z - 0.5, 1, 1))
+						else:
+							_tree(p, trunks, crowns, dead_crowns, tree_body)
+					elif roll < 0.38 and not _blocked(p, 2.5):
+						var L := rng.randf_range(3.0, 6.0)
+						var sb := _static_box(Vector3(0.6, 0.6, L), p + Vector3(0, 0.3, 0), Color.WHITE, null, BARK)
+						sb.rotation_degrees.y = rng.randf() * 180.0
+						blocks.append(_rect_for(p, Vector3(L, 1, L) * 0.7))
+				"P":
+					if roll < 0.12 and not _blocked(p, 1.0):
+						_dead_tree(p)
+						blocks.append(Rect2(p.x - 0.5, p.z - 0.5, 1, 1))
+					elif roll < 0.145 and not _blocked(p, 1.2):
+						var n := Node3D.new()
+						world.add_child(n)
+						n.position = p
+						n.rotation.y = rng.randi_range(0, 3) * PI * 0.5
+						A.add(n, A.bevel_box(Vector3(1.8, 0.08, 0.5), 0.02), BENCH, Vector3(0, 0.45, 0))
+						A.add(n, A.bevel_box(Vector3(1.8, 0.4, 0.06), 0.02), BENCH, Vector3(0, 0.7, -0.25))
+						for sx in [-0.8, 0.8]:
+							A.add(n, A.bevel_box(Vector3(0.08, 0.45, 0.45), 0.01), A.metal(), Vector3(sx, 0.22, 0))
+					elif roll < 0.163 and not _blocked(p, 3.0):
+						var size := Vector3(rng.randf_range(4, 8), 0.9, 1.0) if rng.randf() < 0.5 else Vector3(1.0, 0.9, rng.randf_range(4, 8))
+						var n := Node3D.new()
+						world.add_child(n)
+						A.add(n, A.bevel_box(size, 0.3, 0.85), HEDGE, p + Vector3(0, 0.45, 0))
+						blocks.append(_rect_for(p, size))
+				"W":
+					if roll < 0.022 and not _blocked(p, 3.0):
+						var r2 := rng.randf()
+						if r2 < 0.4:
+							_boulder(p, rng.randf_range(1.5, 4.5))
+						elif r2 < 0.65:
+							var size := Vector3(rng.randf_range(6, 12), rng.randf_range(1.4, 3.0), 0.8) if rng.randf() < 0.5 else Vector3(0.8, rng.randf_range(1.4, 3.0), rng.randf_range(6, 12))
+							_static_box(size, p + Vector3(0, size.y * 0.5, 0), Color(0.52, 0.48, 0.44))
+							blocks.append(_rect_for(p, size))
+						elif r2 < 0.8:
+							_dead_tree(p)
+						elif r2 < 0.9:
+							_wreck_car(p)
+						else:
+							var sz := Vector3(rng.randf_range(5, 9), rng.randf_range(2.0, 4.0), rng.randf_range(5, 9))
+							_building(p, sz)
+							blocks.append(_rect_for(p, sz))
+				"C":
+					if roll < 0.04 and not _blocked(p, 3.0):
+						_crater(p, rims)
+					elif roll < 0.05 and not _blocked(p, 3.5):
+						_tank_wreck(p)
+					elif roll < 0.052 and not _blocked(p, 1.5):
+						_fire_barrel(p)
+				"S":
+					if roll < 0.15:
+						var d := A.ground_decal(world, A.cloud_tex(), Color(0.13, 0.08, 0.15, rng.randf_range(0.45, 0.75)), rng.randf_range(4.0, 9.0), p + Vector3(0, 0.02 + rng.randf() * 0.01, 0))
+						d.rotation.y = rng.randf() * TAU
+					if rng.randf() < 0.064 and not _blocked(p, 1.2):
+						_bug_spire(p, rng.randf_range(2.5, 7.0))
+					for k in 3:
+						if rng.randf() < 0.12:
+							var q := p + Vector3(rng.randf_range(-1.5, 1.5), 0, rng.randf_range(-1.5, 1.5))
+							if not on_road(Vector2(q.x, q.z)):
+								var s := rng.randf_range(0.15, 0.45)
+								pods.append(Transform3D(Basis.IDENTITY.scaled(Vector3(s, s * 0.7, s)), q + Vector3(0, s * 0.25, 0)))
+				"L":
+					if roll < 0.3 and not in_wet(Vector2(p.x, p.z), 0.0) and not on_road(Vector2(p.x, p.z), 0.5):
+						for k in rng.randi_range(3, 7):
+							var q := p + Vector3(rng.randf_range(-1.4, 1.4), 0, rng.randf_range(-1.4, 1.4))
+							var hh := rng.randf_range(0.5, 1.3)
+							reeds.append(Transform3D(_rand_basis(15).scaled(Vector3(1, hh, 1)), Vector3(q.x, hh * 0.5, q.z)))
+					elif roll < 0.33 and not _blocked(p, 1.0):
+						_dead_tree(p)
+					elif roll < 0.36:
+						var d := A.ground_decal(world, A.blob_tex(), Color(0.06, 0.08, 0.07, 0.55), rng.randf_range(2.5, 6.0), p + Vector3(0, 0.02, 0))
+						d.rotation.y = rng.randf() * TAU
+				"D", "R", "I", "H", "Y":
+					if roll < 0.004 and not _blocked(p, 2.0):
+						_rubble_pile(p, 2.0)
+						blocks.append(Rect2(p.x - 1.5, p.z - 1.5, 3, 3))
+		gz += step
+	var NEEDLE := A.paint(Color(0.15, 0.2, 0.12), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.45, "wear": 0.0, "grime": 0.7})
+	var BROWN := A.paint(Color(0.32, 0.25, 0.15), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.45, "wear": 0.0, "grime": 0.7})
+	_multimesh(A.cyl(0.14, 1.0, 0.24, 6), BARK, trunks)
+	_multimesh(A.cyl(0.0, 1.0, 1.0, 7), NEEDLE, crowns)
+	_multimesh(A.cyl(0.0, 1.0, 1.0, 7), BROWN, dead_crowns)
+	_multimesh(A.bevel_box(Vector3.ONE, 0.15, 0.8), A.concrete(Color(0.36, 0.32, 0.28), false), rims)
+	_multimesh(A.sphere(1.0, -1, 8), A.emit(Color(0.65, 0.3, 1.0), 1.6), pods, false)
+	var REED := StandardMaterial3D.new()
+	REED.albedo_color = Color(0.45, 0.42, 0.26)
+	REED.roughness = 1.0
+	REED.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_multimesh(A.cyl(0.0, 1.0, 0.04, 3), REED, reeds, false)
+
+
+func _tree(p: Vector3, trunks: Array, crowns: Array, dead_crowns: Array, body: StaticBody3D) -> void:
+	var h := rng.randf_range(5.0, 10.0)
+	var cr := h * rng.randf_range(0.2, 0.27)
+	trunks.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, h * 0.45, 1)), p + Vector3(0, h * 0.225, 0)))
+	var dead := rng.randf() < 0.3
+	for t in 3:
+		var y := h * (0.3 + t * 0.22)
+		var s := cr * (1.0 - t * 0.26)
+		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-5, 5)))
+		(dead_crowns if dead else crowns).append(Transform3D(b.scaled(Vector3(s, h * 0.34, s)), p + Vector3(0, y + h * 0.17, 0)))
+	var cs := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.radius = 0.45
+	sh.height = 5.0
+	cs.shape = sh
+	cs.position = p + Vector3(0, 2.5, 0)
+	body.add_child(cs)
+	blocks.append(Rect2(p.x - 0.8, p.z - 0.8, 1.6, 1.6))
+
+
+func _crater(p: Vector3, rims: Array) -> void:
+	var rad := rng.randf_range(2.5, 6.5)
+	var d := A.ground_decal(world, A.blob_tex(), Color(0.05, 0.045, 0.04, 0.9), rad * 2.4, p + Vector3(0, 0.02, 0))
+	d.rotation.y = rng.randf() * TAU
+	var d2 := A.ground_decal(world, A.blob_tex(), Color(0.17, 0.14, 0.11, 0.8), rad * 1.3, p + Vector3(0, 0.025, 0))
+	d2.rotation.y = rng.randf() * TAU
+	var n := int(rad * 4.0)
+	for i in n:
+		var a := TAU * i / n + rng.randf_range(-0.15, 0.15)
+		var rr := rad * rng.randf_range(0.85, 1.15)
+		var sc := rng.randf_range(0.25, 0.7) * rad * 0.35
+		rims.append(Transform3D(_rand_basis(35).scaled(Vector3(sc * 1.4, sc * 0.6, sc)), p + Vector3(cos(a) * rr, sc * 0.15, sin(a) * rr)))
+
+
+func _tank_wreck(p: Vector3) -> void:
+	if rng.randf() < 0.5:
+		var M := A.paint(Color(0.2, 0.2, 0.17), 0.4, 0.8, {"rust": 0.8, "wear": 0.7, "grime": 1.0})
+		var sb := _static_box(Vector3(3.4, 1.3, 6.2), p + Vector3(0, 0.9, 0), Color.WHITE, null, M)
+		sb.rotation_degrees.y = rng.randf() * 180.0
+		A.add(sb, A.bevel_box(Vector3(2.3, 0.9, 2.6), 0.2, 0.8), M, Vector3(0.2, 1.05, -0.4), Vector3(0, rng.randf_range(-40, 40), 8))
+		A.add(sb, A.cyl(0.12, 4.0, 0.14, 8), M, Vector3(0.2, 1.3, 1.8), Vector3(rng.randf_range(70, 100), 0, 0))
+		blocks.append(_rect_for(p, Vector3(6, 1, 6)))
+	else:
+		_wreck_car(p)
+
+
+func _park_statue(c: Vector3) -> void:
+	var sb := StaticBody3D.new()
+	sb.collision_layer = 1
+	var cs := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.radius = 2.4
+	sh.height = 5.0
+	cs.shape = sh
+	cs.position.y = 2.5
+	sb.add_child(cs)
+	world.add_child(sb)
+	sb.position = c
+	A.add(sb, A.cyl(2.6, 0.6, 2.8, 20), A.concrete(Color(0.55, 0.53, 0.5)), Vector3(0, 0.3, 0))
+	A.add(sb, A.bevel_box(Vector3(1.4, 2.2, 1.4), 0.08), A.concrete(Color(0.5, 0.48, 0.46)), Vector3(0, 1.7, 0))
+	A.add(sb, A.bevel_box(Vector3(0.7, 1.8, 0.5), 0.1, 0.7), A.paint(Color(0.3, 0.38, 0.33), 0.7, 0.45, {"rust": 0.4, "wear": 0.5, "panel_scale": 0.0}), Vector3(0, 3.7, 0), Vector3(0, 0, 14))
+	blocks.append(Rect2(c.x - 3, c.z - 3, 6, 6))
+	A.add(world, A.cyl(7.5, 0.03, 7.5, 32), A.concrete(Color(0.5, 0.48, 0.44), true), c + Vector3(0, 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(world, A.cyl(5.5, 0.05, 5.5, 32), A.ground(), c + Vector3(0, 0.03, 0), Vector3.ZERO, Vector3.ONE, false)
+	_poi_lamp(c + Vector3(6.5, 0, 6.5), Color(1.0, 0.8, 0.55))
+
+
+## 菌毯区：数据格子里相连的 S 格各放一座虫巢
+func _hive_nests() -> void:
+	var seen := {}
+	for j in 9:
+		for i in 9:
+			if zones[j][i] != "S" or seen.has(Vector2i(i, j)):
+				continue
+			var grp: Array = []
+			var stack: Array = [Vector2i(i, j)]
+			seen[Vector2i(i, j)] = true
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				grp.append(c)
+				for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var nn := c + d
+					if nn.x >= 0 and nn.y >= 0 and nn.x <= 8 and nn.y <= 8 and not seen.has(nn) and zones[nn.y][nn.x] == "S":
+						seen[nn] = true
+						stack.append(nn)
+			var c0: Vector2i = grp[rng.randi() % grp.size()]
+			for t in 12:
+				var p := _spot_in(_cell_rect(c0.x, c0.y), 3.0, 8)
+				if p != Vector3.INF and zone_at(p) == "S":
+					var nest = NestScript.new()
+					world.add_child(nest)
+					nest.position = p
+					nest.setup(self)
+					blocks.append(Rect2(p.x - 2, p.z - 2, 4, 4))
+					break
+
+
+## 悬崖岩体：层叠的大岩块（不可通行），外缘参差
+func _scatter_cliffs() -> void:
+	var ROCK := A.concrete(Color(0.4, 0.34, 0.28), false)
+	var ROCK2 := A.concrete(Color(0.33, 0.28, 0.23), false)
+	var step := 5.5
+	var x := -HALF + step * 0.5
+	while x < HALF:
+		var z := -HALF + step * 0.5
+		while z < HALF:
+			var p := Vector3(x + rng.randf_range(-1.5, 1.5), 0, z + rng.randf_range(-1.5, 1.5))
+			z += step
+			if absf(p.x) > HALF - 2.0 or absf(p.z) > HALF - 2.0 or zone_at(p) != "K":
+				continue
+			var edge := false
+			for o in [Vector3(step, 0, 0), Vector3(-step, 0, 0), Vector3(0, 0, step), Vector3(0, 0, -step)]:
+				if zone_at(p + o) != "K":
+					edge = true
+			if (edge and rng.randf() < 0.35) or _blocked(p, 2.5):
+				continue
+			var hgt := rng.randf_range(6.0, 13.0) * (0.6 if edge else 1.0)
+			var sz := Vector3(rng.randf_range(5.5, 8.0), hgt, rng.randf_range(5.5, 8.0))
+			var sb := _static_box(sz, p + Vector3(0, hgt * 0.5, 0), Color.WHITE, null, ROCK)
+			sb.rotation_degrees = Vector3(rng.randf_range(-4, 4), rng.randf() * 90.0, rng.randf_range(-4, 4))
+			A.add(sb, A.bevel_box(Vector3(sz.x * 0.7, hgt * 0.4, sz.z * 0.8), 0.4, 0.7), ROCK2, Vector3(rng.randf_range(-1, 1), hgt * 0.55, rng.randf_range(-1, 1)), Vector3(0, rng.randf() * 90, rng.randf_range(-8, 8)))
+			blocks.append(_rect_for(p, sz * 0.95))
+			if rng.randf() < 0.12:
+				var q := p + Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(-4, 4))
+				if not _blocked(q, 2.0):
+					_boulder(q, rng.randf_range(1.2, 2.5))
+		x += step
 
 
 # ---------- 建筑部件 ----------
-func _house(p: Vector3, sz: Vector3) -> void:
+func _house(p: Vector3, sz: Vector3, rot := 0.0) -> void:
 	var c: Color = [Color(0.55, 0.5, 0.43), Color(0.5, 0.46, 0.42), Color(0.46, 0.38, 0.3), Color(0.52, 0.52, 0.48)][rng.randi() % 4]
 	var sb := _static_box(sz, p + Vector3(0, sz.y * 0.5, 0), c, null, A.concrete(c))
+	sb.rotation.y = -rot
 	var hx := sz.x * 0.5
 	var hz := sz.z * 0.5
 	var hy := sz.y * 0.5
@@ -2970,32 +3385,11 @@ func _house(p: Vector3, sz: Vector3) -> void:
 		if rng.randf() < 0.6:
 			A.add(sb, A.bevel_box(Vector3(0.6, 1.2, 0.6), 0.04), M_DARK, Vector3(hx * 0.45, hy + rh * 0.6, hz * 0.3))
 
-
-func _yard_walls(lot: Rect2) -> void:
-	var M := A.concrete(Color(0.56, 0.53, 0.48), false)
-	for side in 4:
-		if rng.randf() < 0.35:
-			continue
-		var horiz := side < 2
-		var length: float = (lot.size.x if horiz else lot.size.y) * rng.randf_range(0.35, 0.8)
-		var t := rng.randf_range(-0.2, 0.2) * (lot.size.x if horiz else lot.size.y)
-		var pos: Vector3
-		var size: Vector3
-		var hgt := 1.25
-		if horiz:
-			size = Vector3(length, hgt, 0.35)
-			pos = Vector3(lot.get_center().x + t, hgt * 0.5, lot.position.y + 0.3 if side == 0 else lot.end.y - 0.3)
-		else:
-			size = Vector3(0.35, hgt, length)
-			pos = Vector3(lot.position.x + 0.3 if side == 2 else lot.end.x - 0.3, hgt * 0.5, lot.get_center().y + t)
-		_static_box(size, pos, Color.WHITE, null, M)
-		blocks.append(_rect_for(pos, size))
-
-
-func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0)) -> void:
+func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0), rot := 0.0) -> void:
 	var c: Color = col if col.r >= 0.0 else [Color(0.42, 0.44, 0.42), Color(0.5, 0.45, 0.36), Color(0.36, 0.4, 0.44)][rng.randi() % 3]
 	var M := A.paint(c, 0.45, 0.6, {"wear": 0.45, "rust": 0.6, "dust": 0.4, "panel_scale": 1.6, "grime": 0.6})
 	var sb := _static_box(sz, p + Vector3(0, sz.y * 0.5, 0), c, null, M)
+	sb.rotation.y = -rot
 	var hx := sz.x * 0.5
 	var hz := sz.z * 0.5
 	var hy := sz.y * 0.5
@@ -3012,7 +3406,6 @@ func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0)) -> void:
 	A.add(sb, A.bevel_box(Vector3(sz.x * 0.3, sz.y * 0.6, 0.12), 0.02), A.metal(Color(0.28, 0.29, 0.28)), Vector3(0, -hy + sz.y * 0.3, hz + 0.1), Vector3.ZERO, Vector3.ONE, false)
 	A.add(sb, A.bevel_box(Vector3(sz.x * 0.4, 0.9, 1.6), 0.05), A.concrete(Color(0.5, 0.48, 0.45), false), Vector3(0, -hy + 0.45, hz + 0.8))
 	A.stencil(sb, "BLD-%02d" % rng.randi_range(1, 40), Vector3(-hx * 0.6, hy * 0.5, hz + 0.12), Vector3.ZERO, 0.02, Color(0.85, 0.82, 0.72, 0.6))
-
 
 func _tank(p: Vector3, rad: float, h: float) -> void:
 	var sb := StaticBody3D.new()
@@ -3034,7 +3427,6 @@ func _tank(p: Vector3, rad: float, h: float) -> void:
 	A.add(sb, A.bevel_box(Vector3(0.5, h, 0.08), 0.01), A.metal(Color(0.2, 0.2, 0.2)), Vector3(0, h * 0.5, rad + 0.1))
 	blocks.append(Rect2(p.x - rad - 1, p.z - rad - 1, rad * 2 + 2, rad * 2 + 2))
 
-
 func _chimney(p: Vector3) -> void:
 	var sb := _static_box(Vector3(3.0, 1.0, 3.0), p + Vector3(0, 0.5, 0), Color(0.45, 0.42, 0.4))
 	var M := A.paint(Color(0.48, 0.32, 0.25), 0.0, 0.9, {"wear": 0.3, "grime": 0.9, "dust": 0.3, "panel_scale": 0.5})
@@ -3045,38 +3437,6 @@ func _chimney(p: Vector3) -> void:
 		"gravity": Vector3(0.6, 0.4, 0.2), "c0": Color(0.15, 0.13, 0.12, 0.45), "c1": Color(0.3, 0.28, 0.26, 0.0), "grow0": 0.6, "grow1": 3.0})
 	blocks.append(Rect2(p.x - 2, p.z - 2, 4, 4))
 
-
-func _fence_ring(r: Rect2, hgt: float, gap_chance: float) -> void:
-	var M := A.metal(Color(0.3, 0.29, 0.27))
-	var inner := r.grow(-1.0)
-	for side in 4:
-		var horiz := side < 2
-		var length: float = inner.size.x if horiz else inner.size.y
-		var seg := 4.0
-		var n := int(length / seg)
-		for k in n:
-			if rng.randf() < gap_chance:
-				continue
-			var t := -length * 0.5 + (k + 0.5) * seg
-			var pos := Vector3(inner.get_center().x + t, hgt * 0.5, inner.position.y if side == 0 else inner.end.y) if horiz else Vector3(inner.position.x if side == 2 else inner.end.x, hgt * 0.5, inner.get_center().y + t)
-			if _blocked(pos, 0.6):
-				continue
-			var size := Vector3(seg, hgt, 0.12) if horiz else Vector3(0.12, hgt, seg)
-			if hgt < 1.5:
-				# 矮木栅栏：不挡子弹（只是装饰性矮栏）
-				var n2 := Node3D.new()
-				world.add_child(n2)
-				n2.position = pos
-				A.add(n2, A.bevel_box(Vector3(seg, 0.1, 0.06) if horiz else Vector3(0.06, 0.1, seg), 0.01), A.paint(Color(0.36, 0.28, 0.2), 0.0, 0.9, {"wear": 0.5, "dust": 0.5}), Vector3(0, 0.2, 0))
-				A.add(n2, A.bevel_box(Vector3(seg, 0.1, 0.06) if horiz else Vector3(0.06, 0.1, seg), 0.01), A.paint(Color(0.36, 0.28, 0.2), 0.0, 0.9, {"wear": 0.5, "dust": 0.5}), Vector3(0, -0.2, 0))
-				A.add(n2, A.bevel_box(Vector3(0.12, hgt, 0.12), 0.01), A.paint(Color(0.3, 0.24, 0.18), 0.0, 0.9), Vector3(-seg * 0.5 if horiz else 0, 0, 0 if horiz else -seg * 0.5))
-			else:
-				# 铁丝网围栏：立柱 + 网（挡子弹）
-				var sb := _static_box(size, pos, Color.WHITE, null, A.paint(Color(0.32, 0.31, 0.29), 0.6, 0.6, {"panel_scale": 3.0, "rust": 0.6, "wear": 0.3}))
-				A.add(sb, A.cyl(0.07, hgt + 0.4, 0.07, 6), M, Vector3(-seg * 0.5 if horiz else 0, 0.2, 0 if horiz else -seg * 0.5))
-				blocks.append(_rect_for(pos, size))
-
-
 func _bunker(p: Vector3) -> void:
 	var sz := Vector3(6.0, 2.6, 5.0)
 	var sb := _static_box(sz, p + Vector3(0, sz.y * 0.5, 0), Color(0.48, 0.47, 0.43))
@@ -3085,7 +3445,6 @@ func _bunker(p: Vector3) -> void:
 	for k in 3:
 		A.add(sb, A.bevel_box(Vector3(1.4, 0.45, 0.7), 0.15), A.paint(Color(0.5, 0.45, 0.32), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.6}), Vector3(-1.6 + k * 1.6, sz.y * 0.5 + 0.6, sz.z * 0.5 - 0.4))
 	blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-
 
 func _watchtower(p: Vector3) -> void:
 	var sb := _static_box(Vector3(2.4, 1.1, 2.4), p + Vector3(0, 6.2, 0), Color(0.4, 0.38, 0.33), null, A.paint(Color(0.38, 0.36, 0.3), 0.2, 0.8, {"wear": 0.6, "rust": 0.4, "dust": 0.5}))
@@ -3110,7 +3469,6 @@ func _watchtower(p: Vector3) -> void:
 	col.position = p
 	blocks.append(Rect2(p.x - 1.5, p.z - 1.5, 3, 3))
 
-
 func _sandbags(p: Vector3, rot: float) -> void:
 	var M := A.paint(Color(0.5, 0.45, 0.32), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.6, "wear": 0.2})
 	var sb := _static_box(Vector3(4.0, 1.2, 0.9), p + Vector3(0, 0.6, 0), Color.WHITE, null, M)
@@ -3119,7 +3477,6 @@ func _sandbags(p: Vector3, rot: float) -> void:
 		for k in 5:
 			A.add(sb, A.bevel_box(Vector3(0.85, 0.36, 0.55), 0.15), M, Vector3(-1.7 + k * 0.85 + (0.42 if row % 2 else 0.0), -0.42 + row * 0.38, rng.randf_range(-0.08, 0.08)), Vector3(0, rng.randf_range(-6, 6), 0))
 	blocks.append(_rect_for(p, Vector3(4.4, 1, 4.4)))
-
 
 func _boulder(p: Vector3, s: float) -> void:
 	var sb := StaticBody3D.new()
@@ -3139,7 +3496,6 @@ func _boulder(p: Vector3, s: float) -> void:
 		A.add(sb, A.bevel_box(Vector3(ss * 1.2, ss * 0.8, ss), ss * 0.3, 0.7), M, Vector3(rng.randf_range(-0.3, 0.3) * s, ss * 0.3, rng.randf_range(-0.3, 0.3) * s), Vector3(rng.randf_range(-15, 15), rng.randf() * 360, rng.randf_range(-15, 15)))
 	blocks.append(Rect2(p.x - s * 0.7, p.z - s * 0.7, s * 1.4, s * 1.4))
 
-
 func _dead_tree(p: Vector3) -> void:
 	var n := Node3D.new()
 	world.add_child(n)
@@ -3152,7 +3508,6 @@ func _dead_tree(p: Vector3) -> void:
 		var a := rng.randf() * 360.0
 		A.add(n, A.cyl(0.02, h * 0.35, 0.06, 5), M, Vector3(0, y, 0), Vector3(rng.randf_range(35, 60), a, 0))
 
-
 func _rubble_pile(p: Vector3, s: float) -> void:
 	var M := A.concrete(Color(0.52, 0.49, 0.45), false)
 	var n := Node3D.new()
@@ -3162,272 +3517,6 @@ func _rubble_pile(p: Vector3, s: float) -> void:
 		var ss := rng.randf_range(0.3, 0.9) * s * 0.5
 		A.add(n, A.bevel_box(Vector3(ss * 1.4, ss * 0.6, ss), 0.06), M, Vector3(rng.randf_range(-s, s) * 0.6, ss * 0.2, rng.randf_range(-s, s) * 0.6), Vector3(rng.randf_range(-25, 25), rng.randf() * 360, rng.randf_range(-25, 25)))
 
-
-# ---------- 撤离点 / 虫群 ----------
-func _fill_park(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	# 环形步道 + 中央雕像基座 + 树阵 + 长椅 + 矮绿篱
-	var c := Vector3(r.get_center().x, 0, r.get_center().y)
-	if not poi and not _blocked(c, 3.0):
-		var sb := StaticBody3D.new()
-		sb.collision_layer = 1
-		var cs := CollisionShape3D.new()
-		var sh := CylinderShape3D.new()
-		sh.radius = 2.4
-		sh.height = 5.0
-		cs.shape = sh
-		cs.position.y = 2.5
-		sb.add_child(cs)
-		world.add_child(sb)
-		sb.position = c
-		A.add(sb, A.cyl(2.6, 0.6, 2.8, 20), A.concrete(Color(0.55, 0.53, 0.5)), Vector3(0, 0.3, 0))
-		A.add(sb, A.bevel_box(Vector3(1.4, 2.2, 1.4), 0.08), A.concrete(Color(0.5, 0.48, 0.46)), Vector3(0, 1.7, 0))
-		A.add(sb, A.bevel_box(Vector3(0.7, 1.8, 0.5), 0.1, 0.7), A.paint(Color(0.3, 0.38, 0.33), 0.7, 0.45, {"rust": 0.4, "wear": 0.5, "panel_scale": 0.0}), Vector3(0, 3.7, 0), Vector3(0, 0, 14))
-		blocks.append(Rect2(c.x - 3, c.z - 3, 6, 6))
-		var ring := A.cyl(7.5, 0.03, 7.5, 32)
-		A.add(world, ring, A.concrete(Color(0.5, 0.48, 0.44), true), c + Vector3(0, 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(world, A.cyl(5.5, 0.05, 5.5, 32), A.ground(), c + Vector3(0, 0.03, 0), Vector3.ZERO, Vector3.ONE, false)
-	for k in roundi(r.get_area() / 70.0):
-		var p := _spot_in(r, 1.0, 10)
-		if p != Vector3.INF and p.distance_to(c) > 8.0:
-			_dead_tree(p)
-			blocks.append(Rect2(p.x - 0.5, p.z - 0.5, 1, 1))
-	var BENCH := A.paint(Color(0.32, 0.25, 0.18), 0.0, 0.9, {"wear": 0.5, "dust": 0.5, "panel_scale": 0.0})
-	for k in roundi(r.get_area() / 350.0):
-		var p := _spot_in(r, 1.2, 10)
-		if p != Vector3.INF:
-			var n := Node3D.new()
-			world.add_child(n)
-			n.position = p
-			n.rotation.y = rng.randi_range(0, 3) * PI * 0.5
-			A.add(n, A.bevel_box(Vector3(1.8, 0.08, 0.5), 0.02), BENCH, Vector3(0, 0.45, 0))
-			A.add(n, A.bevel_box(Vector3(1.8, 0.4, 0.06), 0.02), BENCH, Vector3(0, 0.7, -0.25))
-			for sx in [-0.8, 0.8]:
-				A.add(n, A.bevel_box(Vector3(0.08, 0.45, 0.45), 0.01), A.metal(), Vector3(sx, 0.22, 0))
-	var HEDGE := A.paint(Color(0.22, 0.24, 0.14), 0.0, 1.0, {"wear": 0.0, "dust": 0.4, "panel_scale": 0.0, "grime": 0.8})
-	for k in roundi(r.get_area() / 500.0):
-		var p := _spot_in(r, 3.0, 10)
-		if p != Vector3.INF and p.distance_to(c) > 9.0:
-			var size := Vector3(rng.randf_range(4, 8), 0.9, 1.0) if rng.randf() < 0.5 else Vector3(1.0, 0.9, rng.randf_range(4, 8))
-			var n := Node3D.new()
-			world.add_child(n)
-			A.add(n, A.bevel_box(size, 0.3, 0.85), HEDGE, p + Vector3(0, 0.45, 0))
-			blocks.append(_rect_for(p, size))
-	if not poi:
-		_poi_lamp(Vector3(r.position.x + 3, 0, r.position.y + 3), Color(1.0, 0.8, 0.55))
-	_loot_in(r, 3, {"supply": 55, "tool": 25, "military": 8, "safe": 12})
-
-
-func _fill_harbor(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	var cols := [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35), Color(0.5, 0.2, 0.2)]
-	# 集装箱堆场：成排、两层
-	for k in roundi(r.get_area() / 180.0):
-		var p := _spot_in(r, 3.6, 12)
-		if p == Vector3.INF or (poi and Vector2(p.x, p.z).distance_to(r.get_center()) < 13.0):
-			continue
-		var rot := 0.0 if rng.randf() < 0.5 else 90.0
-		_container(p, rot, cols[rng.randi() % cols.size()])
-		if rng.randf() < 0.45:
-			_container(p + Vector3(0, 2.4, 0), rot + rng.randf_range(-4, 4), cols[rng.randi() % cols.size()])
-		blocks.append(Rect2(p.x - 3.5, p.z - 3.5, 7, 7))
-	# 岸桥吊机
-	if not poi and rng.randf() < 0.8:
-		var p := _spot_in(r, 5.0, 20)
-		if p != Vector3.INF:
-			var M := A.paint(Color(0.75, 0.45, 0.12), 0.5, 0.55, {"rust": 0.8, "wear": 0.6, "panel_scale": 0.8})
-			for lx in [-3.5, 3.5]:
-				for lz in [-3.5, 3.5]:
-					_static_box(Vector3(0.7, 14.0, 0.7), p + Vector3(lx, 7.0, lz), Color.WHITE, null, M)
-			A.add(world, A.bevel_box(Vector3(8.0, 1.2, 26.0), 0.1), M, p + Vector3(0, 14.4, 4.0))
-			A.add(world, A.bevel_box(Vector3(3.0, 2.2, 3.0), 0.1), A.paint(Color(0.3, 0.3, 0.32), 0.4, 0.6), p + Vector3(0, 13.0, 9.0))
-			blocks.append(Rect2(p.x - 4.2, p.z - 4.2, 8.4, 8.4))
-	if r.get_area() > 900.0 and rng.randf() < 0.6:
-		var sz := Vector3(minf(r.size.x * 0.5, 18.0), 7.0, minf(r.size.y * 0.4, 12.0))
-		var p := _spot_in(r, maxf(sz.x, sz.z) * 0.55, 15)
-		if p != Vector3.INF:
-			_warehouse(p, sz)
-			blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
-	_loot_in(r, 6, {"supply": 30, "tool": 45, "military": 15, "safe": 10})
-
-
-func _fill_railyard(r: Rect2) -> void:
-	# 停在编组站铁轨上的车厢
-	for l: Array in rail_lines:
-		var a: Vector2 = l[0]
-		var b: Vector2 = l[1]
-		var horiz := absf(b.x - a.x) > absf(b.y - a.y)
-		var x := (r.position.x if horiz else r.position.y) + 7.0
-		var end := (r.end.x if horiz else r.end.y) - 7.0
-		var line_c := a.y if horiz else a.x
-		if horiz and (line_c < r.position.y or line_c > r.end.y):
-			continue
-		if not horiz and (line_c < r.position.x or line_c > r.end.x):
-			continue
-		while x < end:
-			if rng.randf() < 0.55:
-				var p := Vector3(x, 0, line_c) if horiz else Vector3(line_c, 0, x)
-				if not _blocked(p, 1.0, false):
-					_wagon(p, horiz)
-			x += 13.5
-	# 信号塔 / 工具棚
-	var p := _spot_in(r, 3.0, 20)
-	if p != Vector3.INF:
-		_watchtower(p)
-	for k in roundi(r.get_area() / 900.0):
-		var q := _spot_in(r, 4.0, 15)
-		if q != Vector3.INF:
-			var sz := Vector3(rng.randf_range(5, 8), 3.0, rng.randf_range(4, 6))
-			_building(q, sz)
-			blocks.append(_rect_for(q, sz))
-	_loot_in(r, 5, {"supply": 25, "tool": 50, "military": 15, "safe": 10})
-
-
-# ---------- 新地形区块 ----------
-func _fill_forest(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	var trunks: Array = []
-	var crowns: Array = []
-	var dead_crowns: Array = []
-	var body := StaticBody3D.new()
-	body.collision_layer = 1
-	world.add_child(body)
-	for k in roundi(r.get_area() / 26.0):
-		var p := _spot_in(r, 1.1, 4)
-		if p == Vector3.INF or (poi and Vector2(p.x, p.z).distance_to(r.get_center()) < 13.0):
-			continue
-		if rng.randf() < 0.12:
-			_dead_tree(p)
-			blocks.append(Rect2(p.x - 0.5, p.z - 0.5, 1, 1))
-			continue
-		var h := rng.randf_range(5.0, 10.0)
-		var cr := h * rng.randf_range(0.2, 0.27)
-		trunks.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, h * 0.45, 1)), p + Vector3(0, h * 0.225, 0)))
-		var dead := rng.randf() < 0.3
-		for t in 3:
-			var y := h * (0.3 + t * 0.22)
-			var s := cr * (1.0 - t * 0.26)
-			var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-5, 5)))
-			(dead_crowns if dead else crowns).append(Transform3D(b.scaled(Vector3(s, h * 0.34, s)), p + Vector3(0, y + h * 0.17, 0)))
-		var cs := CollisionShape3D.new()
-		var sh := CylinderShape3D.new()
-		sh.radius = 0.45
-		sh.height = 5.0
-		cs.shape = sh
-		cs.position = p + Vector3(0, 2.5, 0)
-		body.add_child(cs)
-		blocks.append(Rect2(p.x - 0.8, p.z - 0.8, 1.6, 1.6))
-	var BARK := A.paint(Color(0.22, 0.17, 0.13), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.3, "wear": 0.0})
-	var NEEDLE := A.paint(Color(0.15, 0.2, 0.12), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.45, "wear": 0.0, "grime": 0.7})
-	var BROWN := A.paint(Color(0.32, 0.25, 0.15), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.45, "wear": 0.0, "grime": 0.7})
-	_multimesh(A.cyl(0.14, 1.0, 0.24, 6), BARK, trunks)
-	_multimesh(A.cyl(0.0, 1.0, 1.0, 7), NEEDLE, crowns)
-	_multimesh(A.cyl(0.0, 1.0, 1.0, 7), BROWN, dead_crowns)
-	# 倒木
-	for k in roundi(r.get_area() / 400.0):
-		var p := _spot_in(r, 2.5, 6)
-		if p != Vector3.INF:
-			var L := rng.randf_range(3.0, 6.0)
-			var sb := _static_box(Vector3(0.6, 0.6, L), p + Vector3(0, 0.3, 0), Color.WHITE, null, BARK)
-			sb.rotation_degrees.y = rng.randf() * 180.0
-			blocks.append(_rect_for(p, Vector3(L, 1, L) * 0.7))
-	_loot_in(r, 3, {"supply": 50, "tool": 30, "military": 10, "safe": 10})
-
-
-func _fill_craters(r: Rect2) -> void:
-	var poi := _is_poi_cell(r)
-	var rims: Array = []
-	for k in roundi(r.get_area() / 220.0):
-		var p := _spot_in(r, 3.0, 8)
-		if p == Vector3.INF or (poi and Vector2(p.x, p.z).distance_to(r.get_center()) < 14.0):
-			continue
-		var rad := rng.randf_range(2.5, 6.5)
-		var d := A.ground_decal(world, A.blob_tex(), Color(0.05, 0.045, 0.04, 0.9), rad * 2.4, p + Vector3(0, 0.02, 0))
-		d.rotation.y = rng.randf() * TAU
-		var d2 := A.ground_decal(world, A.blob_tex(), Color(0.17, 0.14, 0.11, 0.8), rad * 1.3, p + Vector3(0, 0.025, 0))
-		d2.rotation.y = rng.randf() * TAU
-		var n := int(rad * 4.0)
-		for i in n:
-			var a := TAU * i / n + rng.randf_range(-0.15, 0.15)
-			var rr := rad * rng.randf_range(0.85, 1.15)
-			var sc := rng.randf_range(0.25, 0.7) * rad * 0.35
-			rims.append(Transform3D(_rand_basis(35).scaled(Vector3(sc * 1.4, sc * 0.6, sc)), p + Vector3(cos(a) * rr, sc * 0.15, sin(a) * rr)))
-	_multimesh(A.bevel_box(Vector3.ONE, 0.15, 0.8), A.concrete(Color(0.36, 0.32, 0.28), false), rims)
-	# 被击毁的坦克 / 焦黑的车
-	for k in roundi(r.get_area() / 900.0):
-		var p := _spot_in(r, 3.5, 10)
-		if p == Vector3.INF:
-			continue
-		if rng.randf() < 0.5:
-			var M := A.paint(Color(0.2, 0.2, 0.17), 0.4, 0.8, {"rust": 0.8, "wear": 0.7, "grime": 1.0})
-			var sb := _static_box(Vector3(3.4, 1.3, 6.2), p + Vector3(0, 0.9, 0), Color.WHITE, null, M)
-			sb.rotation_degrees.y = rng.randf() * 180.0
-			A.add(sb, A.bevel_box(Vector3(2.3, 0.9, 2.6), 0.2, 0.8), M, Vector3(0.2, 1.05, -0.4), Vector3(0, rng.randf_range(-40, 40), 8))
-			A.add(sb, A.cyl(0.12, 4.0, 0.14, 8), M, Vector3(0.2, 1.3, 1.8), Vector3(rng.randf_range(70, 100), 0, 0))
-			blocks.append(_rect_for(p, Vector3(6, 1, 6)))
-		else:
-			_wreck_car(p)
-	for k in 2:
-		var p := _spot_in(r, 1.5, 8)
-		if p != Vector3.INF and rng.randf() < 0.5:
-			_fire_barrel(p)
-	_loot_in(r, 4, {"supply": 15, "tool": 25, "military": 50, "safe": 10})
-
-
-func _fill_hive(r: Rect2) -> void:
-	for k in roundi(r.get_area() / 60.0):
-		var p := Vector3(rng.randf_range(r.position.x, r.end.x), 0.02 + (k % 40) * 0.0003, rng.randf_range(r.position.y, r.end.y))
-		var d := A.ground_decal(world, A.cloud_tex(), Color(0.13, 0.08, 0.15, rng.randf_range(0.45, 0.75)), rng.randf_range(4.0, 9.0), p)
-		d.rotation.y = rng.randf() * TAU
-	for k in roundi(r.get_area() / 140.0):
-		var p := _spot_in(r, 1.2, 6)
-		if p != Vector3.INF:
-			_bug_spire(p, rng.randf_range(2.5, 7.0))
-	var pods: Array = []
-	for k in roundi(r.get_area() / 25.0):
-		var p := Vector3(rng.randf_range(r.position.x, r.end.x), 0, rng.randf_range(r.position.y, r.end.y))
-		if on_road(Vector2(p.x, p.z)):
-			continue
-		var s := rng.randf_range(0.15, 0.45)
-		pods.append(Transform3D(Basis.IDENTITY.scaled(Vector3(s, s * 0.7, s)), p + Vector3(0, s * 0.25, 0)))
-	_multimesh(A.sphere(1.0, -1, 8), A.emit(Color(0.65, 0.3, 1.0), 1.6), pods, false)
-	if r.get_area() > 700.0:
-		var p := _spot_in(r, 3.0, 20)
-		if p != Vector3.INF:
-			var n = NestScript.new()
-			world.add_child(n)
-			n.position = p
-			n.setup(self)
-			blocks.append(Rect2(p.x - 2, p.z - 2, 4, 4))
-	_loot_in(r, 3, {"supply": 20, "tool": 20, "military": 35, "safe": 25})
-
-
-func _fill_cliff(r: Rect2) -> void:
-	# 悬崖岩体：层叠的大岩块（不可通行），外缘参差
-	var ROCK := A.concrete(Color(0.4, 0.34, 0.28), false)
-	var ROCK2 := A.concrete(Color(0.33, 0.28, 0.23), false)
-	var step := 5.5
-	var x := r.position.x + step * 0.5
-	while x < r.end.x:
-		var z := r.position.y + step * 0.5
-		while z < r.end.y:
-			var edge := minf(minf(x - r.position.x, r.end.x - x), minf(z - r.position.y, r.end.y - z))
-			var p := Vector3(x + rng.randf_range(-1.5, 1.5), 0, z + rng.randf_range(-1.5, 1.5))
-			if (edge < step and rng.randf() < 0.35) or _blocked(p, 2.5):
-				z += step
-				continue
-			var hgt := rng.randf_range(6.0, 13.0) * (0.6 if edge < step else 1.0)
-			var sz := Vector3(rng.randf_range(5.5, 8.0), hgt, rng.randf_range(5.5, 8.0))
-			var sb := _static_box(sz, p + Vector3(0, hgt * 0.5, 0), Color.WHITE, null, ROCK)
-			sb.rotation_degrees = Vector3(rng.randf_range(-4, 4), rng.randf() * 90.0, rng.randf_range(-4, 4))
-			A.add(sb, A.bevel_box(Vector3(sz.x * 0.7, hgt * 0.4, sz.z * 0.8), 0.4, 0.7), ROCK2, Vector3(rng.randf_range(-1, 1), hgt * 0.55, rng.randf_range(-1, 1)), Vector3(0, rng.randf() * 90, rng.randf_range(-8, 8)))
-			blocks.append(_rect_for(p, sz * 0.95))
-			z += step
-		x += step
-	for k in roundi(r.get_area() / 300.0):
-		var p := Vector3(rng.randf_range(r.position.x - 3, r.end.x + 3), 0, rng.randf_range(r.position.y - 3, r.end.y + 3))
-		if not _blocked(p, 2.0):
-			_boulder(p, rng.randf_range(1.2, 2.5))
 
 
 func _spawn_extracts(drop: Vector3) -> void:
@@ -3643,6 +3732,15 @@ func _bake_static() -> void:
 		world.add_child(mmi)
 		removed += g.items.size()
 	print("[raid] baked %d static meshes into multimeshes" % removed)
+
+
+## 统计子树节点数（地图生成性能日志用；queue_free 待删的不算）
+func _count_nodes(n: Node) -> int:
+	var c := 1
+	for ch in n.get_children():
+		if not ch.is_queued_for_deletion():
+			c += _count_nodes(ch)
+	return c
 
 
 func _apply_style() -> void:

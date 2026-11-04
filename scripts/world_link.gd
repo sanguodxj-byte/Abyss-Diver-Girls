@@ -22,6 +22,7 @@ const HOLD := 1.2           ## 停留多久触发转场
 const GATE_COLOR := Color(0.35, 0.85, 1.0)
 
 const A = preload("res://scripts/art.gd")
+const WC = preload("res://scripts/world_city.gd")
 
 static var force_open := false   ## 测试用：忽略战区解锁条件
 
@@ -70,29 +71,11 @@ static func _inward(edge: String) -> Vector3:
 		_: return Vector3(-1, 0, 0)
 
 
-## 转场口位置：沿边界每 8 米试一处，向内 6~30 米都得是空地；道路通到边上的地方优先，其次靠近边的中段
+## 转场口位置：由城市群布局统一决定（scripts/world_city.gd gate_along），相邻两个战区共用同一处、每局一致：
+## 沿边每 8 米试一处，边两侧向内 6~30 米都得是空地（不是水、悬崖、建筑、遗迹院落）；道路跨过边界的地方优先，其次靠近边的中段。
+## 地图生成时（raid._build_map）转场口通道里不摆杂物。
 func _pick_along(edge: String) -> float:
-	var best := 0.0
-	var bs := -INF
-	var t := -128.0
-	while t <= 128.0:
-		var ok := true
-		var road := false
-		for inset in [6.0, 12.0, 20.0, 30.0]:
-			var p := _edge_point(edge, t, inset)
-			var q := Vector2(p.x, p.z)
-			if raid._blocked(p, 4.5, false) or raid.in_wet(q, 2.0) or raid.zone_at(p) == "K":
-				ok = false
-				break
-			if raid.on_road(q, 1.0) or raid.on_curve(q, 1.0):
-				road = true
-		if ok:
-			var s := -absf(t) * 0.15 + (30.0 if road else 0.0)
-			if s > bs:
-				bs = s
-				best = t
-		t += 8.0
-	return best
+	return WC.gate_along(raid.map_id, edge)
 
 
 # ---------------------------------------------------------------- 外观
