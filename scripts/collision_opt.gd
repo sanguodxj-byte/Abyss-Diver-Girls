@@ -26,6 +26,7 @@ const LOOT_WIN := 16.0        ## 搜刮箱封死判定的局部窗口半宽（32
 const CELL := 0.5             ## 可达性栅格边长
 const HULL_FILL := 0.85       ## 簇凸包填充率阈值
 const HULL_MAX_AREA := 900.0  ## 只对凸包面积小于它的簇做整体替换（大簇保持“原形状 + 填缝”）
+const MERGE_MAX_SHAPES := 16  ## 合并进一个静态体的形状上限（成员 + 填缝）；超过的簇沿长轴切成几段，每段一个静态体（形状过多的静态体拖慢 move_and_slide）
 const GROUND_EPS := 0.15      ## 底面以下的形状（地面）不参与
 const UNIT_TOP := 2.6         ## 底面高于它的形状（瞭望塔平台、吊机横梁）单位从下面走过，不参与
 const HUGE_EXT := 120.0       ## 超大形状（地面盒）不参与
@@ -110,6 +111,8 @@ static func optimize(raid) -> Dictionary:
 		no_hull[_find(parent, f.a)] = true
 	var merged_bodies := 0
 	var hulls := 0
+	var capped := 0       # 超过 MERGE_MAX_SHAPES 被切段的簇
+	var max_shapes := 0   # 合并后单个静态体的最多形状数
 	var new_rects: Array = []
 	var new_polys: Array = []
 	for root in clusters:
@@ -120,6 +123,30 @@ static func optimize(raid) -> Dictionary:
 		for i: int in c.members:
 			if obs[i].fixed:
 				mergeable = false
+		var use_hull := false
+		var hull := PackedVector2Array()
+		var layer := 0
+		var ymin := INF
+		var ymax := -INF
+		if mergeable:
+			var pts := PackedVector2Array()
+			var polys: Array = []
+			for i: int in c.members:
+				layer |= int(obs[i].body.collision_layer)
+				ymin = minf(ymin, obs[i].y0)
+				ymax = maxf(ymax, obs[i].y1)
+				pts.append_array(obs[i].poly)
+				polys.append(obs[i].poly)
+			for f: Dictionary in c.fillers:
+				pts.append_array(f.poly)
+				polys.append(f.poly)
+			hull = _hull(pts)
+			var harea := absf(_area(hull))
+			var sum_area := 0.0   # 成员 + 填缝面积之和（重叠会重复计，是覆盖面积的上界）：不够阈值就不必采样
+			for poly: PackedVector2Array in polys:
+				sum_area += absf(_area(poly))
+			use_hull = not no_hull.has(root) and harea > 0.5 and sum_area >= harea * HULL_FILL and harea <= HULL_MAX_AREA and not _near_loot(hull, loot, LOOT_CLEAR) \
+				and _fill_ratio(hull, polys) >= HULL_FILL
 		if not mergeable:
 			# 有脚本的静态体（理论上不会出现）或关闭合并：不搬形状，每块填缝单独一个静态体
 			for f: Dictionary in c.fillers:
@@ -128,47 +155,52 @@ static func optimize(raid) -> Dictionary:
 				new_polys.append(f.poly)
 				merged_bodies += 1
 			continue
-		var layer := 0
-		var ymin := INF
-		var ymax := -INF
-		var pts := PackedVector2Array()
-		var polys: Array = []
-		for i: int in c.members:
-			layer |= int(obs[i].body.collision_layer)
-			ymin = minf(ymin, obs[i].y0)
-			ymax = maxf(ymax, obs[i].y1)
-			pts.append_array(obs[i].poly)
-			polys.append(obs[i].poly)
-		for f: Dictionary in c.fillers:
-			pts.append_array(f.poly)
-			polys.append(f.poly)
-		var body := _new_body(raid.world, layer)
-		merged_bodies += 1
-		var hull := _hull(pts)
-		var harea := absf(_area(hull))
-		var sum_area := 0.0   # 成员 + 填缝面积之和（重叠会重复计，是覆盖面积的上界）：不够阈值就不必采样
-		for poly: PackedVector2Array in polys:
-			sum_area += absf(_area(poly))
-		var use_hull := not no_hull.has(root) and harea > 0.5 and sum_area >= harea * HULL_FILL and harea <= HULL_MAX_AREA and not _near_loot(hull, loot, LOOT_CLEAR) \
-			and _fill_ratio(hull, polys) >= HULL_FILL
 		if use_hull:
+			var hb := _new_body(raid.world, layer)
+			merged_bodies += 1
 			for i: int in c.members:
 				var cs: CollisionShape3D = obs[i].cs
 				cs.get_parent().remove_child(cs)
 				cs.free()
-			_add_prism(body, hull, minf(ymin, 0.0), ymax)
+			_add_prism(hb, hull, minf(ymin, 0.0), ymax)
 			new_polys.append(hull)
 			hulls += 1
-		else:
-			for i: int in c.members:
-				var cs: CollisionShape3D = obs[i].cs
-				var gt := cs.global_transform
-				cs.get_parent().remove_child(cs)
-				body.add_child(cs)
-				cs.global_transform = gt
-			for f: Dictionary in c.fillers:
+			continue
+		# 原形状 + 填缝：按成员沿簇长轴排序，每 MERGE_MAX_SHAPES 个形状切一段；填缝跟着它的 a 成员走
+		var by_a := {}
+		for f: Dictionary in c.fillers:
+			if not by_a.has(f.a):
+				by_a[f.a] = []
+			by_a[f.a].append(f)
+		var crect: Rect2 = obs[c.members[0]].rect
+		for i: int in c.members:
+			crect = crect.merge(obs[i].rect)
+		var along_x := crect.size.x >= crect.size.y
+		var order: Array = c.members.duplicate()
+		order.sort_custom(func(x, y):
+			var cx: Vector2 = obs[x].rect.get_center()
+			var cy: Vector2 = obs[y].rect.get_center()
+			return cx.x < cy.x if along_x else cx.y < cy.y)
+		if c.members.size() + c.fillers.size() > MERGE_MAX_SHAPES:
+			capped += 1
+		var body: StaticBody3D = null
+		var n := 0
+		for i: int in order:
+			var fs: Array = by_a.get(i, [])
+			if body == null or n + 1 + fs.size() > MERGE_MAX_SHAPES:
+				body = _new_body(raid.world, layer)
+				merged_bodies += 1
+				n = 0
+			var cs: CollisionShape3D = obs[i].cs
+			var gt := cs.global_transform
+			cs.get_parent().remove_child(cs)
+			body.add_child(cs)
+			cs.global_transform = gt
+			for f: Dictionary in fs:
 				_add_prism(body, f.poly, 0.0, f.y1)
 				new_polys.append(f.poly)
+			n += 1 + fs.size()
+			max_shapes = maxi(max_shapes, n)
 	stats["t_build"] = (Time.get_ticks_usec() - t0) / 1000.0
 	# ---- 3) 摆放 / 巡逻数据 ----
 	for p: PackedVector2Array in new_polys:
@@ -180,6 +212,8 @@ static func optimize(raid) -> Dictionary:
 	_push_units_out(raid, new_polys)
 	stats["merged_bodies"] = merged_bodies
 	stats["hull_clusters"] = hulls
+	stats["clusters_capped"] = capped
+	stats["max_merged_shapes"] = max_shapes
 	stats["blocks_added"] = new_rects.size()
 	stats["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	last_stats = stats
