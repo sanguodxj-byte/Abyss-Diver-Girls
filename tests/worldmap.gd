@@ -100,6 +100,15 @@ func _check_layout() -> void:
 				p("%s 方块位置 %s 与城市群世界坐标不符（应为 %s）" % [id, Vector2(float(meta.maps[id].x), float(meta.maps[id].y)), want])
 	else:
 		p("worldmap.json 缺少 world_rect")
+	# 转场口预算表（scripts/world_gates.gd）与现算一致
+	for a: String in WorldLink.LINKS:
+		for e: String in WorldLink.LINKS[a]:
+			var key := "%s|%s" % [a, e]
+			var want := WC.gate_compute(a, e)
+			if not WC.WorldGates.GATES.has(key):
+				p("world_gates.gd 缺少 %s（重新运行 -- --worldmap_export）" % key)
+			elif absf(float(WC.WorldGates.GATES[key]) - want) > 0.01:
+				p("world_gates.gd %s = %.1f，现算 %.1f（重新运行 -- --worldmap_export）" % [key, float(WC.WorldGates.GATES[key]), want])
 
 
 func _px(m: Dictionary, x: float, z: float) -> Color:

@@ -71,9 +71,13 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	add_child(fx)
 	map_id = GameData.map_id
 	var t_build := Time.get_ticks_usec()
+	_tphase.clear()
+	_tlast = t_build
 	_load_map()
+	_tmark("load_map")
 	_build_environment()
 	_build_ground()
+	_tmark("env+ground")
 	var drop := _build_map()
 	world_link = WorldLinkScript.new()
 	world_link.name = "WorldLink"
@@ -81,16 +85,23 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	world_link.setup(self)
 	if not transit.is_empty():
 		drop = world_link.entry_point(str(transit.get("edge", "")), drop)
+	_tlast = Time.get_ticks_usec()
 	_build_map_texture()
 	world_link.paint_map(map_tex)
 	_build_zone_ground()
+	_tmark("map_tex+zone_ground")
 	_run_ext_build(drop)
+	_tmark("ext")
 	_spawn_extracts(drop)
 	preload("res://scripts/collision_opt.gd").optimize(self)   # 碰撞后处理：小件去碰撞、窄缝合并、防卡死（见脚本说明）
 	_spawn_initial_bugs(drop)
+	_tmark("extracts+bugs")
 	_bake_static()
+	_tmark("bake")
 	rebuild_nav()   # 导航网格：所有静态几何体都建好之后栅格化（碰撞后处理改动布局后会再调一次）
+	_tmark("nav")
 	print("[raid] map build %s: %d ms, world nodes %d, blocks %d" % [map_id, (Time.get_ticks_usec() - t_build) / 1000, _count_nodes(world), blocks.size()])
+	print("[raid]   phases: %s" % ", ".join(_tphase.keys().map(func(k): return "%s %d" % [k, _tphase[k]])))
 
 	mech = MechScript.new()
 	mech.raid = self
@@ -376,6 +387,24 @@ func _static_box(size: Vector3, pos: Vector3, c: Color, parent: Node3D = null, m
 	return sb
 
 
+## 楼体：只有碰撞体（外观由 _ibox 合进 MultiMesh）；碰撞高度规则同 _static_box
+func _bldg_body(size: Vector3, pos: Vector3) -> StaticBody3D:
+	var sb := StaticBody3D.new()
+	sb.collision_layer = 1
+	sb.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = size
+	if size.y >= 1.1 and size.y < 5.0:
+		sh.size.y = 5.0
+		cs.position.y = (5.0 - size.y) * 0.5
+	cs.shape = sh
+	sb.add_child(cs)
+	world.add_child(sb)
+	sb.position = pos
+	return sb
+
+
 func _multimesh(mesh: Mesh, m: Material, xforms: Array, shadow := true) -> void:
 	# 按 60m 分块，保证视锥裁剪有效（大地图性能）
 	var buckets := {}
@@ -578,16 +607,25 @@ func _bk_sync() -> void:
 var _keep_clear: Array = []
 
 
+## 是否压到留空区（只查 _keep_clear，不查已有占地）。线状杂物（院墙、围栏、防爆墙）按整段长度查，
+## 免得只查中心点时长墙的一端伸进地标原位
+func _in_keep_clear(p: Vector3, r: float) -> bool:
+	if _keep_clear.is_empty():
+		return false
+	var pr := Rect2(p.x - r, p.z - r, r * 2, r * 2)
+	for kc in _keep_clear:
+		if kc is Rect2:
+			if (kc as Rect2).intersects(pr):
+				return true
+		elif Vector2(p.x, p.z).distance_to(Vector2(kc.x, kc.y)) < kc.z + r:
+			return true
+	return false
+
+
 func _blocked(p: Vector3, r: float, terrain := true) -> bool:
 	_bk_sync()
-	if not _keep_clear.is_empty():
-		var pr := Rect2(p.x - r, p.z - r, r * 2, r * 2)
-		for kc in _keep_clear:
-			if kc is Rect2:
-				if (kc as Rect2).intersects(pr):
-					return true
-			elif Vector2(p.x, p.z).distance_to(Vector2(kc.x, kc.y)) < kc.z + r:
-				return true
+	if _in_keep_clear(p, r):
+		return true
 	var probe := Rect2(p.x - r, p.z - r, r * 2, r * 2)
 	for gx in range(floori(probe.position.x / _BK), floori(probe.end.x / _BK) + 1):
 		for gz in range(floori(probe.position.y / _BK), floori(probe.end.y / _BK) + 1):
@@ -760,29 +798,31 @@ func _crashed_ship(c: Vector3) -> void:
 
 func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 	# 废弃城区楼房：暖灰混凝土外墙 + 深色勒脚 + 转角壁柱 + 窗框窗台 + 带女儿墙的沥青屋顶 + 屋顶设备
-	var c := Color(0.5, 0.46, 0.4).lerp(Color(0.42, 0.38, 0.33), rng.randf())
+	# 外墙色取 4 档（材质能在全图共用，细部零件才合得成少量 MultiMesh）
+	var c := Color(0.5, 0.46, 0.4).lerp(Color(0.42, 0.38, 0.33), rng.randi_range(0, 3) / 3.0)
 	if rng.randf() < 0.3:
 		c = Color(0.46, 0.4, 0.33)  # 少数砖黄色楼
-	var sb := _static_box(size, p + Vector3(0, size.y * 0.5, 0), c, null, A.concrete(c))
+	var sb := _bldg_body(size, p + Vector3(0, size.y * 0.5, 0))
 	sb.rotation.y = -yaw
+	_ibox(sb, size, 0.01, A.concrete(c))
 	var hy := size.y * 0.5
 	var hx := size.x * 0.5
 	var hz := size.z * 0.5
 	var M_DARK := A.concrete(c.darkened(0.35), false)
 	var M_TRIM := A.concrete(c.lightened(0.08), false)
 	# 勒脚
-	A.add(sb, A.bevel_box(Vector3(size.x + 0.12, 0.55, size.z + 0.12), 0.03), M_DARK, Vector3(0, -hy + 0.27, 0))
+	_ibox(sb, Vector3(size.x + 0.12, 0.55, size.z + 0.12), 0.03, M_DARK, Vector3(0, -hy + 0.27, 0))
 	# 转角壁柱
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			A.add(sb, A.bevel_box(Vector3(0.34, size.y + 0.02, 0.34), 0.04), M_TRIM, Vector3(sx * (hx - 0.1), 0.01, sz * (hz - 0.1)))
+			_ibox(sb, Vector3(0.34, size.y + 0.02, 0.34), 0.04, M_TRIM, Vector3(sx * (hx - 0.1), 0.01, sz * (hz - 0.1)))
 	# 楼层分隔带
 	var floors := int(size.y / 1.6)
 	for f in range(1, floors + 1):
 		var y := -hy + f * 1.6 - 0.1
 		if y > hy - 0.3:
 			break
-		A.add(sb, A.bevel_box(Vector3(size.x + 0.08, 0.12, size.z + 0.08), 0.03), M_DARK, Vector3(0, y, 0))
+		_ibox(sb, Vector3(size.x + 0.08, 0.12, size.z + 0.08), 0.03, M_DARK, Vector3(0, y, 0))
 	# 窗：窗框 + 窗台 + 玻璃（大多黑洞，少数封板或亮着暖光）
 	if size.x > 2.5 and size.z > 2.5:
 		var M_WIN := A.paint(Color(0.03, 0.035, 0.04), 0.1, 0.35)
@@ -806,14 +846,14 @@ func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 						var o: float = sd * (depth + 0.005)
 						var pos := Vector3(t, y, o) if axis == 0 else Vector3(o, y, t)
 						var rot := Vector3.ZERO if axis == 0 else Vector3(0, 90, 0)
-						A.add(sb, A.bevel_box(Vector3(0.82, 0.86, 0.05), 0.01), M_TRIM, pos + (Vector3(0, 0, sd * 0.01) if axis == 0 else Vector3(sd * 0.01, 0, 0)), rot, Vector3.ONE, false)
-						A.add(sb, A.bevel_box(Vector3(0.66, 0.7, 0.06), 0.01), wm, pos + (Vector3(0, 0, sd * 0.03) if axis == 0 else Vector3(sd * 0.03, 0, 0)), rot, Vector3.ONE, false)
-						A.add(sb, A.bevel_box(Vector3(0.9, 0.07, 0.16), 0.01), M_TRIM, pos + Vector3(0, -0.45, 0) + (Vector3(0, 0, sd * 0.07) if axis == 0 else Vector3(sd * 0.07, 0, 0)), rot, Vector3.ONE, false)
+						_ibox(sb, Vector3(0.82, 0.86, 0.05), 0.01, M_TRIM, pos + (Vector3(0, 0, sd * 0.01) if axis == 0 else Vector3(sd * 0.01, 0, 0)), rot, Vector3.ONE, false)
+						_ibox(sb, Vector3(0.66, 0.7, 0.06), 0.01, wm, pos + (Vector3(0, 0, sd * 0.03) if axis == 0 else Vector3(sd * 0.03, 0, 0)), rot, Vector3.ONE, false)
+						_ibox(sb, Vector3(0.9, 0.07, 0.16), 0.01, M_TRIM, pos + Vector3(0, -0.45, 0) + (Vector3(0, 0, sd * 0.07) if axis == 0 else Vector3(sd * 0.07, 0, 0)), rot, Vector3.ONE, false)
 		# 一层卷帘门
 		var dz := (hz + 0.02) * (1 if rng.randf() < 0.5 else -1)
-		A.add(sb, A.bevel_box(Vector3(min(2.2, size.x * 0.4), 1.25, 0.08), 0.02), A.metal(Color(0.3, 0.31, 0.3)), Vector3(rng.randf_range(-hx, hx) * 0.4, -hy + 0.75, dz), Vector3.ZERO, Vector3.ONE, false)
+		_ibox(sb, Vector3(min(2.2, size.x * 0.4), 1.25, 0.08), 0.02, A.metal(Color(0.3, 0.31, 0.3)), Vector3(rng.randf_range(-hx, hx) * 0.4, -hy + 0.75, dz), Vector3.ZERO, Vector3.ONE, false)
 	# 屋顶：深色沥青屋面 + 女儿墙（随机残缺）
-	A.add(sb, A.bevel_box(Vector3(size.x - 0.3, 0.06, size.z - 0.3), 0.02), A.concrete(Color(0.2, 0.19, 0.18), false), Vector3(0, hy + 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
+	_ibox(sb, Vector3(size.x - 0.3, 0.06, size.z - 0.3), 0.02, A.concrete(Color(0.2, 0.19, 0.18), false), Vector3(0, hy + 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
 	var ph := 0.45
 	for sd: float in [-1.0, 1.0]:
 		var segs := 3
@@ -822,40 +862,41 @@ func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 				continue
 			var len_x := size.x / segs
 			var hh := ph * rng.randf_range(0.55, 1.0)
-			A.add(sb, A.bevel_box(Vector3(len_x, hh, 0.22), 0.03), M_TRIM, Vector3(-hx + (k + 0.5) * len_x, hy + hh * 0.5, sd * (hz - 0.11)))
+			_ibox(sb, Vector3(len_x, hh, 0.22), 0.03, M_TRIM, Vector3(-hx + (k + 0.5) * len_x, hy + hh * 0.5, sd * (hz - 0.11)))
 			var len_z := size.z / segs
 			hh = ph * rng.randf_range(0.55, 1.0)
-			A.add(sb, A.bevel_box(Vector3(0.22, hh, len_z), 0.03), M_TRIM, Vector3(sd * (hx - 0.11), hy + hh * 0.5, -hz + (k + 0.5) * len_z))
+			_ibox(sb, Vector3(0.22, hh, len_z), 0.03, M_TRIM, Vector3(sd * (hx - 0.11), hy + hh * 0.5, -hz + (k + 0.5) * len_z))
 	# 屋顶设备：空调外机、通风管、水箱、检修口
 	var M_UNIT := A.paint(Color(0.55, 0.56, 0.54), 0.4, 0.55, {"wear": 0.5, "rust": 0.5, "dust": 0.4})
 	for k in rng.randi_range(1, 3):
 		var up := Vector3(rng.randf_range(-hx, hx) * 0.55, hy + 0.32, rng.randf_range(-hz, hz) * 0.55)
-		A.add(sb, A.bevel_box(Vector3(0.95, 0.6, 0.75), 0.05), M_UNIT, up, Vector3(0, rng.randf() * 90.0, 0))
-		A.add(sb, A.cyl(0.26, 0.04, 0.26, 12), A.metal(Color(0.08, 0.08, 0.08)), up + Vector3(0, 0.31, 0), Vector3.ZERO, Vector3.ONE, false)
+		_ibox(sb, Vector3(0.95, 0.6, 0.75), 0.05, M_UNIT, up, Vector3(0, rng.randf() * 90.0, 0))
+		_imesh(sb, A.cyl(0.26, 0.04, 0.26, 12), A.metal(Color(0.08, 0.08, 0.08)), up + Vector3(0, 0.31, 0), Vector3.ZERO, Vector3.ONE, false)
 	for k in rng.randi_range(1, 3):
 		var vp := Vector3(rng.randf_range(-hx, hx) * 0.65, hy + 0.35, rng.randf_range(-hz, hz) * 0.65)
-		A.add(sb, A.cyl(0.12, 0.7, 0.12, 8), A.metal(Color(0.4, 0.4, 0.4)), vp)
-		A.add(sb, A.cyl(0.18, 0.08, 0.18, 8), A.metal(Color(0.25, 0.25, 0.25)), vp + Vector3(0, 0.38, 0), Vector3.ZERO, Vector3.ONE, false)
+		_imesh(sb, A.cyl(0.12, 0.7, 0.12, 8), A.metal(Color(0.4, 0.4, 0.4)), vp)
+		_imesh(sb, A.cyl(0.18, 0.08, 0.18, 8), A.metal(Color(0.25, 0.25, 0.25)), vp + Vector3(0, 0.38, 0), Vector3.ZERO, Vector3.ONE, false)
 	if size.x * size.z > 30.0 and rng.randf() < 0.6:
 		var tp := Vector3(rng.randf_range(-hx, hx) * 0.45, hy, rng.randf_range(-hz, hz) * 0.45)
 		for lx in [-0.5, 0.5]:
 			for lz in [-0.5, 0.5]:
-				A.add(sb, A.cyl(0.05, 0.8, 0.05, 5), A.metal(Color(0.2, 0.2, 0.2)), tp + Vector3(lx, 0.4, lz))
-		A.add(sb, A.cyl(0.75, 1.1, 0.75, 16), A.paint(Color(0.5, 0.42, 0.32), 0.5, 0.6, {"rust": 0.8, "wear": 0.6}), tp + Vector3(0, 1.35, 0))
-		A.add(sb, A.cyl(0.05, 0.25, 0.78, 16), A.metal(Color(0.3, 0.27, 0.24)), tp + Vector3(0, 2.02, 0))
+				_imesh(sb, A.cyl(0.05, 0.8, 0.05, 5), A.metal(Color(0.2, 0.2, 0.2)), tp + Vector3(lx, 0.4, lz))
+		_imesh(sb, A.cyl(0.75, 1.1, 0.75, 16), A.paint(Color(0.5, 0.42, 0.32), 0.5, 0.6, {"rust": 0.8, "wear": 0.6}), tp + Vector3(0, 1.35, 0))
+		_imesh(sb, A.cyl(0.05, 0.25, 0.78, 16), A.metal(Color(0.3, 0.27, 0.24)), tp + Vector3(0, 2.02, 0))
 	else:
-		A.add(sb, A.bevel_box(Vector3(0.8, 0.25, 0.8), 0.04), M_DARK, Vector3(rng.randf_range(-hx, hx) * 0.5, hy + 0.14, rng.randf_range(-hz, hz) * 0.5))
+		_ibox(sb, Vector3(0.8, 0.25, 0.8), 0.04, M_DARK, Vector3(rng.randf_range(-hx, hx) * 0.5, hy + 0.14, rng.randf_range(-hz, hz) * 0.5))
 	# 战损：屋顶塌洞 + 钢筋
 	if rng.randf() < 0.45:
 		var hp := Vector3(rng.randf_range(-hx, hx) * 0.4, hy + 0.06, rng.randf_range(-hz, hz) * 0.4)
-		A.add(sb, A.cyl(rng.randf_range(0.6, 1.1), 0.02, 0.9, 7), A.paint(Color(0.02, 0.02, 0.02), 0.0, 1.0), hp, Vector3(0, rng.randf() * 60.0, 0), Vector3(1, 1, rng.randf_range(0.6, 1.0)), false)
+		var hr := rng.randf_range(0.6, 1.1)
+		_imesh(sb, A.cyl(1.0, 0.02, 0.9, 7), A.paint(Color(0.02, 0.02, 0.02), 0.0, 1.0), hp, Vector3(0, rng.randf() * 60.0, 0), Vector3(hr, 1, hr * rng.randf_range(0.6, 1.0)), false)
 		for k in rng.randi_range(3, 6):
-			A.add(sb, A.cyl(0.03, rng.randf_range(0.5, 1.2), 0.03, 5), A.paint(Color(0.35, 0.18, 0.1), 0.5, 0.8),
-				hp + Vector3(rng.randf_range(-0.8, 0.8), 0.3, rng.randf_range(-0.8, 0.8)), Vector3(rng.randf_range(-40, 40), 0, rng.randf_range(-40, 40)))
+			_imesh(sb, A.cyl(0.03, 1.0, 0.03, 5), A.paint(Color(0.35, 0.18, 0.1), 0.5, 0.8),
+				hp + Vector3(rng.randf_range(-0.8, 0.8), 0.3, rng.randf_range(-0.8, 0.8)), Vector3(rng.randf_range(-40, 40), 0, rng.randf_range(-40, 40)), Vector3(1, rng.randf_range(0.5, 1.2), 1))
 	# 楼脚碎石堆
 	for k in rng.randi_range(2, 4):
 		var side := Vector3(rng.randf_range(-1, 1) * hx, -hy + 0.2, (1 if rng.randf() < 0.5 else -1) * (hz + 0.5))
-		A.add(sb, A.bevel_box(Vector3(rng.randf_range(0.6, 1.4), rng.randf_range(0.3, 0.7), rng.randf_range(0.5, 1.0)), 0.1), A.concrete(c.darkened(0.15)), side, Vector3(rng.randf_range(-15, 15), rng.randf() * 90.0, rng.randf_range(-15, 15)))
+		_ibox(sb, Vector3(rng.randf_range(0.6, 1.4), rng.randf_range(0.3, 0.7), rng.randf_range(0.5, 1.0)), 0.1, A.concrete(c.darkened(0.15)), side, Vector3(rng.randf_range(-15, 15), rng.randf() * 90.0, rng.randf_range(-15, 15)))
 	# 少数楼挂着残存的灯牌
 	if size.y > 3.0 and rng.randf() < 0.3:
 		var nc: Color = [Color(1.0, 0.45, 0.2), Color(0.3, 0.9, 1.0), Color(1.0, 0.75, 0.3)][rng.randi() % 3]
@@ -867,6 +908,39 @@ func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 		l.position = sign_n.position + Vector3(0, 0, 0.8)
 		sb.add_child(l)
 		_add_flicker(l)
+
+
+## 建筑细部（窗、腰线、女儿墙、屋顶设备、碎石……）不建节点：按 网格 + 材质 收集变换，_bake_static 时一次性
+## 生成 MultiMesh（60 米分块）。尺寸各异的方块统一用单位倒角盒按尺寸缩放，全图共用一个网格。
+## 记下所属楼体：扩展脚本在烘焙前删掉的楼（见 landmarks.gd _clear_aprons），它的细部一并丢弃。
+var _inst := {}
+
+
+func _imesh(owner: Node3D, mesh: Mesh, m: Material, pos := Vector3.ZERO, rot := Vector3.ZERO, scl := Vector3.ONE, shadow := true) -> void:
+	var key := "%d|%d|%d" % [mesh.get_rid().get_id(), m.get_rid().get_id(), 1 if shadow else 0]
+	var e = _inst.get(key)
+	if e == null:
+		e = {"mesh": mesh, "mat": m, "shadow": shadow, "xf": [], "own": []}
+		_inst[key] = e
+	var bs := Basis.from_euler(rot * (PI / 180.0)) * Basis.from_scale(scl)
+	e.xf.append(owner.transform * Transform3D(bs, pos))
+	e.own.append(owner)
+
+
+func _ibox(owner: Node3D, size: Vector3, bevel: float, m: Material, pos := Vector3.ZERO, rot := Vector3.ZERO, scl := Vector3.ONE, shadow := true) -> void:
+	_imesh(owner, A.bevel_box(Vector3.ONE, clampf(snappedf(bevel, 0.01), 0.01, 0.1)), m, pos, rot, size * scl, shadow)
+
+
+func _flush_inst() -> void:
+	for key in _inst:
+		var e: Dictionary = _inst[key]
+		var xs: Array = []
+		for i in e.xf.size():
+			if is_instance_valid(e.own[i]) and not e.own[i].is_queued_for_deletion():
+				xs.append(e.xf[i])
+		if not xs.is_empty():
+			_multimesh(e.mesh, e.mat, xs, e.shadow)
+	_inst.clear()
 
 
 func _wreck_car(p: Vector3) -> void:
@@ -2099,12 +2173,15 @@ func _obb_blocks(c: Vector2, ang: float, sx: float, sz: float) -> void:
 
 
 func _build_map() -> Vector3:
+	_tlast = Time.get_ticks_usec()
 	_shield_spots()
+	_tmark("shield_spots")
 	_build_roads()
 	_build_river()
 	_build_lakes()
 	_build_rails()
 	_build_ridges()
+	_tmark("roads+water+rails")
 	poi_centers.clear()
 	poi_ids.clear()
 	for p: Dictionary in layout.pois:
@@ -2115,9 +2192,12 @@ func _build_map() -> Vector3:
 	_keep_clear = []
 	_build_pois()
 	_keep_clear = kc
+	_tmark("pois")
 	_build_blocks()
+	_tmark("blocks")
 	_build_fields()
 	_scatter()
+	_tmark("fields+scatter")
 	# 道路上的废弃车辆 / 火桶
 	for k in 96:
 		var p := _road_point(2.5)
@@ -2141,9 +2221,12 @@ func _shield_spots() -> void:
 			"S": _keep_clear.append(Rect2(al - hs, HALF - 36.0, hs * 2.0, 40.0))
 			"W": _keep_clear.append(Rect2(-HALF - 4.0, al - hs, 40.0, hs * 2.0))
 			_: _keep_clear.append(Rect2(HALF - 36.0, al - hs, 40.0, hs * 2.0))
+	# 地标：用方形留空（地标脚本按方形探测占地），再多留 4 米，盖住杂物占地矩形超出其探测半径的部分（如 12 米长的断墙）
 	for e in MAP.get("landmarks", []):
 		if not bool(e.get("water", false)):
-			_keep_clear.append(Vector3(float(e.get("x", 0)), float(e.get("z", 0)), float(e.get("clear", 7.0)) + 1.0))
+			var ls := WC.landmark_spot(map_id, e)
+			var h := float(e.get("clear", 7.0)) + 4.0
+			_keep_clear.append(Rect2(ls.x - h, ls.y - h, h * 2.0, h * 2.0))
 
 
 ## 随机路面点（按道路长度加权）
@@ -2874,7 +2957,7 @@ func _block_residential(blk: Dictionary) -> void:
 		var dir := (b - a) / L
 		var mid := a + dir * (t0 + seg_len * 0.5)
 		var p := Vector3(mid.x, 0.62, mid.y)
-		if _blocked(p, 0.8, false) or on_road(mid, 0.5):
+		if _blocked(p, 0.8, false) or on_road(mid, 0.5) or _in_keep_clear(p, seg_len * 0.5 + 0.4):
 			continue
 		var wl := _static_box(Vector3(seg_len, 1.25, 0.35), p, Color.WHITE, null, M)
 		wl.rotation.y = -atan2(dir.y, dir.x)
@@ -2978,7 +3061,7 @@ func _block_military(blk: Dictionary) -> void:
 				continue
 			var q := a + dir * ((k + 0.5) * L / n)
 			var pos := Vector3(q.x, 1.2, q.y)
-			if on_road(q, 0.3) or _blocked(pos, 0.4, false):
+			if on_road(q, 0.3) or _blocked(pos, 0.4, false) or _in_keep_clear(pos, L / n * 0.5 + 0.7):
 				continue
 			var sb := _static_box(Vector3(L / n - 0.1, 2.4, 1.2), pos, Color.WHITE, null, M_HESCO)
 			sb.rotation.y = -atan2(dir.y, dir.x)
@@ -3023,7 +3106,7 @@ func _fence_poly(poly: PackedVector2Array, hgt: float, gap_chance: float) -> voi
 				continue
 			var q := a + dir * ((k + 0.5) * L / n)
 			var pos := Vector3(q.x, hgt * 0.5, q.y)
-			if _blocked(pos, 0.6) or absf(q.x) > HALF - 2.0 or absf(q.y) > HALF - 2.0:
+			if _blocked(pos, 0.6) or _in_keep_clear(pos, L / n * 0.5 + 0.2) or absf(q.x) > HALF - 2.0 or absf(q.y) > HALF - 2.0:
 				continue
 			var sb := _static_box(Vector3(L / n, hgt, 0.12), pos, Color.WHITE, null, MF)
 			A.add(sb, A.cyl(0.07, hgt + 0.4, 0.07, 6), MP, Vector3(-L / n * 0.5, 0.2, 0))
@@ -3358,38 +3441,41 @@ func _scatter_cliffs() -> void:
 # ---------- 建筑部件 ----------
 func _house(p: Vector3, sz: Vector3, rot := 0.0) -> void:
 	var c: Color = [Color(0.55, 0.5, 0.43), Color(0.5, 0.46, 0.42), Color(0.46, 0.38, 0.3), Color(0.52, 0.52, 0.48)][rng.randi() % 4]
-	var sb := _static_box(sz, p + Vector3(0, sz.y * 0.5, 0), c, null, A.concrete(c))
+	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
 	sb.rotation.y = -rot
+	_ibox(sb, sz, 0.01, A.concrete(c))
 	var hx := sz.x * 0.5
 	var hz := sz.z * 0.5
 	var hy := sz.y * 0.5
 	var M_DARK := A.concrete(c.darkened(0.35), false)
-	A.add(sb, A.bevel_box(Vector3(sz.x + 0.1, 0.45, sz.z + 0.1), 0.03), M_DARK, Vector3(0, -hy + 0.22, 0))
+	_ibox(sb, Vector3(sz.x + 0.1, 0.45, sz.z + 0.1), 0.03, M_DARK, Vector3(0, -hy + 0.22, 0))
 	var M_WIN := A.paint(Color(0.06, 0.07, 0.08), 0.3, 0.25)
 	var M_FR := A.concrete(c.lightened(0.12), false)
 	for sd in [-1.0, 1.0]:
 		for k in 2:
 			var x := (k - 0.5) * hx
-			A.add(sb, A.bevel_box(Vector3(1.1, 1.1, 0.08), 0.01), M_FR, Vector3(x, 0.2, sd * (hz + 0.02)))
-			A.add(sb, A.bevel_box(Vector3(0.9, 0.9, 0.1), 0.01), M_WIN, Vector3(x, 0.2, sd * (hz + 0.03)))
-	A.add(sb, A.bevel_box(Vector3(1.1, 2.0, 0.1), 0.01), A.paint(Color(0.3, 0.22, 0.16), 0.0, 0.8, {"wear": 0.6, "dust": 0.4}), Vector3(hx * 0.5, -hy + 1.0, hz + 0.04))
+			_ibox(sb, Vector3(1.1, 1.1, 0.08), 0.01, M_FR, Vector3(x, 0.2, sd * (hz + 0.02)))
+			_ibox(sb, Vector3(0.9, 0.9, 0.1), 0.01, M_WIN, Vector3(x, 0.2, sd * (hz + 0.03)))
+	_ibox(sb, Vector3(1.1, 2.0, 0.1), 0.01, A.paint(Color(0.3, 0.22, 0.16), 0.0, 0.8, {"wear": 0.6, "dust": 0.4}), Vector3(hx * 0.5, -hy + 1.0, hz + 0.04))
 	# 双坡屋顶
 	var roof_c: Color = [Color(0.35, 0.18, 0.14), Color(0.25, 0.26, 0.28), Color(0.4, 0.3, 0.22)][rng.randi() % 3]
 	var rh: float = min(sz.x, sz.z) * 0.32
 	if rng.randf() < 0.25:
 		# 塌了一半的屋顶：只剩平顶
-		A.add(sb, A.bevel_box(Vector3(sz.x * 0.6, 0.12, sz.z + 0.2), 0.02), A.concrete(roof_c, false), Vector3(-hx * 0.35, hy + 0.06, 0), Vector3(0, 0, 6))
+		_ibox(sb, Vector3(sz.x * 0.6, 0.12, sz.z + 0.2), 0.02, A.concrete(roof_c, false), Vector3(-hx * 0.35, hy + 0.06, 0), Vector3(0, 0, 6))
 	else:
-		var outline := PackedVector2Array([Vector2(-hx - 0.35, 0), Vector2(0, rh), Vector2(hx + 0.35, 0)])
-		A.add(sb, A.prism(outline, sz.z + 0.5, 0.04), A.paint(roof_c, 0.1, 0.85, {"wear": 0.4, "dust": 0.5, "rust": 0.3, "panel_scale": 0.6}), Vector3(0, hy, 0))
+		# 单位三角棱柱按房子尺寸缩放（全图共用一个网格）
+		var outline := PackedVector2Array([Vector2(-0.5, 0), Vector2(0, 1), Vector2(0.5, 0)])
+		_imesh(sb, A.prism(outline, 1.0, 0.01), A.paint(roof_c, 0.1, 0.85, {"wear": 0.4, "dust": 0.5, "rust": 0.3, "panel_scale": 0.6}), Vector3(0, hy, 0), Vector3.ZERO, Vector3(sz.x + 0.7, rh, sz.z + 0.5))
 		if rng.randf() < 0.6:
-			A.add(sb, A.bevel_box(Vector3(0.6, 1.2, 0.6), 0.04), M_DARK, Vector3(hx * 0.45, hy + rh * 0.6, hz * 0.3))
+			_ibox(sb, Vector3(0.6, 1.2, 0.6), 0.04, M_DARK, Vector3(hx * 0.45, hy + rh * 0.6, hz * 0.3))
 
 func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0), rot := 0.0) -> void:
 	var c: Color = col if col.r >= 0.0 else [Color(0.42, 0.44, 0.42), Color(0.5, 0.45, 0.36), Color(0.36, 0.4, 0.44)][rng.randi() % 3]
 	var M := A.paint(c, 0.45, 0.6, {"wear": 0.45, "rust": 0.6, "dust": 0.4, "panel_scale": 1.6, "grime": 0.6})
-	var sb := _static_box(sz, p + Vector3(0, sz.y * 0.5, 0), c, null, M)
+	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
 	sb.rotation.y = -rot
+	_ibox(sb, sz, 0.01, M)
 	var hx := sz.x * 0.5
 	var hz := sz.z * 0.5
 	var hy := sz.y * 0.5
@@ -3398,13 +3484,13 @@ func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0), rot := 0.0) -> 
 	var n := int(sz.x / 2.0)
 	for k in n + 1:
 		for sd in [-1.0, 1.0]:
-			A.add(sb, A.bevel_box(Vector3(0.18, sz.y, 0.12), 0.02), MR, Vector3(-hx + k * sz.x / n, 0, sd * (hz + 0.05)), Vector3.ZERO, Vector3.ONE, false)
+			_ibox(sb, Vector3(0.18, sz.y, 0.12), 0.02, MR, Vector3(-hx + k * sz.x / n, 0, sd * (hz + 0.05)), Vector3.ZERO, Vector3.ONE, false)
 	# 拱形屋顶（压扁的圆柱）
-	A.add(sb, A.cyl(1.0, sz.x + 0.3, 1.0, 20), A.paint(c.darkened(0.12), 0.5, 0.55, {"wear": 0.4, "rust": 0.8, "dust": 0.5, "panel_scale": 1.2}),
-		Vector3(0, hy, 0), Vector3(0, 0, 90), Vector3(sz.z * 0.12, 1, sz.z * 0.5))
+	_imesh(sb, A.cyl(1.0, 1.0, 1.0, 20), A.paint(c.darkened(0.12), 0.5, 0.55, {"wear": 0.4, "rust": 0.8, "dust": 0.5, "panel_scale": 1.2}),
+		Vector3(0, hy, 0), Vector3(0, 0, 90), Vector3(sz.z * 0.12, sz.x + 0.3, sz.z * 0.5))
 	# 大门 + 装卸台
-	A.add(sb, A.bevel_box(Vector3(sz.x * 0.3, sz.y * 0.6, 0.12), 0.02), A.metal(Color(0.28, 0.29, 0.28)), Vector3(0, -hy + sz.y * 0.3, hz + 0.1), Vector3.ZERO, Vector3.ONE, false)
-	A.add(sb, A.bevel_box(Vector3(sz.x * 0.4, 0.9, 1.6), 0.05), A.concrete(Color(0.5, 0.48, 0.45), false), Vector3(0, -hy + 0.45, hz + 0.8))
+	_ibox(sb, Vector3(sz.x * 0.3, sz.y * 0.6, 0.12), 0.02, A.metal(Color(0.28, 0.29, 0.28)), Vector3(0, -hy + sz.y * 0.3, hz + 0.1), Vector3.ZERO, Vector3.ONE, false)
+	_ibox(sb, Vector3(sz.x * 0.4, 0.9, 1.6), 0.05, A.concrete(Color(0.5, 0.48, 0.45), false), Vector3(0, -hy + 0.45, hz + 0.8))
 	A.stencil(sb, "BLD-%02d" % rng.randi_range(1, 40), Vector3(-hx * 0.6, hy * 0.5, hz + 0.12), Vector3.ZERO, 0.02, Color(0.85, 0.82, 0.72, 0.6))
 
 func _tank(p: Vector3, rad: float, h: float) -> void:
@@ -3693,6 +3779,7 @@ func _patrol_free(p: Vector3, r: float) -> bool:
 # ---------- 性能：静态装饰合批 ----------
 ## 把挂在静态体上的大量重复小网格（窗户、窗框、墙肋……）合并成分块 MultiMesh，节点数降一个数量级
 func _bake_static() -> void:
+	_flush_inst()
 	var groups := {}
 	var stack: Array = [world]
 	while not stack.is_empty():
@@ -3732,6 +3819,17 @@ func _bake_static() -> void:
 		world.add_child(mmi)
 		removed += g.items.size()
 	print("[raid] baked %d static meshes into multimeshes" % removed)
+
+
+## 地图生成分段耗时（毫秒，按阶段累计；打印在 map build 日志下一行）
+var _tphase := {}
+var _tlast := 0
+
+
+func _tmark(name: String) -> void:
+	var now := Time.get_ticks_usec()
+	_tphase[name] = int(_tphase.get(name, 0)) + (now - _tlast) / 1000
+	_tlast = now
 
 
 ## 统计子树节点数（地图生成性能日志用；queue_free 待删的不算）

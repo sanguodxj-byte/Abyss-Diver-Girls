@@ -22,6 +22,7 @@ func run() -> void:
 	out_dir = ProjectSettings.globalize_path("res://tools/worldmap/data")
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	await Dump.dump(self)
+	_write_gates()
 	var only := OS.get_environment("WM_ONLY")
 	var seeds := int(OS.get_environment("WM_SEEDS")) if OS.get_environment("WM_SEEDS") != "" else 8
 	for mid: String in GameData.map_ids():
@@ -29,6 +30,25 @@ func run() -> void:
 			continue
 		await _export(mid, seeds)
 	WorldLink.force_open = false
+
+
+## 转场口预算表：scripts/world_gates.gd（world_city.gd gate_along 先查它，免得开局为算转场口去生成相邻战区的整格布局）
+func _write_gates() -> void:
+	var lines: Array = []
+	var keys: Array = []
+	for a: String in WorldLink.LINKS:
+		for e: String in WorldLink.LINKS[a]:
+			keys.append("%s|%s" % [a, e])
+	keys.sort()
+	for key: String in keys:
+		var pr: PackedStringArray = key.split("|")
+		lines.append('\t"%s": %.2f,' % [key, WC.gate_compute(pr[0], pr[1])])
+	var src := "extends RefCounted\n## 自动生成（tests/worldmap_export.gd），勿手改：各战区转场口沿边位置（米），即 world_city.gd gate_compute 的结果。\n" \
+		+ "## 城市群布局改动后重新运行 -- --worldmap_export；tests/worldmap.gd 会校验这张表与现算一致。\n\nconst GATES := {\n" + "\n".join(lines) + "\n}\n"
+	var f := FileAccess.open("res://scripts/world_gates.gd", FileAccess.WRITE)
+	f.store_string(src)
+	f.close()
+	log_line("world_gates.gd: %d 处" % keys.size())
 
 
 func _v2(p: Vector2) -> Array:
