@@ -327,6 +327,28 @@ static func _ball() -> SphereMesh:
 
 
 ## 静态零件合批：同材质的零件并成一个网格，动画部件所在的子树整段跳过
+## 合批后的网格按「种类 + 第几次合批 + 第几个材质桶」缓存：同种虫的外形是确定的（零件随机数按固定种子），
+## 第二只起直接复用合好的网格，省掉 SurfaceTool 逐只重新合并（开局铺 150 只虫时这是大头）
+static var _merge_cache := {}
+var _merge_n := 0
+
+
+func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array) -> Mesh:
+	var key := "%s|%.3f|%s%d|%d|%d" % [kind, float(data.scale), tag, _merge_n, bi, list.size()]
+	if _merge_cache.has(key):
+		return _merge_cache[key]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in list.size():
+		var mi: MeshInstance3D = list[i]
+		for si in mi.mesh.get_surface_count():
+			st.append_from(mi.mesh, si, xfs[i])
+	st.index()
+	var m := st.commit()
+	_merge_cache[key] = m
+	return m
+
+
 func _batch_static() -> void:
 	var skip := {}
 	var roots: Array = []
@@ -367,19 +389,16 @@ func _batch_direct(root: Node3D) -> void:
 			if not buckets.has(key):
 				buckets[key] = {"mat": mi.material_override, "list": []}
 			buckets[key]["list"].append(mi)
+	_merge_n += 1
+	var bi := 0
 	for key in buckets:
 		var b: Dictionary = buckets[key]
 		var list: Array = b["list"]
+		bi += 1
 		if list.size() < 2:
 			continue
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for mi in list:
-			for si in mi.mesh.get_surface_count():
-				st.append_from(mi.mesh, si, mi.transform)
-		st.index()
 		var merged := MeshInstance3D.new()
-		merged.mesh = st.commit()
+		merged.mesh = _merged_mesh("d", bi, list, list.map(func(mi): return mi.transform))
 		merged.material_override = b["mat"]
 		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(merged)
@@ -409,21 +428,17 @@ func _batch_container(top: Node3D, skip: Dictionary) -> void:
 			continue
 		for ch in n.get_children():
 			stack.append(ch)
+	_merge_n += 1
+	var bi := 0
 	for key in buckets:
 		var b: Dictionary = buckets[key]
 		var list: Array = b["list"]
+		bi += 1
 		if list.size() < 2:
 			singles.append(list[0])
 			continue
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for mi in list:
-			var xf := _rel_xf(mi, top)
-			for si in mi.mesh.get_surface_count():
-				st.append_from(mi.mesh, si, xf)
-		st.index()
 		var merged := MeshInstance3D.new()
-		merged.mesh = st.commit()
+		merged.mesh = _merged_mesh("c", bi, list, list.map(func(mi): return _rel_xf(mi, top)))
 		merged.material_override = b["mat"]
 		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		top.add_child(merged)
