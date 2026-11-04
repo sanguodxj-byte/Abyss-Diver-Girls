@@ -1,6 +1,8 @@
 extends StaticBody3D
 ## 虫巢：玩家靠近时不断孵化虫子，摧毁后留下高价值残骸。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const A = preload("res://scripts/art.gd")
 
 var hp := 260.0
@@ -45,6 +47,12 @@ func setup(r) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_physics_tick(delta)
+	Prof.add("phys.nest", _pt)
+
+
+func _physics_tick(delta: float) -> void:
 	t += delta
 	pulse.scale = Vector3.ONE * (1.0 + sin(t * 3.0) * 0.15)
 	children_alive = children_alive.filter(func(b): return is_instance_valid(b) and not b.dying)

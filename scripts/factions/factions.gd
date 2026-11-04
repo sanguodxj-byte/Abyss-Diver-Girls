@@ -8,6 +8,8 @@ extends Node
 ##   每项生成一台跟随玩家的友方机甲，tier 1~3 提高结构与伤害；跨图转场时随玩家一起过去（保留剩余结构）。
 ## 测试可写 test_ally_squad 注入队友列表、把 rovers_enabled 设为 false 关掉流浪者。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const Npc = preload("res://scripts/factions/npc_mech.gd")
 const RadarOverlay = preload("res://scripts/factions/radar_overlay.gd")
 
@@ -83,6 +85,12 @@ static func ally_squad() -> Array:
 
 
 func _physics_process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_physics_tick(delta)
+	Prof.add("phys.factions", _pt)
+
+
+func _physics_tick(delta: float) -> void:
 	if raid == null or raid.ended:
 		return
 	if raid.dropping:

@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## 行动界面：机甲状态卡、武装卡、雷达、目标、撤离读条、搜刮面板、暂停菜单。
 
+const Prof = preload("res://scripts/prof.gd")
 const UI = preload("res://scripts/ui.gd")
 const HL = preload("res://scripts/hud_l.gd")
 const RadioWindow = preload("res://scripts/story/radio_window.gd")
@@ -743,6 +744,12 @@ func close_loot() -> void:
 
 
 func _process(_d: float) -> void:
+	var _pt := Prof.t0()
+	_process_impl(_d)
+	Prof.add("proc.hud", _pt)
+
+
+func _process_impl(_d: float) -> void:
 	if loot_panel and loot_panel.visible and raid.open_box and is_instance_valid(raid.open_box):
 		var b = raid.open_box
 		if b.revealed < b.items.size():

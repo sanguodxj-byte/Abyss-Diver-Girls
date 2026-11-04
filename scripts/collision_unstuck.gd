@@ -7,6 +7,8 @@ extends Node
 ## 只是顶着一面墙走（侧向能走）不算卡住；被虫子围住（单位挡路）也不算。
 ## 处理：a / b 在周围由近到远找一个胶囊放得下的空位（同距离优先输入方向）瞬移过去；c 沿输入方向挪一小步。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const WINDOW := 0.6
 const MIN_PROGRESS := 0.25
 const STATIC_MASK := 1 | 8          ## 地形（1）+ 只挡机甲的河岸（8）
@@ -39,7 +41,13 @@ func _ready() -> void:
 	_cap_small.height = H - LIFT - 0.16
 
 
-func _physics_process(dt: float) -> void:
+func _physics_process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_physics_tick(delta)
+	Prof.add("phys.unstuck", _pt)
+
+
+func _physics_tick(dt: float) -> void:
 	var m = raid.mech if raid else null
 	if m == null or not is_instance_valid(m) or m.dead or m.input_locked or raid.dropping or m.dash_time > 0.0 or not m.is_inside_tree():
 		_hist.clear()
