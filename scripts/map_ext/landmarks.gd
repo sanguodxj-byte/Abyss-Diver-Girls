@@ -5,6 +5,7 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
+const WC = preload("res://scripts/world_city.gd")
 
 const STEEL := Color(0.32, 0.32, 0.3)
 const CONCRETE := Color(0.48, 0.46, 0.42)
@@ -15,7 +16,8 @@ static func build(raid, _drop: Vector3) -> void:
 	var made: Array = []
 	for e in raid.MAP.get("landmarks", []):
 		var t := str(e.get("type", ""))
-		var p := Vector3(float(e.get("x", 0)), 0, float(e.get("z", 0)))
+		var ls: Vector2 = WC.landmark_spot(raid.map_id, e)   # 已避开遗迹院落的确定性落位点
+		var p := Vector3(ls.x, 0, ls.y)
 		var rot := float(e.get("rot", 0))
 		var clear := float(e.get("clear", 7.0))
 		if not bool(e.get("water", false)) and raid._blocked(p, clear, false):

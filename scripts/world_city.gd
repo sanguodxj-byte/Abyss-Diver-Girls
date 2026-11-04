@@ -852,6 +852,46 @@ static func zone_pois(id: String) -> Array:
 	return out
 
 
+## 地标落位点（战区本地坐标，确定性）：数据里的原位压在遗迹院落上时，按固定的环形顺序向外找第一处离开所有院落的点；
+## 城市群建筑留空（_clear_zones）、生成杂物留空（raid._shield_spots）和地标脚本（map_ext/landmarks.gd）都用这同一个点，
+## 这样地标原位从头到尾都是空地，不再在生成末尾按随机杂物临时挪位（挪位结果随种子漂移）
+static var _lm_cache := {}
+
+
+static func landmark_spot(id: String, e: Dictionary) -> Vector2:
+	var raw := Vector2(float(e.get("x", 0)), float(e.get("z", 0)))
+	if bool(e.get("water", false)):
+		return raw
+	var key := "%s|%s|%.1f|%.1f" % [id, str(e.get("type", "")), raw.x, raw.y]
+	if _lm_cache.has(key):
+		return _lm_cache[key]
+	var org := origin(id)
+	var need := float(e.get("clear", 7.0)) + 16.5
+	var pois := zone_pois(id)
+	var best := raw
+	var found := false
+	for r in range(0, 48, 4):
+		var steps := 1 if r == 0 else 16
+		for k in steps:
+			var a := TAU * k / steps
+			var q := raw + Vector2(cos(a), sin(a)) * r
+			if absf(q.x) > HALF - 16.0 or absf(q.y) > HALF - 16.0:
+				continue
+			var ok := true
+			for p: Dictionary in pois:
+				if (p.c as Vector2).distance_to(org + q) < need:
+					ok = false
+					break
+			if ok:
+				best = q
+				found = true
+				break
+		if found:
+			break
+	_lm_cache[key] = best
+	return best
+
+
 ## 需要清空建筑的圆：遗迹院落、地标、撤离点（世界坐标 Vector3(x, z, r)），按格子收集周围 3×3 个战区
 static func _clear_zones(t: Vector2i) -> Array:
 	var out: Array = []
@@ -866,7 +906,8 @@ static func _clear_zones(t: Vector2i) -> Array:
 				out.append(Vector3(p.c.x, p.c.y, 15.5))
 			for e in md.get("landmarks", []):
 				if not bool(e.get("water", false)):
-					out.append(Vector3(org.x + float(e.get("x", 0)), org.y + float(e.get("z", 0)), float(e.get("clear", 7.0)) + 3.0))
+					var ls := landmark_spot(id, e)
+					out.append(Vector3(org.x + ls.x, org.y + ls.y, float(e.get("clear", 7.0)) + 3.0))
 			for e: Array in md.get("extracts", []):
 				out.append(Vector3(org.x + float(e[1]), org.y + float(e[2]), 10.0))
 	return out

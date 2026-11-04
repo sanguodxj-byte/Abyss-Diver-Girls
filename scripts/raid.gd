@@ -574,16 +574,25 @@ func _bk_sync() -> void:
 var _keep_clear: Array = []
 
 
+## 是否压到留空区（只查 _keep_clear，不查已有占地）。线状杂物（院墙、围栏、防爆墙）按整段长度查，
+## 免得只查中心点时长墙的一端伸进地标原位
+func _in_keep_clear(p: Vector3, r: float) -> bool:
+	if _keep_clear.is_empty():
+		return false
+	var pr := Rect2(p.x - r, p.z - r, r * 2, r * 2)
+	for kc in _keep_clear:
+		if kc is Rect2:
+			if (kc as Rect2).intersects(pr):
+				return true
+		elif Vector2(p.x, p.z).distance_to(Vector2(kc.x, kc.y)) < kc.z + r:
+			return true
+	return false
+
+
 func _blocked(p: Vector3, r: float, terrain := true) -> bool:
 	_bk_sync()
-	if not _keep_clear.is_empty():
-		var pr := Rect2(p.x - r, p.z - r, r * 2, r * 2)
-		for kc in _keep_clear:
-			if kc is Rect2:
-				if (kc as Rect2).intersects(pr):
-					return true
-			elif Vector2(p.x, p.z).distance_to(Vector2(kc.x, kc.y)) < kc.z + r:
-				return true
+	if _in_keep_clear(p, r):
+		return true
 	var probe := Rect2(p.x - r, p.z - r, r * 2, r * 2)
 	for gx in range(floori(probe.position.x / _BK), floori(probe.end.x / _BK) + 1):
 		for gz in range(floori(probe.position.y / _BK), floori(probe.end.y / _BK) + 1):
@@ -1955,9 +1964,12 @@ func _shield_spots() -> void:
 			"S": _keep_clear.append(Rect2(al - hs, HALF - 36.0, hs * 2.0, 40.0))
 			"W": _keep_clear.append(Rect2(-HALF - 4.0, al - hs, 40.0, hs * 2.0))
 			_: _keep_clear.append(Rect2(HALF - 36.0, al - hs, 40.0, hs * 2.0))
+	# 地标：用方形留空（地标脚本按方形探测占地），再多留 4 米，盖住杂物占地矩形超出其探测半径的部分（如 12 米长的断墙）
 	for e in MAP.get("landmarks", []):
 		if not bool(e.get("water", false)):
-			_keep_clear.append(Vector3(float(e.get("x", 0)), float(e.get("z", 0)), float(e.get("clear", 7.0)) + 1.0))
+			var ls := WC.landmark_spot(map_id, e)
+			var h := float(e.get("clear", 7.0)) + 4.0
+			_keep_clear.append(Rect2(ls.x - h, ls.y - h, h * 2.0, h * 2.0))
 
 
 ## 随机路面点（按道路长度加权）
@@ -2688,7 +2700,7 @@ func _block_residential(blk: Dictionary) -> void:
 		var dir := (b - a) / L
 		var mid := a + dir * (t0 + seg_len * 0.5)
 		var p := Vector3(mid.x, 0.62, mid.y)
-		if _blocked(p, 0.8, false) or on_road(mid, 0.5):
+		if _blocked(p, 0.8, false) or on_road(mid, 0.5) or _in_keep_clear(p, seg_len * 0.5 + 0.4):
 			continue
 		var wl := _static_box(Vector3(seg_len, 1.25, 0.35), p, Color.WHITE, null, M)
 		wl.rotation.y = -atan2(dir.y, dir.x)
@@ -2792,7 +2804,7 @@ func _block_military(blk: Dictionary) -> void:
 				continue
 			var q := a + dir * ((k + 0.5) * L / n)
 			var pos := Vector3(q.x, 1.2, q.y)
-			if on_road(q, 0.3) or _blocked(pos, 0.4, false):
+			if on_road(q, 0.3) or _blocked(pos, 0.4, false) or _in_keep_clear(pos, L / n * 0.5 + 0.7):
 				continue
 			var sb := _static_box(Vector3(L / n - 0.1, 2.4, 1.2), pos, Color.WHITE, null, M_HESCO)
 			sb.rotation.y = -atan2(dir.y, dir.x)
@@ -2837,7 +2849,7 @@ func _fence_poly(poly: PackedVector2Array, hgt: float, gap_chance: float) -> voi
 				continue
 			var q := a + dir * ((k + 0.5) * L / n)
 			var pos := Vector3(q.x, hgt * 0.5, q.y)
-			if _blocked(pos, 0.6) or absf(q.x) > HALF - 2.0 or absf(q.y) > HALF - 2.0:
+			if _blocked(pos, 0.6) or _in_keep_clear(pos, L / n * 0.5 + 0.2) or absf(q.x) > HALF - 2.0 or absf(q.y) > HALF - 2.0:
 				continue
 			var sb := _static_box(Vector3(L / n, hgt, 0.12), pos, Color.WHITE, null, MF)
 			A.add(sb, A.cyl(0.07, hgt + 0.4, 0.07, 6), MP, Vector3(-L / n * 0.5, 0.2, 0))
