@@ -1,6 +1,8 @@
 extends CharacterBody3D
 ## 玩家机甲：下半身跟移动方向，上半身跟鼠标（双摇杆式），左右键分别控制左右臂。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const MechVisual = preload("res://scripts/mech_visual.gd")
 const A = preload("res://scripts/art.gd")
 
@@ -116,7 +118,9 @@ func setup(lo: Dictionary, carry: Array) -> void:
 	cs.position.y = 1.4
 	add_child(cs)
 	visual = MechVisual.build(loadout)
+	_batch_visual(visual)
 	add_child(visual)
+	_anchor_visual()
 	torso = visual.get_meta("torso")
 	legs = visual.get_meta("legs")
 	muzzles = visual.get_meta("muzzles")
@@ -172,6 +176,16 @@ func energy_seconds_left() -> float:
 var _shown_damage := -1.0
 
 func _physics_process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_physics_tick(delta)
+	Prof.add(_prof_key(), _pt)
+
+
+func _prof_key() -> String:
+	return "phys.mech"
+
+
+func _physics_tick(delta: float) -> void:
 	var dmg_now := clampf(1.0 - hp / max_hp, 0.0, 1.0)
 	if absf(dmg_now - _shown_damage) > 0.01:
 		_shown_damage = dmg_now
@@ -217,6 +231,7 @@ func _physics_process(delta: float) -> void:
 	if raid and raid.dropping:
 		# 空投中由 raid 的补间控制位置，不叠加重力
 		velocity = Vector3.ZERO
+		_vis_sync()
 		_animate(delta, Vector3.ZERO)
 		return
 	var move := Vector3.ZERO
@@ -268,7 +283,10 @@ func _physics_process(delta: float) -> void:
 		velocity.y = -1.0
 	else:
 		velocity.y -= 40.0 * delta
+	var _t1 := Prof.t0()
 	move_and_slide()
+	_vis_sync()
+	Prof.add("mech.move_and_slide", _t1)
 
 	# 下半身朝移动方向，上半身朝鼠标
 	if move != Vector3.ZERO and leg_type != "hover":
@@ -277,7 +295,9 @@ func _physics_process(delta: float) -> void:
 	to.y = 0.0
 	if to.length() > 0.6:
 		torso.rotation.y = lerp_angle(torso.rotation.y, atan2(-to.x, -to.z), clamp(TORSO_TURN * delta, 0.0, 1.0))  # 上半身转向有惯性 → 拖曳感
+	var _t2 := Prof.t0()
 	_animate(delta, move)
+	Prof.add("mech.anim", _t2)
 
 	# 能源
 	var drain: float = float(stats.drain) * drain_mul * (1.6 if move != Vector3.ZERO else 1.0) * (1.5 if parts.gen <= 0.0 else 1.0)
@@ -297,7 +317,9 @@ func _physics_process(delta: float) -> void:
 		return
 	var map_on: bool = raid != null and raid.hud != null and raid.hud.map_open()
 	if Input.is_action_pressed("fire_left") and not map_on:
+		var _t3 := Prof.t0()
 		try_fire("arm_l")
+		Prof.add("mech.fire", _t3)
 	if Input.is_action_pressed("fire_right") and not map_on:
 		try_fire("arm_r")
 	if Input.is_action_just_pressed("dash"):
@@ -973,3 +995,130 @@ func _thrust_clear() -> void:
 			f.emitting = false
 			get_tree().create_timer(1.2).timeout.connect(f.queue_free)
 	_thrusters.clear()
+
+
+# ---------------- 外观挂点 ----------------
+## 外观子树挂在一个 top_level 的空节点（VisAnchor）下，而不是直接挂在机体上：
+## move_and_slide 每次迭代都会改写机体变换，外观直接挂在机体下时，每次改写都要把整棵外观子树（机甲约 700 个节点、虫子约 80 个）
+## 标脏并逐个通知渲染。挂点只在机体变换真正变了之后同步一次（移动后显式同步 + 变换通知兜底：传送、补间、死亡下沉都跟得上）
+var vis_anchor: Node3D = null
+
+
+func _anchor_visual() -> void:
+	if visual == null or vis_anchor != null:
+		return
+	vis_anchor = Node3D.new()
+	vis_anchor.name = "VisAnchor"
+	vis_anchor.top_level = true
+	add_child(vis_anchor)
+	if visual.get_parent():
+		visual.get_parent().remove_child(visual)
+	vis_anchor.add_child(visual)
+	set_notify_transform(true)
+	_vis_sync()
+
+
+func _vis_sync() -> void:
+	if vis_anchor != null and is_inside_tree():
+		var gt := global_transform
+		if vis_anchor.transform != gt:
+			vis_anchor.transform = gt
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED or what == NOTIFICATION_ENTER_TREE:
+		_vis_sync()
+
+
+# ---------------- 外观合批 ----------------
+## 模块化外观一台机甲约 600 个网格节点：同一父节点下、同材质、不再被引用的静态叶子网格合成一个网格。
+## 动画只改父节点（腿 / 膝 / 踝 / 躯干 / 武器座）的变换，叶子网格跟着父节点整体动，合批后外观与动画完全一致；
+## 节点少了，机体移动时的变换传播、渲染实例与绘制调用都随之减少。被任何元数据引用的节点（枪口、膝踝、腿件、模块根）一律保留
+static var _vis_merge_cache := {}
+
+
+static func _collect_refs(v, out: Dictionary) -> void:
+	if v is Node:
+		out[v.get_instance_id()] = true
+	elif v is Array:
+		for e in v:
+			_collect_refs(e, out)
+	elif v is Dictionary:
+		for e in v.values():
+			_collect_refs(e, out)
+
+
+static func _batch_visual(root: Node3D) -> void:
+	var keep := {root.get_instance_id(): true}
+	var all: Array = root.find_children("*", "", true, false)
+	for n in all:
+		for mk in n.get_meta_list():
+			_collect_refs(n.get_meta(mk), keep)
+	for mk in root.get_meta_list():
+		_collect_refs(root.get_meta(mk), keep)
+	var parents := {}
+	for n in all:
+		if not (n is MeshInstance3D):
+			continue
+		var mi: MeshInstance3D = n
+		if keep.has(mi.get_instance_id()) or mi.get_child_count() > 0 or mi.get_script() != null or not mi.visible:
+			continue
+		if mi.mesh == null or mi.material_override == null or mi.material_overlay != null or mi.skin != null:
+			continue
+		if not mi.get_meta_list().is_empty() or mi.transparency > 0.0 or mi.visibility_range_end > 0.0:
+			continue
+		# 往上找最近的“会动的”祖先（被引用的节点或根）：中间没人引用的容器节点从不被改动，叶子网格可以直接并到那个祖先下
+		var xf := mi.transform
+		var p: Node = mi.get_parent()
+		var ok := true
+		while p != null and not keep.has(p.get_instance_id()):
+			if not (p is Node3D) or not p.visible or p.top_level:
+				ok = false
+				break
+			xf = p.transform * xf
+			p = p.get_parent()
+		if not ok or not (p is Node3D):
+			continue
+		mi.set_meta("_bx", xf)
+		var key := "%d|%d|%d|%d" % [mi.material_override.get_instance_id(), mi.cast_shadow, mi.layers, mi.gi_mode]
+		var pid := p.get_instance_id()
+		if not parents.has(pid):
+			parents[pid] = {"node": p, "groups": {}}
+		var g: Dictionary = parents[pid]["groups"]
+		if not g.has(key):
+			g[key] = []
+		g[key].append(mi)
+	for pid in parents:
+		var p: Node3D = parents[pid]["node"]
+		for key in parents[pid]["groups"]:
+			if parents[pid]["groups"][key].size() < 2:
+				for mi: MeshInstance3D in parents[pid]["groups"][key]:
+					mi.remove_meta("_bx")
+		for key in parents[pid]["groups"]:
+			var list: Array = parents[pid]["groups"][key]
+			if list.size() < 2:
+				continue
+			var sig: String = key
+			for mi: MeshInstance3D in list:
+				sig += "|%d:%s" % [mi.mesh.get_instance_id(), mi.get_meta("_bx")]
+			var h := sig.hash()
+			var mesh: Mesh = _vis_merge_cache.get(h)
+			if mesh == null:
+				var st := SurfaceTool.new()
+				st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				for mi: MeshInstance3D in list:
+					for si in mi.mesh.get_surface_count():
+						st.append_from(mi.mesh, si, mi.get_meta("_bx"))
+				mesh = st.commit()
+				_vis_merge_cache[h] = mesh
+			var first: MeshInstance3D = list[0]
+			var merged := MeshInstance3D.new()
+			merged.mesh = mesh
+			merged.material_override = first.material_override
+			merged.cast_shadow = first.cast_shadow
+			merged.layers = first.layers
+			merged.gi_mode = first.gi_mode
+			p.add_child(merged)
+			for mi: MeshInstance3D in list:
+				mi.get_parent().remove_child(mi)
+				mi.free()

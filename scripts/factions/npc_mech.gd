@@ -151,7 +151,11 @@ func _lod_dt(delta: float) -> float:
 	return dt
 
 
-func _physics_process(delta: float) -> void:
+func _prof_key() -> String:
+	return "phys.npc"
+
+
+func _physics_tick(delta: float) -> void:
 	if dead or raid == null:
 		return
 	delta = _lod_dt(delta)
@@ -171,8 +175,12 @@ func _physics_process(delta: float) -> void:
 	_think_t -= delta
 	if _think_t <= 0.0:
 		_think_t = (0.25 if lod == 0 else 0.5) * randf_range(0.85, 1.15)
+		var _t1 := Prof.t0()
 		_choose_target()
+		Prof.add("npc.think", _t1)
+	var _t2 := Prof.t0()
 	var move := _steer(delta)
+	Prof.add("npc.steer", _t2)
 	var spd: float = float(stats.speed) * speed_mult() * (0.95 if faction == "rover" else 1.05)
 	# 队友掉队超过 12 米且没在交战：加速追上（重型脚步的队友不然永远跟不上轻装玩家）
 	if faction == "ally" and not _ok(ai_target) and goal != Vector3.INF and global_position.distance_to(goal) > 12.0:
@@ -182,7 +190,10 @@ func _physics_process(delta: float) -> void:
 	velocity.x = hv.x
 	velocity.z = hv.z
 	velocity.y = -1.0 if is_on_floor() else velocity.y - 40.0 * delta
+	var _t3 := Prof.t0()
 	_slide(delta)
+	_vis_sync()
+	Prof.add("npc.slide", _t3)
 	if move.length() > 0.1 and leg_type != "hover":
 		legs.rotation.y = lerp_angle(legs.rotation.y, atan2(-move.x, -move.z), clampf(6.0 * delta, 0.0, 1.0))
 	var valid := _ok(ai_target)
@@ -204,12 +215,16 @@ func _physics_process(delta: float) -> void:
 			for slot in ["arm_l", "arm_r"]:
 				var id: String = loadout.get(slot, "")
 				if id != "" and dist < float(GameData.module(id).get("range", 20.0)) * 0.95:
+					var _t5 := Prof.t0()
 					_npc_fire(slot)
+					Prof.add("npc.fire", _t5)
 	# 程序动画（双足 IK 等）很贵：30 米内逐帧，画面边缘降到 30Hz，画面外不跑
 	if lod == 0:
 		_anim_acc += delta
 		if _near or _anim_acc >= 0.033:
+			var _t4 := Prof.t0()
 			_animate(_anim_acc, move)
+			Prof.add("npc.anim", _t4)
 			_anim_acc = 0.0
 
 
@@ -239,6 +254,7 @@ func _slide(dt: float) -> void:
 					global_position = alt
 					return
 		# 已经压在建筑占地格子里（或贴着地图边）：退回真实物理 move_and_slide，不然会原地踏步
+	var _pt := Prof.t0()
 	var pd := get_physics_process_delta_time()
 	if pd > 0.0 and dt > pd * 1.5:
 		var k := dt / pd
@@ -249,6 +265,7 @@ func _slide(dt: float) -> void:
 		velocity.z /= k
 	else:
 		move_and_slide()
+	Prof.add("npc.move_and_slide", _pt)
 
 
 ## 流浪者的视野与虫群一致：察觉距离封顶 raid.vision_range()（看玩家机甲时按屏幕方向收紧），且要有视线
