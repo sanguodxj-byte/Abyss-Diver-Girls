@@ -3,6 +3,7 @@ extends Node3D
 
 signal raid_ended(result: Dictionary)
 
+const Prof = preload("res://scripts/prof.gd")
 const MechScript = preload("res://scripts/mech.gd")
 const BugScript = preload("res://scripts/bug.gd")
 const NestScript = preload("res://scripts/nest.gd")
@@ -1018,6 +1019,12 @@ func _spawn_nests() -> void:
 
 # ================= 运行 =================
 func _process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_process_impl(delta)
+	Prof.add("proc.raid", _pt)
+
+
+func _process_impl(delta: float) -> void:
 	if mech == null:
 		return
 	# 镜头跟随 + 鼠标前探
@@ -1490,8 +1497,11 @@ func scaled_aggro(raw: float) -> float:
 
 ## 视线：两点胸口高度之间有没有静态地形（碰撞层 1）挡着
 func has_los(a: Vector3, b: Vector3) -> bool:
+	var _pt := Prof.t0()
 	var q := PhysicsRayQueryParameters3D.create(a + Vector3(0, EYE_H, 0), b + Vector3(0, EYE_H, 0), 1)
-	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+	var r := get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+	Prof.add("raid.has_los", _pt)
+	return r
 
 
 ## 重新栅格化导航网格。地图建完时调用一次；碰撞后处理（合并 / 删除碰撞体）之后也应调用它
@@ -1587,8 +1597,51 @@ func _proj(pos: Vector3, vel: Vector3, dmg: float, life: float, mask: int, c: Co
 
 
 ## 曳光弹：白热弹芯 + 由白到橙渐隐的长尾（随飞行距离拉长，带拖曳感）
+## 曳光弹对象池：机甲小队齐射时每秒几十发，每发新建 4 个节点、飞完再删掉（进出场景树、渲染实例创建销毁）。
+## 子弹寿命结束 / 命中后回池（隐藏、停物理），同外观（尺寸 + 颜色）的下一发直接复用，所有状态字段在复用时重置
+const TRACER_POOL_MAX := 64
+var _tracer_pool := {}
+
+
+func recycle_projectile(p) -> bool:
+	var key: String = p.pool_key
+	if key == "" or not is_instance_valid(fx) or p.get_parent() != fx:
+		return false
+	var pool: Array = _tracer_pool.get(key, [])
+	if pool.size() >= TRACER_POOL_MAX:
+		return false
+	p.visible = false
+	p.set_physics_process(false)
+	pool.append(p)
+	_tracer_pool[key] = pool
+	return true
+
+
 func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: float, core: float):
+	var key := "%s|%s|%s" % [c, w, core]
+	var pool: Array = _tracer_pool.get(key, [])
+	while not pool.is_empty():
+		var q = pool.pop_back()
+		if not is_instance_valid(q):
+			continue
+		q.reset_state()
+		q.raid = self
+		q.vel = vel
+		q.dmg = dmg
+		q.life = life
+		q.mask = 1 | 4 | 16
+		q.source = mech
+		q.color = c
+		q.tail.scale = Vector3(1, 1, 0.01)
+		q.tail.position = Vector3.ZERO
+		q.tail_len = clampf(vel.length() * 0.065, 1.5, 5.5)
+		q.global_position = pos
+		q.look_at(pos + vel, Vector3.UP)
+		q.visible = true
+		q.set_physics_process(true)
+		return q
 	var p = ProjScript.new()
+	p.pool_key = key
 	p.raid = self
 	p.vel = vel
 	p.dmg = dmg
