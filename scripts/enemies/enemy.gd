@@ -152,6 +152,7 @@ func _build_visual() -> void:
 # ================= 受击与死亡 =================
 ## 受击：先过常驻减伤与正面折射，再过弱点倍率；前摇期间的累计伤害够多就打断这次出手。
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
+	_wake()
 	if hp <= 0.0 or dying or guard_t > 0.0 or underground:
 		return
 	var amt: float = maxf(amount, 0.0) * (1.0 - clampf(armor, 0.0, 0.9))
@@ -310,7 +311,13 @@ func _sfx(what: String) -> void:
 var enraged := false
 
 
-func _physics_process(delta: float) -> void:
+## 远处睡眠（见 bug.gd _sleep）期间 guard_t 不逐帧递减，醒来补扣
+func _on_wake(slept: float) -> void:
+	if guard_t > 0.0:
+		guard_t = maxf(0.0, guard_t - slept)
+
+
+func _physics_tick(delta: float) -> void:
 	if dying:
 		return
 	if guard_t > 0.0:
@@ -926,7 +933,7 @@ func _pose(act_name: String) -> Dictionary:
 	return {"pitch": pitch, "fwd": fwd, "dy": dy, "roll": roll}
 
 
-func _animate(delta: float, mv: float) -> void:
+func _animate_impl(delta: float, mv: float) -> void:
 	move_amt = move_toward(move_amt, clampf(mv, 0.0, 1.0), delta * 6.0)
 	var cad := _cadence()
 	anim_t += delta * (0.3 + move_amt)

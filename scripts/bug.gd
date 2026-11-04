@@ -2,6 +2,8 @@ extends CharacterBody3D
 ## 虫族（参考《绝地潜兵2》终端虫）：跳虫=猎手(近战快)、酸液虫=胆汁喷吐者(远程)、甲虫=冲锋者(肉盾)。
 ## 黑褐色厚重切角甲壳 + 甲片缝隙露出的橙黄肉质 + 发光脓包。
 
+const Prof = preload("res://scripts/prof.gd")
+
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/modules/kit.gd")
 
@@ -22,7 +24,11 @@ var data := {}
 var hp := 30.0
 var raid
 var target
-var state := "idle"
+var state := "idle":
+	set(v):
+		state = v
+		if _sleeping and v != "idle":
+			_wake()
 var atk_cd := 0.0
 var aggro_range := 17.0
 var home := Vector3.ZERO
@@ -81,6 +87,7 @@ func setup(k: String, r, tgt) -> void:
 	for mi in parts:
 		if is_instance_valid(mi):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_anchor_visual()
 
 
 ## 两点之间放一段锥形肢节（圆柱 UV：v 沿长度，贴图的关节环/刚毛会顺着肢节走）
@@ -1272,6 +1279,7 @@ static func _vmat_solid(c: Color) -> StandardMaterial3D:
 
 ## 被噪音惊动（机甲开火、空投落地）：转入追击，目标是机甲
 func alert(pos: Vector3) -> void:
+	_wake()
 	if state == "idle":
 		if raid and _alive(raid.mech):
 			target = raid.mech
@@ -1331,6 +1339,48 @@ static func _alive(n) -> bool:
 	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true
 
 
+## 远处（LOD 2）的虫每 0.5 秒才真正模拟一次，其余物理帧只是进来累加时间、马上返回；150 只虫里这类空转占了虫群 AI 的大头。
+## 改成：LOD 2 走完一步就关掉物理回调“睡”到下一步前夕（引擎计时器叫醒），醒来时把睡过的物理帧补进累计时间，
+## 之后与原来逐帧累加完全一样地判断 LOD 与步长。被外部改成追击 / 受击 / 听到动静时立即叫醒，反应时机不变
+const SLEEP_FAR := true
+const SLEEP_TICKS := 27
+var _sleeping := false
+var _sleep_frame := 0
+
+
+func _can_sleep() -> bool:
+	return not bool(data.get("boss", false)) and not dying
+
+
+func _sleep() -> void:
+	if _sleeping or not _can_sleep() or not is_inside_tree():
+		return
+	_sleeping = true
+	_sleep_frame = Engine.get_physics_frames()
+	set_physics_process(false)
+	var pd := get_physics_process_delta_time()
+	get_tree().create_timer(pd * SLEEP_TICKS, false, true).timeout.connect(_wake)
+
+
+## 叫醒：恢复物理回调，睡过的物理帧（不含醒来这一帧，它会照常传 delta 进来）补进 LOD 累计时间
+func _wake() -> void:
+	if not _sleeping:
+		return
+	_sleeping = false
+	if dying or hp <= 0.0 or not is_instance_valid(self) or not is_inside_tree():
+		return
+	var missed := maxi(0, Engine.get_physics_frames() - _sleep_frame - 1)
+	var slept := missed * get_physics_process_delta_time()
+	_lod_acc += slept
+	_on_wake(slept)
+	set_physics_process(true)
+
+
+## 子类在睡眠期间不随 LOD 走的逐帧计时（如 enemy 的 guard_t）在这里补扣
+func _on_wake(_slept: float) -> void:
+	pass
+
+
 ## 本帧要模拟的时间：近处返回 delta；中远处累计到节拍才返回累计值，其余帧返回 0（跳过）
 func _lod_dt(delta: float) -> float:
 	var busy: bool = act != "" or spawn_t > 0.0 or flash_t > 0.0
@@ -1360,12 +1410,19 @@ func _lod_dt(delta: float) -> float:
 		return 0.0
 	var dt := minf(_lod_acc, 0.6)
 	_lod_acc = 0.0
+	if lod == 2 and SLEEP_FAR:
+		_sleep()
 	return dt
 
 
 ## 一次 move_and_slide 走完 dt：低频更新时按比例放大速度，碰撞照常结算。
 ## 画面外（LOD 中 / 远）闲逛巡逻的虫不跑物理：直接平移，只用建筑占地格子挡一下（撞上就换路点），省掉绝大部分 move_and_slide
 func _slide(dt: float) -> void:
+	_slide_impl(dt)
+	_vis_sync()
+
+
+func _slide_impl(dt: float) -> void:
 	# 保险：被挤穿地面（重叠的碰撞体解穿透时往下推）就拉回地表，不让虫子在地下一直掉
 	if global_position.y < -4.0:
 		global_position.y = 0.5
@@ -1382,6 +1439,12 @@ func _slide(dt: float) -> void:
 		if raid.ai_free(global_position, float(data.radius)):
 			wander_to = Vector3.ZERO
 			return
+	var _pt := Prof.t0()
+	_slide_phys(dt)
+	Prof.add("bug.move_and_slide", _pt)
+
+
+func _slide_phys(dt: float) -> void:
 	var pd := get_physics_process_delta_time()
 	if pd > 0.0 and dt > pd * 1.5:
 		var k := dt / pd
@@ -1425,6 +1488,12 @@ func _can_see(f, d: float) -> bool:
 ## 感知：在可敌对单位（机甲 + 队友 + 流浪者，由 raid.bug_foes() 提供，数量很少）里挑目标。
 ## 射线只对察觉距离内的候选打，按 LOD 节拍（0.25 / 0.5 / 1 秒）一次，150 只虫里真正打射线的只有近处几只
 func _perceive() -> void:
+	var _pt := Prof.t0()
+	_perceive_impl()
+	Prof.add("bug.perceive", _pt)
+
+
+func _perceive_impl() -> void:
 	if raid == null or bool(data.get("boss", false)):
 		return
 	var foes: Array = raid.bug_foes() if raid.has_method("bug_foes") else ([raid.mech] if raid.mech else [])
@@ -1582,7 +1651,10 @@ func _nav_dir(goal: Vector3, delta: float) -> Vector3:
 		w.y = 0.0
 		return w.normalized() if w.length_squared() > 0.0001 else Vector3.ZERO
 	# 体型大的虫（半径 > 1 米）走机甲那张间隙更宽的网格，免得被引进挤不过去的窄缝（代价：也会绕开只挡机甲的河岸）
-	return nav_agent.steer(raid.nav, global_position, goal, delta, float(data.radius) > 1.0, _nav_period())
+	var _pt := Prof.t0()
+	var v: Vector3 = nav_agent.steer(raid.nav, global_position, goal, delta, float(data.radius) > 1.0, _nav_period())
+	Prof.add("bug.nav", _pt)
+	return v
 
 
 func _uses_nav() -> bool:
@@ -1699,6 +1771,14 @@ func _sfx(what: String) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var _pt := Prof.t0()
+	_physics_tick(delta)
+	Prof.add("phys.bugs", _pt)
+	if Prof.on:
+		Prof.add("bugs.lod%d.%s" % [lod, "chase" if state == "chase" else "idle"], _pt)
+
+
+func _physics_tick(delta: float) -> void:
 	delta = _lod_dt(delta)
 	if delta <= 0.0:
 		return
@@ -1819,6 +1899,12 @@ func _strike() -> void:
 
 ## 程序动画：步态（抬腿 = 绕腿轴 z 旋转，摆腿 = 绕 y）、身体起伏、攻击前摇/出手/收招、受击后仰、出生爬出
 func _animate(delta: float, mv: float) -> void:
+	var _pt := Prof.t0()
+	_animate_impl(delta, mv)
+	Prof.add("bug.anim", _pt)
+
+
+func _animate_impl(delta: float, mv: float) -> void:
 	move_amt = move_toward(move_amt, clampf(mv, 0.0, 1.0), delta * 6.0)
 	var cad: float = 14.0 if beh == "ling" else (9.0 if beh == "spitter" else 6.5)
 	anim_t += delta * (0.3 + move_amt)
@@ -1921,6 +2007,7 @@ func _set_flash(on: bool) -> void:
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	if hp <= 0.0:
 		return
+	_wake()
 	hp -= amount
 	_aggro_on_hit()
 	flash_t = 0.07
@@ -1991,3 +2078,36 @@ static func _panelize(m: StandardMaterial3D, scale := 1.1) -> void:
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * scale
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+
+
+# ---------------- 外观挂点 ----------------
+## 外观子树挂在一个 top_level 的空节点（VisAnchor）下，而不是直接挂在机体上：
+## move_and_slide 每次迭代都会改写机体变换，外观直接挂在机体下时，每次改写都要把整棵外观子树（机甲约 700 个节点、虫子约 80 个）
+## 标脏并逐个通知渲染。挂点只在机体变换真正变了之后同步一次（移动后显式同步 + 变换通知兜底：传送、补间、死亡下沉都跟得上）
+var vis_anchor: Node3D = null
+
+
+func _anchor_visual() -> void:
+	if visual == null or vis_anchor != null:
+		return
+	vis_anchor = Node3D.new()
+	vis_anchor.name = "VisAnchor"
+	vis_anchor.top_level = true
+	add_child(vis_anchor)
+	if visual.get_parent():
+		visual.get_parent().remove_child(visual)
+	vis_anchor.add_child(visual)
+	set_notify_transform(true)
+	_vis_sync()
+
+
+func _vis_sync() -> void:
+	if vis_anchor != null and is_inside_tree():
+		var gt := global_transform
+		if vis_anchor.transform != gt:
+			vis_anchor.transform = gt
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED or what == NOTIFICATION_ENTER_TREE:
+		_vis_sync()

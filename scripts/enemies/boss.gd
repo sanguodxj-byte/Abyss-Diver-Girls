@@ -53,13 +53,13 @@ func hp_ratio() -> float:
 	return clampf(hp / maxf(float(data.hp), 1.0), 0.0, 1.0)
 
 
-func _physics_process(delta: float) -> void:
+func _physics_tick(delta: float) -> void:
 	if dying:
 		return
 	if not awake:
 		_idle_wait(delta)
 		return
-	super._physics_process(delta)
+	super._physics_tick(delta)
 	if core_open > 0.0:
 		core_open = maxf(0.0, core_open - delta)
 	if _weak_flash > 0.0:
