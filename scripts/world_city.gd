@@ -27,6 +27,7 @@ extends RefCounted
 ## Godot 节点 rotation.y = -ang。
 
 const WorldLink = preload("res://scripts/world_link.gd")
+const WorldGates = preload("res://scripts/world_gates.gd")
 
 const TILE := 360.0
 const HALF := 180.0
@@ -920,7 +921,20 @@ const OPP := {"N": "S", "S": "N", "E": "W", "W": "E"}
 
 ## 战区 id 的 edge 边上转场口的位置（沿边坐标，米；两侧战区共用同一处，确定性）：
 ## 沿边每 8 米试一处，边两侧向内 6~30 米都得是空地（不是水、悬崖、建筑、遗迹院落）；有道路跨过边界的地方优先，其次靠近边的中段
+## 先查预先算好的表（scripts/world_gates.gd，由 tests/worldmap_export.gd 生成，tests/worldmap.gd 校验与现算一致）：
+## 现算要用到相邻战区整格的布局，开局多花一两秒
+static var use_gate_table := true
+
+
 static func gate_along(id: String, edge: String) -> float:
+	var key := "%s|%s" % [id, edge]
+	if use_gate_table and WorldGates.GATES.has(key):
+		return float(WorldGates.GATES[key])
+	return gate_compute(id, edge)
+
+
+## 转场口位置现算（不查表）
+static func gate_compute(id: String, edge: String) -> float:
 	var to: String = WorldLink.LINKS.get(id, {}).get(edge, "")
 	var key := "%s|%s" % [id, edge]
 	if _gate_cache.has(key):
