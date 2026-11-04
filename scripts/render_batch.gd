@@ -16,6 +16,7 @@ const VIS_END := 140.0
 const CAM_DIST_REF := 62.8   ## ZOOM_MAX 时相机到焦点的距离；拉远的相机（截图等）按比例放大 stream_r
 const PAINT_PATH := "res://shaders/mech_paint.gdshader"
 const BUILDS_PER_FRAME := 2
+const MM_MIN := 32   ## 同块同网格不超过这么多个实例时并进合并网格，不单开 MultiMesh
 
 static var _tint_mats := {}   ## 去色共享材质：参数（除底色外）+ tint_mode → 材质
 
@@ -31,6 +32,8 @@ static func chunk_of(p: Vector3) -> Vector2i:
 
 ## 写实涂装材质拆成「去色共享材质 + 底色」；其他材质原样返回、底色为白
 static func split_tint(m: Material, mode: int) -> Array:
+	if m is StandardMaterial3D:
+		return _split_std(m, mode)
 	if not (m is ShaderMaterial) or m.shader == null or m.shader.resource_path != PAINT_PATH:
 		return [m, Color.WHITE]
 	var sm: ShaderMaterial = m
@@ -39,8 +42,15 @@ static func split_tint(m: Material, mode: int) -> Array:
 	if sm.has_meta(mk):
 		return [sm.get_meta(mk), col]
 	var parts := PackedStringArray([str(mode)])
+	var bare = sm.get_shader_parameter("bare_metal")
+	if bare is Color:
+		# 裸金属色（只在掉漆棱边露出）多随底色变：量化成 0.1 一档的同亮度灰，否则每色一份材质、合不了批
+		var l := snappedf(bare.get_luminance(), 0.1)
+		bare = Color(l, l, l, 1.0)
 	for u in sm.shader.get_shader_uniform_list():
-		if u.name != "base_color" and u.name != "tint_mode":
+		if u.name == "bare_metal":
+			parts.append(str(bare))
+		elif u.name != "base_color" and u.name != "tint_mode":
 			parts.append(str(sm.get_shader_parameter(u.name)))
 	var key := "|".join(parts)
 	var out: ShaderMaterial = _tint_mats.get(key)
@@ -48,9 +58,34 @@ static func split_tint(m: Material, mode: int) -> Array:
 		out = sm.duplicate()
 		out.set_shader_parameter("base_color", Color.WHITE)
 		out.set_shader_parameter("tint_mode", mode)
+		if bare is Color:
+			out.set_shader_parameter("bare_metal", bare)
 		_tint_mats[key] = out
 	sm.set_meta(mk, out)
 	return [out, col]
+
+
+## 标准材质（贴花、灯片……常按实例改透明度/颜色复制出很多份）：去掉反照率色，改用顶点色 / MultiMesh 实例色
+## （vertex_color_use_as_albedo）。本来就用顶点色的不动。
+static func _split_std(m: StandardMaterial3D, mode: int) -> Array:
+	if m.vertex_color_use_as_albedo or m.next_pass != null:
+		return [m, Color.WHITE]
+	var mk := "_tint%d" % mode
+	if m.has_meta(mk):
+		return [m.get_meta(mk), m.albedo_color]
+	var parts := PackedStringArray(["std", str(mode)])
+	for pr in m.get_property_list():
+		if (pr.usage & PROPERTY_USAGE_STORAGE) and pr.name != "albedo_color" and pr.name != "resource_name" and pr.name != "resource_local_to_scene":
+			parts.append(str(m.get(pr.name)))
+	var key := "|".join(parts)
+	var out: StandardMaterial3D = _tint_mats.get(key)
+	if out == null:
+		out = m.duplicate()
+		out.albedo_color = Color.WHITE
+		out.vertex_color_use_as_albedo = true
+		_tint_mats[key] = out
+	m.set_meta(mk, out)
+	return [out, m.albedo_color]
 
 
 func _chunk(c: Vector2i) -> Dictionary:
@@ -77,14 +112,17 @@ static func mergeable(mesh: Mesh) -> bool:
 
 ## 单个静态网格（xf 为世界变换）；mat 为空时用网格自带的表面材质
 func add_mesh(mesh: Mesh, mat: Material, xf: Transform3D, shadow: int) -> void:
-	var ch := _chunk(chunk_of(xf.origin))
+	_add_part(_chunk(chunk_of(xf.origin)), mesh, mat, xf, shadow)
+
+
+func _add_part(ch: Dictionary, mesh: Mesh, mat: Material, xf: Transform3D, shadow: int) -> void:
 	for si in mesh.get_surface_count():
 		var m: Material = mat if mat else mesh.surface_get_material(si)
 		var st := split_tint(m, 2)
 		var key := "%d|%d" % [st[0].get_rid().get_id() if st[0] else 0, shadow]
 		var g = ch.merge.get(key)
 		if g == null:
-			g = {"mat": st[0], "shadow": shadow, "tint": st[0] != m, "parts": []}
+			g = {"mat": st[0], "shadow": shadow, "tint": 0 if st[0] == m else (2 if st[0] is StandardMaterial3D else 1), "parts": []}
 			ch.merge[key] = g
 		g.parts.append([mesh, si, xf, st[1]])
 		stats.mesh_parts += 1
@@ -99,16 +137,17 @@ func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
 		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if shadow else 0]
 		var g = ch.inst.get(key)
 		if g == null:
-			g = {"mesh": mesh, "mat": st[0], "shadow": shadow, "tinted": tinted, "xf": [], "col": []}
+			g = {"mesh": mesh, "src": mat, "mat": st[0], "shadow": shadow, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
 			ch.inst[key] = g
 		g.xf.append(t)
 		g.col.append(st[1])
 		stats.inst += 1
 
 
-## 带底色的单表面副本：补齐 法线/切线/UV/顶点色/索引，保证同组格式一致；顶点色 r 保留边缘遮罩，gba 写底色
-func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: bool) -> ArrayMesh:
-	var key := "%d|%d|%s" % [mesh.get_rid().get_id(), si, col.to_html() if tint else "-"]
+## 带底色的单表面副本：补齐 法线/切线/UV/顶点色/索引，保证同组格式一致。
+## tint 1（涂装）：顶点色 r 保留边缘遮罩，gba 写底色；tint 2（标准材质）：顶点色整个写反照率色（含透明度）
+func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> ArrayMesh:
+	var key := "%d|%d|%d|%s" % [mesh.get_rid().get_id(), si, tint, col.to_html() if tint else "-"]
 	var out: ArrayMesh = _tinted.get(key)
 	if out:
 		return out
@@ -141,10 +180,13 @@ func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: bool) -> ArrayMesh:
 	var src_c = a[Mesh.ARRAY_COLOR]
 	var has_c: bool = src_c != null and src_c.size() == n
 	var cc := PackedColorArray()
-	if tint:
+	if tint == 1:
 		cc.resize(n)
 		for i in n:
 			cc[i] = Color(src_c[i].r if has_c else 1.0, col.r, col.g, col.b)
+	elif tint == 2:
+		cc.resize(n)
+		cc.fill(col)
 	elif has_c:
 		cc = src_c
 	else:
@@ -171,6 +213,14 @@ func _build_chunk(c: Vector2i) -> void:
 	root.name = "Chunk_%d_%d" % [c.x, c.y]
 	add_child(root)
 	ch.node = root
+	# 实例太少的小件组不值得单独一次 MultiMesh 绘制：并进同材质的合并网格
+	for key in ch.inst.keys():
+		var g: Dictionary = ch.inst[key]
+		if g.xf.size() <= MM_MIN and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
+			var sh := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for t: Transform3D in g.xf:
+				_add_part(ch, g.mesh, g.src, t, sh)
+			ch.inst.erase(key)
 	for key in ch.merge:
 		var g: Dictionary = ch.merge[key]
 		var st := SurfaceTool.new()
@@ -190,14 +240,17 @@ func _build_chunk(c: Vector2i) -> void:
 		var g: Dictionary = ch.inst[key]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_custom_data = g.tinted
+		mm.use_custom_data = g.tinted and not g.std
+		mm.use_colors = g.tinted and g.std
 		mm.mesh = g.mesh
 		mm.instance_count = g.xf.size()
 		var ma: AABB = g.mesh.get_aabb()
 		var ab := AABB()
 		for i in g.xf.size():
 			mm.set_instance_transform(i, g.xf[i])
-			if g.tinted:
+			if g.tinted and g.std:
+				mm.set_instance_color(i, g.col[i])
+			elif g.tinted:
 				mm.set_instance_custom_data(i, g.col[i])
 			var a: AABB = g.xf[i] * ma
 			ab = a if i == 0 else ab.merge(a)

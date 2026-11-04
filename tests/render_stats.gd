@@ -35,6 +35,8 @@ func run() -> void:
 			GameData.map_id, pair[0], s.mi, s.mmi, s.mm_inst, s.mats, s.dc, s.world_dc, s.static_dc, s.static_mats, s.mm_noaabb])
 	if _arg("detail", "0") == "1":
 		_detail(raid)
+		if raid.get("_rbatch") != null:
+			_mat_detail(raid)
 	if Fac:
 		Fac.rovers_enabled = true
 
@@ -132,3 +134,35 @@ func _detail(raid: Node) -> void:
 	ks.sort_custom(func(a, b): return cnt[a] > cnt[b])
 	for k in ks.slice(0, 20):
 		print("[render_stats] detail %6d  %s" % [cnt[k], k])
+
+
+## 合批分块里材质的来源分布（按类型 / 着色器）
+func _mat_detail(raid: Node) -> void:
+	var cnt := {}
+	for gi in raid._rbatch.find_children("*", "GeometryInstance3D", true, false):
+		var m: Material = gi.material_override
+		var k := "null"
+		if m is ShaderMaterial:
+			k = "shader " + m.shader.resource_path.get_file() + " tint=" + str(m.get_shader_parameter("tint_mode"))
+		elif m:
+			k = m.get_class() + " " + str(m.get("albedo_color")) + " tex=" + str(m.get("albedo_texture") != null)
+		if not cnt.has(k):
+			cnt[k] = {}
+		cnt[k][m] = true
+	var ks := cnt.keys()
+	ks.sort_custom(func(a, b): return cnt[a].size() > cnt[b].size())
+	for k in ks.slice(0, 12):
+		print("[render_stats] mats %4d  %s" % [cnt[k].size(), k])
+	# 去色材质里哪些参数还在变（合不成一份的原因）
+	var var_p := {}
+	for k in cnt:
+		if not k.begins_with("shader"):
+			continue
+		for m: ShaderMaterial in cnt[k]:
+			for u in m.shader.get_shader_uniform_list():
+				if not var_p.has(u.name):
+					var_p[u.name] = {}
+				var_p[u.name][str(m.get_shader_parameter(u.name))] = true
+	for n in var_p:
+		if var_p[n].size() > 3:
+			print("[render_stats] param %s distinct=%d" % [n, var_p[n].size()])
