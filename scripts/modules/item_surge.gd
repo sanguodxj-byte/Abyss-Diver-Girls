@@ -9,7 +9,7 @@ const SURGE := Color(1.0, 0.72, 0.25)
 
 static func use(mech, _id) -> bool:
 	if mech.energy >= mech.max_energy - 0.1 and mech.emergency <= 0.0:
-		mech.message.emit("能源已满")
+		mech.message.emit(Loc.t("能源已满", "Energy full"))
 		Audio.play_sfx("use_denied")
 		return false
 	mech.energy = minf(mech.max_energy, mech.energy + 85.0)
@@ -23,7 +23,7 @@ static func use(mech, _id) -> bool:
 		var o = instance_from_id(mid)
 		if o != null and int(o.get_meta("_surge_tok", 0)) == tok:
 			o.drain_mul = 1.0)
-	mech.message.emit("超频电芯接入 +85 能量，回路过热带电 10 秒")
+	mech.message.emit(Loc.t("超频电芯接入 +85 能量，回路过热带电 10 秒", "Surge cell plugged +85 EN, circuit overheating 10s"))
 	FX.shell(mech, SURGE, 2.1, 0.6)
 	var raid = mech.raid
 	if raid != null and is_instance_valid(raid):

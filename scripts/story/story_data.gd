@@ -12,10 +12,10 @@ extends RefCounted
 ##
 ## 场景：{"chapter": 章节 id 或 "", "title": 中文标题, "trigger": {"event": 事件名, "when": 条件} 或省略,
 ##        "once": true/false, "bg": 背景插画 id 或 "", "lines": [台词...]}
-## 台词：{"speaker": 角色 id（"" 为旁白）, "expr": 表情 id（"" 为默认立绘）,
+## 台词：{"speaker": 角色 id（"" 为旁白）, "expr": 表情 id（"" 为默认立绘）, "tag": 情绪标签（如 "沉着" / "急促" / "振奋"）,
 ##        "zh": 中文字幕, "ja": 日语配音文本, "voice": 语音 id（"" 为不配音）}
 ## 通讯条目：{"id": 唯一 id, "event": 事件名（scripts\events.gd 的信号名，或 Events.emit_custom 的事件名）,
-##        "when": 条件, "speaker": 角色 id, "expr": 表情 id, "zh": 中文, "ja": 日语, "voice": 语音 id,
+##        "when": 条件, "speaker": 角色 id, "expr": 表情 id, "tag": 情绪标签, "zh": 中文, "ja": 日语, "voice": 语音 id,
 ##        "priority": 整数（越大越先播，同时触发时只播最高的）, "chance": 0..1（省略为 1）, "cooldown": 秒（同一条目两次播出的最小间隔，省略为 0）}
 ## 图鉴条目：{"cat": item / module / enemy / map / poi / character / lore, "ref": 对应注册表 id（lore 可为 ""）,
 ##        "title": 中文标题, "body": 中文正文, "unlock": {"event": 事件名, "when": 条件} 或省略（省略 = 一开始就解锁）}

@@ -15,11 +15,14 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 
-const DARK := Color(0.16, 0.165, 0.18)
-const FRAME := Color(0.11, 0.115, 0.125)
-const ACCENT := Color(0.58, 0.52, 0.28)   # 警示条与接口标注用的低饱和战术黄
-const VISOR := Color(0.30, 0.44, 0.42)
-const IFACE_COLOR := Color(0.60, 0.53, 0.27)
+const DARK := Color(0.15, 0.155, 0.17)
+const FRAME := Color(0.10, 0.105, 0.115)
+const GUNMETAL := Color(0.21, 0.22, 0.24)
+const BRASS := Color(0.54, 0.43, 0.22)
+const COPPER := Color(0.56, 0.33, 0.20)
+const ACCENT := Color(0.64, 0.52, 0.19)   # 警示条与接口标注用的低饱和工业琥珀黄
+const VISOR := Color(0.22, 0.42, 0.38)
+const IFACE_COLOR := Color(0.62, 0.51, 0.20)
 
 const IFACES := {
 	"core": "HP-C1", "arm_l": "HP-A1", "arm_r": "HP-A1", "back": "HP-B1", "gen": "HP-G1",
@@ -27,19 +30,21 @@ const IFACES := {
 
 const SLOT_CN := {"core": "躯干座圈", "arm_l": "左臂挂点", "arm_r": "右臂挂点", "back": "背部导轨", "gen": "动力舱"}
 
-## 真实军用涂装色（按模块 id）
+## 真实重工业与军用涂装色（按模块 id）：降低粉白感，强化冷轧钢/橄榄褐/舰灰/沙褐工业层次
 const REAL := {
-	"core_scout": Color(0.56, 0.55, 0.5), "core_std": Color(0.46, 0.48, 0.5), "core_heavy": Color(0.36, 0.38, 0.3),
-	"legs_biped": Color(0.5, 0.51, 0.52), "legs_tread": Color(0.34, 0.36, 0.3), "legs_quad": Color(0.4, 0.41, 0.43), "legs_hover": Color(0.55, 0.56, 0.56),
-	"arm_mg": Color(0.42, 0.43, 0.44), "arm_shotgun": Color(0.46, 0.44, 0.4), "arm_flamer": Color(0.44, 0.36, 0.3), "arm_laser": Color(0.36, 0.4, 0.44),
-	"back_cargo": Color(0.42, 0.42, 0.38), "back_missile": Color(0.36, 0.39, 0.34), "back_shield": Color(0.4, 0.43, 0.47),
-	"gen_cell": Color(0.36, 0.37, 0.37), "gen_reactor": Color(0.34, 0.36, 0.38), "gen_crystal": Color(0.32, 0.32, 0.35),
-	"core_assault": Color(0.44, 0.38, 0.32), "core_command": Color(0.36, 0.40, 0.44), "core_fortress": Color(0.42, 0.43, 0.39),
-	"legs_titan": Color(0.36, 0.38, 0.34),
-	"back_rack": Color(0.42, 0.41, 0.36), "back_rocket": Color(0.38, 0.40, 0.34), "back_vls": Color(0.34, 0.36, 0.38),
-	"gen_diesel": Color(0.40, 0.37, 0.31), "gen_hfc": Color(0.36, 0.40, 0.42), "gen_turbine": Color(0.38, 0.39, 0.36),
-	"arm_hmg": Color(0.42, 0.43, 0.43), "arm_gatling": Color(0.38, 0.40, 0.42), "arm_ac30": Color(0.40, 0.41, 0.39),
-	"arm_slug": Color(0.38, 0.36, 0.32), "arm_cannon": Color(0.45, 0.42, 0.34), "arm_rail": Color(0.36, 0.38, 0.40),
+	"core_scout": Color(0.46, 0.45, 0.40), "core_std": Color(0.39, 0.42, 0.44), "core_heavy": Color(0.33, 0.36, 0.29),
+	"legs_tread_light": Color(0.40, 0.39, 0.31), "legs_tread": Color(0.32, 0.34, 0.28), "legs_tread_heavy": Color(0.29, 0.33, 0.30), "legs_tread_siege": Color(0.41, 0.37, 0.30),
+	"legs_biped_scout": Color(0.45, 0.43, 0.37), "legs_biped": Color(0.42, 0.44, 0.45), "legs_biped_assault": Color(0.34, 0.37, 0.41), "legs_titan": Color(0.34, 0.36, 0.32),
+	"legs_quad_hound": Color(0.43, 0.38, 0.31), "legs_quad": Color(0.36, 0.38, 0.40), "legs_quad_crab": Color(0.40, 0.34, 0.28), "legs_quad_mammoth": Color(0.39, 0.39, 0.33),
+	"legs_hex_ant": Color(0.36, 0.39, 0.33), "legs_hex": Color(0.34, 0.37, 0.39), "legs_hex_beetle": Color(0.35, 0.34, 0.28), "legs_hex_colossus": Color(0.30, 0.32, 0.33),
+	"arm_mg": Color(0.35, 0.37, 0.38), "arm_shotgun": Color(0.41, 0.39, 0.35), "arm_flamer": Color(0.40, 0.33, 0.27), "arm_laser": Color(0.34, 0.37, 0.39),
+	"back_cargo": Color(0.39, 0.39, 0.34), "back_missile": Color(0.34, 0.37, 0.32), "back_shield": Color(0.36, 0.39, 0.42),
+	"gen_cell": Color(0.33, 0.35, 0.35), "gen_reactor": Color(0.31, 0.34, 0.36), "gen_crystal": Color(0.30, 0.32, 0.34),
+	"core_assault": Color(0.42, 0.36, 0.29), "core_command": Color(0.33, 0.37, 0.41), "core_fortress": Color(0.38, 0.40, 0.35),
+	"back_rack": Color(0.39, 0.38, 0.33), "back_rocket": Color(0.35, 0.38, 0.31), "back_vls": Color(0.32, 0.35, 0.37),
+	"gen_diesel": Color(0.38, 0.35, 0.29), "gen_hfc": Color(0.34, 0.38, 0.40), "gen_turbine": Color(0.35, 0.36, 0.33),
+	"arm_hmg": Color(0.36, 0.38, 0.39), "arm_gatling": Color(0.33, 0.35, 0.37), "arm_ac30": Color(0.36, 0.38, 0.35),
+	"arm_slug": Color(0.35, 0.33, 0.29), "arm_cannon": Color(0.42, 0.39, 0.31), "arm_rail": Color(0.33, 0.35, 0.38),
 }
 
 
@@ -47,12 +52,16 @@ static func real(id: String, c: Color) -> Color:
 	if REAL.has(id):
 		return REAL[id]
 	var g := (c.r + c.g + c.b) / 3.0
-	return c.lerp(Color(g, g, g), 0.55).darkened(0.25)
+	return c.lerp(Color(g, g, g), 0.55).darkened(0.28)
 
 
 # ---------------------------------------------------------------- 材质
-static func armor(c: Color, wear := 0.4) -> ShaderMaterial:
-	return A.paint(c, 0.05, 0.74, {"wear": wear, "panel_scale": 0.62, "takes_damage": 1.0})
+static func armor(c: Color, wear := 0.44) -> ShaderMaterial:
+	return A.paint(c, 0.16, 0.54, {"wear": wear, "panel_scale": 0.65, "takes_damage": 1.0})
+
+
+static func armor_sub(c: Color, wear := 0.48) -> ShaderMaterial:
+	return A.paint(c.darkened(0.20), 0.18, 0.52, {"wear": wear, "panel_scale": 0.65, "takes_damage": 1.0})
 
 
 static func frame() -> ShaderMaterial:
@@ -63,19 +72,37 @@ static func dark() -> ShaderMaterial:
 	return A.metal(DARK)
 
 
+static func gunmetal() -> ShaderMaterial:
+	return A.metal(GUNMETAL)
+
+
+static func brass() -> ShaderMaterial:
+	return A.paint(BRASS, 0.78, 0.38, {"wear": 0.35, "panel_scale": 0.0, "bare_metal": Color(0.76, 0.64, 0.38)})
+
+
+static func copper() -> ShaderMaterial:
+	return A.paint(COPPER, 0.82, 0.36, {"wear": 0.30, "panel_scale": 0.0, "bare_metal": Color(0.78, 0.50, 0.34)})
+
+
+static func bore_mat() -> ShaderMaterial:
+	return A.paint(Color(0.015, 0.015, 0.018), 0.05, 0.96, {"wear": 0.0, "panel_scale": 0.0, "dust": 0.0, "scratches": 0.0})
+
+
 static func accent() -> ShaderMaterial:
-	return A.paint(ACCENT, 0.1, 0.55, {"wear": 0.7, "panel_scale": 0.0})
+	return A.paint(ACCENT, 0.14, 0.52, {"wear": 0.68, "panel_scale": 0.0})
 
 
-static func canopy() -> StandardMaterial3D:
+static func canopy(c := VISOR, energy := 0.18) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.03, 0.05, 0.06)
-	m.metallic = 0.8
+	m.albedo_color = Color(0.025, 0.04, 0.045)
+	m.metallic = 0.85
 	m.roughness = 0.06
 	m.emission_enabled = true
-	m.emission = VISOR
-	m.emission_energy_multiplier = 0.1
+	m.emission = c
+	m.emission_energy_multiplier = energy
 	m.clearcoat_enabled = true
+	m.clearcoat = 1.0
+	m.clearcoat_roughness = 0.04
 	return m
 
 
@@ -154,13 +181,19 @@ static func number(p: Node3D, txt: String, pos: Vector3, rot: Vector3, px := 0.0
 	A.stencil(p, txt, pos, rot, px, Color(0.94, 0.94, 0.9, 0.9), 64)
 
 
-## 武器臂通用肩部：作动器 + 多面切角肩甲 + 警示条 + 徽记
+## 武器臂通用肩部：承力叉架 + 作动器 + 双层多面切角肩甲 + 吊装环 + 警示条 + 徽记
 static func shoulder(arm: Node3D, side: float, M: Material) -> void:
-	actuator(arm, Vector3(-side * 0.08, 0.05, 0.05), 0.24, 0.3)
+	actuator(arm, Vector3(-side * 0.08, 0.05, 0.05), 0.24, 0.30)
+	bb(arm, Vector3(0.24, 0.28, 0.30), frame(), Vector3(side * 0.04, 0.20, 0.02), Vector3(0, 0, side * -8.0), 0.02)
 	var sh := node(arm, Vector3(side * 0.06, 0.34, 0.02), Vector3(0, 0, side * -12.0))
-	plate(sh, trap(0.7, 0.46, 0.24, 0.06), 0.56, M, Vector3.ZERO, Vector3(0, 90, 0), 0.04)
-	plate(sh, crect(0.05, 0.26), 0.58, accent(), Vector3(side * 0.12, 0.0, 0.0), Vector3(0, 90, 0), 0.005)
-	A.emblem(arm, Vector3(side * 0.31, 0.2, 0.08), Vector3(0, side * 90.0, side * -6.0), 0.22)
+	plate(sh, trap(0.72, 0.48, 0.25, 0.06), 0.58, M, Vector3.ZERO, Vector3(0, 90, 0), 0.038)
+	# 外侧附加装甲护翼与顶部维修提手
+	plate(sh, trap(0.56, 0.38, 0.18, 0.04), 0.12, gunmetal(), Vector3(side * 0.27, -0.02, 0.0), Vector3(0, 90, 0), 0.02)
+	plate(sh, crect(0.05, 0.26), 0.60, accent(), Vector3(side * 0.14, 0.01, 0.0), Vector3(0, 90, 0), 0.005)
+	grab_iron(sh, 0.20, 0.045, Vector3(0.0, 0.13, 0.0), Vector3(-90, 90, 0))
+	for sz in [-0.22, 0.22]:
+		cy(sh, 0.022, 0.03, A.chrome(), Vector3(side * 0.31, 0.04, sz), Vector3(0, 0, 90), -1.0, 6)
+	A.emblem(arm, Vector3(side * 0.33, 0.20, 0.08), Vector3(0, side * 90.0, side * -6.0), 0.22)
 
 
 static func node(p: Node3D, pos := Vector3.ZERO, rot := Vector3.ZERO, name := "") -> Node3D:
@@ -173,18 +206,19 @@ static func node(p: Node3D, pos := Vector3.ZERO, rot := Vector3.ZERO, name := ""
 	return n
 
 
-## 作动器：外壳圆柱 + 两端法兰 + 轴盖 + 螺栓，轴沿 X
+## 作动器：外壳圆柱 + 散热筋环 + 两端重型法兰 + 镀铬轴盖 + 螺栓圈，轴沿 X
 static func actuator(p: Node3D, pos: Vector3, r: float, w: float) -> void:
 	cy(p, r, w, dark(), pos, Vector3(0, 0, 90), -1.0, 20)
+	cy(p, r * 1.04, w * 0.36, gunmetal(), pos, Vector3(0, 0, 90), -1.0, 20)
 	for sx in [-1.0, 1.0]:
-		cy(p, r * 1.08, w * 0.12, A.metal(Color(0.24, 0.24, 0.26)), pos + Vector3(sx * w * 0.5, 0, 0), Vector3(0, 0, 90), -1.0, 20)
-		cy(p, r * 0.45, w * 0.14, A.chrome(), pos + Vector3(sx * (w * 0.5 + 0.03), 0, 0), Vector3(0, 0, 90), -1.0, 12)
-		for i in 6:
-			var a := TAU * i / 6.0
-			A.add(p, A.cyl(0.018, 0.03, 0.02, 6), A.metal(Color(0.4, 0.4, 0.4)), pos + Vector3(sx * (w * 0.5 + 0.035), cos(a) * r * 0.75, sin(a) * r * 0.75), Vector3(0, 0, 90), Vector3.ONE, false)
+		cy(p, r * 1.10, w * 0.13, gunmetal(), pos + Vector3(sx * w * 0.48, 0, 0), Vector3(0, 0, 90), -1.0, 20)
+		cy(p, r * 0.46, w * 0.15, A.chrome(), pos + Vector3(sx * (w * 0.50 + 0.03), 0, 0), Vector3(0, 0, 90), -1.0, 12)
+		for i in 8:
+			var a := TAU * i / 8.0
+			A.add(p, A.cyl(0.017, 0.03, 0.02, 6), A.chrome(), pos + Vector3(sx * (w * 0.50 + 0.032), cos(a) * r * 0.78, sin(a) * r * 0.78), Vector3(0, 0, 90), Vector3.ONE, false)
 
 
-## 液压活塞：缸体 + 镀铬活塞杆 + 两端球铰
+## 液压活塞：重型油缸 + 防尘密封黄铜油封 + 镀铬活塞杆 + 两端耳轴叉头
 static func piston(p: Node3D, from: Vector3, to: Vector3, r := 0.04) -> void:
 	var mid := (from + to) * 0.5
 	var len := from.distance_to(to)
@@ -193,11 +227,72 @@ static func piston(p: Node3D, from: Vector3, to: Vector3, r := 0.04) -> void:
 	holder.position = mid
 	if len > 0.01:
 		holder.look_at_from_position(mid, to, Vector3.UP if abs((to - from).normalized().y) < 0.95 else Vector3.FORWARD)
-	A.add(holder, A.cyl(r * 1.7, len * 0.55, r * 1.7, 12), A.metal(Color(0.2, 0.2, 0.22)), Vector3(0, 0, len * 0.2), Vector3(90, 0, 0))
-	A.add(holder, A.cyl(r * 1.9, 0.04, r * 1.9, 12), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0, len * 0.47), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.75, len * 0.56, r * 1.75, 12), gunmetal(), Vector3(0, 0, len * 0.20), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.98, 0.045, r * 1.98, 12), brass(), Vector3(0, 0, -len * 0.08), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.95, 0.045, r * 1.95, 12), dark(), Vector3(0, 0, len * 0.46), Vector3(90, 0, 0))
 	A.add(holder, A.cyl(r, len * 0.95, r, 10), A.chrome(), Vector3(0, 0, -len * 0.02), Vector3(90, 0, 0))
 	for e in [-1.0, 1.0]:
-		A.add(holder, A.sphere(r * 1.6, -1, 10), A.metal(Color(0.25, 0.25, 0.27)), Vector3(0, 0, e * len * 0.5))
+		A.add(holder, A.bevel_box(Vector3(r * 3.1, r * 2.4, r * 2.8), 0.008), dark(), Vector3(0, 0, e * len * 0.49))
+		A.add(holder, A.cyl(r * 0.75, r * 3.6, r * 0.75, 8), A.chrome(), Vector3(0, 0, e * len * 0.50), Vector3(0, 0, 90), Vector3.ONE, false)
+
+
+## 枪炮膛口：车削膛口冠 + 内倒角 + 深黑枪膛（彻底消除实心灰柱封死感；局部 -Z 朝前）
+static func barrel_bore(p: Node3D, r_outer: float, r_inner: float, pos: Vector3, depth := 0.06, rot := Vector3(90, 0, 0)) -> void:
+	var dir := Basis.from_euler(rot * PI / 180.0)
+	A.add(p, A.torus(r_inner * 0.92, r_outer * 1.02, 18), gunmetal(), pos, rot, Vector3(1, 0.36, 1), false)
+	A.add(p, A.cyl(r_inner, depth, r_inner, 14), bore_mat(), pos - dir * Vector3(0, depth * 0.45, 0), rot, Vector3.ONE, false)
+
+
+## 制退器（轴沿 -Z，pos 为制退器中心）：侧开泄气槽 + 锁紧箍 + 真实深膛孔
+static func muzzle_brake(p: Node3D, r: float, len: float, m: Material, pos: Vector3, slots := 2) -> void:
+	bb(p, Vector3(r * 2.35, r * 2.15, len), m, pos, Vector3.ZERO, minf(0.022, r * 0.35))
+	cy(p, r * 1.12, len * 0.22, dark(), pos + Vector3(0, 0, len * 0.44), Vector3(90, 0, 0), -1.0, 16)
+	for i in slots:
+		var z := pos.z + len * 0.22 - float(i) * (len * 0.56 / maxf(1.0, float(slots)))
+		bb(p, Vector3(r * 2.45, r * 0.85, len * 0.18), bore_mat(), Vector3(pos.x, pos.y, z), Vector3.ZERO, 0.005)
+	barrel_bore(p, r * 0.96, r * 0.68, pos + Vector3(0, 0, -len * 0.50), minf(0.08, len * 0.45))
+
+
+## 环形法兰螺栓圈（默认轴沿 Z，贴在 XY 面）
+static func bolt_ring(p: Node3D, r: float, n_bolts: int, bolt_r := 0.018, pos := Vector3.ZERO, rot := Vector3(90, 0, 0)) -> void:
+	var dir := Basis.from_euler(rot * PI / 180.0)
+	var bm := A.chrome()
+	var mesh := A.cyl(bolt_r, bolt_r * 1.4, bolt_r * 1.15, 6)
+	for i in n_bolts:
+		var a := TAU * float(i) / float(n_bolts)
+		var off := dir * Vector3(cos(a) * r, 0, sin(a) * r)
+		A.add(p, mesh, bm, pos + off, rot, Vector3.ONE, false)
+
+
+## 弯折钢制维修抓手 / 攀爬踏棍（局部 -Z 朝外伸出 d，宽 w）
+static func grab_iron(p: Node3D, w: float, d: float, pos: Vector3, rot := Vector3.ZERO, r := 0.014) -> void:
+	var g := node(p, pos, rot)
+	var m := gunmetal()
+	cy(g, r, w, m, Vector3(0, 0, -d), Vector3(0, 0, 90), -1.0, 8)
+	for sx in [-w * 0.5 + r, w * 0.5 - r]:
+		cy(g, r, d, m, Vector3(sx, 0, -d * 0.5), Vector3(90, 0, 0), -1.0, 8)
+		cy(g, r * 1.55, 0.014, dark(), Vector3(sx, 0, -0.006), Vector3(90, 0, 0), -1.0, 8)
+
+
+## 装甲潜望镜 / 光学观察窗（局部 -Z 朝前：遮光防弹眉檐 + 深凹镜框 + 镀膜玻璃）
+static func periscope(p: Node3D, w: float, h: float, pos: Vector3, rot := Vector3.ZERO, c := VISOR, energy := 0.35) -> void:
+	var g := node(p, pos, rot)
+	bb(g, Vector3(w, h, 0.09), dark(), Vector3(0, 0, 0.02), Vector3.ZERO, 0.012)
+	bb(g, Vector3(w * 1.06, 0.028, 0.12), gunmetal(), Vector3(0, h * 0.46, -0.01), Vector3(8, 0, 0), 0.006)
+	bb(g, Vector3(w * 0.84, h * 0.56, 0.03), bore_mat(), Vector3(0, -0.005, -0.018), Vector3.ZERO, 0.004)
+	bb(g, Vector3(w * 0.78, h * 0.46, 0.022), canopy(c, energy), Vector3(0, -0.005, -0.024), Vector3.ZERO, 0.003)
+
+
+## 爆炸反应装甲块（ERA）：切角钢盒 + 四角紧固螺栓（局部 -Z 朝外）
+static func era_block(p: Node3D, size: Vector3, m: Material, pos: Vector3, rot := Vector3.ZERO) -> void:
+	var g := node(p, pos, rot)
+	bb(g, size, m, Vector3.ZERO, Vector3.ZERO, minf(0.018, size.z * 0.3))
+	var bm := A.chrome()
+	var bx := size.x * 0.5 - 0.032
+	var by := size.y * 0.5 - 0.032
+	for sx in [-bx, bx]:
+		for sy in [-by, by]:
+			A.add(g, A.cyl(0.013, 0.018, 0.015, 6), bm, Vector3(sx, sy, -size.z * 0.5 - 0.004), Vector3(90, 0, 0), Vector3.ONE, false)
 
 
 static func light(p: Node3D, c: Color, pos: Vector3, energy := 1.0, rng := 3.0) -> OmniLight3D:
@@ -271,82 +366,87 @@ static func module_root(slot: String, id: String, plug_dir: Vector3) -> Node3D:
 
 ## 母座外观（在局部坐标中：-Z 朝外，接合面在 z=0）
 static func _receiver(v: Node3D, iface: String) -> void:
-	var M_R := A.metal(Color(0.2, 0.2, 0.22))
-	var M_Y := A.paint(IFACE_COLOR, 0.1, 0.55, {"wear": 0.8, "panel_scale": 0.0})
+	var M_R := gunmetal()
+	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.46, 0.1, M_R, Vector3(0, 0, 0.05), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.4, 0.47, 32), M_Y, Vector3(0, 0, 0.0), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
-			for i in 12:
-				var a := TAU * i / 12.0
-				A.add(v, A.cyl(0.02, 0.04, 0.024, 6), A.metal(Color(0.45, 0.45, 0.45)), Vector3(cos(a) * 0.43, sin(a) * 0.43, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
+			cy(v, 0.50, 0.12, dark(), Vector3(0, 0, 0.06), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.45, 0.08, M_R, Vector3(0, 0, 0.03), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.41, 0.48, 28), M_Y, Vector3(0, 0, 0.0), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
+			for i in 16:
+				var a := TAU * i / 16.0
+				A.add(v, A.cyl(0.018, 0.04, 0.022, 6), A.chrome(), Vector3(cos(a) * 0.44, sin(a) * 0.44, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-A1":
-			bb(v, Vector3(0.46, 0.46, 0.06), M_R, Vector3(0, 0, 0.03), Vector3.ZERO, 0.02)
-			A.add(v, A.torus(0.15, 0.2, 24), M_Y, Vector3(0, 0, -0.005), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
+			bb(v, Vector3(0.48, 0.48, 0.07), M_R, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
+			cy(v, 0.21, 0.08, dark(), Vector3(0, 0, 0.03), Vector3(90, 0, 0), -1.0, 20)
+			A.add(v, A.torus(0.15, 0.20, 20), M_Y, Vector3(0, 0, -0.005), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
 			for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-				A.add(v, A.cyl(0.025, 0.04, 0.03, 6), A.metal(Color(0.45, 0.45, 0.45)), Vector3(c.x * 0.17, c.y * 0.17, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.024, 0.04, 0.028, 6), A.chrome(), Vector3(c.x * 0.18, c.y * 0.18, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-B1":
 			for sx in [-0.3, 0.3]:
-				bb(v, Vector3(0.1, 0.62, 0.06), M_R, Vector3(sx, 0, 0.02), Vector3.ZERO, 0.015)
-				bb(v, Vector3(0.04, 0.6, 0.04), M_Y, Vector3(sx, 0, -0.02), Vector3.ZERO, 0.01)
+				bb(v, Vector3(0.12, 0.64, 0.07), M_R, Vector3(sx, 0, 0.025), Vector3.ZERO, 0.015)
+				bb(v, Vector3(0.045, 0.60, 0.04), M_Y, Vector3(sx, 0, -0.018), Vector3.ZERO, 0.008)
+				for sy in [-0.24, 0.0, 0.24]:
+					A.add(v, A.cyl(0.016, 0.03, 0.018, 6), A.chrome(), Vector3(sx, sy, -0.02), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-G1":
-			bb(v, Vector3(0.8, 0.7, 0.05), M_R, Vector3(0, 0, 0.02), Vector3.ZERO, 0.02)
-			bb(v, Vector3(0.84, 0.05, 0.06), M_Y, Vector3(0, 0.36, 0.0), Vector3.ZERO, 0.01)
-			bb(v, Vector3(0.84, 0.05, 0.06), M_Y, Vector3(0, -0.36, 0.0), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.82, 0.72, 0.06), M_R, Vector3(0, 0, 0.025), Vector3.ZERO, 0.02)
+			bb(v, Vector3(0.85, 0.05, 0.065), M_Y, Vector3(0, 0.36, 0.0), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.85, 0.05, 0.065), M_Y, Vector3(0, -0.36, 0.0), Vector3.ZERO, 0.01)
 			for i in 4:
-				A.add(v, A.cyl(0.02, 0.05, 0.02, 8), A.chrome(), Vector3(-0.15 + i * 0.1, -0.2, -0.02), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.024, 0.05, 0.024, 8), brass(), Vector3(-0.18 + i * 0.12, -0.20, -0.02), Vector3(90, 0, 0), Vector3.ONE, false)
 
 
 ## 公插头外观（局部 -Z 指向父模块；接合面在 z=0，插头本体在 +Z 侧即模块内部）
 static func _plug(v: Node3D, iface: String) -> void:
-	var M_P := A.metal(Color(0.26, 0.26, 0.28))
-	var M_Y := A.paint(IFACE_COLOR, 0.1, 0.55, {"wear": 0.8, "panel_scale": 0.0})
+	var M_P := gunmetal()
+	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.39, 0.12, M_P, Vector3(0, 0, 0.06), Vector3(90, 0, 0), -1.0, 28)
-			cy(v, 0.33, 0.06, A.chrome(), Vector3(0, 0, -0.01), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.36, 0.4, 32), M_Y, Vector3(0, 0, 0.1), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
+			cy(v, 0.42, 0.14, M_P, Vector3(0, 0, 0.07), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.35, 0.07, A.chrome(), Vector3(0, 0, -0.01), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.37, 0.43, 28), M_Y, Vector3(0, 0, 0.10), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
 		"HP-A1":
-			bb(v, Vector3(0.4, 0.4, 0.06), M_P, Vector3(0, 0, 0.03), Vector3.ZERO, 0.02)
-			cy(v, 0.13, 0.08, A.chrome(), Vector3(0, 0, -0.02), Vector3(90, 0, 0), -1.0, 18)
-			bb(v, Vector3(0.42, 0.04, 0.07), M_Y, Vector3(0, 0.19, 0.03), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.42, 0.42, 0.07), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
+			cy(v, 0.14, 0.08, A.chrome(), Vector3(0, 0, -0.02), Vector3(90, 0, 0), -1.0, 18)
+			bb(v, Vector3(0.44, 0.045, 0.075), M_Y, Vector3(0, 0.19, 0.03), Vector3.ZERO, 0.01)
 		"HP-B1":
 			for sx in [-0.3, 0.3]:
-				bb(v, Vector3(0.18, 0.2, 0.12), M_P, Vector3(sx, 0.18, 0.06), Vector3.ZERO, 0.02)
-				bb(v, Vector3(0.18, 0.2, 0.12), M_P, Vector3(sx, -0.18, 0.06), Vector3.ZERO, 0.02)
-				bb(v, Vector3(0.19, 0.04, 0.13), M_Y, Vector3(sx, 0.0, 0.06), Vector3.ZERO, 0.01)
+				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, 0.18, 0.06), Vector3.ZERO, 0.02)
+				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, -0.18, 0.06), Vector3.ZERO, 0.02)
+				bb(v, Vector3(0.20, 0.045, 0.135), M_Y, Vector3(sx, 0.0, 0.06), Vector3.ZERO, 0.01)
 		"HP-G1":
-			bb(v, Vector3(0.74, 0.64, 0.06), M_P, Vector3(0, 0, 0.03), Vector3.ZERO, 0.02)
-			bb(v, Vector3(0.5, 0.1, 0.06), A.metal(Color(0.1, 0.1, 0.1)), Vector3(0, -0.2, -0.01), Vector3.ZERO, 0.01)
-			bb(v, Vector3(0.76, 0.04, 0.07), M_Y, Vector3(0, 0.3, 0.03), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.76, 0.66, 0.07), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
+			bb(v, Vector3(0.52, 0.11, 0.06), dark(), Vector3(0, -0.20, -0.01), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.78, 0.045, 0.075), M_Y, Vector3(0, 0.30, 0.03), Vector3.ZERO, 0.01)
 
 
 # ================================================================ 接头转接件（v0.4.9 新模块用）
-## HP-A1 臂部转接：方形法兰（4 枚螺栓）→ 回转轴承 → 叉架立轴。
-## 在臂 Body 坐标里建（Body 原点在接口外 0.25m），返回叉架节点（原点 = 立轴中心，x=side*0.13）。武器机匣贴在立轴外侧。
+## HP-A1 臂部转接：方形法兰（4 枚螺栓）→ 回转轴承 → 叉架立轴 + 上肩甲托架。
+## 在臂 Body 坐标里建（Body 原点在接口外 0.25m），返回叉架节点（原点 = 立轴中心，x=side*0.13）。武器机匣与肩甲均牢固连接。
 static func a1_mount(arm: Node3D, side: float, M: Material) -> Node3D:
 	var M_B := A.metal(Color(0.24, 0.24, 0.26))
 	var bolt := A.metal(Color(0.5, 0.5, 0.5))
-	# 法兰：贴在插头背面（接口外 0.06m 处）
-	bb(arm, Vector3(0.05, 0.42, 0.42), M_B, Vector3(-side * 0.165, 0, 0), Vector3.ZERO, 0.012)
+	# 法兰与加深肩部过渡轴套：从接口平面（x=-side*0.25）无缝延伸至轴承
+	bb(arm, Vector3(0.14, 0.44, 0.44), M_B, Vector3(-side * 0.19, 0, 0), Vector3.ZERO, 0.015)
 	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-		cy(arm, 0.024, 0.03, bolt, Vector3(-side * 0.13, c.y * 0.16, c.x * 0.16), Vector3(0, 0, 90), -1.0, 6)
+		cy(arm, 0.024, 0.03, bolt, Vector3(-side * 0.12, c.y * 0.16, c.x * 0.16), Vector3(0, 0, 90), -1.0, 6)
 	# 回转轴承：外圈 + 镀铬滚道 + 内圈
-	cy(arm, 0.2, 0.08, dark(), Vector3(-side * 0.1, 0, 0), Vector3(0, 0, 90), -1.0, 24)
-	cy(arm, 0.205, 0.016, A.chrome(), Vector3(-side * 0.06, 0, 0), Vector3(0, 0, 90), -1.0, 24)
-	cy(arm, 0.17, 0.08, M_B, Vector3(-side * 0.02, 0, 0), Vector3(0, 0, 90), -1.0, 20)
-	# 俯仰叉架：两片侧耳 + 耳轴
+	cy(arm, 0.22, 0.10, dark(), Vector3(-side * 0.09, 0, 0), Vector3(0, 0, 90), -1.0, 24)
+	cy(arm, 0.225, 0.018, A.chrome(), Vector3(-side * 0.05, 0, 0), Vector3(0, 0, 90), -1.0, 24)
+	cy(arm, 0.19, 0.10, M_B, Vector3(-side * 0.01, 0, 0), Vector3(0, 0, 90), -1.0, 20)
+	# 俯仰叉架与上肩甲承力支座：向上延伸衔接肩甲 sh，向外延伸衔接机匣 g
 	var yoke := node(arm, Vector3(side * 0.12, 0, 0), Vector3.ZERO, "Yoke")
-	bb(arm, Vector3(0.12, 0.2, 0.3), M, Vector3(side * 0.02, 0, 0), Vector3.ZERO, 0.02)
+	bb(arm, Vector3(0.32, 0.26, 0.34), M, Vector3(side * 0.12, 0, 0), Vector3.ZERO, 0.02)
+	bb(arm, Vector3(0.26, 0.34, 0.30), frame(), Vector3(side * 0.16, 0.26, 0.02), Vector3(0, 0, -side * 8.0), 0.02)
 	for sy in [-1.0, 1.0]:
-		bb(arm, Vector3(0.3, 0.05, 0.34), M, Vector3(side * 0.13, sy * 0.2, 0), Vector3.ZERO, 0.015)
-	cy(arm, 0.07, 0.48, dark(), Vector3(side * 0.13, 0, 0), Vector3.ZERO, -1.0, 14)
+		bb(arm, Vector3(0.36, 0.06, 0.36), M, Vector3(side * 0.16, sy * 0.2, 0), Vector3.ZERO, 0.015)
+	cy(arm, 0.08, 0.50, dark(), Vector3(side * 0.13, 0, 0), Vector3.ZERO, -1.0, 14)
 	for sy in [-1.0, 1.0]:
-		cy(arm, 0.085, 0.03, A.chrome(), Vector3(side * 0.13, sy * 0.245, 0), Vector3.ZERO, -1.0, 14)
+		cy(arm, 0.09, 0.03, A.chrome(), Vector3(side * 0.13, sy * 0.245, 0), Vector3.ZERO, -1.0, 14)
 	return yoke
 
 
-## HP-B1 背部转接：两只导轨卡箍（压在插头导轨块上）+ 横梁。在背部模块根坐标建；
+## HP-B1 背部转接：两只导轨卡箍（直接贴合躯干背板与导轨）+ 低矮横梁。在背部模块根坐标建；
 ## up = 远离躯干的方向（与插座 out 相同）。返回横梁上表面的安装节点（+Y 为 up）。
 static func b1_mount(root: Node3D, M: Material, width := 1.2) -> Node3D:
 	var up := Vector3(0, 1, 0.25).normalized()
@@ -356,28 +456,29 @@ static func b1_mount(root: Node3D, M: Material, width := 1.2) -> Node3D:
 	base.basis = Basis(Vector3.RIGHT, up, Vector3.RIGHT.cross(up))
 	var M_B := A.metal(Color(0.24, 0.24, 0.26))
 	for sx in [-0.3, 0.3]:
-		# 卡箍：U 形压块 + 两颗快拆销
-		bb(base, Vector3(0.24, 0.08, 0.5), M_B, Vector3(sx, 0.16, 0), Vector3.ZERO, 0.015)
+		# 卡箍：下探至躯干背板内部（y=-0.04..0.11），消除背部悬空缝隙
+		bb(base, Vector3(0.26, 0.15, 0.52), M_B, Vector3(sx, 0.035, 0), Vector3.ZERO, 0.015)
 		for sz in [-0.18, 0.18]:
-			cy(base, 0.025, 0.3, A.chrome(), Vector3(sx, 0.15, sz), Vector3(0, 0, 90), -1.0, 8)
-			cy(base, 0.04, 0.02, accent(), Vector3(sx + 0.15, 0.15, sz), Vector3(0, 0, 90), -1.0, 8)
-	bb(base, Vector3(width, 0.12, 0.3), frame(), Vector3(0, 0.26, 0), Vector3.ZERO, 0.025)
-	var top := node(base, Vector3(0, 0.32, 0), Vector3.ZERO, "Top")
+			cy(base, 0.025, 0.32, A.chrome(), Vector3(sx, 0.06, sz), Vector3(0, 0, 90), -1.0, 8)
+			cy(base, 0.04, 0.02, accent(), Vector3(sx + 0.15, 0.06, sz), Vector3(0, 0, 90), -1.0, 8)
+	bb(base, Vector3(width, 0.13, 0.34), frame(), Vector3(0, 0.12, 0), Vector3.ZERO, 0.025)
+	var top := node(base, Vector3(0, 0.17, 0), Vector3.ZERO, "Top")
 	return top
 
 
 ## HP-G1 动力舱转接：安装背板（四角锁销）。在动力模块根坐标建，返回背板后表面节点（+Z 向后）。
 static func g1_mount(root: Node3D, M: Material, w := 0.82, h := 0.66) -> Node3D:
-	plate(root, crect(w, h, [0.1, 0.1, 0.1, 0.1]), 0.08, frame(), Vector3(0, 0, 0.1), Vector3.ZERO, 0.02)
+	plate(root, crect(w, h, [0.1, 0.1, 0.1, 0.1]), 0.14, frame(), Vector3(0, 0, 0.05), Vector3.ZERO, 0.02)
 	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-		cy(root, 0.035, 0.06, A.chrome(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.15), Vector3(90, 0, 0), -1.0, 10)
-		cy(root, 0.05, 0.015, accent(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.185), Vector3(90, 0, 0), -1.0, 10)
-	return node(root, Vector3(0, 0, 0.14), Vector3.ZERO, "Back")
+		cy(root, 0.035, 0.06, A.chrome(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.13), Vector3(90, 0, 0), -1.0, 10)
+		cy(root, 0.05, 0.015, accent(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.165), Vector3(90, 0, 0), -1.0, 10)
+	return node(root, Vector3(0, 0, 0.11), Vector3.ZERO, "Back")
 
 
-## 重型臂的加强件：在 a1_mount 法兰后面加第二圈法兰 + 上下三角加强筋（同一 HP-A1 接口，只是更粗）
+## 重型臂的加强件：在 a1_mount 法兰后面加第二圈法兰 + 上下三角加强筋 + 高耸肩甲立柱（同一 HP-A1 接口，只是更粗）
 static func heavy_gussets(arm: Node3D, side: float, M: Material) -> void:
 	bb(arm, Vector3(0.06, 0.5, 0.5), A.metal(Color(0.22, 0.22, 0.24)), Vector3(-side * 0.115, 0, 0), Vector3.ZERO, 0.015)
+	bb(arm, Vector3(0.34, 0.44, 0.36), frame(), Vector3(side * 0.24, 0.38, 0.04), Vector3(0, 0, -side * 10.0), 0.02)
 	for i in 8:
 		var a := TAU * i / 8.0
 		cy(arm, 0.02, 0.03, A.metal(Color(0.5, 0.5, 0.5)), Vector3(-side * 0.08, sin(a) * 0.21, cos(a) * 0.21), Vector3(0, 0, 90), -1.0, 6)

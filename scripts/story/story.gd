@@ -84,8 +84,49 @@ func character(cid: String) -> Dictionary:
 	if cid == Growth.PROTAGONIST and not c.is_empty():
 		var row := c.duplicate()
 		row["name_zh"] = Growth.player_name()
+		row["name_en"] = Growth.player_name()
 		return row
 	return c
+
+
+func char_name(cid: String, fallback: String = "") -> String:
+	var c := character(cid)
+	var loc := get_node_or_null("/root/Loc")
+	if loc != null and loc.has_method("is_en") and bool(loc.call("is_en")):
+		if c.has("name_en") and str(c["name_en"]) != "":
+			return str(c["name_en"])
+		if fallback != "":
+			return fallback
+	if not c.is_empty():
+		var nz := str(c.get("name_zh", ""))
+		if nz != "":
+			return nz
+	return fallback if fallback != "" else cid
+
+
+func char_role(cid: String, fallback: String = "") -> String:
+	var c := character(cid)
+	var loc := get_node_or_null("/root/Loc")
+	if loc != null and loc.has_method("is_en") and bool(loc.call("is_en")):
+		if c.has("role_en") and str(c["role_en"]) != "":
+			return str(c["role_en"])
+	if not c.is_empty():
+		var r := str(c.get("role", ""))
+		if r != "":
+			return r
+	return fallback
+
+
+func line_text(entry: Dictionary) -> String:
+	var cid := str(entry.get("id", ""))
+	var zh := str(entry.get("zh", ""))
+	var loc := get_node_or_null("/root/Loc")
+	if loc != null and loc.has_method("is_en") and bool(loc.call("is_en")):
+		if entry.has("en") and str(entry["en"]) != "":
+			return Growth.subst(str(entry["en"]))
+		if cid != "" and loc.has_method("comm_text"):
+			return Growth.subst(str(loc.call("comm_text", cid, zh)))
+	return Growth.subst(zh)
 
 
 # ---------- 演出进度 ----------

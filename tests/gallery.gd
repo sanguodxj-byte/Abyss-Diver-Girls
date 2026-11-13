@@ -38,7 +38,7 @@ func run() -> void:
 		{"core":"core_scout","legs":"legs_biped","arm_l":"arm_mg","arm_r":"arm_mg","back":"back_cargo","gen":"gen_cell"},
 		{"core":"core_std","legs":"legs_tread","arm_l":"arm_shotgun","arm_r":"arm_laser","back":"back_missile","gen":"gen_reactor"},
 		{"core":"core_heavy","legs":"legs_quad","arm_l":"arm_flamer","arm_r":"arm_mg","back":"back_shield","gen":"gen_crystal"},
-		{"core":"core_std","legs":"legs_hover","arm_l":"arm_laser","arm_r":"arm_flamer","back":"back_cargo","gen":"gen_crystal"},
+		{"core":"core_std","legs":"legs_hex","arm_l":"arm_laser","arm_r":"arm_flamer","back":"back_cargo","gen":"gen_crystal"},
 	]
 	var mode := "mech"
 	for a in OS.get_cmdline_user_args():

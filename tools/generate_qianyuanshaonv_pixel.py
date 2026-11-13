@@ -95,15 +95,6 @@ CHARACTERS = {
         ),
         "default_pose": "playful smirk, head tilted back slightly, confident dynamic angle looking at viewer"
     },
-    "captain": {
-        "name": "舰长 (captain)",
-        "lookTags": (
-            "1girl, solo, mature woman, long black hair in low ponytail, silver streaks, "
-            "dark grey eyes, tall 172cm, charcoal double-breasted captain coat, silver epaulets, "
-            "black gloves, wooden cane"
-        ),
-        "default_pose": "dignified sharp stare, commanding 3/4 posture, one gloved hand resting on cane handle"
-    },
     "shiori": {
         "name": "诗织 (shiori)",
         "lookTags": (
@@ -267,7 +258,7 @@ def generate_character(char_id, custom_pose=None, seed=-1, count=1):
 def main():
     parser = argparse.ArgumentParser(description="潜渊少女现代独立游戏像素风角色立绘生成器")
     parser.add_argument("--character", "-c", required=True, choices=list(CHARACTERS.keys()) + ["all"],
-                        help="角色标识 (nao, rei, kurumi, lina, laojiao, ajin, xiaoman, captain, shiori, all)")
+                        help="角色标识 (nao, rei, kurumi, lina, mia, ajin, xiaoman, shiori, all)")
     parser.add_argument("--pose", "-p", default=None, help="覆盖角色的默认动作与表情提示词")
     parser.add_argument("--seed", "-s", type=int, default=-1, help="随机种子，默认 -1 随机")
     parser.add_argument("--count", "-n", type=int, default=1, help="每个角色生成张数")

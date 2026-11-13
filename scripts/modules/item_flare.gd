@@ -14,11 +14,11 @@ static func use(mech, _id) -> bool:
 		return false
 	var zone = raid.extract_target
 	if zone == null or not is_instance_valid(zone):
-		mech.message.emit("不在撤离区内")
+		mech.message.emit(Loc.t("不在撤离区内", "Not inside extraction zone"))
 		Audio.play_sfx("use_denied")
 		return false
 	if zone.has_meta("flare_used"):
-		mech.message.emit("这个撤离点已经引导过了")
+		mech.message.emit(Loc.t("这个撤离点已经引导过了", "This extraction zone is already flared"))
 		Audio.play_sfx("use_denied")
 		return false
 	zone.set_meta("flare_used", true)
@@ -39,6 +39,6 @@ static func use(mech, _id) -> bool:
 			var o2 = instance_from_id(eid)
 			if o2 != null:
 				o2.queue_free()))
-	mech.message.emit("%s：撤离读条 %.1f 到 %.1f 秒" % [zone.title, before, zone.need])
+	mech.message.emit(Loc.t("%s：撤离读条 %.1f 到 %.1f 秒" % [zone.title, before, zone.need], "%s: extraction timer %.1f -> %.1fs" % [zone.title, before, zone.need]))
 	Audio.play_sfx("flare_ignite", zone.global_position)
 	return true

@@ -5,6 +5,7 @@ const START := "none"
 const StoryData = preload("res://scripts/story/story_data.gd")
 const AudioReg = preload("res://scripts/audio/audio_registry.gd")
 const MapsData = preload("res://scripts/maps.gd")
+const MV = preload("res://scripts/mech_visual.gd")
 
 var problems: Array = []
 
@@ -43,6 +44,10 @@ func _items_modules() -> void:
 		if it.has("cat") and not GameData.CAT_NAMES.has(it.cat):
 			p("物品 %s 的 cat「%s」不在 CAT_NAMES 里" % [id, it.cat])
 	var slots := ["core", "legs", "arm", "back", "gen"]
+	var allowed_leg_types := ["tread", "biped", "quad", "hex"]
+	var leg_type_counts := {"tread": 0, "biped": 0, "quad": 0, "hex": 0}
+	if GameData.MODULES.has("legs_hover") or GameData.SKILLS.has("hover"):
+		p("悬浮底盘（legs_hover / hover）必须彻底移除")
 	for id: String in GameData.MODULES:
 		var m: Dictionary = GameData.MODULES[id]
 		if not (str(m.get("slot", "")) in slots):
@@ -62,8 +67,26 @@ func _items_modules() -> void:
 				for k in ["speed", "load", "type"]:
 					if not m.has(k):
 						p("底盘模块 %s 缺少字段 %s" % [id, k])
+				var lt_s := str(m.get("type", ""))
+				if not (lt_s in allowed_leg_types):
+					p("底盘模块 %s 的 type「%s」不在仅允许的四类底盘 %s 内" % [id, lt_s, allowed_leg_types])
+				else:
+					leg_type_counts[lt_s] = int(leg_type_counts[lt_s]) + 1
 				if m.has("type") and not GameData.SKILLS.has(m.type):
 					p("底盘模块 %s 的 type「%s」在 SKILLS 里没有位移技能" % [id, m.type])
+				var vis_m: Node3D = MV.build_module("legs", id, false)
+				if vis_m == null:
+					p("底盘模块 %s 无法构建 3D 节点" % id)
+				else:
+					var vlt := str(vis_m.get_meta("leg_type", ""))
+					if vlt != lt_s:
+						p("底盘模块 %s 的 3D leg_type「%s」与数据 type「%s」不一致" % [id, vlt, lt_s])
+					var lps: Array = vis_m.get_meta("leg_parts", [])
+					var want_map := {"biped": 2, "quad": 4, "hex": 6}
+					var want_n: int = int(want_map.get(lt_s, -1))
+					if want_n > 0 and lps.size() != want_n:
+						p("底盘模块 %s（%s）的 leg_parts 数量应为 %d，实为 %d" % [id, lt_s, want_n, lps.size()])
+					vis_m.free()
 			"back":
 				if not GameData.SKILLS.has(str(m.get("ability", ""))):
 					p("背部模块 %s 的 ability「%s」不在 SKILLS 里" % [id, m.get("ability", "")])
@@ -75,6 +98,9 @@ func _items_modules() -> void:
 						p("动力炉模块 %s 缺少字段 %s" % [id, k])
 		if not GameData.ITEMS.has(id) or GameData.ITEMS[id].get("cat") != "module":
 			p("模块 %s 没有登记为物品（id 可能与普通物品重名）" % id)
+	for lt_k: String in allowed_leg_types:
+		if int(leg_type_counts[lt_k]) != 4:
+			p("底盘类型 %s 必须做满 4 款，当前为 %d 款" % [lt_k, int(leg_type_counts[lt_k])])
 	for w: String in GameData.AMMO:
 		var a: Dictionary = GameData.AMMO[w]
 		for k in ["mag", "reload", "tex"]:

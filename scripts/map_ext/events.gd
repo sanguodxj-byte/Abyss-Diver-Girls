@@ -60,7 +60,7 @@ func _pick_spot() -> Vector3:
 		var a = raid.rng.randf() * TAU
 		var d = raid.rng.randf_range(24.0, 58.0)
 		var p := base + Vector3(cos(a) * d, 0, sin(a) * d)
-		if absf(p.x) > 168.0 or absf(p.z) > 168.0:
+		if not raid.in_bounds(p, 10.0):
 			continue
 		if raid.in_wet(Vector2(p.x, p.z), 2.0):
 			continue
@@ -71,24 +71,39 @@ func _pick_spot() -> Vector3:
 
 
 # ---------- 补给空投 ----------
-## 运输机从头顶掠过时抛下的补给舱：减速伞 + 舱体 + 落地扬尘，落地后成为补给箱
+## 运输机从头顶掠过时抛下的装甲补给空投舱：多幅开缝减速伞 + 八棱缓冲空投舱 + 四角液压着陆脚，落地后成为补给箱
 func _supply_drop(p: Vector3) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = Vector3(p.x, 60.0, p.z)
+	var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
+	var M_ST := A.metal(Color(0.34, 0.35, 0.34))
 	var chute := Node3D.new()
 	n.add_child(chute)
-	chute.position = Vector3(0, 6.0, 0)
-	chute.rotation_degrees = Vector3(14, raid.rng.randf() * 360, -9)
-	A.add(chute, A.sphere(3.4, -1, 20), A.paint(Color(0.62, 0.6, 0.5), 0.0, 0.9, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0}), Vector3.ZERO, Vector3.ZERO, Vector3(1.0, 0.55, 1.0))
-	for i in 6:
-		var a := TAU * i / 6.0
-		A.add(chute, A.cyl(0.02, 4.6, 0.02, 4), A.metal(Color(0.5, 0.48, 0.42)), Vector3(cos(a) * 2.4, -2.4, sin(a) * 2.4), Vector3(sin(a) * 26.0, 0, -cos(a) * 26.0))
-	var pod := A.add(n, A.bevel_box(Vector3(2.2, 2.4, 2.2), 0.12, 0.92), A.paint(Color(0.4, 0.42, 0.34), 0.3, 0.6, {"wear": 0.6, "rust": 0.5, "dust": 0.5}), Vector3(0, 1.6, 0))
-	A.add(pod, A.bevel_box(Vector3(2.24, 0.3, 1.6), 0.02), A.hazard(), Vector3(0, -0.4, 0))
-	A.add(pod, A.bevel_box(Vector3(0.6, 0.1, 0.1), 0.01), A.emit(Color(1.0, 0.35, 0.12), 2.0), Vector3(0, 1.3, -1.14), Vector3.ZERO, Vector3.ONE, false)
-	for i in 4:
-		A.add(pod, A.bevel_box(Vector3(0.06, 2.4, 0.06), 0.01), A.metal(Color(0.28, 0.28, 0.27)), Vector3(-1.2 + i * 0.8, 0, 1.15))
+	chute.position = Vector3(0, 6.4, 0)
+	chute.rotation_degrees = Vector3(12, raid.rng.randf() * 360, -8)
+	var M_CANOPY := A.paint(Color(0.60, 0.58, 0.48), 0.0, 0.92, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0})
+	A.add(chute, A.cyl(1.15, 1.45, 3.55, 12), M_CANOPY, Vector3(0, 0.4, 0))
+	A.add(chute, A.torus(0.95, 1.22, 16), A.paint(Color(0.72, 0.30, 0.12), 0.0, 0.88), Vector3(0, 1.12, 0), Vector3.ZERO, Vector3(1, 0.35, 1), false)
+	for i in 8:
+		var a := TAU * float(i) / 8.0
+		A.add(chute, A.tube([Vector3(cos(a) * 3.4, -0.25, sin(a) * 3.4), Vector3(cos(a) * 0.85, -4.1, sin(a) * 0.85)], 0.018, 5, 2), A.metal(Color(0.48, 0.46, 0.40)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var pod := Node3D.new()
+	n.add_child(pod)
+	pod.position = Vector3(0, 1.55, 0)
+	var M_POD := A.paint(Color(0.38, 0.41, 0.34), 0.38, 0.58, {"wear": 0.6, "rust": 0.48, "dust": 0.45})
+	A.add(pod, A.cyl(0.95, 2.2, 1.18, 8), M_POD, Vector3(0, 0.05, 0))
+	A.add(pod, A.cyl(0.52, 0.42, 0.98, 8), M_DARK, Vector3(0, 1.32, 0))
+	A.add(pod, A.torus(0.28, 0.38, 14), M_ST, Vector3(0, 1.62, 0), Vector3(90, 0, 0), Vector3.ONE, false)
+	A.add(pod, A.cyl(1.16, 0.26, 1.20, 8), A.hazard(), Vector3(0, -0.45, 0))
+	for k in 4:
+		var ka := PI * 0.25 + PI * 0.5 * float(k)
+		var dir_v := Vector3(cos(ka), 0, sin(ka))
+		A.add(pod, A.bevel_box(Vector3(0.22, 2.15, 0.26), 0.03), M_DARK, dir_v * 1.06)
+		A.add(pod, A.cyl(0.08, 0.72, 0.11, 8), M_ST, dir_v * 1.22 + Vector3(0, -1.05, 0), Vector3(sin(ka) * -22.0, 0, cos(ka) * 22.0))
+		A.add(pod, A.bevel_box(Vector3(0.42, 0.10, 0.42), 0.02), M_DARK, dir_v * 1.38 + Vector3(0, -1.38, 0))
+		A.add(pod, A.cyl(0.14, 0.32, 0.20, 10), M_DARK, dir_v * 0.95 + Vector3(0, 0.85, 0), Vector3(sin(ka) * 28.0, 0, -cos(ka) * 28.0))
+	A.add(pod, A.bevel_box(Vector3(0.56, 0.12, 0.12), 0.01), A.emit(Color(1.0, 0.35, 0.12), 2.2), Vector3(0, 0.95, -1.08), Vector3.ZERO, Vector3.ONE, false)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(1.0, 0.4, 0.15)
 	glow.light_energy = 2.4
@@ -100,16 +115,26 @@ func _supply_drop(p: Vector3) -> void:
 
 
 # ---------- 求救信号 ----------
-## 一段反复播放的求救电波：地面竖起的应急信标 + 被惊动的虫群，信标旁边留一只军用箱
+## 一段反复播放的求救电波：三脚架军用应急战术信标台 + 太阳能翼板 + 护笼频闪红灯，旁边留一只军用箱
 func _distress(p: Vector3) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
-	A.add(n, A.bevel_box(Vector3(0.9, 0.24, 0.9), 0.04), A.paint(Color(0.3, 0.3, 0.28), 0.5, 0.5), Vector3(0, 0.12, 0))
-	A.add(n, A.cyl(0.07, 3.2, 0.07, 6), A.metal(Color(0.42, 0.42, 0.4)), Vector3(0, 1.7, 0))
-	A.add(n, A.bevel_box(Vector3(0.6, 0.5, 0.4), 0.04), A.paint(Color(0.32, 0.34, 0.3), 0.4, 0.6, {"rust": 0.6}), Vector3(0, 3.3, 0))
-	A.add(n, A.sphere(0.18, -1, 10), A.emit(Color(1.0, 0.18, 0.12), 3.0), Vector3(0, 3.66, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.cyl(0.03, 1.6, 0.03, 4), A.metal(Color(0.4, 0.4, 0.38)), Vector3(0.3, 4.2, 0), Vector3(0, 0, -18))
+	var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
+	var M_ST := A.metal(Color(0.38, 0.39, 0.37))
+	var M_CASE := A.paint(Color(0.30, 0.34, 0.28), 0.42, 0.58, {"rust": 0.55, "wear": 0.55})
+	for lg in 3:
+		var la := TAU * float(lg) / 3.0 + 0.2
+		A.add(n, A.tube([Vector3(cos(la) * 0.82, 0.04, sin(la) * 0.82), Vector3(cos(la) * 0.18, 1.25, sin(la) * 0.18)], 0.042, 6, 2), M_ST)
+		A.add(n, A.bevel_box(Vector3(0.22, 0.08, 0.22), 0.02), M_DARK, Vector3(cos(la) * 0.82, 0.04, sin(la) * 0.82))
+	A.add(n, A.bevel_box(Vector3(0.76, 0.52, 0.56), 0.04), M_CASE, Vector3(0, 1.42, 0))
+	A.add(n, A.bevel_box(Vector3(0.78, 0.10, 0.58), 0.01), A.hazard(), Vector3(0, 1.24, 0))
+	A.add(n, A.bevel_box(Vector3(0.68, 0.05, 0.48), 0.01), A.paint(Color(0.10, 0.16, 0.24), 0.65, 0.28), Vector3(0, 1.52, 0.48), Vector3(34, 0, 0))
+	A.add(n, A.cyl(0.055, 1.85, 0.075, 10), M_ST, Vector3(0, 2.55, 0))
+	A.add(n, A.cyl(0.16, 0.28, 0.18, 12), M_DARK, Vector3(0, 3.48, 0))
+	A.add(n, A.cyl(0.11, 0.22, 0.11, 12), A.emit(Color(1.0, 0.18, 0.12), 3.0), Vector3(0, 3.68, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.torus(0.14, 0.17, 12), M_DARK, Vector3(0, 3.74, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.cyl(0.022, 1.75, 0.035, 6), M_ST, Vector3(0.28, 4.15, 0), Vector3(0, 0, -14))
 	A.emitter(raid.world, p + Vector3(0, 3.6, 0), {"amount": 10, "life": 4.0, "size": 1.6, "tex": A.smoke_tex(), "additive": false, "spread": 20.0,
 		"vmin": 0.6, "vmax": 1.2, "gravity": Vector3(0.2, 0.8, 0.1), "c0": Color(0.35, 0.3, 0.28, 0.4), "c1": Color(0.4, 0.38, 0.36, 0.0), "grow0": 0.5, "grow1": 2.4})
 	var l := OmniLight3D.new()
@@ -126,16 +151,27 @@ func _distress(p: Vector3) -> void:
 
 
 # ---------- 坠落货柜 ----------
-## 从高空掉下来的货运柜：拖着火星砸进地面，落地后柜体裂开，里面是军用物资
+## 从高空掉下来的轨道装甲货运柜：四角ISO吊装角件 + 加强外肋 + 逆喷制动环，拖着火星砸进地面
 func _cargo_crash(p: Vector3) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = Vector3(p.x, 70.0, p.z)
-	var M := A.paint(Color(0.32, 0.34, 0.3), 0.4, 0.6, {"wear": 0.7, "rust": 0.7, "dust": 0.5, "panel_scale": 1.2})
-	var body := A.add(n, A.bevel_box(Vector3(2.4, 2.4, 6.0), 0.1), M, Vector3.ZERO)
+	var M := A.paint(Color(0.32, 0.34, 0.3), 0.45, 0.58, {"wear": 0.72, "rust": 0.7, "dust": 0.5, "panel_scale": 1.2})
+	var M_RIB := A.paint(Color(0.24, 0.26, 0.24), 0.5, 0.58, {"rust": 0.8})
+	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
+	var body := Node3D.new()
+	n.add_child(body)
+	body.rotation_degrees = Vector3(18, 24, -12)
+	A.add(body, A.bevel_box(Vector3(2.4, 2.4, 6.0), 0.1), M, Vector3.ZERO)
 	for i in 7:
-		A.add(body, A.bevel_box(Vector3(2.44, 2.2, 0.12), 0.03), A.paint(Color(0.27, 0.29, 0.26), 0.4, 0.6, {"rust": 0.8}), Vector3(0, 0, -2.6 + i * 0.85))
-	A.add(body, A.bevel_box(Vector3(2.5, 0.28, 6.04), 0.04), A.hazard(), Vector3(0, -1.0, 0))
+		A.add(body, A.bevel_box(Vector3(2.50, 2.46, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.55 + i * 0.85))
+	for sx in [-1.18, 1.18]:
+		for sy in [-1.18, 1.18]:
+			for sz in [-2.96, 2.96]:
+				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
+	A.add(body, A.bevel_box(Vector3(2.52, 0.28, 6.04), 0.03), A.hazard(), Vector3(0, -0.95, 0))
+	for rx_c in [-0.75, 0.75]:
+		A.add(body, A.cyl(0.34, 0.45, 0.42, 12), M_DARK, Vector3(rx_c, 0.75, 3.12), Vector3(90, 0, 0))
 	A.emitter(n, Vector3(0, 1.2, 0), {"amount": 24, "life": 0.7, "size": 0.7, "vmin": 1.0, "vmax": 2.6, "gravity": Vector3(0, 2.0, 0), "radius": 0.4,
 		"c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
 	_falling.append({"node": n, "y": 70.0, "vy": 24.0, "kind": "cargo", "pos": p})
@@ -158,11 +194,46 @@ func _land(f: Dictionary) -> void:
 			raid.explode_fx(p, 9.0, Color(1.0, 0.55, 0.2))
 			raid.shake = max(raid.shake, 0.7)
 			raid.alert_noise(p, 46.0)
-			var b2 = K.crate(raid, p + Vector3(1.6, 0, 2.2), "military", GameData.roll_loot("military", raid.rng) + ["bug_crystal"])
-			K.crate(raid, p + Vector3(-2.0, 0, 1.4), "supply")
+			_spawn_cargo_wreck(p)
+			var b2 = K.crate(raid, p + Vector3(2.8, 0, 2.4), "military", GameData.roll_loot("military", raid.rng) + ["bug_crystal"])
+			K.crate(raid, p + Vector3(-2.8, 0, 1.8), "supply")
 			Events.emit_custom("cargo_crash", {"pos": [p.x, p.y, p.z], "items": b2.items.duplicate(), "map": raid.map_id})
 		_:
 			raid.explode_fx(p, 3.0, Color(0.8, 0.7, 0.5))
+
+
+func _spawn_cargo_wreck(p: Vector3) -> void:
+	var w := Node3D.new()
+	raid.world.add_child(w)
+	w.position = p
+	var yaw: float = raid.rng.randf_range(-28.0, 28.0)
+	w.rotation_degrees.y = yaw
+	A.ground_decal(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.03, 0))
+	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})
+	var M_RIB := A.paint(Color(0.20, 0.22, 0.20), 0.52, 0.60, {"rust": 0.85, "grime": 0.8})
+	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
+	var body := Node3D.new()
+	w.add_child(body)
+	body.position = Vector3(0, 0.92, 0)
+	body.rotation_degrees = Vector3(11, 0, -8)
+	A.add(body, A.bevel_box(Vector3(2.35, 2.25, 5.6), 0.10), M, Vector3.ZERO)
+	for i in 6:
+		A.add(body, A.bevel_box(Vector3(2.46, 2.32, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.25 + i * 0.90))
+	for sx in [-1.14, 1.14]:
+		for sy in [-1.08, 1.08]:
+			for sz in [-2.76, 2.76]:
+				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
+	A.add(body, A.bevel_box(Vector3(2.46, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
+	for rx_c in [-0.72, 0.72]:
+		A.add(body, A.cyl(0.32, 0.44, 0.40, 12), M_DARK, Vector3(rx_c, 0.65, 2.92), Vector3(90, 0, 0))
+	for dk in 4:
+		var da := TAU * float(dk) / 4.0 + 0.4
+		A.add(w, A.rock_mesh((dk * 3 + 1) % 12), A.rock_mat(Color(0.26, 0.22, 0.18)),
+			Vector3(cos(da) * 1.9, 0.18, sin(da) * 2.8), Vector3(0, dk * 62.0, 0), Vector3(0.95, 0.36, 0.82))
+	A.emitter(w, Vector3(0.2, 1.8, -0.4), {"amount": 12, "life": 4.2, "size": 2.0, "tex": A.smoke_tex(), "additive": false,
+		"vmin": 0.6, "vmax": 1.3, "gravity": Vector3(0.4, 0.7, 0.2), "radius": 0.5,
+		"c0": Color(0.12, 0.10, 0.10, 0.55), "c1": Color(0.26, 0.24, 0.24, 0.0), "grow0": 0.5, "grow1": 2.6})
+	K.blocker(raid, p, Vector3(2.5, 2.2, 5.6), yaw)
 
 
 # ---------- 解锁：档案图鉴 ----------

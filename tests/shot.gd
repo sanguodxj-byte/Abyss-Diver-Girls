@@ -22,8 +22,6 @@ func run() -> void:
 	mm.parts.arm_r = 0.38
 	mm.parts.gen = 0.18
 	mm.parts.back = 0.0
-	mm.skill_e_cd = 6.3
-	mm.skill_r_cd = 0.0
 	Input.action_press("fire_right")
 	Input.action_press("fire_left")
 	await wait(0.6)

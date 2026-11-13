@@ -18,11 +18,20 @@ const DEFAULT_PLAYER_NAME := "奈绪"
 const XP_BASE := 80.0
 const XP_LINEAR := 45.0
 const XP_QUAD := 12.0
+## 塔科夫式实战熟练度：单局前 FOCUS_RAW 点享 129% 精力充沛加成，超过 EXHAUST_RAW 点进入 50% 疲劳递减
+const ABILITY_MAX_DEFAULT := 10
+const FOCUS_RAW := 12.0
+const EXHAUST_RAW := 32.0
 
 static var _tables := {}
+static var _tables_lang := ""
 static var _installed := false
 static var _bound := false
 static var _self_script: Script
+static var network_profile = null ## Scoped stat calculation for a co-op player's own progression.
+static var _raid_skill_raw := {}
+static var _raid_skill_gained := {}
+static var _raid_skill_leveled := {}
 
 
 static func _self() -> Script:
@@ -40,10 +49,20 @@ static func _node(n: String) -> Node:
 	return t.root.get_node_or_null(n) if t != null else null
 
 
+static func invalidate_lang_cache() -> void:
+	_tables.clear()
+	_tables_lang = ""
+
+
 static func tables() -> Dictionary:
-	if _tables.is_empty():
+	var loc := _node("Loc")
+	var cur_lang := str(loc.get("lang")) if loc != null else "zh"
+	if _tables.is_empty() or _tables_lang != cur_lang:
 		var s: Script = load(DATA_PATH)
-		_tables = s.get_script_constant_map() if s != null else {}
+		_tables = s.get_script_constant_map().duplicate(true) if s != null else {}
+		_tables_lang = cur_lang
+		if loc != null and loc.has_method("apply_growth_tables"):
+			loc.call("apply_growth_tables", _tables)
 	return _tables
 
 
@@ -115,11 +134,25 @@ static func ensure_defaults() -> Dictionary:
 	var pname := str(s.get("player_name", "")).strip_edges()
 	s["player_name"] = pname if pname != "" else DEFAULT_PLAYER_NAME
 
-	# v0.6：主角能力强化与部署仓。旧存档没有这两个字段时补成全 0（未购买）。
+	# 塔科夫式角色熟练度技能（abilities 存整数等级供属性与联机同步，ability_xp 存当前级内浮点熟练度）與部署仓。
 	var ab: Dictionary = s.get("abilities") if typeof(s.get("abilities")) == TYPE_DICTIONARY else {}
+	var ab_xp: Dictionary = s.get("ability_xp") if typeof(s.get("ability_xp")) == TYPE_DICTIONARY else {}
 	for id in _table("ABILITIES"):
-		ab[id] = clampi(int(ab.get(id, 0)), 0, int(_table("ABILITIES")[id].get("max", MAX_FACILITY)))
+		var mx := int(_table("ABILITIES")[id].get("max", ABILITY_MAX_DEFAULT))
+		var raw_entry = ab.get(id, 0)
+		var lv := 0
+		var xp_val := float(ab_xp.get(id, 0.0))
+		if typeof(raw_entry) == TYPE_DICTIONARY:
+			lv = int(raw_entry.get("level", 0))
+			xp_val = float(raw_entry.get("xp", xp_val))
+		else:
+			lv = int(raw_entry)
+		lv = clampi(lv, 0, mx)
+		ab[id] = lv
+		var need := _ability_xp_need_at(lv, mx)
+		ab_xp[id] = 0.0 if need <= 0.0 else clampf(xp_val, 0.0, maxf(0.0, need - 0.001))
 	s["abilities"] = ab
+	s["ability_xp"] = ab_xp
 	var pods: Dictionary = s.get("pods") if typeof(s.get("pods")) == TYPE_DICTIONARY else {}
 	for id in _table("PODS"):
 		var pd: Dictionary = pods.get(id) if typeof(pods.get(id)) == TYPE_DICTIONARY else {}
@@ -175,9 +208,27 @@ static func _late_bind() -> void:
 	var ev := _node("Events")
 	if ev == null:
 		return
+	ev.deployed.connect(func(_m, _lo): _self().call("reset_raid_skill_fatigue"))
+	ev.box_opened.connect(func(_k, _p): _self().call("record_skill_xp", "ab_search", 1.4))
+	ev.item_revealed.connect(func(_id, rar): _self().call("record_skill_xp", "ab_search", 0.55 + float(rar) * 0.45))
+	ev.item_picked.connect(func(id, rar): _self().call("_on_item_picked_skill", id, rar))
+	ev.poi_discovered.connect(func(_id, _t, _p):
+		_self().call("record_skill_xp", "ab_covert", 2.2)
+		_self().call("record_skill_xp", "ab_search", 0.8))
+	ev.skill_used.connect(func(key, sk_id): _self().call("_on_tactical_skill_used", key, sk_id))
+	ev.item_used.connect(func(id): _self().call("_on_item_used_skill", id))
+	ev.player_damaged.connect(func(amt, _hp, _mx): _self().call("record_skill_xp", "ab_frame", clampf(float(amt) * 0.14, 0.3, 4.5)))
+	ev.enemy_killed.connect(func(kind, _p): _self().call("_on_enemy_killed_skill", kind))
+	ev.nest_destroyed.connect(func(_p):
+		_self().call("record_skill_xp", "ab_firearm", 2.0)
+		_self().call("record_skill_xp", "ab_covert", 1.8))
+	ev.boss_defeated.connect(func(id):
+		_self().call("_on_boss_defeated", id)
+		_self().call("record_skill_xp", "ab_covert", 6.0)
+		_self().call("record_skill_xp", "ab_firearm", 4.0)
+		_self().call("record_skill_xp", "ab_plating", 3.0))
 	ev.raid_finished.connect(func(success, result): _self().call("_on_raid_finished", success, result))
 	ev.request_fulfilled.connect(func(req): _self().call("_on_request_fulfilled", req))
-	ev.boss_defeated.connect(func(id): _self().call("_on_boss_defeated", id))
 
 
 # ---------------------------------------------------------------- 公共小工具
@@ -405,13 +456,17 @@ static func pilot_data(id: String) -> Dictionary:
 
 ## 主角身份：名字由玩家输入，预填默认名。
 static func player_name() -> String:
-	return str(ensure_defaults().get("player_name", DEFAULT_PLAYER_NAME))
+	var n := str(ensure_defaults().get("player_name", DEFAULT_PLAYER_NAME))
+	var loc := _node("Loc")
+	if n == DEFAULT_PLAYER_NAME and loc != null and loc.has_method("is_en") and bool(loc.call("is_en")):
+		return "Nao"
+	return n
 
 
 static func set_player_name(v: String) -> void:
 	var s := ensure_defaults()
 	var n := v.strip_edges()
-	s["player_name"] = n if n != "" else DEFAULT_PLAYER_NAME
+	s["player_name"] = DEFAULT_PLAYER_NAME if (n == "" or n == "Nao") else n
 	_save()
 
 
@@ -420,11 +475,13 @@ static func set_player_name(v: String) -> void:
 static func subst(text: String) -> String:
 	if text.find("{player_") < 0:
 		return text
+	var loc := _node("Loc")
+	var en := loc != null and loc.has_method("is_en") and bool(loc.call("is_en"))
 	var out := text
 	out = out.replace("{player_name}", player_name())
-	out = out.replace("{player_kin}", "姐")
-	out = out.replace("{player_ta}", "她")
-	out = out.replace("{player_plural}", "她们")
+	out = out.replace("{player_kin}", "" if en else "姐")
+	out = out.replace("{player_ta}", "she" if en else "她")
+	out = out.replace("{player_plural}", "they" if en else "她们")
 	return out
 
 
@@ -651,6 +708,8 @@ static func meal_text() -> String:
 
 ## 餐点对下一局行动的数值加成；没有待用餐点返回空字典
 static func meal_bonus() -> Dictionary:
+	if network_profile != null:
+		return _meal_bonus_for(network_profile)
 	var lv := meal_ready()
 	if lv <= 0:
 		return {}
@@ -810,16 +869,9 @@ static func shop_allowed(id: String) -> bool:
 	return not gated
 
 
-## 章节战区：没有登记在章节表里的战区（后续扩展地图）默认开放
-static func map_allowed(id: String) -> bool:
-	var found := false
-	for ch in _list("CHAPTERS"):
-		if str(ch.map) != id:
-			continue
-		found = true
-		if chapter_unlocked(str(ch.id)):
-			return true
-	return not found
+## 章节战区：移除未开放封堵，全部战区默认开放
+static func map_allowed(_id: String) -> bool:
+	return true
 
 
 # ---------------------------------------------------------------- 机体数值
@@ -833,7 +885,7 @@ static func _add_stats(dst: Dictionary, add: Dictionary, mult: float) -> void:
 ## GameData.compute_stats 的钩子：在模块基础数值之后叠加设施、研究、驾驶员、船员与餐点加成。
 ## 模块本身的数值不改，这里只改本次计算的合计结果。
 static func stat_hook(stats: Dictionary, _loadout: Dictionary) -> void:
-	var s := ensure_defaults()
+	var s: Dictionary = network_profile if network_profile != null else ensure_defaults()
 	var fac: Dictionary = s.get("facilities", {})
 	for id in _table("FACILITIES"):
 		var lv := int(fac.get(id, 0))
@@ -871,6 +923,17 @@ static func stat_hook(stats: Dictionary, _loadout: Dictionary) -> void:
 	stats["load"] = maxf(5.0, float(stats.get("load", 5.0)))
 	stats["cargo"] = maxf(0.0, float(stats.get("cargo", 0.0)))
 	stats["armor"] = clampf(float(stats.get("armor", 0.0)), 0.0, 0.6)
+
+
+static func _meal_bonus_for(s: Dictionary) -> Dictionary:
+	var lv := int(s.get("meal", 0))
+	if lv <= 0: return {}
+	var m := _table("MEAL")
+	var out := {"energy": 8.0 + float(m.get("energy", 0.0)) * lv, "hp": float(m.get("hp", 0.0)) * lv, "drain": float(m.get("drain", 0.0)) * lv}
+	if "res_ration" in s.get("research", []):
+		out.energy += float(m.get("ration_energy", 0.0))
+		out.hp += float(m.get("ration_hp", 0.0))
+	return out
 
 
 ## 工坊等级降低的后勤售价倍率（机库商店可选接入；基础倍率 1.25，每级 -0.03）
@@ -920,8 +983,14 @@ static func _on_raid_finished(success: bool, result: Dictionary) -> void:
 	var map_id := str(result.get("map_id", ""))
 	if success:
 		_complete_map_chapter(map_id)
+		record_skill_xp("ab_covert", 4.5)
+		var gd_w := _gd()
+		if gd_w != null:
+			var cw := float(gd_w.weight_of(result.get("cargo", [])))
+			if cw > 0.5:
+				record_skill_xp("ab_rack", clampf(cw * 0.16, 0.4, 5.5))
 	var xp := _raid_xp(success, result)
-	var report := {"xp": xp, "map_id": map_id, "success": success, "levels": {}}
+	var report := {"xp": xp, "map_id": map_id, "success": success, "levels": {}, "skills": raid_skill_summary()}
 	var active := active_pilot()
 	var leveled := {}
 	for pid in _table("PILOTS"):
@@ -939,6 +1008,7 @@ static func _on_raid_finished(success: bool, result: Dictionary) -> void:
 		var ss := ensure_defaults()
 		ss["meal"] = 0
 		report["meal_used"] = true
+	result["skill_summary"] = report["skills"]
 	Events.emit_custom("growth_report", report)
 	_save()
 
@@ -973,6 +1043,10 @@ static func _who_char(who: String) -> String:
 	for name in map:
 		if who.begins_with(str(name)):
 			return str(map[name])
+	const EXTRA := {"Chef Ajin": "ajin", "Mechanic Mia": "mia", "Armor Workshop": "mia"}
+	for name in EXTRA:
+		if who.begins_with(name):
+			return str(EXTRA[name])
 	return ""
 
 
@@ -1014,19 +1088,25 @@ static func can_afford(cost: Dictionary) -> bool:
 ## 某件物品作为升级材料出现在哪些「下一级」费用里（仓库页提示用途）；返回显示名列表
 static func material_uses(item_id: String) -> Array:
 	var out: Array = []
+	var loc := _node("Loc")
 	for id in facility_ids():
 		if (facility_cost(id).get("items", {}) as Dictionary).has(item_id):
-			out.append("%s Lv%d" % [facility_name(id), facility_level(id) + 1])
-	for id in ability_ids():
-		if (ability_cost(id).get("items", {}) as Dictionary).has(item_id):
-			out.append("%s Lv%d" % [ability_name(id), ability_level(id) + 1])
+			var lv_s := str(loc.call("lv", facility_level(id) + 1)) if loc != null and loc.has_method("lv") else ("%d级" % (facility_level(id) + 1))
+			out.append("%s %s" % [facility_name(id), lv_s])
 	for id in pod_ids():
 		if (pod_cost(id).get("items", {}) as Dictionary).has(item_id):
-			out.append("%s T%d" % [pod_name(id), pod_tier(id) + 1])
+			var tier_s := str(loc.call("pod_tier_str", pod_tier(id) + 1)) if loc != null and loc.has_method("pod_tier_str") else ("%d阶" % (pod_tier(id) + 1))
+			out.append("%s %s" % [pod_name(id), tier_s])
 	return out
 
 
-# ---------------------------------------------------------------- 主角能力强化（钱 + 杂物直接升级）
+# ---------------------------------------------------------------- 塔科夫式实战熟练度技能（通过行动使用自动升级，零资源消耗）
+static func _ability_xp_need_at(lv: int, mx: int) -> float:
+	if lv >= mx:
+		return 0.0
+	return float(10 * (lv + 1))
+
+
 static func ability_ids() -> Array:
 	return _table("ABILITIES").keys()
 
@@ -1040,80 +1120,189 @@ static func ability_name(id: String) -> String:
 
 
 static func ability_max(id: String) -> int:
-	return int(ability_data(id).get("max", MAX_FACILITY))
+	return int(ability_data(id).get("max", ABILITY_MAX_DEFAULT))
 
 
 static func ability_level(id: String) -> int:
+	if network_profile != null and typeof(network_profile) == TYPE_DICTIONARY:
+		return clampi(int((network_profile.get("abilities", {}) as Dictionary).get(id, 0)), 0, ability_max(id))
 	var ab: Dictionary = ensure_defaults().get("abilities", {})
-	return int(ab.get(id, 0))
+	return clampi(int(ab.get(id, 0)), 0, ability_max(id))
 
 
-## 下一级费用；满级返回空字典
-static func ability_cost(id: String) -> Dictionary:
-	var costs: Array = ability_data(id).get("cost", [])
-	var lv := ability_level(id)
-	if lv >= ability_max(id) or lv >= costs.size():
-		return {}
-	return costs[lv]
+static func ability_xp(id: String) -> float:
+	var ax: Dictionary = ensure_defaults().get("ability_xp", {})
+	return float(ax.get(id, 0.0))
 
 
-## 空串表示可以升级；否则是拒绝原因
+static func ability_xp_next(id: String) -> float:
+	return _ability_xp_need_at(ability_level(id), ability_max(id))
+
+
+static func ability_elite(id: String) -> bool:
+	return ability_level(id) >= ability_max(id)
+
+
+## 塔科夫式单局精力充沛 / 疲劳递减倍率：初段 1.29x，常规 1.0x，重复过多 0.5x
+static func ability_focus_mult(id: String) -> float:
+	var raw := float(_raid_skill_raw.get(id, 0.0))
+	if raw < FOCUS_RAW:
+		return 1.29
+	if raw < EXHAUST_RAW:
+		return 1.0
+	return 0.5
+
+
+static func reset_raid_skill_fatigue() -> void:
+	_raid_skill_raw.clear()
+	_raid_skill_gained.clear()
+	_raid_skill_leveled.clear()
+
+
+static func raid_skill_summary() -> Array:
+	var out: Array = []
+	for id in ability_ids():
+		var g := float(_raid_skill_gained.get(id, 0.0))
+		var up := int(_raid_skill_leveled.get(id, 0))
+		if g >= 0.05 or up > 0:
+			out.append({"id": str(id), "name": ability_name(str(id)), "xp": g, "levels": up, "level": ability_level(str(id))})
+	return out
+
+
+## 记录某项实战熟练度动作经验（自动应用塔科夫式单局专注/疲劳倍率，满额自动升级并实时刷新机体数值）
+static func record_skill_xp(id: String, raw_amount: float, use_fatigue := true, save_now := false) -> Dictionary:
+	var d := ability_data(id)
+	if d.is_empty() or raw_amount <= 0.0:
+		return {"gained_xp": 0.0, "levels": 0, "level": 0}
+	var s := ensure_defaults()
+	if s.is_empty():
+		return {"gained_xp": 0.0, "levels": 0, "level": 0}
+	var mx := ability_max(id)
+	var lv := int(s.abilities.get(id, 0))
+	if lv >= mx:
+		return {"gained_xp": 0.0, "levels": 0, "level": lv}
+	var mult := ability_focus_mult(id) if use_fatigue else 1.0
+	var eff := raw_amount * mult
+	if use_fatigue:
+		_raid_skill_raw[id] = float(_raid_skill_raw.get(id, 0.0)) + raw_amount
+	_raid_skill_gained[id] = float(_raid_skill_gained.get(id, 0.0)) + eff
+	var xp := float(s.ability_xp.get(id, 0.0)) + eff
+	var up := 0
+	while lv < mx:
+		var need := _ability_xp_need_at(lv, mx)
+		if need <= 0.0 or xp + 0.0001 < need:
+			break
+		xp = maxf(0.0, xp - need)
+		lv += 1
+		up += 1
+	if lv >= mx:
+		xp = 0.0
+	s.abilities[id] = lv
+	s.ability_xp[id] = xp
+	if up > 0:
+		_raid_skill_leveled[id] = int(_raid_skill_leveled.get(id, 0)) + up
+		var aud := _node("Audio")
+		if aud != null and aud.has_method("play_ui"):
+			aud.play_ui("grow_level")
+		var ev := _node("Events")
+		if ev != null:
+			ev.emit_custom("ability_upgraded", {"id": id, "level": lv, "gained": up})
+		_notify_live_mech_skill_up(id, lv, d)
+	if save_now:
+		_save()
+	return {"gained_xp": eff, "levels": up, "level": lv, "xp": xp}
+
+
+static func _notify_live_mech_skill_up(id: String, lv: int, d: Dictionary) -> void:
+	var t := _tree()
+	if t == null or t.current_scene == null:
+		return
+	var r = t.current_scene.get("raid")
+	if r == null or not is_instance_valid(r) or r.get("mech") == null or not is_instance_valid(r.mech):
+		return
+	var m = r.mech
+	if m.has_method("refresh_growth_stats"):
+		m.refresh_growth_stats()
+	var bonus_txt := str(d.get("elite", "")) if lv >= int(d.get("max", ABILITY_MAX_DEFAULT)) else str(d.get("effect", ""))
+	if m.has_signal("message"):
+		var loc := _node("Loc")
+		var is_e := loc != null and loc.has_method("is_en") and bool(loc.call("is_en"))
+		var fmt := "◆ Skill Up: %s Lv.%d (%s)" if is_e else "◆ 熟练度升级：%s %d级（%s）"
+		m.message.emit(fmt % [str(d.get("name", id)), lv, bonus_txt])
+
+
+static func _on_item_picked_skill(id: String, rar: int) -> void:
+	record_skill_xp("ab_search", 0.35 + float(rar) * 0.35)
+	var gd := _gd()
+	if gd != null:
+		var w := float(gd.item(id).get("w", 0.0))
+		if w >= 3.0:
+			record_skill_xp("ab_rack", clampf(w * 0.16, 0.3, 2.2))
+
+
+static func _on_tactical_skill_used(key: String, sk_id: String) -> void:
+	if key == "space":
+		record_skill_xp("ab_servo", 1.15)
+	elif key == "f":
+		record_skill_xp("ab_reactor", 1.35)
+		if sk_id == "shield":
+			record_skill_xp("ab_plating", 1.1)
+		elif sk_id == "missile":
+			record_skill_xp("ab_firearm", 0.9)
+
+
+static func _on_item_used_skill(id: String) -> void:
+	var gd := _gd()
+	var b := str(gd.base_id(id)) if gd != null and gd.has_method("base_id") else id
+	match b:
+		"repair_kit":
+			record_skill_xp("ab_frame", 3.2)
+		"fuel_cell", "energy_rod", "surge_cell", "coolant_pack":
+			record_skill_xp("ab_reactor", 2.4)
+		"can_food", "biscuit", "water_tab", "coffee":
+			record_skill_xp("ab_reactor", 1.8)
+			record_skill_xp("ab_frame", 0.8)
+		"sonic_decoy", "extract_flare", "extract_barrier", "beacon":
+			record_skill_xp("ab_covert", 2.8)
+
+
+static func _on_enemy_killed_skill(kind: String) -> void:
+	record_skill_xp("ab_firearm", 1.15)
+	if kind in ["beetle", "aegis", "crystal_bug", "ironjaw", "mech_beetle", "mortar"]:
+		record_skill_xp("ab_plating", 0.95)
+
+
+## 角色技能已改为塔科夫式使用升级，不再有任何货币或物资消耗
+static func ability_cost(_id: String) -> Dictionary:
+	return {}
+
+
 static func can_upgrade_ability(id: String) -> String:
 	if ability_data(id).is_empty():
-		return "未知能力"
-	var cost := ability_cost(id)
-	if cost.is_empty():
+		return "未知技能"
+	if ability_level(id) >= ability_max(id):
 		return "已满级"
-	if _money() < int(cost.get("money", 0)):
-		return "信用点不足"
-	if not _has_cost(cost):
-		return "材料不足"
-	return ""
+	return "实战使用自动升级"
 
 
-static func upgrade_ability(id: String) -> bool:
-	if can_upgrade_ability(id) != "":
-		return false
-	if not _pay_cost(ability_cost(id)):
-		return false
-	var s := ensure_defaults()
-	s.abilities[id] = ability_level(id) + 1
-	Audio.play_ui("grow_level")
-	Events.emit_custom("ability_upgraded", {"id": id, "level": int(s.abilities[id])})
-	_save()
-	return true
+static func upgrade_ability(_id: String) -> bool:
+	return false
 
 
-## 模拟舱训练：花费固定费用给主角加经验
 static func training_cost() -> Dictionary:
-	return (_table("TRAINING").get("cost", {}) as Dictionary)
+	return {}
 
 
 static func training_xp() -> int:
-	return int(_table("TRAINING").get("xp", 0))
+	return 0
 
 
 static func can_train() -> String:
-	if pilot_level(PROTAGONIST) >= PILOT_MAX:
-		return "已满级"
-	var cost := training_cost()
-	if cost.is_empty():
-		return "未开放"
-	if _money() < int(cost.get("money", 0)):
-		return "信用点不足"
-	if not _has_cost(cost):
-		return "材料不足"
-	return ""
+	return "实战行动自动升级"
 
 
 static func train_protagonist() -> Dictionary:
-	if can_train() != "":
-		return {}
-	if not _pay_cost(training_cost()):
-		return {}
-	var r := add_pilot_xp(PROTAGONIST, training_xp())
-	_save()
-	return r
+	return {}
 
 
 # ---------------------------------------------------------------- 部署仓（战斗队友）

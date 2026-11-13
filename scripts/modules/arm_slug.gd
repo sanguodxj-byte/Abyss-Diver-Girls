@@ -38,19 +38,22 @@ static func build(ctx: Dictionary) -> Node3D:
 	for i in 5:
 		A.add(g, A.torus(0.1, 0.122, 16), A.rubber(), Vector3(0, -0.1, -0.6 - i * 0.08), Vector3(90, 0, 0), Vector3(1, 0.5, 1), false)
 	K.bb(g, Vector3(0.2, 0.28, 0.07), M_ARM2, Vector3(0, -0.03, -1.38), Vector3.ZERO, 0.015)
-	# 制退器
+	# 制退器 + 深黑膛孔 + 准星架
 	K.cy(g, 0.11, 0.16, M_DARK, Vector3(0, 0.05, -1.72), Vector3(90, 0, 0), -1.0, 16)
+	K.barrel_bore(g, 0.106, 0.072, Vector3(0, 0.05, -1.80), 0.09)
+	K.bb(g, Vector3(0.05, 0.07, 0.04), M_DARK, Vector3(0, 0.18, -1.58), Vector3.ZERO, 0.005)
 	for i in 3:
 		for sx in [-1.0, 1.0]:
-			K.bb(g, Vector3(0.02, 0.05, 0.025), A.metal(Color(0.02, 0.02, 0.02)), Vector3(sx * 0.1, 0.05, -1.67 - i * 0.045), Vector3.ZERO, 0.003)
-	# 侧挂弹托（外侧）
-	K.bb(g, Vector3(0.04, 0.2, 0.52), M_DARK, Vector3(side * 0.21, -0.03, -0.16), Vector3.ZERO, 0.01)
-	var RED := A.paint(Color(0.55, 0.12, 0.08), 0.05, 0.6, {"wear": 0.3, "panel_scale": 0.0})
-	var BRASS := A.paint(Color(0.72, 0.55, 0.22), 0.8, 0.35, {"wear": 0.2, "panel_scale": 0.0})
+			K.bb(g, Vector3(0.02, 0.05, 0.025), K.bore_mat(), Vector3(sx * 0.102, 0.05, -1.67 - i * 0.045), Vector3.ZERO, 0.003)
+	# 侧挂军规重型穿甲独头弹托（哑光暗枣红/军绿弹壳 + 高黄铜底火座 + 弹簧卡箍）
+	K.bb(g, Vector3(0.04, 0.20, 0.52), M_DARK, Vector3(side * 0.21, -0.03, -0.16), Vector3.ZERO, 0.01)
+	K.bb(g, Vector3(0.028, 0.042, 0.50), K.gunmetal(), Vector3(side * 0.268, -0.02, -0.16), Vector3.ZERO, 0.006)
+	var HULL := A.paint(Color(0.28, 0.13, 0.11), 0.12, 0.68, {"wear": 0.35, "panel_scale": 0.0})
+	var BRASS := K.brass()
 	for i in 6:
 		var z := -0.36 + i * 0.08
-		K.cy(g, 0.032, 0.15, RED, Vector3(side * 0.25, -0.01, z), Vector3.ZERO, -1.0, 10)
-		K.cy(g, 0.034, 0.04, BRASS, Vector3(side * 0.25, -0.1, z), Vector3.ZERO, -1.0, 10)
+		K.cy(g, 0.031, 0.13, HULL, Vector3(side * 0.248, 0.0, z), Vector3.ZERO, -1.0, 10)
+		K.cy(g, 0.033, 0.055, BRASS, Vector3(side * 0.248, -0.092, z), Vector3.ZERO, -1.0, 10)
 	var muzzle := Marker3D.new()
 	muzzle.name = "Muzzle"
 	g.add_child(muzzle)

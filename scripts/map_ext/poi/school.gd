@@ -12,11 +12,15 @@ const FLOOR := Color(0.48, 0.46, 0.42)
 static func build(raid, c: Vector3, pid: String) -> void:
 	var r = raid.rng
 	K.slab(raid, c, Vector2(26, 22), FLOOR)
-	# 北教学楼：实心楼体 + 两层窗带 + 断掉的女儿墙
+	# 北教学楼：实心楼体 + 带钢窗框与窗台石的两层窗带 + 断掉的女儿墙
 	K.wall(raid, c + Vector3(0, 0, -7.6), Vector3(17.0, 6.4, 5.6), 0.0, BRICK)
+	var M_DARK := A.metal(Color(0.18, 0.19, 0.20))
 	for y in [1.9, 4.4]:
 		for x in [-6.8, -4.0, -1.2, 1.6, 4.4, 7.2]:
-			A.add(raid.world, A.bevel_box(Vector3(1.5, 1.0, 0.12), 0.02), A.paint(Color(0.07, 0.09, 0.1), 0.3, 0.3), c + Vector3(x, y, -4.74), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(1.62, 1.12, 0.10), 0.02), M_DARK, c + Vector3(x, y, -4.76), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(1.48, 0.98, 0.12), 0.01), A.paint(Color(0.07, 0.09, 0.1), 0.3, 0.28), c + Vector3(x, y, -4.74), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(0.05, 1.0, 0.14), 0.005), M_DARK, c + Vector3(x, y, -4.73), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(1.72, 0.09, 0.20), 0.015), A.concrete(BRICK.darkened(0.24), false), c + Vector3(x, y - 0.56, -4.72), Vector3.ZERO, Vector3.ONE, false)
 	for k in 3:
 		A.add(raid.world, A.bevel_box(Vector3(r.randf_range(1.2, 3.0), 0.5, 0.5), 0.05), A.concrete(BRICK.darkened(0.18), false), c + Vector3(-6.0 + k * 6.0, 6.5, -4.9))
 	# 正门台阶与门廊
@@ -53,9 +57,10 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.bevel_box(Vector3(1.5, 0.9, 0.04), 0.01), A.paint(Color(0.55, 0.2, 0.18), 0.1, 0.85), c + Vector3(-0.25, 9.6, -2.2), Vector3(0, 0, -6))
 	raid.blocks.append(raid._rect_for(c + Vector3(-1.0, 0, -2.2), Vector3(0.6, 1, 0.6)))
 	var hoop := c + Vector3(8.4, 0, -3.4)
-	A.add(raid.world, A.cyl(0.1, 3.2, 0.1, 8), A.metal(Color(0.4, 0.4, 0.38)), hoop + Vector3(0, 1.6, 0), Vector3(0, 0, -8))
-	A.add(raid.world, A.bevel_box(Vector3(1.1, 0.7, 0.6), 0.03), A.paint(Color(0.55, 0.53, 0.46), 0.2, 0.7), hoop + Vector3(0.3, 3.1, 0), Vector3(0, 0, -8))
-	A.add(raid.world, A.torus(0.28, 0.34, 12), A.metal(Color(0.6, 0.28, 0.15)), hoop + Vector3(0.55, 2.75, 0))
+	A.add(raid.world, A.cyl(0.10, 3.2, 0.12, 10), A.metal(Color(0.4, 0.4, 0.38)), hoop + Vector3(0, 1.6, 0), Vector3(0, 0, -6))
+	A.add(raid.world, A.tube([hoop + Vector3(0.16, 3.05, 0), hoop + Vector3(0.55, 3.12, 0)], 0.06, 6, 2), A.metal(Color(0.4, 0.4, 0.38)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(0.08, 0.85, 1.35), 0.02), A.paint(Color(0.58, 0.56, 0.50), 0.2, 0.65), hoop + Vector3(0.58, 3.12, 0), Vector3(0, 0, -6))
+	A.add(raid.world, A.torus(0.24, 0.29, 14), A.metal(Color(0.62, 0.26, 0.14)), hoop + Vector3(0.86, 2.84, 0))
 	# 秋千架
 	var sw := c + Vector3(-12.0, 0, -6.4)
 	for sx in [-2.0, 2.0]:
@@ -64,12 +69,15 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for sx in [-1.0, 0.6]:
 		A.add(raid.world, A.bevel_box(Vector3(0.5, 0.06, 0.3), 0.01), A.paint(Color(0.4, 0.32, 0.22), 0.1, 0.85), sw + Vector3(sx, 1.4, 0))
 	raid.blocks.append(raid._rect_for(sw, Vector3(4.6, 1, 0.8)))
-	# 体育馆：南面塌顶的大厅
+	# 体育馆：南面塌顶的大厅（三道按 X 均匀排开的拱形钢屋架 + 纵向檩条 + 塌落斜梁）
 	var gym := c + Vector3(2.0, 0, 9.4)
-	K.wall_line(raid, gym + Vector3(-6.0, 0, -2.0), 12.0, 3.2, 0.0, [[-5.0, 5.0]], Color(0.5, 0.48, 0.43))
+	K.wall_line(raid, gym + Vector3(0, 0, -2.0), 12.0, 3.2, 0.0, [[-5.0, 5.0]], Color(0.5, 0.48, 0.43))
 	K.wall_line(raid, gym + Vector3(0, 0, 3.2), 12.0, 2.6, 0.0, [[0.2, 4.8]], Color(0.5, 0.48, 0.43))
 	for k in 3:
-		A.add(raid.world, A.tube([gym + Vector3(-6.0, 0, -2.0), gym + Vector3(-6.0, 4.6, 0.6), gym + Vector3(-6.0, 0, 3.2)], 0.14, 5, 4), A.metal(Color(0.35, 0.34, 0.31)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		var ax_g := -5.0 + k * 5.0
+		A.add(raid.world, A.tube([gym + Vector3(ax_g, 0, -2.0), gym + Vector3(ax_g, 4.4, -0.7), gym + Vector3(ax_g, 4.8, 0.6), gym + Vector3(ax_g, 4.2, 1.9), gym + Vector3(ax_g, 0, 3.2)], 0.14, 8, 4), A.metal(Color(0.35, 0.34, 0.31)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	for pz_g in [-0.7, 0.6, 1.9]:
+		A.add(raid.world, A.bevel_box(Vector3(10.4, 0.08, 0.09), 0.01), A.metal(Color(0.30, 0.30, 0.28)), gym + Vector3(0, 4.55 if absf(pz_g - 0.6) < 0.2 else 4.25, pz_g), Vector3.ZERO, Vector3.ONE, false)
 	for k in 3:
 		A.add(raid.world, A.tube([gym + Vector3(-5.0 + k * 4.0, 4.4, -2.0), gym + Vector3(-3.6 + k * 4.2, 0.3, 2.0)], 0.12, 5, 4), A.paint(Color(0.4, 0.32, 0.22), 0.2, 0.8), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	for i in 3:

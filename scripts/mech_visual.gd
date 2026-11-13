@@ -169,6 +169,7 @@ static func _install(root: Node3D, slot: String, id: String, animate: bool) -> v
 		var ls: Node3D = m.get_node_or_null("Socket_core")
 		var mount: Node3D = root.get_node("TorsoMount")
 		var target := ls.position if ls else Vector3(0, 2.0, 0)
+		mount.set_meta("target_y", target.y)
 		if animate:
 			var tw := root.create_tween()
 			tw.tween_property(mount, "position", target, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -184,6 +185,7 @@ static func _install(root: Node3D, slot: String, id: String, animate: bool) -> v
 			tw.tween_interval(0.18 if old else 0.0)
 			tw.tween_property(m, "position", rest, 0.42).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		if old:
+			old.set_meta("_detaching", true)
 			var tw2 := root.create_tween()
 			tw2.tween_property(old, "position", old.position + out * dist, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			tw2.parallel().tween_property(old, "scale", Vector3.ONE * 0.6, 0.28)
@@ -227,7 +229,7 @@ static func _refresh_meta(root: Node3D) -> void:
 	root.set_meta("legs", legs)
 	root.set_meta("leg_parts", legs.get_meta("leg_parts", []) if legs else [])
 	root.set_meta("leg_type", legs.get_meta("leg_type", "biped") if legs else "biped")
-	root.set_meta("torso_base_y", mount.position.y)
+	root.set_meta("torso_base_y", float(mount.get_meta("target_y", mount.position.y)))
 	var muzzles := {}
 	for slot in ["arm_l", "arm_r"]:
 		var arm: Node3D = mods.get(slot)

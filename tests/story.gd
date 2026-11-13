@@ -27,7 +27,7 @@ func run() -> void:
 		return
 	if not check(Story.scene(SCENE).get("lines", []).size() >= 4, "场景台词数量不对"):
 		return
-	if not check(Story.character("laojiao").get("name_zh", "") == "米娅", "说话人表没有读进来"):
+	if not check(Story.character("mia").get("name_zh", "") == "米娅", "说话人表没有读进来"):
 		return
 	if not check(Story.codex_progress().x >= 10, "没有 unlock 条件的图鉴条目应在启动时解锁：%s" % [Story.codex_progress()]):
 		return
@@ -80,9 +80,9 @@ func run() -> void:
 	await frames(2)
 	if not check(p.current_line() == 1, "点击推进没有走到第二句"):
 		return
-	if not check(p.name_text() == Story.character("laojiao").get("name_zh", ""), "说话人名牌不对：%s" % p.name_text()):
+	if not check(p.name_text() == Story.character("mia").get("name_zh", ""), "说话人名牌不对：%s" % p.name_text()):
 		return
-	if not check(str(p._slots.left.get("char", "")) == "laojiao", "说话人立绘没有站到左席"):
+	if not check(str(p._slots.left.get("char", "")) == "mia", "说话人立绘没有站到左席"):
 		return
 	p._btn_ff.button_pressed = true
 	p._toggle_ff()

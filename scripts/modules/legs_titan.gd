@@ -56,38 +56,46 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.number(th, serial, Vector3(side * 0.485, -l1 * 0.5, 0.08), Vector3(0, side * 90.0, 0), 0.005)
 		A.hose(leg, Vector3(side * 0.2, -0.2, 0.5), Vector3(side * 0.2, -0.8, 0.1), Vector3(0, -0.06, 0.3), 0.045)
 
-		# 膝：粗作动器 + 大护膝
-		K.actuator(leg, KN, 0.4, 0.7)
+		# 膝：重型铰接轴鼓 + 双层撞角装甲护膝（消除三角贴纸感）
+		K.actuator(leg, KN, 0.40, 0.72)
 		var kp := K.node(leg, KN + Vector3(0, 0.04, -0.44), Vector3(-10, 0, 0))
-		K.plate(kp, [Vector2(-0.42, 0.28), Vector2(0.42, 0.28), Vector2(0.44, -0.1), Vector2(0.0, -0.42), Vector2(-0.44, -0.1)], 0.34, M_LEG2, Vector3.ZERO, Vector3.ZERO, 0.08)
-		K.plate(kp, [Vector2(-0.24, 0.18), Vector2(0.24, 0.18), Vector2(0.0, -0.24)], 0.35, M_LEG, Vector3(0, 0.0, -0.01), Vector3.ZERO, 0.03)
+		K.plate(kp, K.trap(0.76, 0.86, 0.56, 0.12), 0.32, M_LEG2, Vector3(0, -0.02, 0.02), Vector3.ZERO, 0.06)
+		K.plate(kp, K.trap(0.48, 0.60, 0.38, 0.08), 0.18, M_LEG, Vector3(0, 0.04, -0.14), Vector3(-8, 0, 0), 0.035)
+		K.era_block(kp, Vector3(0.40, 0.18, 0.08), M_LEG2, Vector3(0, 0.06, -0.24))
+		for kx in [-0.44, 0.44]:
+			K.cy(kp, 0.055, 0.06, A.chrome(), Vector3(kx, 0.04, 0.02), Vector3(0, 0, 90), -1.0, 10)
 
 		# 小腿：厚装甲箱 + 前甲 + 后侧大液压
 		var kj := K.node(leg, KN, Vector3.ZERO, "Knee")
 		var sh := K.bone(kj, Vector3.ZERO, AN - KN)
 		var l2 := KN.distance_to(AN)
-		K.bb(sh, Vector3(0.66, l2 + 0.08, 0.86), M_LEG2, Vector3(0, -l2 * 0.5, 0.06), Vector3.ZERO, 0.15)
+		K.bb(sh, Vector3(0.66, l2 + 0.08, 0.86), M_LEG2, Vector3(0, -l2 * 0.5, 0.06), Vector3.ZERO, 0.14)
 		K.plate(sh, K.trap(0.56, 0.74, l2 * 0.92, 0.12), 0.22, M_LEG, Vector3(0, -l2 * 0.5, -0.45), Vector3.ZERO, 0.05)
 		K.holes(sh, Vector3(0, -l2 * 0.4, -0.565), Vector3.ZERO, 4, 2, 0.1, 0.03)
 		for s2 in [-1.0, 1.0]:
 			K.plate(sh, K.crect(0.74, l2 * 0.78, [0.14, 0.06, 0.06, 0.14]), 0.12, M_LEG, Vector3(s2 * 0.37, -l2 * 0.48, 0.04), Vector3(0, s2 * 90.0, 0), 0.03)
+			K.grab_iron(sh, 0.24, 0.045, Vector3(s2 * 0.44, -l2 * 0.28, 0.04), Vector3(0, s2 * -90.0, 0))
 		K.piston(kj, Vector3(0, -0.08, 0.5), AN - KN + Vector3(0, 0.22, 0.46), 0.11)
 		K.piston(kj, Vector3(side * 0.22, -0.08, 0.46), AN - KN + Vector3(side * 0.22, 0.22, 0.42), 0.075)
 
-		# 踝 + 象足式宽厚大足
+		# 踝 + 攻城锤级四趾驻锄大足
 		var aj := K.node(kj, AN - KN, Vector3.ZERO, "Ankle")
-		K.actuator(aj, Vector3.ZERO, 0.32, 0.58)
+		K.actuator(aj, Vector3.ZERO, 0.32, 0.60)
 		var ft := K.node(aj, Vector3(0, -1.5, 0.06) - AN)
-		K.bb(ft, Vector3(0.84, 0.34, 1.0), M_BARE, Vector3(0, 0.04, 0.0), Vector3.ZERO, 0.08)
-		K.plate(ft, K.trap(0.84, 0.6, 0.54, 0.08), 0.26, M_LEG2, Vector3(0, 0.24, -0.22), Vector3(-58, 0, 0), 0.045)
-		K.bb(ft, Vector3(0.88, 0.07, 1.04), A.rubber(), Vector3(0, -0.15, 0.0), Vector3.ZERO, 0.02)
+		K.bb(ft, Vector3(0.86, 0.34, 1.02), M_BARE, Vector3(0, 0.04, 0.0), Vector3.ZERO, 0.07)
+		K.plate(ft, K.trap(0.84, 0.62, 0.54, 0.08), 0.26, M_LEG2, Vector3(0, 0.24, -0.22), Vector3(-58, 0, 0), 0.045)
+		K.bb(ft, Vector3(0.90, 0.07, 1.06), A.rubber(), Vector3(0, -0.15, 0.0), Vector3.ZERO, 0.02)
 		for i in 4:
-			var tx := -0.3 + i * 0.2
-			var toe := K.node(ft, Vector3(tx, -0.02, -0.5), Vector3(0, (i - 1.5) * 8.0, 0))
-			K.bb(toe, Vector3(0.19, 0.28, 0.32), M_LEG, Vector3(0, 0.0, -0.1), Vector3(-10, 0, 0), 0.05)
-			K.bb(toe, Vector3(0.2, 0.06, 0.32), A.rubber(), Vector3(0, -0.15, -0.11), Vector3.ZERO, 0.015)
-		K.bb(ft, Vector3(0.6, 0.24, 0.26), M_LEG2, Vector3(0, 0.0, 0.56), Vector3(12, 0, 0), 0.05)
-		K.bb(ft, Vector3(0.2, 0.05, 0.12), M_ACC, Vector3(0, 0.22, 0.48), Vector3.ZERO, 0.008)
+			var tx := -0.315 + i * 0.21
+			var toe := K.node(ft, Vector3(tx, -0.02, -0.50), Vector3(0, (i - 1.5) * 7.5, 0))
+			K.cy(toe, 0.055, 0.17, M_DARK, Vector3(0, 0.06, 0.02), Vector3(0, 0, 90), -1.0, 10)
+			K.plate(toe, K.trap(0.18, 0.14, 0.30, 0.025), 0.22, M_LEG, Vector3(0, 0.01, -0.11), Vector3(-76, 0, 0), 0.03)
+			K.bb(toe, Vector3(0.18, 0.07, 0.10), K.gunmetal(), Vector3(0, -0.09, -0.24), Vector3(18, 0, 0), 0.015)
+			K.bb(toe, Vector3(0.19, 0.06, 0.34), A.rubber(), Vector3(0, -0.15, -0.12), Vector3.ZERO, 0.015)
+		K.bb(ft, Vector3(0.64, 0.24, 0.28), M_LEG2, Vector3(0, 0.0, 0.56), Vector3(12, 0, 0), 0.045)
+		K.piston(ft, Vector3(-0.22, 0.22, 0.32), Vector3(-0.22, 0.04, 0.58), 0.036)
+		K.piston(ft, Vector3(0.22, 0.22, 0.32), Vector3(0.22, 0.04, 0.58), 0.036)
+		K.bb(ft, Vector3(0.22, 0.05, 0.12), M_ACC, Vector3(0, 0.22, 0.48), Vector3.ZERO, 0.008)
 		leg.set_meta("knee", kj)
 		leg.set_meta("ankle", aj)
 		leg.set_meta("KN", KN)

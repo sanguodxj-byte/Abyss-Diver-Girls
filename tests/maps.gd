@@ -64,8 +64,15 @@ func _check_map(mid: String) -> void:
 	if made.size() != want:
 		p("%s 地标数据 %d 处，实际摆下 %d 处" % [tag, want, made.size()])
 	for m in made:
-		if absf(float(m.x)) > 180.0 or absf(float(m.z)) > 180.0:
+		if not raid.in_bounds_xz(Vector2(float(m.x), float(m.z)), 4.0):
 			p("%s 地标 %s 落在地图外" % [tag, m.type])
+	# 区域首领：每个战区都应生成至少 3 只首领（主 Boss + 副 Boss + 地标专属 Boss）并绑定机甲目标
+	var bosses := get_tree().get_nodes_in_group("boss")
+	if bosses.size() < 3:
+		p("%s 区域首领数量不足 3 只（实际 %d 只）" % [tag, bosses.size()])
+	for bn in bosses:
+		if bn.target != raid.mech:
+			p("%s 区域首领 %s 没有绑定机甲目标" % [tag, str(bn.kind)])
 	# 容器
 	var boxes := get_tree().get_nodes_in_group("lootboxes")
 	var n_arch := 0
@@ -121,7 +128,11 @@ func _check_map(mid: String) -> void:
 		p("%s 天气预设 %s 没有生效" % [tag, wpreset])
 	if raid.get_node_or_null("ext_events") == null:
 		p("%s 没有动态事件节点" % tag)
-	log_line("%s pois=%d(new %d) landmarks=%d boxes=%d archive=%d local_reach=%d preset=%s" % [tag, raid.poi_centers.size(), mine.size(), made.size(), boxes.size(), n_arch, reach_min, wpreset])
+	var btags: Array = []
+	for bn in bosses:
+		btags.append("%s@(%.0f,%.0f)" % [str(bn.kind), bn.global_position.x, bn.global_position.z])
+	var boss_tag := ",".join(btags) if not btags.is_empty() else "none"
+	log_line("%s boss=%s pois=%d(new %d) landmarks=%d boxes=%d archive=%d local_reach=%d preset=%s" % [tag, boss_tag, raid.poi_centers.size(), mine.size(), made.size(), boxes.size(), n_arch, reach_min, wpreset])
 	# 非无头运行时留一组巡览截图：实机画面、每处新增遗迹的俯视总览、远景与大地图；无头时跳过
 	if not headless():
 		await wait(5.0)
@@ -238,14 +249,14 @@ func _solid_rects(raid) -> Array:
 
 ## 把碰撞体投影铺成 2 米栅格（含机甲半径）
 func _raster(solids: Array) -> Dictionary:
-	var n := int(360.0 / STEP)
+	var n := int(480.0 / STEP)
 	var solid := {}
 	for r: Rect2 in solids:
 		var rr := r.grow(PAD)
-		var x0 := maxi(0, int(floor((rr.position.x + 180.0) / STEP)))
-		var x1 := mini(n - 1, int(floor((rr.end.x + 180.0) / STEP)))
-		var y0 := maxi(0, int(floor((rr.position.y + 180.0) / STEP)))
-		var y1 := mini(n - 1, int(floor((rr.end.y + 180.0) / STEP)))
+		var x0 := maxi(0, int(floor((rr.position.x + 240.0) / STEP)))
+		var x1 := mini(n - 1, int(floor((rr.end.x + 240.0) / STEP)))
+		var y0 := maxi(0, int(floor((rr.position.y + 240.0) / STEP)))
+		var y1 := mini(n - 1, int(floor((rr.end.y + 240.0) / STEP)))
 		for y in range(y0, y1 + 1):
 			for x in range(x0, x1 + 1):
 				solid[Vector2i(x, y)] = true
@@ -272,7 +283,7 @@ func _local_flood(center: Vector3, solid: Dictionary) -> Dictionary:
 
 
 func _flood_from(start: Vector2i, solid: Dictionary, origin: Vector2i, lim: int) -> Dictionary:
-	var n := int(360.0 / STEP)
+	var n := int(480.0 / STEP)
 	var seen := {start: true}
 	var stack: Array = [start]
 	while not stack.is_empty():
@@ -371,7 +382,7 @@ func _clear(raid, b) -> bool:
 
 
 func _cell(p: Vector3) -> Vector2i:
-	return Vector2i(clampi(int((p.x + 180.0) / STEP), 0, int(360.0 / STEP) - 1), clampi(int((p.z + 180.0) / STEP), 0, int(360.0 / STEP) - 1))
+	return Vector2i(clampi(int((p.x + 240.0) / STEP), 0, int(480.0 / STEP) - 1), clampi(int((p.z + 240.0) / STEP), 0, int(480.0 / STEP) - 1))
 
 
 func _near(seen: Dictionary, p: Vector3, radius: float) -> bool:

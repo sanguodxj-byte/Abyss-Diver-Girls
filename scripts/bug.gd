@@ -6,6 +6,7 @@ const Prof = preload("res://scripts/prof.gd")
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/modules/kit.gd")
+const RB = preload("res://scripts/render_batch.gd")
 
 const KINDS := {
 	"ling": {"name": "跳虫", "hp": 26.0, "speed": 8.8, "dmg": 6.0, "range": 2.0, "rate": 0.7, "radius": 0.6, "color": Color(0.36, 0.09, 0.16), "scale": 0.8, "drop": 0.25},
@@ -71,6 +72,9 @@ func setup(k: String, r, tgt) -> void:
 	add_to_group("bugs")
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4 | 16 | 32   # 16 流浪者机甲 / 32 战斗队友机甲
+	# 8 = 河湖护堤 / 湖面：地面虫子也过不了水（飞行种照飞）
+	if str(data.get("ai", "")) != "flyer" and float(data.get("hover", 0.0)) <= 0.0:
+		collision_mask |= 8
 	var cs := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = data.radius
@@ -83,6 +87,11 @@ func setup(k: String, r, tgt) -> void:
 	_build_visual()
 	# 静态零件按材质合批：一只虫近百个网格压到十几个，动画部件（腿/颚/镰/翼等）保持独立
 	_batch_static()
+	if gun_glow and gun_glow.material_override:
+		gun_glow.material_override = gun_glow.material_override.duplicate()
+	var cmi = get("core_mi")
+	if cmi is MeshInstance3D and cmi.material_override:
+		cmi.material_override = cmi.material_override.duplicate()
 	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影
 	for mi in parts:
 		if is_instance_valid(mi):
@@ -103,6 +112,7 @@ func _seg(parent: Node3D, p0: Vector3, p1: Vector3, r0: float, r1: float, m: Mat
 	mi.transform = Transform3D(Basis(x, y, z), (p0 + p1) * 0.5)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
+	parts.append(mi)
 	return mi
 
 
@@ -271,27 +281,26 @@ func _pustule(p: Node3D, pos: Vector3, r: float, c: Color, e := 1.0) -> void:
 # 统一配色：暗褐黑亮面甲壳 → 骨白刃尖（顶点色渐变），甲片缝隙露出橙红发光肉质，橙色发光眼/囊。
 # 造型语言：弯曲的镰刃、背脊长刺、分段拱形甲、反关节腿、前倾猎食姿态 —— 不是现实昆虫。
 static var _sm := {}
-const C_CH := Color(0.22, 0.225, 0.24)     # 主甲壳
-const C_CH2 := Color(0.4, 0.41, 0.44)    # 亮一档甲壳
-const C_BONE := Color(0.58, 0.59, 0.63)   # 骨白刃尖
-const C_FL := Color(0.05, 0.05, 0.06)      # 肉
-const C_GLOW := Color(0.62, 0.22, 1.0)    # 发光
+const C_CH := Color(0.25, 0.26, 0.275)     # 重工暗枪灰轧制钢
+const C_CH2 := Color(0.41, 0.42, 0.44)     # 机加工中灰钢甲
+const C_BONE := Color(0.68, 0.67, 0.63)    # 锻造钨钢刃面
+const C_FL := Color(0.08, 0.08, 0.09)      # 内部暗色骨架
+const C_GLOW := Color(1.0, 0.38, 0.10)     # 工业高温炉芯琥珀橙红
 
 
 static func _vmat() -> StandardMaterial3D:
 	if _sm.has("v"):
 		return _sm["v"]
 	var m := StandardMaterial3D.new()
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	m.vertex_color_use_as_albedo = true
-	m.roughness = 0.26
-	m.metallic = 0.6
-	m.metallic_specular = 0.8
-	m.clearcoat_enabled = true
-	m.clearcoat = 1.0
-	m.clearcoat_roughness = 0.15
+	m.vertex_color_is_srgb = true
+	m.roughness = 0.42
+	m.metallic = 0.54
+	m.metallic_specular = 0.68
 	m.rim_enabled = true
-	m.rim = 0.3
-	m.rim_tint = 0.7
+	m.rim = 0.22
+	m.rim_tint = 0.65
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_panelize(m)
 	_sm["v"] = m
@@ -318,7 +327,7 @@ static func _flesh(c := C_FL, glow := 0.12) -> StandardMaterial3D:
 
 
 static func _glow(e := 2.5) -> StandardMaterial3D:
-	return A.emit(C_GLOW, e)
+	return A.emit(C_GLOW, 0.0 if e <= 0.05 else (1.4 if e < 1.75 else 2.3))
 
 
 static func _ball() -> SphereMesh:
@@ -327,8 +336,8 @@ static func _ball() -> SphereMesh:
 	var s := SphereMesh.new()
 	s.radius = 0.5
 	s.height = 1.0
-	s.rings = 14
-	s.radial_segments = 24
+	s.rings = 9
+	s.radial_segments = 16
 	_sm["ball"] = s
 	return s
 
@@ -340,7 +349,7 @@ static var _merge_cache := {}
 var _merge_n := 0
 
 
-func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array) -> Mesh:
+func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array, tints: Array = [], modes: Array = []) -> Mesh:
 	var key := "%s|%.3f|%s%d|%d|%d" % [kind, float(data.scale), tag, _merge_n, bi, list.size()]
 	if _merge_cache.has(key):
 		return _merge_cache[key]
@@ -348,9 +357,10 @@ func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array) -> Mesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in list.size():
 		var mi: MeshInstance3D = list[i]
+		var tint: Color = tints[i] if i < tints.size() else Color.WHITE
+		var tmode: int = modes[i] if i < modes.size() else 2
 		for si in mi.mesh.get_surface_count():
-			st.append_from(mi.mesh, si, xfs[i])
-	st.index()
+			st.append_from(RB._tinted_surface(mi.mesh, si, tint, tmode), 0, xfs[i])
 	var m := st.commit()
 	_merge_cache[key] = m
 	return m
@@ -377,62 +387,38 @@ func _batch_static() -> void:
 	for n in roots:
 		skip[n.get_instance_id()] = true
 	for c in visual.get_children():
-		if c is Node3D:
+		if c is Node3D and not (c is MeshInstance3D):
 			_batch_container(c, skip)
-	# 动画根节点自身挂的网格只随根节点整体运动，可以直接合批；再往下的子节点不动
+	# 动画根节点及其下属静态子容器递归合批；遇到嵌套的其他动画根节点（skip）自动停下
 	for n in roots:
 		if is_instance_valid(n) and n is Node3D:
-			_batch_direct(n)
-
-
-func _batch_direct(root: Node3D) -> void:
-	var buckets := {}
-	for ch in root.get_children():
-		if ch is MeshInstance3D:
-			var mi: MeshInstance3D = ch
-			if mi.mesh == null or mi.material_override == null:
-				continue
-			var key := str(mi.material_override.get_instance_id())
-			if not buckets.has(key):
-				buckets[key] = {"mat": mi.material_override, "list": []}
-			buckets[key]["list"].append(mi)
-	_merge_n += 1
-	var bi := 0
-	for key in buckets:
-		var b: Dictionary = buckets[key]
-		var list: Array = b["list"]
-		bi += 1
-		if list.size() < 2:
-			continue
-		var merged := MeshInstance3D.new()
-		merged.mesh = _merged_mesh("d", bi, list, list.map(func(mi): return mi.transform))
-		merged.material_override = b["mat"]
-		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(merged)
-		parts.append(merged)
-		for mi in list:
-			parts.erase(mi)
-			mi.queue_free()
+			_batch_container(n, skip)
 
 
 func _batch_container(top: Node3D, skip: Dictionary) -> void:
 	var buckets := {}
-	var singles: Array = []
+	var empty_dirs: Array = []
 	var stack: Array = [top]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
+		if n != top and skip.has(n.get_instance_id()):
+			continue
 		if n is MeshInstance3D and n != top:
 			var mi: MeshInstance3D = n
 			if mi.mesh != null and mi.material_override != null and is_instance_valid(mi):
-				var ext: Vector3 = mi.mesh.get_aabb().size * mi.get_global_transform().basis.get_scale()
-				var small: bool = maxf(ext.x, maxf(ext.y, ext.z)) < 0.2
-				var key := "%d%s" % [mi.material_override.get_instance_id(), "|d" if small else ""]
+				var mat: Material = mi.material_override
+				var has_vc := mat.has_meta("_vc_tint")
+				var base_mat: Material = mat.get_meta("_vc_base") if mat.has_meta("_vc_base") else mat
+				var tint: Color = mat.get_meta("_vc_tint") if has_vc else Color.WHITE
+				var key := str(base_mat.get_instance_id())
 				if not buckets.has(key):
-					buckets[key] = {"mat": mi.material_override, "small": small, "list": []}
+					buckets[key] = {"mat": base_mat, "list": [], "tints": [], "modes": []}
 				buckets[key]["list"].append(mi)
+				buckets[key]["tints"].append(tint)
+				buckets[key]["modes"].append(2 if has_vc else 0)
 			continue
-		if skip.has(n.get_instance_id()):
-			continue
+		if n != top and n is Node3D and n.get_class() == "Node3D":
+			empty_dirs.append(n)
 		for ch in n.get_children():
 			stack.append(ch)
 	_merge_n += 1
@@ -442,20 +428,31 @@ func _batch_container(top: Node3D, skip: Dictionary) -> void:
 		var list: Array = b["list"]
 		bi += 1
 		if list.size() < 2:
-			singles.append(list[0])
+			if list.size() == 1:
+				var s_mi: MeshInstance3D = list[0]
+				if s_mi.get_parent() != top:
+					var rxf := _rel_xf(s_mi, top)
+					s_mi.get_parent().remove_child(s_mi)
+					s_mi.transform = rxf
+					top.add_child(s_mi)
 			continue
 		var merged := MeshInstance3D.new()
-		merged.mesh = _merged_mesh("c", bi, list, list.map(func(mi): return _rel_xf(mi, top)))
+		merged.mesh = _merged_mesh("c", bi, list, list.map(func(mi): return _rel_xf(mi, top)), b["tints"], b["modes"])
 		merged.material_override = b["mat"]
 		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		top.add_child(merged)
 		parts.append(merged)
-		if b["small"]:
-			detail.append(merged)
-			merged.visible = _detail_on
 		for mi in list:
 			parts.erase(mi)
-			mi.queue_free()
+			if mi.get_parent():
+				mi.get_parent().remove_child(mi)
+			mi.free()
+	for i in range(empty_dirs.size() - 1, -1, -1):
+		var d: Node3D = empty_dirs[i]
+		if is_instance_valid(d) and d.get_child_count() == 0:
+			if d.get_parent():
+				d.get_parent().remove_child(d)
+			d.free()
 
 
 func _rel_xf(n: Node3D, top: Node3D) -> Transform3D:
@@ -488,61 +485,66 @@ static func _cr(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: float) ->
 ## rx = 侧向（tangent×up）缩放，ry = 法向缩放；c0→c1 顶点色沿长度渐变（甲壳→骨白）。
 ## 这是所有刃、刺、腿、甲带、蛇颈的共同基元。
 func _sweep(parent: Node3D, pts: Array, radii: Array, c0: Color, c1: Color, rx := 1.0, ry := 1.0, up := Vector3.UP, steps := 6, rad := 10, m: Material = null, grad_start := 0.45, hard := false) -> MeshInstance3D:
-	var path: Array = []
-	var rs: Array = []
-	var n := pts.size()
-	for i in n - 1:
-		var p0: Vector3 = pts[max(i - 1, 0)]
-		var p1: Vector3 = pts[i]
-		var p2: Vector3 = pts[i + 1]
-		var p3: Vector3 = pts[min(i + 2, n - 1)]
-		for k in steps:
-			var t := float(k) / steps
-			path.append(_cr(p0, p1, p2, p3, t))
-			rs.append(lerpf(radii[i], radii[i + 1], t))
-	path.append(pts[n - 1])
-	rs.append(radii[n - 1])
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	if hard:
-		st.set_smooth_group(-1)
-	var cnt := path.size()
-	var total := 0.0
-	var acc: Array = [0.0]
-	for i in range(1, cnt):
-		total += (path[i] - path[i - 1]).length()
-		acc.append(total)
-	var rings: Array = []
-	for i in cnt:
-		var tg: Vector3 = (path[min(i + 1, cnt - 1)] - path[max(i - 1, 0)]).normalized()
-		var sd := tg.cross(up)
-		if sd.length() < 0.01:
-			sd = tg.cross(Vector3.FORWARD)
-		sd = sd.normalized()
-		var nm := sd.cross(tg).normalized()
-		var ring: Array = []
-		var r: float = rs[i]
-		for a in rad:
-			var ang := TAU * a / rad
-			ring.append([path[i] + sd * cos(ang) * r * rx + nm * sin(ang) * r * ry, (sd * cos(ang) * ry + nm * sin(ang) * rx).normalized()])
-		rings.append(ring)
-	for i in cnt - 1:
-		var u0: float = acc[i] / total
-		var u1: float = acc[i + 1] / total
-		var col0 := c0.lerp(c1, clampf((u0 - grad_start) / (1.0 - grad_start), 0.0, 1.0))
-		var col1 := c0.lerp(c1, clampf((u1 - grad_start) / (1.0 - grad_start), 0.0, 1.0))
-		for a in rad:
-			var b := (a + 1) % rad
-			var q := [[rings[i][a], col0], [rings[i + 1][a], col1], [rings[i + 1][b], col1], [rings[i][b], col0]]
-			for idx in [0, 2, 1, 0, 3, 2]:
-				st.set_color(q[idx][1])
-				if not hard:
-					st.set_normal(q[idx][0][1])
-				st.add_vertex(q[idx][0][0])
-	if hard:
-		st.generate_normals()
+	var key := "sw%s|%s|%s|%s|%.3f|%.3f|%s|%d|%d|%.3f|%d" % [str(pts), str(radii), c0.to_html(), c1.to_html(), rx, ry, str(up), steps, rad, grad_start, 1 if hard else 0]
+	var smesh: ArrayMesh = _sm.get(key)
+	if smesh == null:
+		var path: Array = []
+		var rs: Array = []
+		var n := pts.size()
+		for i in n - 1:
+			var p0: Vector3 = pts[max(i - 1, 0)]
+			var p1: Vector3 = pts[i]
+			var p2: Vector3 = pts[i + 1]
+			var p3: Vector3 = pts[min(i + 2, n - 1)]
+			for k in steps:
+				var t := float(k) / steps
+				path.append(_cr(p0, p1, p2, p3, t))
+				rs.append(lerpf(radii[i], radii[i + 1], t))
+		path.append(pts[n - 1])
+		rs.append(radii[n - 1])
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		if hard:
+			st.set_smooth_group(-1)
+		var cnt := path.size()
+		var total := 0.0
+		var acc: Array = [0.0]
+		for i in range(1, cnt):
+			total += (path[i] - path[i - 1]).length()
+			acc.append(total)
+		var rings: Array = []
+		for i in cnt:
+			var tg: Vector3 = (path[min(i + 1, cnt - 1)] - path[max(i - 1, 0)]).normalized()
+			var sd := tg.cross(up)
+			if sd.length() < 0.01:
+				sd = tg.cross(Vector3.FORWARD)
+			sd = sd.normalized()
+			var nm := sd.cross(tg).normalized()
+			var ring: Array = []
+			var r: float = rs[i]
+			for a in rad:
+				var ang := TAU * a / rad
+				ring.append([path[i] + sd * cos(ang) * r * rx + nm * sin(ang) * r * ry, (sd * cos(ang) * ry + nm * sin(ang) * rx).normalized()])
+			rings.append(ring)
+		for i in cnt - 1:
+			var u0: float = acc[i] / total
+			var u1: float = acc[i + 1] / total
+			var col0 := c0.lerp(c1, clampf((u0 - grad_start) / (1.0 - grad_start), 0.0, 1.0))
+			var col1 := c0.lerp(c1, clampf((u1 - grad_start) / (1.0 - grad_start), 0.0, 1.0))
+			for a in rad:
+				var b := (a + 1) % rad
+				var q := [[rings[i][a], col0], [rings[i + 1][a], col1], [rings[i + 1][b], col1], [rings[i][b], col0]]
+				for idx in [0, 2, 1, 0, 3, 2]:
+					st.set_color(q[idx][1])
+					if not hard:
+						st.set_normal(q[idx][0][1])
+					st.add_vertex(q[idx][0][0])
+		if hard:
+			st.generate_normals()
+		smesh = st.commit()
+		_sm[key] = smesh
 	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
+	mi.mesh = smesh
 	mi.material_override = m if m else _vmat()
 	parent.add_child(mi)
 	parts.append(mi)
@@ -583,15 +585,30 @@ func _band(parent: Node3D, z: float, y: float, half_w: float, arch: float, thick
 			_spike(parent, Vector3(sx * half_w * 0.95, y - 0.02, z), Vector3(sx, 0.2, 0.6), spines * 0.7, thick * 1.2)
 
 
-## 机械足垫：踝伺服 + 八棱缓冲柱 + 切角底板（取代尖足 / 爪）
+## 机械足垫：踝伺服 + 液压缓冲柱 + 防滑齿切角抓地底板
 func _foot_pad(hip: Node3D, foot: Vector3, w: float) -> void:
-	_servo(hip, foot + Vector3(0, w * 0.8, 0), w * 0.8)
-	_p(hip, A.cyl(w * 0.7, w * 0.9, w * 0.8, 8), _steel(), foot + Vector3(0, w * 0.3, 0))
-	_p(hip, HS.cbox(Vector3(w * 2.6, w * 0.45, w * 3.0), w * 0.15), _vmat_solid(C_CH), foot + Vector3(0, -w * 0.25, 0))
+	_servo(hip, foot + Vector3(0, w * 0.82, 0), w * 0.76)
+	_p(hip, A.cyl(w * 0.68, w * 0.92, w * 0.82, 8), _steel(), foot + Vector3(0, w * 0.34, 0))
+	_p(hip, HS.cbox(Vector3(w * 2.7, w * 0.46, w * 3.1), w * 0.14), _vmat_solid(C_CH), foot + Vector3(0, -w * 0.2, 0))
+	for kz: float in [-1.0, 1.0]:
+		_box(hip, _steel(), foot + Vector3(0, -w * 0.36, kz * w * 1.18), Vector3(w * 2.3, w * 0.22, w * 0.42))
 
 
-## 机械连杆腿：髋 → 膝（外上）→ 跗（外下靠后）→ 液压足垫
-func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, by: float, w: float, phase: float, spur := true) -> Node3D:
+## 双级液压作动筒：深色外缸筒 + 黄铜油封压盖 + 高亮镀铬活塞杆 + 两端耳轴座
+func _hydraulic(parent: Node3D, p0: Vector3, p1: Vector3, r: float, cyl_mat: Material = null) -> void:
+	if p0.distance_to(p1) < 0.005:
+		return
+	var cm: Material = cyl_mat if cyl_mat else _vmat_matte(Color(0.32, 0.34, 0.29))
+	var mid := p0.lerp(p1, 0.56)
+	var gland0 := p0.lerp(p1, 0.50)
+	var gland1 := p0.lerp(p1, 0.60)
+	_seg(parent, p0, mid, r * 1.38, r * 1.38, cm, 8, false)
+	_seg(parent, gland0, gland1, r * 1.56, r * 1.56, _brass(), 8, false)
+	_seg(parent, p0.lerp(p1, 0.52), p1, r * 0.78, r * 0.78, _chrome(), 8, false)
+
+
+## 机械连杆腿：髋 → 膝（外上）→ 跗（外下靠后）→ 液压足垫 + 双级液压作动筒
+func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, by: float, w: float, phase: float, _spur := true) -> Node3D:
 	var hip := Node3D.new()
 	hip.position = hip_pos
 	hip.rotation_degrees = Vector3(0, yaw, 0)
@@ -599,19 +616,18 @@ func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	var knee := Vector3(sx * reach * 0.42, by * 0.42, 0)
 	var hock := Vector3(sx * reach * 0.78, -by * 0.35, w * 0.6)
 	var tip := Vector3(sx * reach, -by + 0.01, -w * 0.8)
-	# 纯机械：三段放样连杆 + 液压足垫（无尖端）
 	var DKm := _vmat_solid(C_CH)
 	var ARm := _vmat_solid(C_CH2)
 	var foot := Vector3(tip.x, -by + w * 0.5, tip.z)
-	_limb(hip, Vector3.ZERO, knee, w * 1.7, w * 1.9, DKm, 0.75, 1.15)
-	_limb(hip, knee, hock, w * 1.4, w * 1.6, ARm, 0.7, 1.1, Vector3.FORWARD)
-	_limb(hip, hock, foot + Vector3(0, w * 0.8, 0), w * 1.0, w * 1.1, DKm, 0.85, 1.0, Vector3.FORWARD)
+	_limb(hip, Vector3.ZERO, knee, w * 1.75, w * 1.95, DKm, 0.78, 1.16)
+	_bar(hip, Vector3(0, w * 0.85, 0), knee + Vector3(0, w * 0.75, 0), w * 1.25, w * 0.42, ARm)
+	_limb(hip, knee, hock, w * 1.45, w * 1.65, ARm, 0.72, 1.12, Vector3.FORWARD)
+	_limb(hip, hock, foot + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, DKm, 0.86, 1.02, Vector3.FORWARD)
 	_foot_pad(hip, foot, w)
-	_servo(hip, Vector3.ZERO, w * 1.3)
-	_servo(hip, knee, w * 1.05)
-	_servo(hip, hock, w * 0.7)
-	# 液压杆：股节下方平行一根银色活塞
-	_seg(hip, Vector3(sx * w * 0.5, -w * 1.2, 0), knee.lerp(hock, 0.35) + Vector3(0, -w * 0.3, 0), w * 0.28, w * 0.2, _steel(), 6)
+	_servo(hip, Vector3.ZERO, w * 1.28)
+	_servo(hip, knee, w * 1.04)
+	_servo(hip, hock, w * 0.74)
+	_hydraulic(hip, Vector3(sx * w * 0.45, -w * 1.15, 0), knee.lerp(hock, 0.38) + Vector3(0, -w * 0.28, 0), w * 0.26)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -624,21 +640,61 @@ func _eyes(_head: Node3D, _z: float, _y: float, _xs: Array, _r: float) -> void:
 	pass
 
 
-## 关节伺服：侧向金属圆盘 + 发光环
+## 重工轴承耳轴关节：铸钢外法兰座 + 机加工轴承鼓 + 黄铜油封环 + 六角锁紧端盖（无廉价霓虹光圈）
 func _servo(parent: Node3D, pos: Vector3, r: float) -> void:
-	var mi := _p(parent, A.cyl(r, r * 1.3, r, 8), _steel(), pos, Vector3(0, 0, 90))
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_p(parent, A.torus(r * 0.8, r * 1.02, 12), _glow(2.0), pos, Vector3(0, 0, 90), Vector3(1, 1.5, 1), false)
+	_p(parent, A.cyl(r * 1.05, r * 0.92, r * 1.05, 12), _vmat_solid(Color(0.16, 0.17, 0.18)), pos, Vector3(0, 0, 90), Vector3.ONE, false)
+	_p(parent, A.cyl(r * 0.84, r * 1.34, r * 0.84, 12), _steel(), pos, Vector3(0, 0, 90), Vector3.ONE, false)
+	_p(parent, A.cyl(r * 0.92, r * 1.10, r * 0.92, 10), _brass(), pos, Vector3(0, 0, 90), Vector3.ONE, false)
+	_p(parent, A.cyl(r * 0.42, r * 1.50, r * 0.42, 6), _vmat_matte(Color(0.22, 0.23, 0.25)), pos, Vector3(0, 0, 90), Vector3.ONE, false)
 
 
 static func _steel() -> StandardMaterial3D:
 	if _sm.has("steel"):
 		return _sm["steel"]
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.62, 0.6, 0.68)
-	m.metallic = 0.65
-	m.roughness = 0.22
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.albedo_color = Color(0.58, 0.60, 0.63)
+	m.metallic = 0.76
+	m.metallic_specular = 0.82
+	m.roughness = 0.28
+	m.rim_enabled = true
+	m.rim = 0.22
+	m.rim_tint = 0.75
+	m.set_meta("_vc_base", _vmat())
+	m.set_meta("_vc_tint", m.albedo_color)
 	_sm["steel"] = m
+	return m
+
+
+static func _chrome() -> StandardMaterial3D:
+	if _sm.has("chrome"):
+		return _sm["chrome"]
+	var m := _vmat_solid(Color(0.78, 0.80, 0.82))
+	_sm["chrome"] = m
+	return m
+
+
+static func _brass() -> StandardMaterial3D:
+	if _sm.has("brass"):
+		return _sm["brass"]
+	var m := _vmat_solid(Color(0.68, 0.53, 0.26))
+	_sm["brass"] = m
+	return m
+
+
+static func _rust_plate() -> StandardMaterial3D:
+	if _sm.has("rust_pl"):
+		return _sm["rust_pl"]
+	var m := _vmat_matte(Color(0.44, 0.28, 0.20))
+	_sm["rust_pl"] = m
+	return m
+
+
+static func _hazard_yel() -> StandardMaterial3D:
+	if _sm.has("haz_y"):
+		return _sm["haz_y"]
+	var m := _vmat_matte(Color(0.82, 0.64, 0.14))
+	_sm["haz_y"] = m
 	return m
 
 
@@ -734,8 +790,8 @@ func _box(parent: Node3D, m: Material, pos: Vector3, size: Vector3, rot := Vecto
 	return _p(parent, _bx(size), m, pos, rot)
 
 
-## 机械腿：髋伺服 → 方形股节（顶部装甲板）→ 膝伺服 → 菱形截面胫刃插地 + 液压杆
-func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, by: float, w: float, phase: float, spur := true) -> Node3D:
+## 机械腿：髋伺服 → 方形股节（顶部装甲板）→ 膝伺服 → 切面胫节 + 双级液压油缸 + 抓地足垫
+func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, by: float, w: float, phase: float, _spur := true) -> Node3D:
 	var hip := Node3D.new()
 	hip.position = hip_pos
 	hip.rotation_degrees = Vector3(0, yaw, 0)
@@ -746,14 +802,15 @@ func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	var foot := Vector3(sx * reach, -by + 0.01, 0)
 	_servo(hip, Vector3.ZERO, w * 1.4)
 	_bar(hip, Vector3.ZERO, knee, w * 1.3, w * 1.6, DK)
-	_bar(hip, Vector3(0, w * 0.9, 0), knee + Vector3(0, w * 0.9, 0), w * 1.9, w * 0.5, AR)
+	_bar(hip, Vector3(0, w * 0.9, 0), knee + Vector3(0, w * 0.9, 0), w * 1.9, w * 0.52, AR)
 	_servo(hip, knee, w * 1.15)
 	var ank := knee.lerp(foot, 0.55) + Vector3(sx * w * 0.8, 0, 0)
 	var fp := Vector3(foot.x, -by + w * 0.5, foot.z)
 	_limb(hip, knee, ank, w * 1.5, w * 1.7, DK, 0.75, 1.12, Vector3.FORWARD)
+	_bar(hip, knee + Vector3(sx * w * 0.55, 0, 0), ank + Vector3(sx * w * 0.35, 0, 0), w * 0.42, w * 1.35, AR, Vector3.FORWARD)
 	_limb(hip, ank, fp + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, AR, 0.85, 1.0, Vector3.FORWARD)
 	_foot_pad(hip, fp, w)
-	_seg(hip, Vector3(0, -w * 1.0, 0), knee.lerp(ank, 0.5) + Vector3(-sx * w * 0.6, 0, 0), w * 0.25, w * 0.2, _steel(), 6)
+	_hydraulic(hip, Vector3(0, -w * 0.95, 0), knee.lerp(ank, 0.48) + Vector3(-sx * w * 0.55, 0, 0), w * 0.24, DK)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -761,9 +818,9 @@ func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	return hip
 
 
-## 跳虫：铁血「Dinergate 衍生突击犬」。方核心舱外包一块 Γ 形浅灰护壳（盖顶并包住一侧），
-## 正面一只大圆透镜独眼，左前上方小传感头；腹下两把折叠刃臂；尾部双喷口跳跃推进器；
-## 四条短粗切面腿，胫部浅灰斑带。与炮击虫（高抬腿 + 盾状足）和攻城虫（六足活塞腿）轮廓完全不同。
+## 跳虫：铁血「Dinergate 衍生军工突击猎犬」。方核心舱外包一块 Γ 形浅灰轧制钢护壳（盖顶并包住一侧），
+## 正面圆形螺栓装甲舱盖，左前上方遮光罩激光传感头；腹下两把液压折叠剪刃；尾部双矢量喷口跳跃推进器；
+## 四条短粗切面冲压腿 + 侧置液压撑杆。
 func _dleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: float, phase: float) -> Node3D:
 	var hip := Node3D.new()
 	hip.position = hip_pos
@@ -771,20 +828,22 @@ func _dleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	body.add_child(hip)
 	var DK := _vmat_solid(C_CH)
 	var AR := _vmat_solid(C_CH2)
-	var LT := _vmat_matte(Color(0.7, 0.7, 0.72))
-	var knee := Vector3(sx * 0.2 * s, -0.08 * s, 0)
-	var foot := Vector3(sx * 0.3 * s, -by + 0.01, 0)
-	_servo(hip, Vector3.ZERO, 0.07 * s)
+	var LT := _vmat_matte(Color(0.56, 0.58, 0.55))
+	var knee := Vector3(sx * 0.21 * s, -0.07 * s, 0)
+	var foot := Vector3(sx * 0.31 * s, -by + 0.01, 0)
+	_servo(hip, Vector3.ZERO, 0.075 * s)
 	_bar(hip, Vector3.ZERO, knee, 0.13 * s, 0.15 * s, AR)
-	# 胫：上宽下窄的切面柱，下端斜切成凿形足尖
+	_hydraulic(hip, Vector3(sx * 0.04 * s, 0.06 * s, 0.055 * s), knee + Vector3(sx * 0.03 * s, -0.08 * s, 0.055 * s), 0.022 * s, DK)
+	# 胫：上宽下窄的切面冲压钢柱 + 橡胶防滑靴底
 	var sh := Node3D.new()
 	sh.position = knee
 	hip.add_child(sh)
 	var L := knee.y - foot.y
-	_prism(sh, [Vector2(-0.08 * s, 0), Vector2(0.08 * s, 0), Vector2(0.06 * s, -L + 0.06 * s), Vector2(0.0, -L), Vector2(-0.05 * s, -L + 0.08 * s)],
-		0.14 * s, 0.05, DK, Vector3(sx * 0.1 * s - knee.x + foot.x - sx * 0.1 * s, 0, 0) * 0.0, Vector3(0, 90, 0))
-	_box(sh, LT, Vector3(0, -L * 0.62, 0), Vector3(0.155, 0.06, 0.15) * s, Vector3(0, 0, sx * 8.0))
-	_box(sh, _glow(1.6), Vector3(sx * 0.075 * s, -L * 0.3, 0), Vector3(0.006, 0.12, 0.012) * s)
+	_prism(sh, [Vector2(-0.085 * s, 0), Vector2(0.085 * s, 0), Vector2(0.065 * s, -L + 0.06 * s), Vector2(0.02 * s, -L), Vector2(-0.055 * s, -L), Vector2(-0.065 * s, -L + 0.08 * s)],
+		0.145 * s, 0.05, DK, Vector3.ZERO, Vector3(0, 90, 0))
+	_box(sh, LT, Vector3(0, -L * 0.56, 0), Vector3(0.158, 0.07, 0.154) * s, Vector3(0, 0, sx * 6.0))
+	_box(sh, _hazard_yel(), Vector3(sx * 0.076 * s, -L * 0.30, 0), Vector3(0.008, 0.09, 0.036) * s)
+	_box(sh, _steel(), Vector3(0, -L + 0.022 * s, 0), Vector3(0.14, 0.042, 0.18) * s)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -795,13 +854,14 @@ func _dleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 func _build_ling(body: Node3D, s: float) -> void:
 	var AR := _vmat_solid(C_CH2)
 	var DK := _vmat_solid(C_CH)
-	var LT := _vmat_matte(Color(0.7, 0.7, 0.72))
+	var LT := _vmat_matte(Color(0.56, 0.58, 0.55))
+	var OL := _vmat_matte(Color(0.30, 0.33, 0.26))
 	var BL := _vmat_solid(Color(0.03, 0.03, 0.035))
 	var by := 0.52 * s
-	# 核心舱：斜切方舱
+	# 核心舱：斜切铸钢方舱
 	_prism(body, [Vector2(-0.24, -0.16) * s, Vector2(0.24, -0.16) * s, Vector2(0.27, -0.08) * s, Vector2(0.27, 0.16) * s, Vector2(-0.27, 0.16) * s, Vector2(-0.27, -0.08) * s],
-		0.72 * s, 0.05, DK, Vector3(0, by, 0.02 * s))
-	# Γ 形护壳：盖住顶面并包住右侧，左侧露出核心舱
+		0.74 * s, 0.05, DK, Vector3(0, by, 0.02 * s))
+	# Γ 形轧制装甲护壳：盖住顶面并包住右侧，左侧外露散热百叶与管线
 	_prism(body, [Vector2(-0.3, 0.3) * s, Vector2(0.28, 0.3) * s, Vector2(0.36, 0.22) * s, Vector2(0.36, -0.16) * s, Vector2(0.28, -0.2) * s, Vector2(0.28, 0.18) * s, Vector2(-0.3, 0.18) * s],
 		0.8 * s, 0.08, LT, Vector3(0, by, 0.06 * s))
 	_panels(body, Vector3(0, by + 0.3 * s + 0.005, 0.06 * s), Vector3(-90, 0, 0), 0.6 * s, 0.76 * s, 11, 5)
@@ -809,41 +869,53 @@ func _build_ling(body: Node3D, s: float) -> void:
 	_panels(body, Vector3(0, by + 0.06 * s, 0.445 * s), Vector3.ZERO, 0.5 * s, 0.26 * s, 15, 3)
 	_panels(body, Vector3(0.36 * s + 0.005, by + 0.03 * s, 0.06 * s), Vector3(0, 90, 0), 0.74 * s, 0.34 * s, 12, 4)
 	_panels(body, Vector3(-0.272 * s, by - 0.08 * s, 0.22 * s), Vector3(0, -90, 0), 0.26 * s, 0.12 * s, 13, 2)
-	# 护壳前缘外翻凸边 + 后部台阶
-	_box(body, LT, Vector3(0.0, by + 0.27 * s, -0.36 * s), Vector3(0.62, 0.1, 0.06) * s, Vector3(20, 0, 0))
+	# 护壳前缘防跳弹凸边 + 顶部起吊耳 + 侧面防撞钢条与警示黄条
+	_box(body, OL, Vector3(0.0, by + 0.27 * s, -0.36 * s), Vector3(0.62, 0.1, 0.06) * s, Vector3(20, 0, 0))
 	_box(body, AR, Vector3(-0.05 * s, by + 0.33 * s, 0.22 * s), Vector3(0.4, 0.06, 0.3) * s)
-	_box(body, _glow(2.0), Vector3(0.365 * s, by + 0.05 * s, 0.06 * s), Vector3(0.006, 0.016, 0.6) * s)
-	_box(body, _glow(2.0), Vector3(-0.272 * s, by - 0.02 * s, 0.06 * s), Vector3(0.006, 0.016, 0.5) * s)
-	for k in 3:
-		_box(body, BL, Vector3(-0.273 * s, by + 0.06 * s, (-0.1 + k * 0.1) * s), Vector3(0.006, 0.12, 0.045) * s)
-	# 正面圆形装甲舱盖（非眼睛：实心钢盖，无发光、无暗腔）
-	var eye := Vector3(-0.02 * s, by + 0.0, -0.34 * s)
-	_p(body, A.cyl(0.17 * s, 0.08 * s, 0.17 * s, 16), AR, eye, Vector3(90, 0, 0))
-	_p(body, A.cyl(0.14 * s, 0.02 * s, 0.14 * s, 16), _steel(), eye + Vector3(0, 0, -0.045 * s), Vector3(90, 0, 0))
-	# 左前上方小传感头（红色狭缝）
+	for zz: float in [-0.12, 0.30]:
+		_box(body, _steel(), Vector3(0.18 * s, by + 0.33 * s, zz * s), Vector3(0.03, 0.065, 0.07) * s)
+	_box(body, _steel(), Vector3(0.366 * s, by - 0.08 * s, 0.06 * s), Vector3(0.018, 0.038, 0.68) * s)
+	_box(body, _hazard_yel(), Vector3(0.365 * s, by + 0.05 * s, -0.16 * s), Vector3(0.01, 0.032, 0.22) * s)
+	_p(body, A.cyl(0.018 * s, 0.52 * s, 0.018 * s, 8), _brass(), Vector3(-0.282 * s, by - 0.02 * s, 0.06 * s), Vector3(90, 0, 0))
+	for k in 4:
+		_box(body, BL, Vector3(-0.273 * s, by + 0.07 * s, (-0.14 + k * 0.09) * s), Vector3(0.008, 0.12, 0.042) * s)
+	# 正面圆形铸钢检修舱盖（非眼睛：实心法兰钢盖 + 一圈六角螺栓 + 横闩，无发光、无暗腔）
+	var eye := Vector3(-0.02 * s, by + 0.0, -0.35 * s)
+	_p(body, A.cyl(0.175 * s, 0.075 * s, 0.175 * s, 14), AR, eye, Vector3(90, 0, 0))
+	_p(body, A.cyl(0.135 * s, 0.028 * s, 0.135 * s, 14), _steel(), eye + Vector3(0, 0, -0.042 * s), Vector3(90, 0, 0))
+	_box(body, DK, eye + Vector3(0, 0, -0.058 * s), Vector3(0.20, 0.042, 0.022) * s)
+	for bi in 6:
+		var ba := float(bi) * TAU / 6.0
+		_p(body, A.cyl(0.016 * s, 0.018 * s, 0.016 * s, 6), _brass(), eye + Vector3(cos(ba) * 0.15 * s, sin(ba) * 0.15 * s, -0.044 * s), Vector3(90, 0, 0))
+	# 左前上方装甲激光测距传感盒（带遮光檐与细窄琥珀光缝）
 	var head := Node3D.new()
 	head.position = Vector3(-0.17 * s, by + 0.38 * s, -0.24 * s)
 	body.add_child(head)
-	_box(head, DK, Vector3(0, 0, 0.06 * s), Vector3(0.1, 0.08, 0.24) * s)
-	_box(head, LT, Vector3(0, 0.0, -0.08 * s), Vector3(0.12, 0.1, 0.07) * s)
-	_box(head, _glow(2.4), Vector3(0, 0.0, -0.117 * s), Vector3(0.05, 0.022, 0.006) * s)
-	# 腹下折叠刃臂（jaws：攻击时向内剪合）
+	_box(head, DK, Vector3(0, 0, 0.06 * s), Vector3(0.12, 0.09, 0.24) * s)
+	_box(head, OL, Vector3(0, 0.01 * s, -0.08 * s), Vector3(0.14, 0.105, 0.08) * s)
+	_box(head, _steel(), Vector3(0, 0.055 * s, -0.125 * s), Vector3(0.145, 0.016, 0.045) * s, Vector3(12, 0, 0))
+	_box(head, BL, Vector3(0, -0.005 * s, -0.118 * s), Vector3(0.095, 0.036, 0.01) * s)
+	_box(head, _glow(1.5), Vector3(0, -0.005 * s, -0.122 * s), Vector3(0.072, 0.016, 0.006) * s)
+	# 腹下液压折叠工业剪刃（jaws：攻击时向内剪合）
 	for sx: float in [-1.0, 1.0]:
 		var jaw := Node3D.new()
 		jaw.position = Vector3(sx * 0.17 * s, by - 0.15 * s, -0.26 * s)
 		body.add_child(jaw)
-		_servo(jaw, Vector3.ZERO, 0.05 * s)
-		_box(jaw, AR, Vector3(0, -0.02 * s, -0.08 * s), Vector3(0.06, 0.07, 0.18) * s, Vector3(20, 0, 0))
-		_prism(jaw, [Vector2(0, 0.02) * s, Vector2(0.3, 0.0) * s, Vector2(0.42, 0.08) * s, Vector2(0.28, -0.05) * s, Vector2(0, -0.06) * s],
-			0.025 * s, 0.4, LT, Vector3(0, -0.06 * s, -0.16 * s), Vector3(0, 90, 0))
+		_servo(jaw, Vector3.ZERO, 0.055 * s)
+		_box(jaw, AR, Vector3(0, -0.02 * s, -0.08 * s), Vector3(0.065, 0.075, 0.19) * s, Vector3(18, 0, 0))
+		_hydraulic(jaw, Vector3(sx * 0.035 * s, 0.02 * s, -0.01 * s), Vector3(sx * 0.025 * s, -0.035 * s, -0.15 * s), 0.016 * s, DK)
+		_prism(jaw, [Vector2(0, 0.025) * s, Vector2(0.32, 0.005) * s, Vector2(0.44, 0.075) * s, Vector2(0.30, -0.055) * s, Vector2(0, -0.065) * s],
+			0.032 * s, 0.35, _steel(), Vector3(0, -0.06 * s, -0.16 * s), Vector3(0, 90, 0))
+		_box(jaw, DK, Vector3(0, -0.042 * s, -0.25 * s), Vector3(0.042, 0.035, 0.22) * s)
 		jaws.append(jaw)
-	# 尾部跳跃推进器：双喷口 + 紫色尾焰芯
+	# 尾部跳跃推进器：双收敛喷管 + 隔热外罩 + 深黑喷膛
 	for sx: float in [-1.0, 1.0]:
-		var n := Vector3(sx * 0.13 * s, by + 0.06 * s, 0.46 * s)
-		_p(body, A.cyl(0.07 * s, 0.14 * s, 0.09 * s, 8), AR, n, Vector3(-80, 0, 0))
-		_p(body, A.cyl(0.05 * s, 0.01 * s, 0.05 * s, 8), _glow(2.2), n + Vector3(0, 0.012 * s, 0.072 * s), Vector3(-80, 0, 0), Vector3.ONE, false)
-	_box(body, DK, Vector3(0, by + 0.06 * s, 0.4 * s), Vector3(0.36, 0.16, 0.08) * s)
-	sac = _box(body, _glow(0.8), Vector3(0, by + 0.06 * s, 0.445 * s), Vector3(0.06, 0.06, 0.01) * s)
+		var n := Vector3(sx * 0.135 * s, by + 0.06 * s, 0.46 * s)
+		_p(body, A.cyl(0.082 * s, 0.15 * s, 0.098 * s, 10), DK, n, Vector3(-80, 0, 0))
+		_p(body, A.cyl(0.088 * s, 0.035 * s, 0.088 * s, 10), _steel(), n + Vector3(0, -0.006 * s, -0.035 * s), Vector3(-80, 0, 0))
+		_p(body, A.cyl(0.062 * s, 0.016 * s, 0.062 * s, 10), BL, n + Vector3(0, 0.013 * s, 0.074 * s), Vector3(-80, 0, 0), Vector3.ONE, false)
+	_box(body, DK, Vector3(0, by + 0.06 * s, 0.4 * s), Vector3(0.38, 0.17, 0.09) * s)
+	sac = _box(body, _glow(1.1), Vector3(0, by + 0.06 * s, 0.448 * s), Vector3(0.08, 0.035, 0.012) * s)
 	# 四条短粗腿：前腿前外、后腿后外
 	for i in 2:
 		for sx: float in [-1.0, 1.0]:
@@ -851,9 +923,9 @@ func _build_ling(body: Node3D, s: float) -> void:
 				float(i % 2) * PI + (PI if sx > 0 else 0.0))
 
 
-## 面板分割：在一个矩形面上（本地 +Z 朝外）用确定性随机切出 3~6 块凸起子面板，
-## 多色调交替（深枪灰 / 中灰 / 浅灰），缝隙露出底面形成分缝线，并随机加螺栓、散热槽、警示条纹，
-## 用来打碎大面积单一色块。
+## 面板分割：在一个矩形面上（本地 +Z 朝外）用确定性随机切出 3~6 块凸起工业装甲子板，
+## 多色调交替（铸铁深灰 / 轧制钢中灰 / 军工橄榄灰 / 铁锈检修板），缝隙露出底面形成分缝线，
+## 并加六角螺栓、深黑散热百叶槽、工业黄警示条或黄铜铭牌，打碎大面积单一色块。
 func _panels(parent: Node3D, center: Vector3, rot: Vector3, w: float, h: float, seed: int, n := 4, tones: Array = []) -> void:
 	var f := Node3D.new()
 	f.position = center
@@ -862,7 +934,13 @@ func _panels(parent: Node3D, center: Vector3, rot: Vector3, w: float, h: float, 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	if tones.is_empty():
-		tones = [_vmat_solid(Color(0.14, 0.14, 0.155)), _vmat_matte(Color(0.34, 0.345, 0.37)), _vmat_matte(Color(0.6, 0.6, 0.62)), _vmat_matte(Color(0.3, 0.26, 0.36)), _vmat_solid(C_CH)]
+		tones = [
+			_vmat_solid(Color(0.15, 0.16, 0.175)),
+			_vmat_matte(Color(0.30, 0.32, 0.34)),
+			_vmat_matte(Color(0.46, 0.48, 0.49)),
+			_vmat_matte(Color(0.28, 0.31, 0.25)),
+			_vmat_solid(C_CH)
+		]
 	var cells: Array = [Rect2(-w * 0.5, -h * 0.5, w, h)]
 	for k in n - 1:
 		var bi := 0
@@ -892,72 +970,79 @@ func _panels(parent: Node3D, center: Vector3, rot: Vector3, w: float, h: float, 
 		var z := th * (0.5 + rng.randf() * 0.6)
 		_box(f, m, Vector3(cc.x, cc.y, z * 0.5), Vector3(cw, ch, z))
 		var r := rng.randf()
-		if r < 0.3:
-			# 螺栓四角
+		if r < 0.34:
+			# 四角高强螺栓
 			for q in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-				_box(f, _steel(), Vector3(cc.x + q.x * (cw * 0.5 - g * 1.5), cc.y + q.y * (ch * 0.5 - g * 1.5), z + g * 0.3), Vector3(g, g, g * 0.6))
-		elif r < 0.55:
-			# 散热槽
+				_box(f, _steel(), Vector3(cc.x + q.x * (cw * 0.5 - g * 1.5), cc.y + q.y * (ch * 0.5 - g * 1.5), z + g * 0.3), Vector3(g * 1.05, g * 1.05, g * 0.6))
+		elif r < 0.60:
+			# 散热百叶槽
 			var nv := clampi(int(cw / (g * 4.0)), 2, 6)
 			for v in nv:
-				_box(f, BL, Vector3(cc.x - cw * 0.35 + v * cw * 0.7 / maxf(nv - 1, 1), cc.y, z + 0.002), Vector3(g * 1.2, ch * 0.55, g * 0.3))
-		elif r < 0.72:
-			# 浅色警示斜纹带
-			_box(f, _vmat_matte(Color(0.78, 0.78, 0.8)), Vector3(cc.x, cc.y - ch * 0.3, z + 0.002), Vector3(cw * 0.9, ch * 0.12, g * 0.3))
-		elif r < 0.82:
-			_box(f, _glow(1.4), Vector3(cc.x, cc.y + ch * 0.35, z + 0.002), Vector3(cw * 0.7, g * 0.5, g * 0.3))
+				_box(f, BL, Vector3(cc.x - cw * 0.35 + v * cw * 0.7 / maxf(nv - 1, 1), cc.y, z + 0.002), Vector3(g * 1.2, ch * 0.55, g * 0.35))
+		elif r < 0.78:
+			# 工程警示黄条
+			_box(f, _hazard_yel(), Vector3(cc.x, cc.y - ch * 0.3, z + 0.002), Vector3(cw * 0.85, ch * 0.13, g * 0.32))
+		elif r < 0.90:
+			# 氧化检修铭牌 + 黄铜锁扣
+			_box(f, _rust_plate(), Vector3(cc.x, cc.y + ch * 0.28, z + 0.002), Vector3(cw * 0.62, ch * 0.22, g * 0.32))
+			_box(f, _brass(), Vector3(cc.x + cw * 0.22, cc.y + ch * 0.28, z + g * 0.35), Vector3(g * 1.3, g * 0.9, g * 0.45))
 
 
 ## 挤出棱柱：2D 多边形（XY 平面）沿 Z 挤出 depth，四周倒一圈斜角，用于盾形甲板、鳍片等异形硬表面
 func _prism(parent: Node3D, pts: Array, depth: float, bev: float, m: Material, pos: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_smooth_group(0xFFFFFFFF)
-	var n := pts.size()
-	var c := Vector2.ZERO
-	for q in pts:
-		c += q
-	c /= n
-	var inner: Array = []
-	for q in pts:
-		inner.append(c + (q - c) * (1.0 - bev))
-	var zf := depth * 0.5
-	var zb := -depth * 0.5
-	for i in n:
-		var j := (i + 1) % n
-		var o0: Vector2 = pts[i]
-		var o1: Vector2 = pts[j]
-		var i0: Vector2 = inner[i]
-		var i1: Vector2 = inner[j]
-		# 正面（内缩面）
-		st.add_vertex(Vector3(c.x, c.y, zf)); st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(i1.x, i1.y, zf))
-		# 正面倒角
-		var zm := zf - depth * 0.3
-		st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o1.x, o1.y, zm))
-		st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(o1.x, o1.y, zm)); st.add_vertex(Vector3(i1.x, i1.y, zf))
-		# 侧面
-		st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o0.x, o0.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zb))
-		st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o1.x, o1.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zm))
-		# 背面
-		st.add_vertex(Vector3(c.x, c.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zb)); st.add_vertex(Vector3(o0.x, o0.y, zb))
-	st.generate_normals()
-	var mi := _p(parent, st.commit(), m, pos, rot)
+	var key := "pr%s|%.4f|%.3f" % [str(pts), depth, bev]
+	var pm: ArrayMesh = _sm.get(key)
+	if pm == null:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.set_smooth_group(0xFFFFFFFF)
+		var n := pts.size()
+		var c := Vector2.ZERO
+		for q in pts:
+			c += q
+		c /= n
+		var inner: Array = []
+		for q in pts:
+			inner.append(c + (q - c) * (1.0 - bev))
+		var zf := depth * 0.5
+		var zb := -depth * 0.5
+		for i in n:
+			var j := (i + 1) % n
+			var o0: Vector2 = pts[i]
+			var o1: Vector2 = pts[j]
+			var i0: Vector2 = inner[i]
+			var i1: Vector2 = inner[j]
+			# 正面（内缩面）
+			st.add_vertex(Vector3(c.x, c.y, zf)); st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(i1.x, i1.y, zf))
+			# 正面倒角
+			var zm := zf - depth * 0.3
+			st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o1.x, o1.y, zm))
+			st.add_vertex(Vector3(i0.x, i0.y, zf)); st.add_vertex(Vector3(o1.x, o1.y, zm)); st.add_vertex(Vector3(i1.x, i1.y, zf))
+			# 侧面
+			st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o0.x, o0.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zb))
+			st.add_vertex(Vector3(o0.x, o0.y, zm)); st.add_vertex(Vector3(o1.x, o1.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zm))
+			# 背面
+			st.add_vertex(Vector3(c.x, c.y, zb)); st.add_vertex(Vector3(o1.x, o1.y, zb)); st.add_vertex(Vector3(o0.x, o0.y, zb))
+		st.generate_normals()
+		pm = st.commit()
+		_sm[key] = pm
+	var mi := _p(parent, pm, m, pos, rot)
 	mi.material_override.cull_mode = BaseMaterial3D.CULL_DISABLED if mi.material_override is BaseMaterial3D else 0
 	return mi
 
 
-## 蝎狮式高抬腿：髋 → 股节斜向上抬到高过机身的膝 → 胫节斜插地面，股节外侧覆大块锯齿阶梯甲板
+## 蝎狮式高抬盾腿：髋 → 双梁股节 + 双级液压油缸 → 高抬膝枢纽 → 垂直胫柱 + 抓地足靴；
+## 膝外侧挂载风筝形反应装甲防弹盾（4×2 叠鳞 ERA 模块 + 起吊环 + 工程警示条）。
 func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: float, phase: float, ss := 1.0) -> Node3D:
-	# 蝎狮盾状足：髋 → 高抬的膝 → 几乎垂直落地的胫节；膝外侧挂一面与机体等高的风筝形分鳞大盾（盾面朝外），
-	# 盾面 2×3 凸起鳞板（侧看呈锯齿），顶端暗色尖兜帽带一道紫光，盾下端露出尖足
 	var hip := Node3D.new()
 	hip.position = hip_pos
 	hip.rotation_degrees = Vector3(0, yaw, 0)
 	body.add_child(hip)
 	var AR := _vmat_solid(C_CH2)
 	var DK := _vmat_solid(C_CH)
-	var LT := _vmat_matte(Color(0.2, 0.2, 0.22))
-	var LT2 := _vmat_matte(Color(0.52, 0.52, 0.55))
+	var LT := _vmat_matte(Color(0.20, 0.21, 0.23))
+	var LT2 := _vmat_matte(Color(0.46, 0.48, 0.50))
+	var OL := _vmat_matte(Color(0.28, 0.31, 0.24))
 	var knee := Vector3(sx * 0.9 * s, 0.8 * s * ss, 0)
 	var foot := Vector3(sx * 1.38 * s, -by + 0.02, 0)
 	var ank := foot + Vector3(0, 0.32 * s, 0)
@@ -965,13 +1050,15 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_box(hip, DK, Vector3(sx * 0.05 * s, 0, 0), Vector3(0.22, 0.24, 0.3) * s)
 	for zz: float in [-0.08, 0.08]:
 		_bar(hip, Vector3(0, 0, zz * s), knee + Vector3(0, 0, zz * s), 0.1 * s, 0.15 * s, DK)
-	_seg(hip, Vector3(sx * 0.08 * s, -0.12 * s, 0), knee + Vector3(-sx * 0.14 * s, -0.1 * s, 0), 0.05 * s, 0.035 * s, _steel(), 6)
+	_hydraulic(hip, Vector3(sx * 0.08 * s, -0.12 * s, 0), knee + Vector3(-sx * 0.14 * s, -0.1 * s, 0), 0.048 * s, AR)
 	_servo(hip, knee, 0.15 * s)
 	_bar(hip, knee, ank, 0.14 * s, 0.16 * s, DK)
-	_seg(hip, knee + Vector3(-sx * 0.1, -0.08, 0.1) * s, ank + Vector3(-sx * 0.06, 0.06, 0.1) * s, 0.04 * s, 0.03 * s, _steel(), 6)
-	# 足：暗色足靴 + 切角底板（纯机械）
-	_box(hip, DK, ank + Vector3(0, -0.06 * s, 0), Vector3(0.2, 0.26, 0.24) * s)
-	_box(hip, AR, foot + Vector3(0, 0.03 * s, 0), Vector3(0.26, 0.06, 0.36) * s)
+	_hydraulic(hip, knee + Vector3(-sx * 0.1, -0.08, 0.1) * s, ank + Vector3(-sx * 0.06, 0.06, 0.1) * s, 0.038 * s, AR)
+	# 足：重型驻锄靴 + 防滑齿底板
+	_box(hip, DK, ank + Vector3(0, -0.06 * s, 0), Vector3(0.21, 0.26, 0.25) * s)
+	_box(hip, AR, foot + Vector3(0, 0.04 * s, 0), Vector3(0.28, 0.075, 0.38) * s)
+	for cz: float in [-0.14, 0.0, 0.14]:
+		_box(hip, _steel(), foot + Vector3(0, 0.015 * s, cz * s), Vector3(0.29, 0.028, 0.045) * s)
 	# 大盾：挂在膝外侧，盾面朝外（沿腿方向），顶部向内后仰
 	var sh := Node3D.new()
 	sh.position = Vector3(sx * 1.36 * s, (0.3 + 0.05 * ss) * s, 0)
@@ -981,7 +1068,6 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	tilt.scale = Vector3.ONE * ss
 	sh.add_child(tilt)
 	hip.add_child(sh)
-	# 泪滴/风筝盾：上端尖顶，最宽处在上三分之一，向下收成窄尖底；轮廓用多段折线保持硬表面切面感
 	var hw := func(y: float) -> float:
 		if y >= 0.3:
 			return 0.5 * pow(maxf(1.18 - y, 0.0) / 0.88, 0.75)
@@ -999,23 +1085,24 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 			inner.append(Vector2(-hw.call(y) * 0.8, y * 0.9) * s)
 	_prism(tilt, ks, 0.2 * s, 0.05, LT, Vector3.ZERO)
 	_prism(tilt, inner, 0.14 * s, 0.05, DK, Vector3(0, 0, -0.16 * s))
-	_box(tilt, DK, Vector3(0, 0.0, 0.105 * s), Vector3(0.05, 1.7, 0.02) * s)
-	# 分鳞：四排人字形板，宽度随盾轮廓收窄
+	_box(tilt, _steel(), Vector3(0, 0.0, 0.105 * s), Vector3(0.055, 1.7, 0.024) * s)
+	# 分鳞：四排人字形反应装甲块（轧制钢灰与军工橄榄灰交替 + 螺栓）
 	for r in 4:
 		var cy0 := 0.5 - r * 0.33
 		var w: float = hw.call(cy0) * 0.42
 		for kx: float in [-1.0, 1.0]:
 			var cx: float = kx * (w + 0.035) * s
 			var cy := cy0 * s
-			_prism(tilt, [Vector2(-w, -0.12) * s, Vector2(w, -0.1) * s, Vector2(w + 0.03, 0.1) * s, Vector2(-w + 0.02, 0.12) * s], 0.14 * s, 0.1, LT2 if (r + int(kx > 0)) % 2 == 0 else _vmat_matte(Color(0.33, 0.3, 0.39)),
+			_prism(tilt, [Vector2(-w, -0.12) * s, Vector2(w, -0.1) * s, Vector2(w + 0.03, 0.1) * s, Vector2(-w + 0.02, 0.12) * s], 0.14 * s, 0.1, LT2 if (r + int(kx > 0)) % 2 == 0 else OL,
 				Vector3(cx, cy, 0.14 * s), Vector3(6, 0, -kx * 16.0))
-			_box(tilt, DK, Vector3(cx + kx * 0.02 * s, cy + 0.02 * s, 0.215 * s), Vector3(w * 0.85, 0.008, 0.004) * s, Vector3(0, 0, kx * 4.0))
+			_box(tilt, _steel(), Vector3(cx + kx * (w * 0.65) * s, cy, 0.215 * s), Vector3(0.026, 0.026, 0.014) * s)
 	for k in 3:
-		_p(tilt, A.cyl(0.025 * s, 0.01 * s, 0.025 * s, 10), DK, Vector3((-0.09 + k * 0.09) * s, -0.72 * s, 0.105 * s), Vector3(90, 0, 0), Vector3.ONE, false)
-	_prism(tilt, [Vector2(0, 1.24) * s, Vector2(0.24, 0.92) * s, Vector2(0.3, 0.68) * s, Vector2(-0.3, 0.68) * s, Vector2(-0.24, 0.92) * s], 0.14 * s, 0.08, _vmat_matte(Color(0.12, 0.12, 0.135)), Vector3(0, 0, 0.1 * s))
-	_box(tilt, _glow(1.2), Vector3(0, 0.92 * s, 0.175 * s), Vector3(0.04, 0.4, 0.01) * s)
+		_p(tilt, A.cyl(0.025 * s, 0.014 * s, 0.025 * s, 8), _brass(), Vector3((-0.09 + k * 0.09) * s, -0.72 * s, 0.108 * s), Vector3(90, 0, 0), Vector3.ONE, false)
+	_prism(tilt, [Vector2(0, 1.24) * s, Vector2(0.24, 0.92) * s, Vector2(0.3, 0.68) * s, Vector2(-0.3, 0.68) * s, Vector2(-0.24, 0.92) * s], 0.14 * s, 0.08, DK, Vector3(0, 0, 0.1 * s))
+	_box(tilt, _hazard_yel(), Vector3(0, 0.78 * s, 0.175 * s), Vector3(0.36, 0.055, 0.012) * s)
+	_box(tilt, _steel(), Vector3(0, 1.04 * s, 0.178 * s), Vector3(0.045, 0.14, 0.028) * s)
 	# 盾背连接臂（与膝相连）
-	_bar(hip, knee, Vector3(sx * 1.28 * s, 0.45 * s, 0), 0.12 * s, 0.12 * s, AR)
+	_bar(hip, knee, Vector3(sx * 1.28 * s, 0.45 * s, 0), 0.13 * s, 0.13 * s, AR)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -1023,17 +1110,16 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	return hip
 
 
-## 酸液虫：仿少女前线「蝎狮 Manticore」。正面是与机体等高、上端后仰的风筝形分鳞胸甲（下端尖角垂到地面），
-## 胸甲右后方压着方形头舱（通风格栅 + 分层顶甲），头舱下方长身管主炮沿机体右侧前伸，尾部斜立背鳍，
-## 四条膝部高抬的蛛腿，股节外侧覆阶梯锯齿大甲板。暗灰金属，紫色装饰线。
+## 酸液/重炮虫：重工业「蝎狮 Manticore」四足盾装突击炮。
+## 六边形斜切装甲船体 + 楔形测距头舱 + 右侧长身管驻退火炮（双液压复进机 + 穿孔散热套筒 + 多室开槽制退器）+
+## 腹下捆扎钢制高压储液罐 + 背部百叶散热器总成 + 四条挂装 ERA 大盾的高抬机械足。
 func _build_spitter(body: Node3D, s: float) -> void:
 	var AR := _vmat_solid(C_CH2)
 	var DK := _vmat_solid(C_CH)
-	var TR := _glow(1.8)
+	var OL := _vmat_matte(Color(0.28, 0.31, 0.24))
 	var by := 0.75 * s
 	var GX := 0.36 * s
 	var BL := _vmat_solid(Color(0.03, 0.03, 0.035))
-	# 船体：侧视六边形斜切硬壳（沿 X 挤出，前低后高），两侧裙甲 + 一道紫色腰线
 	var side := func(pts: Array) -> Array:
 		var o: Array = []
 		for q in pts:
@@ -1044,89 +1130,91 @@ func _build_spitter(body: Node3D, s: float) -> void:
 	for sx: float in [-1.0, 1.0]:
 		_prism(body, side.call([Vector2(0.4, -0.1), Vector2(0.2, 0.25), Vector2(-0.45, 0.32), Vector2(-0.55, -0.05), Vector2(-0.3, -0.22), Vector2(0.25, -0.22)]),
 			0.06 * s, 0.1, AR, Vector3(sx * 0.33 * s, by + 0.25 * s, 0.08 * s), Vector3(0, 90, 0))
-		_box(body, TR, Vector3(sx * 0.365 * s, by + 0.37 * s, 0.1 * s), Vector3(0.008, 0.012, 0.55) * s, Vector3(-6, 0, 0))
+		_p(body, A.cyl(0.016 * s, 0.58 * s, 0.016 * s, 8), _brass(), Vector3(sx * 0.368 * s, by + 0.37 * s, 0.1 * s), Vector3(84, 0, 0))
 		_panels(body, Vector3(sx * 0.37 * s, by + 0.3 * s, 0.1 * s), Vector3(0, 90 * sx, 0), 0.7 * s, 0.32 * s, 31 + int(sx), 4)
-		# 侧裙检修板 + 螺栓
-		_box(body, BL, Vector3(sx * 0.364 * s, by + 0.21 * s, 0.2 * s), Vector3(0.006, 0.12, 0.22) * s)
+		_box(body, BL, Vector3(sx * 0.364 * s, by + 0.21 * s, 0.2 * s), Vector3(0.008, 0.12, 0.22) * s)
 		for k in 3:
-			_box(body, _steel(), Vector3(sx * 0.366 * s, by + 0.11 * s, (0.05 + k * 0.12) * s), Vector3(0.01, 0.025, 0.025) * s)
-	# 楔形头舱：前端楔形装甲，顶部两层叠甲后掠，两侧格栅
+			_box(body, _steel(), Vector3(sx * 0.366 * s, by + 0.11 * s, (0.05 + k * 0.12) * s), Vector3(0.012, 0.028, 0.028) * s)
+	# 楔形火控头舱：前端叠层防盾 + 遮光罩光学测距窗 + 两侧排风百叶
 	var head := Node3D.new()
 	head.position = Vector3(GX * 0.6, by + 0.5 * s, -0.4 * s)
 	head.scale = Vector3.ONE * 1.25
 	head.rotation_degrees = Vector3(0, -10, 0)
 	body.add_child(head)
 	_prism(head, side.call([Vector2(0.75, 0.0), Vector2(0.45, 0.32), Vector2(-0.05, 0.42), Vector2(-0.15, 0.05), Vector2(0.35, -0.16)]), 0.4 * s, 0.06, DK, Vector3.ZERO, Vector3(0, 90, 0))
-	_prism(head, side.call([Vector2(0.55, 0.3), Vector2(0.3, 0.46), Vector2(-0.12, 0.5), Vector2(-0.12, 0.38), Vector2(0.4, 0.3)]), 0.46 * s, 0.08, AR, Vector3.ZERO, Vector3(0, 90, 0))
-	_prism(head, side.call([Vector2(0.3, 0.47), Vector2(0.12, 0.56), Vector2(-0.2, 0.58), Vector2(-0.2, 0.48)]), 0.3 * s, 0.1, DK, Vector3.ZERO, Vector3(0, 90, 0))
+	_prism(head, side.call([Vector2(0.55, 0.3), Vector2(0.3, 0.46), Vector2(-0.12, 0.5), Vector2(-0.12, 0.38), Vector2(0.4, 0.3)]), 0.46 * s, 0.08, OL, Vector3.ZERO, Vector3(0, 90, 0))
+	_prism(head, side.call([Vector2(0.3, 0.47), Vector2(0.12, 0.56), Vector2(-0.2, 0.58), Vector2(-0.2, 0.48)]), 0.3 * s, 0.1, AR, Vector3.ZERO, Vector3(0, 90, 0))
+	# 正面内凹光学观瞄狭缝
+	_box(head, BL, Vector3(0, 0.14 * s, -0.56 * s), Vector3(0.28, 0.055, 0.04) * s, Vector3(24, 0, 0))
+	_box(head, _glow(1.4), Vector3(0, 0.14 * s, -0.575 * s), Vector3(0.22, 0.022, 0.01) * s, Vector3(24, 0, 0))
 	for sx: float in [-1.0, 1.0]:
 		for k in 4:
 			_box(head, BL, Vector3(sx * 0.205 * s, 0.12 * s, (-0.05 - k * 0.07) * s), Vector3(0.01, 0.14, 0.03) * s)
-		_box(head, TR, Vector3(sx * 0.235 * s, 0.32 * s, -0.15 * s), Vector3(0.008, 0.01, 0.5) * s, Vector3(-12, 0, 0))
+		_box(head, _hazard_yel(), Vector3(sx * 0.236 * s, 0.33 * s, -0.18 * s), Vector3(0.01, 0.028, 0.28) * s, Vector3(-12, 0, 0))
 	for j in 2:
 		var jaw := Node3D.new()
 		jaw.position = Vector3((j * 2 - 1) * 0.1 * s, -0.12 * s, -0.4 * s)
 		head.add_child(jaw)
 		jaws.append(jaw)
-	sac = _box(body, DK, Vector3(0, by - 0.1 * s, 0.2 * s), Vector3(0.36, 0.3, 0.5) * s)
-	# 顶部长背甲：从头舱后上方斜升到尾部背鳍，两层（亮灰主板 + 暗色顶盖 + 侧裙）
+	# 腹下高压推进剂钢瓶（带钢箍与黄铜法兰盖，保留 sac 引用）
+	sac = _p(body, A.cyl(0.17 * s, 0.56 * s, 0.17 * s, 12), _rust_plate(), Vector3(0, by - 0.11 * s, 0.22 * s), Vector3(90, 0, 0))
+	for sz: float in [0.04, 0.22, 0.40]:
+		_p(body, A.cyl(0.182 * s, 0.035 * s, 0.182 * s, 12), _steel(), Vector3(0, by - 0.11 * s, sz * s), Vector3(90, 0, 0))
+	_p(body, A.cyl(0.12 * s, 0.04 * s, 0.12 * s, 10), _brass(), Vector3(0, by - 0.11 * s, 0.51 * s), Vector3(90, 0, 0))
+	# 顶部长背甲脊梁 + 尾部重型散热器箱与双排烟短管
 	var d0 := Vector3(GX * 0.7, by + 0.92 * s, -0.3 * s)
 	var d1 := Vector3(-0.05 * s, by + 1.2 * s, 0.5 * s)
 	_bar(body, d0, d1, 0.56 * s, 0.2 * s, AR)
 	_bar(body, d0 + Vector3(0, 0.12 * s, 0.05 * s), d1 + Vector3(0, 0.12 * s, 0), 0.4 * s, 0.07 * s, DK)
 	for sx: float in [-1.0, 1.0]:
 		_bar(body, d0 + Vector3(sx * 0.3 * s, -0.08 * s, 0.05 * s), d1 + Vector3(sx * 0.3 * s, -0.1 * s, -0.05 * s), 0.05 * s, 0.22 * s, DK)
-	_box(body, TR, d1 + Vector3(0, 0.16 * s, -0.3 * s), Vector3(0.012, 0.012, 0.5) * s, Vector3(-20, 0, 0))
-	# 尾部散热器
-	var fin := [Vector2(0, 0), Vector2(0.3, 0), Vector2(0.85, 0.95), Vector2(0.75, 1.05), Vector2(0.05, 0.3)]
-	var fs: Array = []
-	for q in fin:
-		fs.append(q * s)
-	# 尾部散热器箱（取代背鳍）：箱体 + 四片竖向散热片
-	_box(body, AR, Vector3(-0.08 * s, by + 1.28 * s, 0.6 * s), Vector3(0.3, 0.26, 0.36) * s)
-	for k in 4:
-		_box(body, DK, Vector3((-0.2 + k * 0.08) * s, by + 1.44 * s, 0.6 * s), Vector3(0.03, 0.1, 0.32) * s)
-	_box(body, DK, Vector3(-0.12 * s, by + 0.66 * s, 0.45 * s), Vector3(0.12, 0.16, 0.22) * s)
-	# 主炮：头舱下方、沿机体右侧前伸的长身管炮（加长机匣 + 前护套 + 三道箍 + 炮口制退器）
-	var GM := StandardMaterial3D.new()
-	GM.albedo_color = Color(0.2, 0.2, 0.23)
-	GM.metallic = 0.85
-	GM.roughness = 0.3
+	_box(body, AR, Vector3(-0.08 * s, by + 1.28 * s, 0.6 * s), Vector3(0.36, 0.28, 0.40) * s)
+	for k in 5:
+		_box(body, BL, Vector3((-0.20 + k * 0.06) * s, by + 1.28 * s, 0.802 * s), Vector3(0.032, 0.20, 0.012) * s)
+		_box(body, _steel(), Vector3((-0.20 + k * 0.06) * s, by + 1.45 * s, 0.6 * s), Vector3(0.026, 0.09, 0.34) * s)
+	for sx: float in [-1.0, 1.0]:
+		var ex := Vector3((-0.08 + sx * 0.11) * s, by + 1.48 * s, 0.76 * s)
+		_p(body, A.cyl(0.042 * s, 0.18 * s, 0.048 * s, 10), DK, ex, Vector3(-32, 0, 0))
+		_p(body, A.cyl(0.034 * s, 0.015 * s, 0.034 * s, 10), BL, ex + Vector3(0, 0.078 * s, 0.048 * s), Vector3(-32, 0, 0), Vector3.ONE, false)
+	_box(body, DK, Vector3(-0.12 * s, by + 0.66 * s, 0.45 * s), Vector3(0.14, 0.18, 0.24) * s)
+	# 主炮：长身管高初速火炮（铸钢炮尾机匣 + 上置驻退复进筒 + 穿孔散热护套 + 多室开槽制退器 + 深黑膛口）
+	var GM := _vmat_solid(Color(0.19, 0.20, 0.22))
 	gun = Node3D.new()
 	gun.name = "Gun"
 	body.add_child(gun)
 	var g0 := Vector3(GX, by - 0.02 * s, -0.4 * s)
-	# 机匣：长条斜切壳 + 上部导轨 + 下部弹仓 + 侧面散热孔
 	_prism(gun, side.call([Vector2(0.7, -0.12), Vector2(0.7, 0.1), Vector2(0.45, 0.16), Vector2(-0.55, 0.16), Vector2(-0.6, -0.12), Vector2(-0.3, -0.2), Vector2(0.4, -0.2)]),
-		0.3 * s, 0.06, AR, g0, Vector3(0, 90, 0))
-	_box(gun, DK, g0 + Vector3(0, 0.2 * s, 0.0), Vector3(0.16, 0.06, 1.1) * s)
-	_box(gun, DK, g0 + Vector3(0, -0.26 * s, 0.2 * s), Vector3(0.22, 0.14, 0.45) * s)
+		0.32 * s, 0.06, AR, g0, Vector3(0, 90, 0))
+	_box(gun, DK, g0 + Vector3(0, 0.2 * s, 0.0), Vector3(0.18, 0.065, 1.12) * s)
+	_box(gun, OL, g0 + Vector3(0, -0.26 * s, 0.2 * s), Vector3(0.24, 0.15, 0.48) * s)
+	_box(gun, _hazard_yel(), g0 + Vector3(0.162 * s, -0.24 * s, 0.2 * s), Vector3(0.008, 0.045, 0.36) * s)
 	for k in 6:
-		_box(gun, BL, g0 + Vector3(0.152 * s, 0.0, (-0.45 + k * 0.1) * s), Vector3(0.006, 0.1, 0.04) * s)
-	_box(gun, TR, g0 + Vector3(0.155 * s, 0.11 * s, 0), Vector3(0.006, 0.012, 1.1) * s)
+		_box(gun, BL, g0 + Vector3(0.162 * s, 0.0, (-0.45 + k * 0.1) * s), Vector3(0.008, 0.1, 0.042) * s)
 	var b0 := g0 + Vector3(0, 0.0, -0.7 * s)
 	var b1 := b0 + Vector3(0, 0, -2.0 * s)
-	# 炮管：前护套 + 多道套环 + 中段散热套 + 方形炮口制退器
-	_box(gun, DK, b0 + Vector3(0, 0, -0.3 * s), Vector3(0.24, 0.22, 0.6) * s)
+	# 炮盾护套 + 上下驻退液压筒
+	_box(gun, DK, b0 + Vector3(0, 0, -0.3 * s), Vector3(0.25, 0.23, 0.62) * s)
+	_p(gun, A.cyl(0.046 * s, 0.72 * s, 0.046 * s, 10), _chrome(), b0 + Vector3(0, 0.155 * s, -0.36 * s), Vector3(90, 0, 0))
+	_p(gun, A.cyl(0.056 * s, 0.18 * s, 0.056 * s, 10), _brass(), b0 + Vector3(0, 0.155 * s, -0.08 * s), Vector3(90, 0, 0))
 	for k in 4:
-		_box(gun, AR, b0 + Vector3(0, 0, (-0.06 - k * 0.17) * s), Vector3(0.28, 0.26, 0.06) * s)
-	_p(gun, A.cyl(0.08 * s, 2.0 * s, 0.08 * s, 14), GM, (b0 + b1) * 0.5, Vector3(90, 0, 0))
-	_p(gun, A.cyl(0.11 * s, 0.6 * s, 0.11 * s, 10), GM, b0 + Vector3(0, 0, -1.0 * s), Vector3(90, 0, 0))
+		_box(gun, AR, b0 + Vector3(0, 0, (-0.06 - k * 0.17) * s), Vector3(0.29, 0.27, 0.06) * s)
+	_p(gun, A.cyl(0.082 * s, 2.0 * s, 0.082 * s, 14), GM, (b0 + b1) * 0.5, Vector3(90, 0, 0))
+	_p(gun, A.cyl(0.115 * s, 0.64 * s, 0.115 * s, 12), DK, b0 + Vector3(0, 0, -1.0 * s), Vector3(90, 0, 0))
 	for k in 5:
-		_p(gun, A.cyl(0.118 * s, 0.03 * s, 0.118 * s, 10), _steel(), b0 + Vector3(0, 0, (-0.75 - k * 0.12) * s), Vector3(90, 0, 0))
+		_p(gun, A.cyl(0.122 * s, 0.03 * s, 0.122 * s, 12), _steel(), b0 + Vector3(0, 0, (-0.75 - k * 0.12) * s), Vector3(90, 0, 0))
 	for k in 3:
-		_p(gun, A.cyl(0.1 * s, 0.035 * s, 0.1 * s, 12), _steel(), b0 + Vector3(0, 0, (-1.45 - k * 0.18) * s), Vector3(90, 0, 0))
+		_p(gun, A.cyl(0.102 * s, 0.038 * s, 0.102 * s, 12), _steel(), b0 + Vector3(0, 0, (-1.45 - k * 0.18) * s), Vector3(90, 0, 0))
 	var mz := b1 + Vector3(0, 0, 0.1 * s)
-	_box(gun, DK, mz, Vector3(0.24, 0.2, 0.3) * s)
+	_box(gun, DK, mz, Vector3(0.26, 0.21, 0.34) * s)
+	_box(gun, _steel(), mz + Vector3(0, 0, -0.14 * s), Vector3(0.27, 0.22, 0.05) * s)
 	for k in 2:
 		for sx: float in [-1.0, 1.0]:
-			_box(gun, BL, mz + Vector3(sx * 0.121 * s, 0, (-0.06 + k * 0.12) * s), Vector3(0.004, 0.12, 0.05) * s)
-	_p(gun, A.cyl(0.075 * s, 0.01 * s, 0.075 * s, 12), BL, mz + Vector3(0, 0, -0.152 * s), Vector3(90, 0, 0), Vector3.ONE, false)
-	_p(gun, A.cyl(0.04 * s, 0.012 * s, 0.04 * s, 10), _glow(1.0), mz + Vector3(0, 0, -0.15 * s), Vector3(90, 0, 0), Vector3.ONE, false)
+			_box(gun, BL, mz + Vector3(sx * 0.132 * s, 0, (-0.06 + k * 0.12) * s), Vector3(0.01, 0.13, 0.055) * s)
+	_p(gun, A.cyl(0.072 * s, 0.02 * s, 0.072 * s, 12), BL, mz + Vector3(0, 0, -0.172 * s), Vector3(90, 0, 0), Vector3.ONE, false)
 	gun_tip = Node3D.new()
-	gun_tip.position = mz + Vector3(0, 0, -0.3 * s)
+	gun_tip.position = mz + Vector3(0, 0, -0.32 * s)
 	gun.add_child(gun_tip)
-	gun_glow = _p(gun, A.cyl(0.06 * s, 0.02 * s, 0.06 * s, 10), _glow(0.0), mz + Vector3(0, 0, -0.16 * s), Vector3(90, 0, 0), Vector3.ONE, false)
+	gun_glow = _p(gun, A.cyl(0.055 * s, 0.02 * s, 0.055 * s, 10), _glow(0.0), mz + Vector3(0, 0, -0.176 * s), Vector3(90, 0, 0), Vector3.ONE, false)
 	# 四条高抬蛛腿：前腿向前外伸、后腿向后外伸
 	var hp := [Vector3(0.28, 0.05, -0.1), Vector3(0.28, 0.0, 0.32)]
 	for i in 2:
@@ -1135,9 +1223,9 @@ func _build_spitter(body: Node3D, s: float) -> void:
 			_tleg(body, Vector3(sx * h.x * s, by + h.y * s, h.z * s), sx * (35.0 - i * 85.0), sx, s, by + h.y * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), 1.0 - i * 0.12)
 
 
-## 攻城虫：铁血重型破城机。低宽六边形底盘，正面五层人字形楔板堆成破城冲角（层间紫色狭缝），
-## 冲角顶端嵌三目传感器；两侧液压破碎钳臂；后部高耸反应堆塔（竖向散热鳍 + 两根后倾排气管）；
-## 六条短粗活塞腿 + 宽扁足垫。与炮击虫（盾状足 + 长炮）、跳虫（Γ 护壳 + 独眼）不雷同。
+## 攻城虫：重工业矿山/破障机。低宽六边形铆接底盘，正面五层重型推土破城楔（高碳钢刃口 + 缓冲梁 + 工程黄黑警示条），
+## 冲角顶端嵌铸钢潜望观瞄塔；两侧双液压岩石破碎钳；后部柴油涡轮动力塔（百叶散热罩 + 炉芯视窗 + 双防烫网排烟管）；
+## 六条重型液压活塞支腿 + 宽扁防滑足垫。
 func _pleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: float, phase: float) -> Node3D:
 	var hip := Node3D.new()
 	hip.position = hip_pos
@@ -1149,14 +1237,16 @@ func _pleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	var foot := Vector3(sx * 0.62 * s, -by + 0.01, 0)
 	_servo(hip, Vector3.ZERO, 0.16 * s)
 	_bar(hip, Vector3.ZERO, knee, 0.2 * s, 0.22 * s, DK)
-	_bar(hip, Vector3(0, 0.13 * s, 0), knee + Vector3(0, 0.13 * s, 0), 0.26 * s, 0.05 * s, AR)
+	_bar(hip, Vector3(0, 0.13 * s, 0), knee + Vector3(0, 0.13 * s, 0), 0.26 * s, 0.055 * s, AR)
+	_hydraulic(hip, Vector3(sx * 0.06 * s, -0.11 * s, 0), knee + Vector3(-sx * 0.08 * s, -0.06 * s, 0), 0.042 * s, DK)
 	_servo(hip, knee, 0.13 * s)
-	# 活塞胫：外套筒（方）+ 内伸缩钢柱 + 足垫
+	# 活塞胫：重型方形油缸外筒 + 黄铜密封法兰 + 镀铬活塞杆 + 六角驻锄足垫
 	var mid := Vector3(foot.x, knee.y - 0.32 * s, 0)
-	_bar(hip, knee, mid, 0.2 * s, 0.2 * s, AR, Vector3.FORWARD)
-	_box(hip, _glow(1.6), mid + Vector3(sx * 0.101 * s, 0.12 * s, 0), Vector3(0.006, 0.18, 0.02) * s)
-	_p(hip, A.cyl(0.06 * s, mid.y - foot.y, 0.06 * s, 10), _steel(), Vector3(foot.x, (mid.y + foot.y) * 0.5, 0))
-	_p(hip, A.cyl(0.13 * s, 0.07 * s, 0.17 * s, 6), DK, foot + Vector3(0, 0.035 * s, 0))
+	_bar(hip, knee, mid, 0.21 * s, 0.21 * s, AR, Vector3.FORWARD)
+	_box(hip, _hazard_yel(), mid + Vector3(sx * 0.106 * s, 0.12 * s, 0), Vector3(0.008, 0.14, 0.055) * s)
+	_p(hip, A.cyl(0.088 * s, 0.045 * s, 0.088 * s, 10), _brass(), mid + Vector3(0, -0.01 * s, 0))
+	_p(hip, A.cyl(0.064 * s, mid.y - foot.y, 0.064 * s, 10), _chrome(), Vector3(foot.x, (mid.y + foot.y) * 0.5, 0))
+	_foot_pad(hip, foot + Vector3(0, 0.06 * s, 0), 0.13 * s)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -1167,22 +1257,23 @@ func _pleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 func _build_brute(body: Node3D, s: float) -> void:
 	var AR := _vmat_solid(C_CH2)
 	var DK := _vmat_solid(C_CH)
-	var LT := _vmat_matte(Color(0.5, 0.5, 0.53))
+	var LT := _vmat_matte(Color(0.46, 0.48, 0.50))
+	var OL := _vmat_matte(Color(0.29, 0.31, 0.24))
 	var BL := _vmat_solid(Color(0.03, 0.03, 0.035))
 	var by := 0.62 * s
-	# 六边形底盘（俯视）+ 上层甲板
+	# 六边形重型铸钢底盘 + 上层甲板
 	_prism(body, [Vector2(-0.5, -0.6) * s, Vector2(0.5, -0.6) * s, Vector2(0.66, 0.0) * s, Vector2(0.52, 0.72) * s, Vector2(-0.52, 0.72) * s, Vector2(-0.66, 0.0) * s],
 		0.34 * s, 0.06, DK, Vector3(0, by, 0), Vector3(90, 0, 0))
 	_prism(body, [Vector2(-0.38, -0.4) * s, Vector2(0.38, -0.4) * s, Vector2(0.48, 0.05) * s, Vector2(0.4, 0.62) * s, Vector2(-0.4, 0.62) * s, Vector2(-0.48, 0.05) * s],
-		0.16 * s, 0.08, AR, Vector3(0, by + 0.24 * s, 0), Vector3(90, 0, 0))
+		0.16 * s, 0.08, OL, Vector3(0, by + 0.24 * s, 0), Vector3(90, 0, 0))
 	_panels(body, Vector3(0, by + 0.32 * s + 0.005, 0.05 * s), Vector3(-90, 0, 0), 0.62 * s, 0.7 * s, 21, 6)
 	for sx: float in [-1.0, 1.0]:
 		_panels(body, Vector3(sx * 0.6 * s, by, 0.36 * s), Vector3(0, 90 * sx, 0), 0.5 * s, 0.26 * s, 22 + int(sx), 3)
-	for sx: float in [-1.0, 1.0]:
-		_box(body, _glow(1.8), Vector3(sx * 0.66 * s, by, 0.0), Vector3(0.006, 0.02, 0.5) * s)
+		_box(body, _steel(), Vector3(sx * 0.665 * s, by + 0.02 * s, 0.0), Vector3(0.022, 0.055, 0.56) * s)
+		_box(body, _hazard_yel(), Vector3(sx * 0.668 * s, by + 0.02 * s, -0.14 * s), Vector3(0.024, 0.042, 0.18) * s)
 		for k in 4:
-			_box(body, _steel(), Vector3(sx * 0.61 * s, by - 0.1 * s, (-0.15 + k * 0.12) * s), Vector3(0.012, 0.03, 0.03) * s)
-	# 破城冲角：五层人字形楔板，越往上越窄、越靠后，整体后仰
+			_box(body, _brass(), Vector3(sx * 0.61 * s, by - 0.1 * s, (-0.15 + k * 0.12) * s), Vector3(0.014, 0.03, 0.03) * s)
+	# 破城冲角：五层人字形重型推土铲板 + 高强钢铲刃 + 工程警示条 + 后置液压顶杆
 	var ram := Node3D.new()
 	ram.position = Vector3(0, by - 0.2 * s, -0.68 * s)
 	ram.rotation_degrees = Vector3(-28, 0, 0)
@@ -1193,20 +1284,27 @@ func _build_brute(body: Node3D, s: float) -> void:
 		_prism(ram, [Vector2(-w, 0.06) * s, Vector2(-w, -0.04) * s, Vector2(0, -0.2) * s, Vector2(w, -0.04) * s, Vector2(w, 0.06) * s, Vector2(0, -0.1) * s],
 			0.22 * s, 0.1, LT if r % 2 == 0 else AR, Vector3(0, y * s, 0))
 		if r < 4:
-			_prism(ram, [Vector2(-w * 0.8, 0.09) * s, Vector2(0, -0.06) * s, Vector2(w * 0.8, 0.09) * s, Vector2(w * 0.8, 0.098) * s, Vector2(0, -0.052) * s, Vector2(-w * 0.8, 0.098) * s],
-				0.02 * s, 0.0, _glow(0.9), Vector3(0, y * s, -0.08 * s))
+			_prism(ram, [Vector2(-w * 0.82, 0.088) * s, Vector2(0, -0.062) * s, Vector2(w * 0.82, 0.088) * s, Vector2(w * 0.82, 0.105) * s, Vector2(0, -0.045) * s, Vector2(-w * 0.82, 0.105) * s],
+				0.035 * s, 0.0, BL, Vector3(0, y * s, -0.085 * s))
 		for sx: float in [-1.0, 1.0]:
-			_box(ram, DK if r % 2 == 0 else _vmat_matte(Color(0.3, 0.305, 0.325)), Vector3(sx * w * 0.52 * s, (y - 0.06) * s, -0.112 * s), Vector3(w * 0.55, 0.05, 0.012) * s, Vector3(0, 0, sx * 11.0))
-			_box(ram, _steel(), Vector3(sx * w * 0.88 * s, (y + 0.01) * s, -0.115 * s), Vector3(0.03, 0.03, 0.012) * s)
-			_box(ram, BL, Vector3(sx * w * 0.5 * s, (y - 0.03) * s, -0.115 * s), Vector3(0.05, 0.035, 0.01) * s, Vector3(0, 0, sx * 14.0))
+			var edge_m: Material = _hazard_yel() if r == 0 else (_steel() if r == 1 else DK)
+			_box(ram, edge_m, Vector3(sx * w * 0.52 * s, (y - 0.06) * s, -0.114 * s), Vector3(w * 0.56, 0.052, 0.016) * s, Vector3(0, 0, sx * 11.0))
+			_box(ram, _steel(), Vector3(sx * w * 0.88 * s, (y + 0.01) * s, -0.118 * s), Vector3(0.034, 0.034, 0.016) * s)
+			_box(ram, BL, Vector3(sx * w * 0.5 * s, (y - 0.03) * s, -0.118 * s), Vector3(0.05, 0.035, 0.012) * s, Vector3(0, 0, sx * 14.0))
+	for sx: float in [-1.0, 1.0]:
+		_hydraulic(body, Vector3(sx * 0.34 * s, by + 0.12 * s, -0.36 * s), Vector3(sx * 0.38 * s, by - 0.02 * s, -0.72 * s), 0.042 * s, DK)
 	_panels(body, Vector3(0, by - 0.05 * s, -0.6 * s - 0.005), Vector3(0, 180, 0), 0.9 * s, 0.2 * s, 27, 3)
-	_box(ram, DK, Vector3(0, 0.36 * s, -0.12 * s), Vector3(0.08, 0.8, 0.03) * s)
-	# 冲角顶部三目传感器
+	_box(ram, _steel(), Vector3(0, 0.36 * s, -0.125 * s), Vector3(0.09, 0.82, 0.035) * s)
+	# 冲角顶部铸钢潜望观瞄塔（防弹遮檐 + 三联内凹光学窄窗）
 	var head := Node3D.new()
 	head.position = Vector3(0, by + 0.42 * s, -0.42 * s)
 	body.add_child(head)
-	_prism(head, [Vector2(-0.2, 0) * s, Vector2(0.2, 0) * s, Vector2(0.15, 0.12) * s, Vector2(-0.15, 0.12) * s], 0.3 * s, 0.08, DK, Vector3.ZERO)
-	# 两侧液压破碎钳
+	_prism(head, [Vector2(-0.22, 0) * s, Vector2(0.22, 0) * s, Vector2(0.17, 0.14) * s, Vector2(-0.17, 0.14) * s], 0.32 * s, 0.08, DK, Vector3.ZERO)
+	_box(head, _steel(), Vector3(0, 0.135 * s, -0.14 * s), Vector3(0.36, 0.025, 0.09) * s, Vector3(10, 0, 0))
+	for vx: float in [-0.10, 0.0, 0.10]:
+		_box(head, BL, Vector3(vx * s, 0.075 * s, -0.158 * s), Vector3(0.075, 0.042, 0.018) * s)
+		_box(head, _glow(1.5), Vector3(vx * s, 0.075 * s, -0.165 * s), Vector3(0.058, 0.018, 0.008) * s)
+	# 两侧重型液压破碎钳
 	for sx: float in [-1.0, 1.0]:
 		var sc := Node3D.new()
 		sc.position = Vector3(sx * 0.58 * s, by + 0.08 * s, -0.42 * s)
@@ -1214,29 +1312,34 @@ func _build_brute(body: Node3D, s: float) -> void:
 		_servo(sc, Vector3.ZERO, 0.15 * s)
 		var el := Vector3(sx * 0.2, -0.05, -0.38) * s
 		_bar(sc, Vector3.ZERO, el, 0.17 * s, 0.2 * s, AR)
-		_seg(sc, Vector3(0, 0.12 * s, 0.05 * s), el + Vector3(0, 0.1 * s, 0), 0.035 * s, 0.03 * s, _steel(), 6)
-		_servo(sc, el, 0.11 * s)
+		_hydraulic(sc, Vector3(0, 0.13 * s, 0.05 * s), el + Vector3(0, 0.11 * s, 0.02 * s), 0.038 * s, DK)
+		_servo(sc, el, 0.115 * s)
 		var wr := el + Vector3(-sx * 0.06, -0.12, -0.32) * s
 		_bar(sc, el, wr, 0.15 * s, 0.17 * s, DK)
-		_box(sc, LT, wr + Vector3(0, 0.0, 0.08 * s), Vector3(0.22, 0.2, 0.12) * s)
+		_box(sc, LT, wr + Vector3(0, 0.0, 0.08 * s), Vector3(0.24, 0.21, 0.14) * s)
+		_p(sc, A.cyl(0.045 * s, 0.23 * s, 0.045 * s, 8), _brass(), wr + Vector3(0, 0, 0.04 * s))
 		for j: float in [-1.0, 1.0]:
-			_prism(sc, [Vector2(0, -0.06) * s, Vector2(0.2, -0.03) * s, Vector2(0.27, 0.05) * s, Vector2(0.17, 0.03) * s, Vector2(0, 0.06) * s],
-				0.07 * s, 0.2, DK, wr + Vector3(j * 0.06 * s, 0, 0), Vector3(0, 90, j * 18.0))
+			_prism(sc, [Vector2(0, -0.065) * s, Vector2(0.21, -0.035) * s, Vector2(0.29, 0.05) * s, Vector2(0.18, 0.035) * s, Vector2(0, 0.065) * s],
+				0.075 * s, 0.18, _steel(), wr + Vector3(j * 0.065 * s, 0, 0), Vector3(0, 90, j * 18.0))
 		scythes.append(sc)
-	# 后部反应堆塔：竖向散热鳍 + 发光堆芯 + 两根后倾排气管
+	# 后部柴油动力塔：竖向散热百叶鳍 + 防爆笼内炉芯视窗（保留 sac 引用）+ 双穿孔防烫网排烟管
 	var rc := Vector3(0, by + 0.42 * s, 0.4 * s)
-	_prism(body, [Vector2(-0.3, -0.16) * s, Vector2(0.3, -0.16) * s, Vector2(0.24, 0.34) * s, Vector2(-0.24, 0.34) * s], 0.4 * s, 0.06, DK, rc)
-	_panels(body, rc + Vector3(0, 0.09 * s, -0.205 * s), Vector3(0, 180, 0), 0.5 * s, 0.44 * s, 25, 4)
+	_prism(body, [Vector2(-0.32, -0.16) * s, Vector2(0.32, -0.16) * s, Vector2(0.25, 0.35) * s, Vector2(-0.25, 0.35) * s], 0.42 * s, 0.06, DK, rc)
+	_panels(body, rc + Vector3(0, 0.09 * s, -0.215 * s), Vector3(0, 180, 0), 0.52 * s, 0.44 * s, 25, 4)
 	for sx: float in [-1.0, 1.0]:
-		_panels(body, rc + Vector3(sx * 0.28 * s, 0.09 * s, 0), Vector3(-0, 90 * sx, 6 * sx), 0.36 * s, 0.4 * s, 26 + int(sx), 3)
+		_panels(body, rc + Vector3(sx * 0.29 * s, 0.09 * s, 0), Vector3(0, 90 * sx, 6 * sx), 0.36 * s, 0.4 * s, 26 + int(sx), 3)
 	for k in 5:
-		_box(body, AR, rc + Vector3((-0.2 + k * 0.1) * s, 0.1 * s, 0.22 * s), Vector3(0.03, 0.4, 0.08) * s)
-	sac = _p(body, A.cyl(0.11 * s, 0.32 * s, 0.11 * s, 8), _flesh(Color(0.55, 0.15, 0.7), 0.9), rc + Vector3(0, 0.08 * s, -0.12 * s))
-	_p(body, A.cyl(0.13 * s, 0.04 * s, 0.13 * s, 8), _steel(), rc + Vector3(0, 0.26 * s, -0.12 * s))
+		_box(body, AR, rc + Vector3((-0.2 + k * 0.1) * s, 0.1 * s, 0.225 * s), Vector3(0.032, 0.4, 0.085) * s)
+	sac = _p(body, A.cyl(0.095 * s, 0.30 * s, 0.095 * s, 10), _flesh(Color(0.86, 0.34, 0.08), 0.8), rc + Vector3(0, 0.08 * s, -0.13 * s))
+	for ci in 4:
+		var ca := float(ci) * TAU / 4.0 + PI * 0.25
+		_box(body, _steel(), rc + Vector3(cos(ca) * 0.105 * s, 0.08 * s, -0.13 * s + sin(ca) * 0.105 * s), Vector3(0.018, 0.31, 0.018) * s)
+	_p(body, A.cyl(0.13 * s, 0.045 * s, 0.13 * s, 10), _brass(), rc + Vector3(0, 0.25 * s, -0.13 * s))
 	for sx: float in [-1.0, 1.0]:
-		var e0 := rc + Vector3(sx * 0.2 * s, 0.25 * s, 0.05 * s)
-		_p(body, A.cyl(0.05 * s, 0.4 * s, 0.06 * s, 8), AR, e0 + Vector3(0, 0.15 * s, 0.06 * s), Vector3(18, 0, 0))
-		_p(body, A.cyl(0.04 * s, 0.01 * s, 0.04 * s, 8), BL, e0 + Vector3(0, 0.35 * s, 0.125 * s), Vector3(18, 0, 0), Vector3.ONE, false)
+		var e0 := rc + Vector3(sx * 0.21 * s, 0.25 * s, 0.05 * s)
+		_p(body, A.cyl(0.052 * s, 0.44 * s, 0.058 * s, 10), DK, e0 + Vector3(0, 0.16 * s, 0.065 * s), Vector3(18, 0, 0))
+		_p(body, A.cyl(0.068 * s, 0.26 * s, 0.068 * s, 10), _rust_plate(), e0 + Vector3(0, 0.11 * s, 0.045 * s), Vector3(18, 0, 0))
+		_p(body, A.cyl(0.042 * s, 0.018 * s, 0.042 * s, 10), BL, e0 + Vector3(0, 0.372 * s, 0.132 * s), Vector3(18, 0, 0), Vector3.ONE, false)
 	# 六条活塞腿（三角步态）
 	for i in 3:
 		for sx: float in [-1.0, 1.0]:
@@ -1244,17 +1347,41 @@ func _build_brute(body: Node3D, s: float) -> void:
 				float(i % 2) * PI + (PI if sx > 0 else 0.0))
 
 
+static func _vmat_matte_vc() -> StandardMaterial3D:
+	if _sm.has("vm_vc"):
+		return _sm["vm_vc"]
+	var m := StandardMaterial3D.new()
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	m.roughness = 0.56
+	m.metallic = 0.42
+	m.metallic_specular = 0.55
+	m.rim_enabled = true
+	m.rim = 0.14
+	m.rim_tint = 0.45
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_panelize(m)
+	_sm["vm_vc"] = m
+	return m
+
+
 static func _vmat_matte(c: Color) -> StandardMaterial3D:
 	var key := "vm%s" % c.to_html()
 	if _sm.has(key):
 		return _sm[key]
 	var m := StandardMaterial3D.new()
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	m.albedo_color = c
-	m.roughness = 0.5
-	m.metallic = 0.55
+	m.roughness = 0.56
+	m.metallic = 0.42
+	m.metallic_specular = 0.55
 	m.rim_enabled = true
-	m.rim = 0.2
+	m.rim = 0.14
+	m.rim_tint = 0.45
 	_panelize(m)
+	m.set_meta("_vc_base", _vmat_matte_vc())
+	m.set_meta("_vc_tint", c)
 	_sm[key] = m
 	return m
 
@@ -1264,35 +1391,46 @@ static func _vmat_solid(c: Color) -> StandardMaterial3D:
 	if _sm.has(key):
 		return _sm[key]
 	var m := StandardMaterial3D.new()
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	m.albedo_color = c
-	m.roughness = 0.26
-	m.metallic = 0.6
-	m.clearcoat_enabled = true
-	m.clearcoat = 1.0
-	m.clearcoat_roughness = 0.15
+	m.roughness = 0.38
+	m.metallic = 0.62
+	m.metallic_specular = 0.72
 	m.rim_enabled = true
-	m.rim = 0.3
+	m.rim = 0.18
+	m.rim_tint = 0.55
 	_panelize(m)
+	m.set_meta("_vc_base", _vmat())
+	m.set_meta("_vc_tint", c)
 	_sm[key] = m
 	return m
 
 
-## 被噪音惊动（机甲开火、空投落地）：转入追击，目标是机甲
+## 被噪音惊动（机甲开火、空投落地）：视距内转入追击，视距外只朝声源处搜寻查看（禁止视距外直接锁定先手）
 func alert(pos: Vector3) -> void:
 	_wake()
 	if state == "idle":
 		if raid and _alive(raid.mech):
-			target = raid.mech
-			# 机甲远在丢失距离外（远处的空投、诱饵信标）：不扑机甲，只去声源处查看
-			if global_position.distance_to(raid.mech.global_position) > _lose_dist():
+			var d_mech := global_position.distance_to(raid.mech.global_position)
+			var max_v: float = raid.vision_toward_player(global_position) if raid.has_method("vision_toward_player") else _lose_dist()
+			# 机甲在当前视距外（远处的空投、枪声或诱饵信标）：不直接锁定机甲，只去声源处查看
+			if d_mech > max_v:
 				target = null
 				_set_investigate(pos)
 				return
+			target = raid.mech
 		state = "chase"
 		# 听到动静：朝声源方向搜过去，多给几秒「看不见也继续找」的宽限，找不到就去声源处查看
 		last_seen = pos
 		_unseen_t = -NOISE_GRACE
 		_alert_pack(target)
+
+
+## 当前敌人是否处于玩家的默认视距内（防止视距外敌人对玩家进行超视距先手打击）
+func _in_player_view(d: float) -> bool:
+	if raid != null and target == raid.mech and raid.has_method("vision_toward_player"):
+		return d <= raid.vision_toward_player(global_position)
+	return true
 
 
 # ================= 感知 / 巡逻 / LOD =================
@@ -1336,7 +1474,7 @@ var target_los := true          ## 最近一次感知时与当前目标之间有
 
 
 static func _alive(n) -> bool:
-	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true
+	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true and n.get("net_done") != true
 
 
 ## 远处（LOD 2）的虫每 0.5 秒才真正模拟一次，其余物理帧只是进来累加时间、马上返回；150 只虫里这类空转占了虫群 AI 的大头。
@@ -1393,7 +1531,9 @@ func _lod_dt(delta: float) -> float:
 		lod = 1
 	else:
 		lod = 2
-	var want_detail := lod == 0
+	var want_detail := lod == 0 or raid == null or bool(data.get("boss", false))
+	if vis_anchor != null and vis_anchor.visible != want_detail:
+		vis_anchor.visible = want_detail
 	if want_detail != _detail_on:
 		_detail_on = want_detail
 		for mi in detail:
@@ -1432,7 +1572,8 @@ func _slide_impl(dt: float) -> void:
 		if step.length_squared() < 0.0001:
 			return
 		var np := global_position + step
-		if raid.ai_free(np, float(data.radius)) and absf(np.x) < raid.HALF - 4.0 and absf(np.z) < raid.HALF - 4.0:
+		var in_b: bool = raid.in_bounds(np, 4.0) if raid.has_method("in_bounds") else (absf(np.x) < raid.HALF - 4.0 and absf(np.z) < raid.HALF - 4.0)
+		if raid.ai_free(np, float(data.radius)) and in_b:
 			global_position = np
 			return
 		# 自己已经压在不可走格子里（网格带通行间隙，比实际碰撞体略大）：走真实物理挤出去，否则会永远卡在原地
@@ -1771,8 +1912,12 @@ func _sfx(what: String) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if raid != null and raid.coop != null and Net.is_client(): return
 	var _pt := Prof.t0()
+	var local_mech = raid.mech if raid != null else null
+	if raid != null and raid.coop != null: raid.mech = raid.nearest_player(global_position)
 	_physics_tick(delta)
+	if raid != null: raid.mech = local_mech
 	Prof.add("phys.bugs", _pt)
 	if Prof.on:
 		Prof.add("bugs.lod%d.%s" % [lod, "chase" if state == "chase" else "idle"], _pt)
@@ -1813,8 +1958,8 @@ func _physics_tick(delta: float) -> void:
 		else:
 			var fwd: Vector3 = to / max(d, 0.01)
 			if beh == "spitter":
-				# 隔着墙不吐酸：没视线就绕过去找射击位置
-				var los := target_los
+				# 隔着墙或还在玩家视距外时不吐酸：先靠近到玩家可见范围内再射击
+				var los := target_los and _in_player_view(d)
 				if d < 8.0:
 					dir = -fwd
 				elif d < data.range and los:
@@ -2004,11 +2149,14 @@ func _set_flash(on: bool) -> void:
 		p.material_overlay = A.flash_overlay() if on else null
 
 
-func take_damage(amount: float, from := Vector3.ZERO) -> void:
+func take_damage(amount: float, _from := Vector3.ZERO, ap := 0.0) -> void:
 	if hp <= 0.0:
 		return
 	_wake()
-	hp -= amount
+	var base_arm := float(data.get("armor", 0.22 if kind == "beetle" else 0.0))
+	var eff_arm := clampf(base_arm * (1.0 - clampf(ap, 0.0, 0.85)), 0.0, 0.9) if ap > 0.0 else 0.0
+	var dmg := amount * (1.0 - eff_arm) if ap > 0.0 else amount
+	hp -= dmg
 	_aggro_on_hit()
 	flash_t = 0.07
 	_set_flash(true)
@@ -2074,7 +2222,7 @@ static func _panelize(m: StandardMaterial3D, scale := 1.1) -> void:
 	m.albedo_texture = A._bug_tex("mech_panel.png")
 	m.normal_enabled = true
 	m.normal_texture = A._bug_tex("mech_panel_n.png")
-	m.normal_scale = 0.6
+	m.normal_scale = 0.85
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * scale
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
@@ -2093,6 +2241,10 @@ func _anchor_visual() -> void:
 	vis_anchor = Node3D.new()
 	vis_anchor.name = "VisAnchor"
 	vis_anchor.top_level = true
+	for ch in get_children():
+		if ch is MeshInstance3D:
+			remove_child(ch)
+			vis_anchor.add_child(ch)
 	add_child(vis_anchor)
 	if visual.get_parent():
 		visual.get_parent().remove_child(visual)

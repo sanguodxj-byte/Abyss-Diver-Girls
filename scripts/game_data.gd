@@ -19,10 +19,15 @@ var test_mode := false
 var _closing := false
 
 const SLOTS := ["core", "legs", "arm_l", "arm_r", "back", "gen"]
-const SLOT_NAMES := {"core": "躯干", "legs": "底盘", "arm_l": "左臂武装", "arm_r": "右臂武装", "back": "背部挂载", "gen": "动力炉"}
+const _ZH_SLOT_NAMES := {"core": "躯干", "legs": "底盘", "arm_l": "左臂武装", "arm_r": "右臂武装", "back": "背部挂载", "gen": "动力炉"}
+var SLOT_NAMES := _ZH_SLOT_NAMES.duplicate()
+const STD_RANGE := 10.0
+const RANGE_M_SCALE := 3.0
 const RARITY_COLORS := [Color(0.82, 0.82, 0.82), Color(0.45, 0.88, 0.45), Color(0.4, 0.65, 1.0), Color(0.88, 0.52, 1.0)]
-const RARITY_NAMES := ["普通", "优良", "稀有", "传说"]
-const CAT_NAMES := {"food": "食物", "misc": "杂物", "use": "消耗品", "money": "货币", "module": "机甲模块"}
+const _ZH_RARITY_NAMES := ["普通", "优良", "稀有", "传说"]
+var RARITY_NAMES := _ZH_RARITY_NAMES.duplicate()
+const _ZH_CAT_NAMES := {"food": "食物", "misc": "杂物", "use": "消耗品", "money": "货币", "module": "机甲模块"}
+var CAT_NAMES := _ZH_CAT_NAMES.duplicate()
 
 ## 普通物品。w = 重量(kg)，v = 价值(信用点)，rar = 稀有度
 var ITEMS := {}
@@ -36,21 +41,15 @@ var AMMO := {
 	"laser": {"mag": 6, "reload": 2.0, "tex": "ammo_cell"},
 }
 
-## 技能：Space=底盘位移，F=背部，E=躯干，R=动力炉。icon 对应 assets/ui/ic_<icon>.png
+## 技能：Space=底盘机动，F=背部挂载。icon 对应 assets/ui/ic_<icon>.png
 var SKILLS := {
-	"biped": {"name": "推进冲刺", "icon": "dash", "cd": 0.9, "cost": 4.0},
-	"tread": {"name": "履带冲撞", "icon": "ram", "cd": 4.0, "cost": 8.0, "dmg": 28.0, "r": 3.2},
-	"quad": {"name": "蛛足跃击", "icon": "leap", "cd": 3.0, "cost": 6.0, "dmg": 22.0, "r": 3.4},
-	"hover": {"name": "相位闪移", "icon": "blink", "cd": 2.2, "cost": 5.0, "dist": 9.0},
-	"missile": {"name": "蜂巢导弹", "icon": "missile"},
-	"shield": {"name": "相位护盾", "icon": "shield"},
-	"none": {"name": "无主动技能", "icon": "lock"},
-	"core_scout": {"name": "诱饵无人机", "icon": "decoy", "cd": 10.0, "cost": 6.0, "dmg": 34.0, "r": 3.6},
-	"core_std": {"name": "火力过载", "icon": "overdrive", "cd": 14.0, "cost": 8.0, "dur": 4.0},
-	"core_heavy": {"name": "震地冲击", "icon": "quake", "cd": 9.0, "cost": 10.0, "dmg": 36.0, "r": 6.0},
-	"gen_cell": {"name": "应急充能", "icon": "charge", "cd": 25.0, "cost": 0.0, "amt": 30.0},
-	"gen_reactor": {"name": "过热排放", "icon": "vent", "cd": 11.0, "cost": 6.0, "dmg": 26.0, "r": 5.0},
-	"gen_crystal": {"name": "纳米修复", "icon": "repair", "cd": 20.0, "cost": 12.0, "amt": 40.0, "dur": 4.0},
+	"biped": {"name": "矢量推进规避", "icon": "dash", "cd": 0.9, "cost": 4.0, "desc": "点火髋部固体矢量推进器，朝移动方向短距高速规避机动。"},
+	"tread": {"name": "全扭矩碾压冲锋", "icon": "ram", "cd": 4.0, "cost": 8.0, "dmg": 28.0, "r": 3.2, "desc": "解除变速箱限速器全扭矩冲撞，碾退路径目标并造成 28 点钝击伤害。"},
+	"quad": {"name": "液压蓄能跃障", "icon": "leap", "cd": 3.0, "cost": 6.0, "dmg": 22.0, "r": 3.4, "desc": "四足液压蓄能弹射跃起，在起跳点抛洒高粘滞阻拦网并在落点造成 22 点震击。"},
+	"hex": {"name": "多足重装震踏", "icon": "quake", "cd": 4.4, "cost": 8.0, "dmg": 34.0, "r": 4.8, "desc": "六足液压同步蓄能前扑重踏，着地释放环形机械冲击波，对 4.8m 内目标造成 34 点震击伤害。"},
+	"missile": {"name": "制导多联齐射", "icon": "missile", "desc": "开启背部发射巢齐射制导火箭/微弹，自动索敌覆盖视野内目标。"},
+	"shield": {"name": "主动防御拦截", "icon": "shield", "desc": "激发车载电磁偏转幕拦截来袭攻击，并向受损部位注入损管密封胶。"},
+	"none": {"name": "无主动机能", "icon": "lock", "desc": "外挂货箱专注于扩容携行，未配置主动火控或防御分系统。"},
 }
 
 ## 机甲模块：既是装备，也决定外观（纸娃娃）。
@@ -62,69 +61,75 @@ var LOOT_TABLES := {
 	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 45, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10}},
 	"safe": {"name": "保险柜", "rolls": [1, 3], "pool": {"credit_s": 40, "credit_l": 15, "gold": 4, "hdd": 10, "coffee": 6}},
 	"bug": {"name": "虫尸", "rolls": [1, 1], "pool": {"chitin": 85, "bug_crystal": 12, "fuel_cell": 6}},
-	"nest": {"name": "巢穴残骸", "rolls": [2, 3], "pool": {"bug_crystal": 45, "chitin": 50, "gen_crystal": 3, "legs_hover": 2}},
+	"nest": {"name": "巢穴残骸", "rolls": [2, 3], "pool": {"bug_crystal": 45, "chitin": 50, "gen_crystal": 3, "legs_hex_beetle": 2}},
 }
 
-var SHOP := ["fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_tread", "gen_reactor"]
+var SHOP := ["fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_biped_scout", "legs_tread_light", "legs_tread", "gen_reactor"]
 
 const STARTER := {"core": "core_scout", "legs": "legs_biped", "arm_l": "arm_mg", "arm_r": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}
 
 var DISPATCH_LINES: Array = []
 
 var REQUEST_POOL := [
-	{"id": "can_food", "count": 3, "reward": 450, "who": "厨师阿堇"},
-	{"id": "water_tab", "count": 4, "reward": 420, "who": "厨师阿堇"},
-		{"id": "circuit", "count": 2, "reward": 500, "who": "机械师米娅"},
-		{"id": "chitin", "count": 3, "reward": 520, "who": "装甲工坊"},
-		{"id": "wire", "count": 2, "reward": 380, "who": "机械师米娅"},
+	{"id": "can_food", "count": 3, "reward": 450, "who": "厨师阿堇", "char": "ajin"},
+	{"id": "water_tab", "count": 4, "reward": 420, "who": "厨师阿堇", "char": "ajin"},
+		{"id": "circuit", "count": 2, "reward": 500, "who": "机械师米娅", "char": "mia"},
+		{"id": "chitin", "count": 3, "reward": 520, "who": "装甲工坊", "char": "mia"},
+		{"id": "wire", "count": 2, "reward": 380, "who": "机械师米娅", "char": "mia"},
 	{"id": "toy", "count": 1, "reward": 400, "who": "艇上的孩子们"},
 	{"id": "bug_crystal", "count": 1, "reward": 900, "who": "轮机长"},
 ]
 
 ## 商人任务线：按顺序逐条推进，完成当前条目后同一商人的下一条接上；全部走完再换下一位商人
 const QUEST_ORDER := ["ajin", "xiaoman", "shiori", "karasu", "nihong", "gin"]
-const QUEST_NAMES := {"ajin": "阿堇", "xiaoman": "小满", "shiori": "诗织", "karasu": "鸦", "nihong": "霓虹", "gin": "银"}
-const QUEST_CHAINS := {
+const _ZH_QUEST_NAMES := {"ajin": "阿堇", "xiaoman": "小满", "shiori": "诗织", "karasu": "鸦", "nihong": "霓虹", "gin": "银"}
+var QUEST_NAMES := _ZH_QUEST_NAMES.duplicate()
+const _ZH_QUEST_CHAINS := {
 	"ajin": [
-		{"id": "can_food", "count": 3, "reward": 300, "aff": 1},
-		{"id": "biscuit", "count": 4, "reward": 380, "aff": 1},
-		{"id": "water_tab", "count": 3, "reward": 450, "aff": 2},
-		{"id": "coffee", "count": 1, "reward": 620, "aff": 2},
-		{"id": "can_food", "count": 6, "reward": 820, "aff": 3},
+		{"name": "罐头补给", "type": "item", "id": "can_food", "count": 3, "reward": 300, "aff": 1},
+		{"name": "清理货道", "type": "kill", "target": "ling", "count": 6, "reward": 380, "aff": 1},
+		{"name": "净水配给", "type": "item", "id": "water_tab", "count": 3, "reward": 450, "aff": 2},
+		{"name": "赤湖踩点", "type": "visit", "target": "redlake", "count": 1, "reward": 620, "aff": 2},
+		{"name": "罐头囤积", "type": "item", "id": "can_food", "count": 6, "reward": 820, "aff": 3},
 	],
 	"xiaoman": [
-		{"id": "wire", "count": 4, "reward": 350, "aff": 1},
-		{"id": "bolts", "count": 8, "reward": 430, "aff": 1},
-		{"id": "arm_mg", "count": 1, "reward": 700, "aff": 2},
-		{"id": "arm_shotgun", "count": 1, "reward": 900, "aff": 3},
+		{"name": "线圈补货", "type": "item", "id": "wire", "count": 4, "reward": 350, "aff": 1},
+		{"name": "甲壳回收", "type": "kill", "target": "beetle", "count": 5, "reward": 430, "aff": 1},
+		{"name": "转管订单", "type": "item", "id": "arm_mg", "count": 1, "reward": 700, "aff": 2},
+		{"name": "工业带撤收", "type": "extract", "target": "ironbelt", "count": 2, "reward": 900, "aff": 3},
 	],
 	"shiori": [
-		{"id": "chitin", "count": 5, "reward": 400, "aff": 1},
-		{"id": "bug_crystal", "count": 2, "reward": 620, "aff": 2},
-		{"id": "coolant_pack", "count": 1, "reward": 720, "aff": 2},
-		{"id": "bug_crystal", "count": 4, "reward": 1150, "aff": 3},
+		{"name": "壳质样本", "type": "item", "id": "chitin", "count": 5, "reward": 400, "aff": 1},
+		{"name": "喷吐取样", "type": "kill", "target": "spitter", "count": 4, "reward": 620, "aff": 2},
+		{"name": "冷却剂递送", "type": "item", "id": "coolant_pack", "count": 1, "reward": 720, "aff": 2},
+		{"name": "巢母解剖", "type": "boss", "target": "broodmother", "count": 1, "reward": 1150, "aff": 3},
 	],
 	"karasu": [
-		{"id": "bolts", "count": 10, "reward": 460, "aff": 1},
-		{"id": "wire", "count": 6, "reward": 540, "aff": 1},
-		{"id": "back_shield", "count": 1, "reward": 1000, "aff": 2},
-		{"id": "core_heavy", "count": 1, "reward": 1650, "aff": 3},
+		{"name": "螺栓清点", "type": "item", "id": "bolts", "count": 10, "reward": 460, "aff": 1},
+		{"name": "破盾作业", "type": "kill", "target": "aegis", "count": 2, "reward": 540, "aff": 1},
+		{"name": "盾板交付", "type": "item", "id": "back_shield", "count": 1, "reward": 1000, "aff": 2},
+		{"name": "王虫猎杀", "type": "boss", "target": "king_beetle", "count": 1, "reward": 1650, "aff": 3},
 	],
 	"nihong": [
-		{"id": "circuit", "count": 3, "reward": 430, "aff": 1},
-		{"id": "hdd", "count": 1, "reward": 660, "aff": 2},
-		{"id": "sonic_decoy", "count": 1, "reward": 720, "aff": 2},
-		{"id": "circuit", "count": 6, "reward": 980, "aff": 3},
+		{"name": "电路订货", "type": "item", "id": "circuit", "count": 3, "reward": 430, "aff": 1},
+		{"name": "灰港撤收", "type": "extract", "target": "greyport", "count": 2, "reward": 660, "aff": 2},
+		{"name": "诱饵交付", "type": "item", "id": "sonic_decoy", "count": 1, "reward": 720, "aff": 2},
+		{"name": "指挥链切断", "type": "kill", "target": "overseer", "count": 1, "reward": 980, "aff": 3},
 	],
 	"gin": [
-		{"id": "credit_s", "count": 2, "reward": 520, "aff": 1},
-		{"id": "gold", "count": 1, "reward": 900, "aff": 2},
-		{"id": "credit_l", "count": 2, "reward": 1250, "aff": 2},
-		{"id": "gen_crystal", "count": 1, "reward": 1900, "aff": 3},
+		{"name": "小额信用", "type": "item", "id": "credit_s", "count": 2, "reward": 520, "aff": 1},
+		{"name": "清场作业", "type": "kill", "target": "any", "count": 10, "reward": 900, "aff": 2},
+		{"name": "大额信用", "type": "item", "id": "credit_l", "count": 2, "reward": 1250, "aff": 2},
+		{"name": "裂谷撤收", "type": "extract", "target": "canyon", "count": 2, "reward": 1900, "aff": 3},
 	],
 }
-## 各商人已完成的任务条数
+var QUEST_CHAINS := _ZH_QUEST_CHAINS.duplicate(true)
+## 各商人已完成的任务条数（旧存档兼容与统计）
 var quests := {}
+## 商人委托状态："商人:序号" -> 1 已接取 / 2 已完成；缺省为可接取
+var quest_state := {}
+## 委托进度："商人:序号" -> 已完成的目标计数；物品类委托不记
+var quest_progress := {}
 
 var money := 1500
 var stash: Array = []
@@ -132,12 +137,12 @@ var cargo: Array = []      ## 下一次出击要带的东西
 var loadout := {}
 var raids := 0
 ## 画质：0 流畅 / 1 高 / 2 极致（新存档默认“高”：极致档 1.5 倍超采样 + MSAA4x + TAA + SSIL，中端显卡压力过大）
-const QUALITY_NAMES := ["流畅", "高", "极致"]
+const _ZH_QUALITY_NAMES := ["流畅", "高", "极致"]
+var QUALITY_NAMES := _ZH_QUALITY_NAMES.duplicate()
 var quality := 1
 var render_style := 0  # 0 写实 1 三渲二
 var map_id := "greyport"  ## 出击战区
 var extracts_ok := 0
-var request := {}
 ## 遭遇过的敌人种类（跨行动累计，随存档保存）
 var seen_enemies: Array = []
 
@@ -154,6 +159,8 @@ var MUSIC := {}
 var RAID_SCRIPTS: Array = []
 
 
+var _zh_base := {}
+
 func _ready() -> void:
 	_init_save_path()
 	_merge_content()
@@ -161,8 +168,46 @@ func _ready() -> void:
 		_module_item(id)
 	_setup_input()
 	_run_ext_register()
+	_capture_zh_base()
+	var loc := get_node_or_null("/root/Loc")
+	if loc != null:
+		apply_lang(str(loc.get("lang")))
 	if not load_game():
 		new_game()
+	call_deferred("_bind_quest_events")
+
+
+func _capture_zh_base() -> void:
+	_zh_base = {
+		"MODULES": MODULES.duplicate(true),
+		"ITEMS": ITEMS.duplicate(true),
+		"SKILLS": SKILLS.duplicate(true),
+		"LOOT_TABLES": LOOT_TABLES.duplicate(true),
+		"ENEMIES": ENEMIES.duplicate(true),
+		"MAPS": MAPS.duplicate(true),
+		"POIS": POIS.duplicate(true),
+		"REQUEST_POOL": REQUEST_POOL.duplicate(true),
+		"DISPATCH_LINES": DISPATCH_LINES.duplicate(true),
+	}
+
+
+func apply_lang(_lang_code: String) -> void:
+	if _zh_base.is_empty():
+		_capture_zh_base()
+	MODULES = (_zh_base["MODULES"] as Dictionary).duplicate(true)
+	ITEMS = (_zh_base["ITEMS"] as Dictionary).duplicate(true)
+	SKILLS = (_zh_base["SKILLS"] as Dictionary).duplicate(true)
+	LOOT_TABLES = (_zh_base["LOOT_TABLES"] as Dictionary).duplicate(true)
+	ENEMIES = (_zh_base["ENEMIES"] as Dictionary).duplicate(true)
+	MAPS = (_zh_base["MAPS"] as Dictionary).duplicate(true)
+	POIS = (_zh_base["POIS"] as Dictionary).duplicate(true)
+	REQUEST_POOL = (_zh_base["REQUEST_POOL"] as Array).duplicate(true)
+	DISPATCH_LINES = (_zh_base["DISPATCH_LINES"] as Array).duplicate(true)
+	QUEST_CHAINS = _ZH_QUEST_CHAINS.duplicate(true)
+	_variant_cache.clear()
+	var loc := get_node_or_null("/root/Loc")
+	if loc != null and loc.has_method("apply_game_data"):
+		loc.call("apply_game_data", self)
 
 
 ## 模块同时登记为物品（类别 module）
@@ -181,9 +226,9 @@ func _setup_input() -> void:
 	_key("move_right", [KEY_D, KEY_RIGHT])
 	_key("dash", [KEY_SPACE, KEY_SHIFT])      # Space：位移技能（由底盘决定）
 	_key("ability", [KEY_F])                  # F：背部挂载技能
-	_key("skill_e", [KEY_E])                  # E：躯干技能
-	_key("skill_r", [KEY_R])                  # R：动力炉技能
+	_key("reload", [KEY_R])                   # R：双臂手动重装填
 	_key("interact", [KEY_G])
+	_key("inventory", [KEY_TAB, KEY_I])       # Tab / I：战地整备与货舱终端
 	_key("use_fuel", [KEY_1])
 	_key("use_repair", [KEY_2])
 	_key("call_transport", [KEY_T])
@@ -273,6 +318,50 @@ func slot_accepts(slot: String, id: String) -> bool:
 	return s == slot
 
 
+## 穿甲深度（mm RHA）换算为 1~6 级穿甲等级（对标防弹插板 Class 1~6）
+func pen_class(pen: float) -> int:
+	return clampi(int(round(pen / 11.0)), 1, 6)
+
+
+## 武器射程数值（标准射程 10）换算为实际弹头/光束物理飞行距离（米）
+func weapon_range_m(m: Dictionary) -> float:
+	if m.has("reach_m"):
+		return float(m.get("reach_m", 30.0))
+	return float(m.get("range", STD_RANGE)) * RANGE_M_SCALE
+
+
+## 判断躯干模块是否带有 [侦察] / [Recon] 标签
+func has_recon_tag(m: Dictionary) -> bool:
+	if float(m.get("recon", 0.0)) > 0.0:
+		return true
+	var tags: Array = m.get("tags", [])
+	return tags.has("侦察") or tags.has("Recon")
+
+
+## 查询模块绑定的车载子系统信息（含按键、冷却、能耗、效果说明）；仅底盘（SPACE/空格）与背部挂载（F）具备主动子系统，其余模块返回空字典
+func module_skill_info(id: String) -> Dictionary:
+	if not is_module(id):
+		return {}
+	var m: Dictionary = module(id)
+	var slot := str(m.get("slot", ""))
+	var en := Loc.is_en()
+	match slot:
+		"legs":
+			var t := str(m.get("type", "biped"))
+			var sk: Dictionary = SKILLS.get(t, {})
+			return {"key": Loc.space_key(), "slot_label": Loc.t("底盘机动", "Chassis Skill"), "id": t, "name": str(sk.get("name", Loc.t("无"))), "icon": str(sk.get("icon", "dash")), "cd": float(sk.get("cd", 1.0)), "cost": float(sk.get("cost", 0.0)), "desc": str(sk.get("desc", ""))}
+		"back":
+			var ab := str(m.get("ability", "none"))
+			var sk: Dictionary = SKILLS.get(ab, {})
+			var desc := str(sk.get("desc", ""))
+			if ab == "missile":
+				desc = ("Launches %d × %s, %.0f frag/HEAT dmg per hit." % [int(m.get("count", 6)), str(m.get("caliber", "guided micromissile")), float(m.get("dmg", 28.0))]) if en else ("齐射 %d 枚 %s，单发造成 %.0f 点破片/聚能伤害。" % [int(m.get("count", 6)), str(m.get("caliber", "制导微弹")), float(m.get("dmg", 28.0))])
+			elif ab == "shield":
+				desc = ("Activates a %.1fs Active Defense screen and injects sealant to repair 35%% limb damage." % float(m.get("dur", 3.5))) if en else ("启动 %.1f 秒主动防御拦截幕偏转来袭攻击，并注入损管密封胶修复 35%% 受损部位。" % float(m.get("dur", 3.5)))
+			return {"key": "F", "slot_label": Loc.t("背部挂载", "Back Mount"), "id": ab, "name": str(sk.get("name", Loc.t("无主动机能", "No Active System"))), "icon": str(sk.get("icon", "lock")), "cd": float(m.get("cd", 0.0)), "cost": float(m.get("cost", 0.0)), "desc": desc}
+	return {}
+
+
 # ---------- 机甲数值 ----------
 ## f(stats: Dictionary, loadout: Dictionary) -> void：在 compute_stats 算完模块数值后原地修改结果（驾驶员天赋、设施加成等）
 var _stat_hooks: Array = []
@@ -281,7 +370,9 @@ func add_stat_hook(f: Callable) -> void:
 	_stat_hooks.append(f)
 
 func compute_stats(lo: Dictionary) -> Dictionary:
-	var s := {"hp": 0.0, "cargo": 0.0, "energy": 0.0, "drain": 0.0, "speed": 0.0, "load": 1.0, "mass": 0.0, "armor": 0.0}
+	var s := {"hp": 0.0, "cargo": 0.0, "energy": 0.0, "drain": 0.0, "speed": 0.0, "load": 1.0, "mass": 0.0, "armor": 0.0, "armor_class": 2, "core_armor_class": 2, "legs_armor_class": 2, "ergo": 60.0, "weapon_range": 0.0, "recon": 0.0, "recon_tag": false, "view_range": STD_RANGE}
+	var ergo_sum := 0.0
+	var ergo_cnt := 0
 	for slot in SLOTS:
 		var id: String = lo.get(slot, "")
 		if not is_module(id):
@@ -293,9 +384,26 @@ func compute_stats(lo: Dictionary) -> Dictionary:
 		s["energy"] += float(m.get("energy", 0))
 		s["drain"] += float(m.get("drain", 0))
 		s["armor"] += float(m.get("armor", 0))
-		if slot == "legs":
+		if slot == "core":
+			s["core_armor_class"] = int(m.get("armor_class", 2))
+			s["recon"] = float(m.get("recon", 0.0))
+			s["recon_tag"] = has_recon_tag(m)
+		elif slot == "legs":
 			s["speed"] = float(m.speed)
 			s["load"] = float(m.load)
+			s["legs_armor_class"] = int(m.get("armor_class", 2))
+		elif slot == "arm_l" or slot == "arm_r":
+			s["weapon_range"] = maxf(float(s["weapon_range"]), float(m.get("range", STD_RANGE)))
+		if m.has("ergo"):
+			ergo_sum += float(m.get("ergo", 60.0))
+			ergo_cnt += 1
+	if float(s["weapon_range"]) <= 0.0:
+		s["weapon_range"] = STD_RANGE
+	s["view_range"] = maxf(STD_RANGE, float(s["weapon_range"])) + float(s["recon"])
+	s["armor_class"] = maxi(int(s["core_armor_class"]), int(s["legs_armor_class"]))
+	var base_ergo := (ergo_sum / float(ergo_cnt)) if ergo_cnt > 0 else 60.0
+	var back_w := float(module(lo.get("back", "")).get("w", 0.0)) if is_module(lo.get("back", "")) else 0.0
+	s["ergo"] = clampf(roundf(base_ergo - maxf(0.0, back_w - 4.0) * 1.2), 15.0, 95.0)
 	var eff := 1.0
 	if is_module(lo.get("gen", "")):
 		eff = float(module(lo.gen).eff)
@@ -305,21 +413,22 @@ func compute_stats(lo: Dictionary) -> Dictionary:
 		f.call(s, lo)
 	return s
 
-## 超载减速：总质量（模块+货物）超过底盘承重时速度下降
+## 超载减速：总质量（模块+货物）超过底盘承重时速度下降（负重肌力精英专精减轻 30% 超载减速惩罚）
 func speed_factor(stats: Dictionary, cargo_w: float) -> float:
 	var total: float = stats.mass + cargo_w
 	var over: float = max(0.0, total - stats.load)
-	return clamp(1.0 - over / max(1.0, stats.load) * 1.5, 0.4, 1.0)
+	var pen_scale := 1.05 if Growth.ability_elite("ab_rack") else 1.5
+	return clamp(1.0 - over / max(1.0, stats.load) * pen_scale, 0.4, 1.0)
 
 func can_deploy(lo: Dictionary) -> String:
 	for s in ["core", "legs", "gen"]:
 		if lo.get(s, "") == "":
-			return "缺少" + SLOT_NAMES[s]
+			return ("Missing " + SLOT_NAMES[s]) if Loc.is_en() else ("缺少" + SLOT_NAMES[s])
 	if lo.get("arm_l", "") == "" and lo.get("arm_r", "") == "":
-		return "至少需要一件手臂武装"
+		return Loc.t("至少需要一件手臂武装", "Requires at least 1 Arm Weapon")
 	var st := compute_stats(lo)
 	if weight_of(cargo) > st.cargo:
-		return "出击货舱超出容量"
+		return Loc.t("出击货舱超出容量", "Cargo Exceeds Capacity")
 	return ""
 
 
@@ -402,42 +511,173 @@ func map_data(id: String) -> Dictionary:
 	return MAPS.get(id, MAPS.get("greyport", {}))
 
 
-# ---------- 后勤委托 ----------
-func current_quest() -> Dictionary:
-	for m in QUEST_ORDER:
-		var i := int(quests.get(m, 0))
-		var chain: Array = QUEST_CHAINS.get(m, [])
-		if i < chain.size():
-			var q: Dictionary = chain[i].duplicate()
-			q["who"] = QUEST_NAMES.get(m, m)
-			q["merchant"] = m
-			q["char"] = m
-			return q
-	return {}
+# ---------- 商人委托 ----------
+func quest_key(m: String, i: int) -> String:
+	return "%s:%d" % [m, i]
 
 
-func new_request() -> void:
-	request = current_quest()
+## 0 可接取 / 1 已接取 / 2 已完成
+func quest_status(m: String, i: int) -> int:
+	return int(quest_state.get(quest_key(m, i), 0))
+
+
+func quest_entry(m: String, i: int) -> Dictionary:
+	var chain: Array = QUEST_CHAINS.get(m, [])
+	if i < 0 or i >= chain.size():
+		return {}
+	var q: Dictionary = chain[i].duplicate()
+	q["who"] = QUEST_NAMES.get(m, m)
+	q["merchant"] = m
+	q["char"] = m
+	q["index"] = i
+	q["status"] = quest_status(m, i)
+	return q
+
+
+## 某商人全部委托（含状态），供交易页逐条展示与接取
+func merchant_quests(m: String) -> Array:
+	var out: Array = []
+	for i in (QUEST_CHAINS.get(m, []) as Array).size():
+		out.append(quest_entry(m, i))
+	return out
+
+
+func accept_quest(m: String, i: int) -> bool:
+	if quest_entry(m, i).is_empty() or quest_status(m, i) != 0:
+		return false
+	quest_state[quest_key(m, i)] = 1
+	save_game()
+	return true
+
+
+## 委托目标类型：item 交付物品 / kill 击杀 / boss 击杀首领 / extract 撤离 / visit 前往战区
+func quest_type(q: Dictionary) -> String:
+	return str(q.get("type", "item"))
+
+
+func quest_progress_of(m: String, i: int) -> int:
+	return int(quest_progress.get(quest_key(m, i), 0))
+
+
+func quest_target_name(q: Dictionary) -> String:
+	var t := quest_type(q)
+	var tgt := str(q.get("target", ""))
+	if t == "kill" or t == "boss":
+		if tgt == "any":
+			return Loc.t("异体", "Hostiles")
+		return str((ENEMIES.get(tgt, {}) as Dictionary).get("name", tgt))
+	if t == "extract" or t == "visit":
+		return str(map_data(tgt).get("name", tgt))
+	return str(item_name(str(q.get("id", ""))))
+
+
+func quest_name(q: Dictionary) -> String:
+	return str(q.get("name", quest_objective(q)))
+
+
+func quest_objective(q: Dictionary) -> String:
+	var t := quest_type(q)
+	match t:
+		"kill", "boss":
+			return Loc.t("击杀 %s", "Eliminate %s") % quest_target_name(q)
+		"extract":
+			return Loc.t("从 %s 撤离", "Extract from %s") % quest_target_name(q)
+		"visit":
+			return Loc.t("前往 %s", "Deploy to %s") % quest_target_name(q)
+		_:
+			return Loc.t("交付 %s", "Deliver %s") % quest_target_name(q)
+
+
+func quest_ready(m: String, i: int) -> bool:
+	if quest_status(m, i) != 1:
+		return false
+	var q := quest_entry(m, i)
+	if q.is_empty():
+		return false
+	if quest_type(q) == "item":
+		return count_in_stash(str(q.get("id", ""))) >= int(q.count)
+	return quest_progress_of(m, i) >= int(q.count)
+
+
+func fulfill_quest(m: String, i: int) -> bool:
+	if not quest_ready(m, i):
+		return false
+	var q := quest_entry(m, i)
+	if quest_type(q) == "item":
+		for _k in int(q.count):
+			stash.erase(str(q.get("id", "")))
+	money += int(q.reward)
+	if int(q.get("aff", 0)) > 0:
+		Growth.grant_affinity(m, int(q.aff))
+	quest_state[quest_key(m, i)] = 2
+	quest_progress[quest_key(m, i)] = int(q.count)
+	quests[m] = int(quests.get(m, 0)) + 1
+	Events.request_fulfilled.emit(q)
+	save_game()
+	return true
+
+
+## 已接取的交付类委托所需物品，出售杂物时跳过
+func accepted_ids() -> Array:
+	var out: Array = []
+	for m: String in QUEST_CHAINS:
+		for i in (QUEST_CHAINS[m] as Array).size():
+			if quest_status(m, i) != 1:
+				continue
+			var q := quest_entry(m, i)
+			if quest_type(q) != "item":
+				continue
+			var id := str(q.get("id", ""))
+			if id != "" and not out.has(id):
+				out.append(id)
+	return out
+
+
+func _bind_quest_events() -> void:
+	if not Events.enemy_killed.is_connected(_on_enemy_killed):
+		Events.enemy_killed.connect(_on_enemy_killed)
+	if not Events.extract_completed.is_connected(_on_extract_completed):
+		Events.extract_completed.connect(_on_extract_completed)
+	if not Events.deployed.is_connected(_on_deployed):
+		Events.deployed.connect(_on_deployed)
+
+
+func _on_enemy_killed(kind: String, _pos: Vector3) -> void:
+	_bump_quests(["kill", "boss"], kind)
+
+
+func _on_extract_completed(_title: String, _is_transport: bool) -> void:
+	var tree := get_tree()
+	var sc = tree.current_scene if tree else null
+	var active_mid := str(sc.raid.map_id) if sc != null and "raid" in sc and is_instance_valid(sc.raid) and "map_id" in sc.raid else map_id
+	_bump_quests(["extract"], active_mid)
+
+
+func _on_deployed(id: String, _loadout: Dictionary) -> void:
+	_bump_quests(["visit"], id)
+
+
+## 事件推进：只累加已接取且未完成的对应目标
+func _bump_quests(types: Array, target_value: String) -> void:
+	for m: String in QUEST_CHAINS:
+		for i in (QUEST_CHAINS[m] as Array).size():
+			if quest_status(m, i) != 1:
+				continue
+			var q := quest_entry(m, i)
+			if not types.has(quest_type(q)):
+				continue
+			var tgt := str(q.get("target", ""))
+			if tgt != "any" and tgt != target_value:
+				if not (tgt == "broodmother" and target_value in ["grey_brood", "dust_matriarch", "harbor_reaper", "dune_devourer", "prism_archon", "terminus_warden", "silo_warhead", "spillway_leviathan"]) and not (tgt == "king_beetle" and target_value in ["iron_warden", "slag_colossus", "gorge_tyrant", "foundry_dreadnought", "excavator_titan", "drydock_behemoth"]) and not (tgt == "abyss_queen" and target_value in ["abyss_harbinger", "core_overlord"]):
+					continue
+			var cur := quest_progress_of(m, i)
+			if cur >= int(q.count):
+				continue
+			quest_progress[quest_key(m, i)] = cur + 1
+
 
 func count_in_stash(id: String) -> int:
 	return stash.count(id)
-
-func fulfill_request() -> bool:
-	if request.is_empty() or count_in_stash(request.id) < int(request.count):
-		return false
-	for i in int(request.count):
-		stash.erase(request.id)
-	money += int(request.reward)
-	var done := request.duplicate()
-	var m := str(request.get("merchant", ""))
-	if m != "":
-		quests[m] = int(quests.get(m, 0)) + 1
-		if int(done.get("aff", 0)) > 0:
-			Growth.grant_affinity(m, int(done.aff))
-	new_request()
-	Events.request_fulfilled.emit(done)
-	save_game()
-	return true
 
 
 ## 记一次敌人遭遇；返回 true 表示这个种类此前从未遇到过
@@ -457,7 +697,9 @@ func new_game() -> void:
 	raids = 0
 	extracts_ok = 0
 	seen_enemies = []
-	new_request()
+	quests = {}
+	quest_state = {}
+	quest_progress = {}
 	_sections_data = {}
 	for k in _sections:
 		_sections[k][1].call({})
@@ -473,7 +715,7 @@ func save_game() -> void:
 	if f == null:
 		return
 	f.store_string(JSON.stringify({"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
-		"raids": raids, "extracts_ok": extracts_ok, "request": request, "quests": quests, "quality": quality, "render_style": render_style, "map_id": map_id,
+		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "map_id": map_id,
 		"seen_enemies": seen_enemies, "sections": sec}))
 
 func load_game() -> bool:
@@ -486,24 +728,66 @@ func load_game() -> bool:
 	if typeof(d) != TYPE_DICTIONARY:
 		return false
 	quests = Dictionary(d.get("quests", {}))
+	quest_state = Dictionary(d.get("quest_state", {}))
+	quest_progress = Dictionary(d.get("quest_progress", {}))
+	if quest_state.is_empty() and not quests.is_empty():
+		# 旧存档只有已完成条数：按顺序补成已完成状态
+		for m: String in quests:
+			var n := mini(int(quests[m]), (QUEST_CHAINS.get(m, []) as Array).size())
+			for i in n:
+				quest_state[quest_key(m, i)] = 2
+	else:
+		quests = {}
+		for key: String in quest_state:
+			if int(quest_state[key]) == 2:
+				var m := key.get_slice(":", 0)
+				quests[m] = int(quests.get(m, 0)) + 1
 	money = int(d.get("money", 1500))
-	stash = Array(d.get("stash", []))
-	cargo = Array(d.get("cargo", []))
+	stash = _migrate_item_list(Array(d.get("stash", [])))
+	cargo = _migrate_item_list(Array(d.get("cargo", [])))
 	loadout = Dictionary(d.get("loadout", STARTER.duplicate()))
+	for slot_k: String in STARTER:
+		var cur_id := _migrate_item_id(str(loadout.get(slot_k, STARTER[slot_k])))
+		loadout[slot_k] = cur_id if MODULES.has(cur_id) else STARTER[slot_k]
 	raids = int(d.get("raids", 0))
 	quality = int(d.get("quality", 1))
 	render_style = int(d.get("render_style", 0))
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
-	request = Dictionary(d.get("request", {}))
-	if request.is_empty() or not d.has("quests"):
-		new_request()
 	seen_enemies = Array(d.get("seen_enemies", []))
 	var sec = d.get("sections", {})
 	_sections_data = sec if typeof(sec) == TYPE_DICTIONARY else {}
+	if _sections_data.has("progress") and typeof(_sections_data["progress"]) == TYPE_DICTIONARY:
+		var prog: Dictionary = _sections_data["progress"]
+		if typeof(prog.get("research")) == TYPE_ARRAY:
+			var rlist: Array = prog["research"]
+			for ri in rlist.size():
+				if str(rlist[ri]) == "res_hover":
+					rlist[ri] = "res_hex"
 	for k in _sections:
 		_sections[k][1].call(_section_in(k))
 	return true
+
+
+const _LEGACY_ID_MAP := {
+	"legs_hover": "legs_hex",
+	"legs_reverse": "legs_biped_scout",
+	"legs_wraith": "legs_biped_scout",
+	"legs_spring": "legs_biped_scout",
+	"legs_wheel": "legs_tread_light",
+}
+
+func _migrate_item_id(id: String) -> String:
+	var b := base_id(id)
+	if _LEGACY_ID_MAP.has(b):
+		return str(_LEGACY_ID_MAP[b]) + id.substr(b.length())
+	return id
+
+func _migrate_item_list(arr: Array) -> Array:
+	var out: Array = []
+	for raw in arr:
+		out.append(_migrate_item_id(str(raw)))
+	return out
 
 
 # ---------- 存档分区 ----------
@@ -579,7 +863,7 @@ func _exit_tree() -> void:
 ## static func register(gd) 在全部合并完成后调用，用来登记解析函数、钩子、输入动作等。
 ## 行为脚本字段 script（值为脚本路径，脚本不加 class_name、只写 static func）：
 ##   AMMO[武器].script     static func fire(mech, slot, origin, dir, m) 接管该武器的开火（弹道、炮口火光、警觉半径）
-##   SKILLS[技能].script   static func use(mech, key, sk, m) 接管该技能的效果；key = space / f / e / r，m 为对应槽位的模块数值
+##   SKILLS[技能].script   static func use(mech, key, sk, m) 接管该技能的效果；key = space / f，m 为对应槽位的模块数值
 ##   ITEMS[物品].script    static func use(mech, id) -> bool 接管消耗品的效果，返回 true 时从货舱扣除一件
 ##   ENEMIES / POIS / SPAWNS 的 script 规则见 data\ext\enemies.gd 与 data\ext\maps.gd
 const EXT_DIR := "res://data/ext"
@@ -679,14 +963,15 @@ static func list_scripts(dir: String) -> Array:
 
 
 ## 按画质档位调整战场环境的重型后处理（GPU 开销大头）。
-## 流畅：关体积雾 / SSIL，SSAO 降档，阴影 2048、硬阴影；高：体积雾 + SSAO，关 SSIL，阴影 4096；极致：全开，阴影 8192。
+## 流畅：关体积雾 / SSIL，保留基础 SSAO，阴影 2048、硬阴影；高：体积雾 + SSAO，关 SSIL，阴影 4096；极致：全开，阴影 8192。
 func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void:
 	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	match quality:
 		0:
 			env.volumetric_fog_enabled = false
 			env.ssil_enabled = false
-			env.ssao_enabled = false
+			env.ssao_enabled = not compat
+			env.ssao_intensity = 2.0
 			env.glow_enabled = true
 			RenderingServer.directional_shadow_atlas_set_size(2048, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
@@ -696,7 +981,7 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 		1:
 			env.ssil_enabled = false
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 		_:
 			env.ssil_enabled = not compat
 			RenderingServer.directional_shadow_atlas_set_size(8192, true)
@@ -704,31 +989,30 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 
 
 ## 应用抗锯齿 / 渲染缩放到主视口。
-## 流畅：MSAA 2x + FXAA；高：MSAA 4x + FXAA + TAA；极致：MSAA 4x + TAA + 1.5 倍超采样
+## 流畅：MSAA 2x；高 / 极致：MSAA 4x（禁用全局 FXAA 以免模糊贴图与高频棱角）
 func apply_quality(vp: Viewport = null) -> void:
 	if vp == null:
 		vp = get_tree().root
-	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
-	# 像素风画面不需要超采样与 TAA：三档只在 MSAA 与各向异性上区分，避免 1.5 倍分辨率叠加 4x MSAA
+	# 使用硬件 MSAA 保持贴图与几何锐度，关闭会涂抹地面的 FXAA
 	match quality:
 		0:
-			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			vp.msaa_3d = Viewport.MSAA_2X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 			vp.use_taa = false
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 			vp.scaling_3d_scale = 1.0
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 		1:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			vp.msaa_3d = Viewport.MSAA_4X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 			vp.use_taa = false
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 0.9
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
+			vp.scaling_3d_scale = 1.0
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
 		_:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			vp.msaa_3d = Viewport.MSAA_4X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 			vp.use_taa = false
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 0.85
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
+			vp.scaling_3d_scale = 1.0
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X

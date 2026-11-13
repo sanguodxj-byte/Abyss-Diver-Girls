@@ -22,13 +22,13 @@ def tt(sec_or_n):
 
 def seed_of(*parts):
     """由字符串拼出稳定的随机种子，同一个 id 与变体每次重建结果相同。"""
-    return zlib.crc32("|".join(str(p) for p in parts).encode("utf-8")) & 0x7FFFFFFF
+    return zlib.crc32(("ac6_hd2_v4|" + "|".join(str(p) for p in parts)).encode("utf-8")) & 0x7FFFFFFF
 
 
 # ---------------------------------------------------------------- 噪声
 def colored(n, rng, slope=0.0, fmin=20.0):
     """频谱斜率为 slope dB/倍频程的噪声（0 白噪声，-3 粉红，-6 布朗），fmin 以下的频谱保持平坦，峰值归一。"""
-    n = int(n)
+    n = ns(n) if isinstance(n, float) else int(n)
     if n < 2:
         return np.zeros(max(n, 0))
     spec = np.fft.rfft(rng.standard_normal(n))
@@ -150,6 +150,11 @@ def sweep(x, kind, freq, q=0.707, stages=1, block=32):
     if x.ndim == 2:
         return np.stack([sweep(x[:, c], kind, freq, q, stages, block) for c in range(2)], axis=1)
     n = len(x)
+    if isinstance(stages, float) or (np.ndim(freq) == 0 and np.ndim(q) == 0 and float(q) > 25.0):
+        f0_s, f1_s = max(15.0, float(freq)), max(15.0, float(q))
+        q = float(stages) if isinstance(stages, (int, float)) else 1.2
+        stages = 1
+        freq = np.geomspace(f0_s, f1_s, n)
     fr = _curve(freq, n)
     qq = _curve(q, n)
     nb = (n + block - 1) // block
@@ -293,36 +298,44 @@ def fold(x, amt=2.0):
 
 
 def crush(x, bits=8, down=1):
-    q = 2.0 ** (bits - 1)
-    y = np.round(x * q) / q
+    """工业级非线性谐波饱和（替代早期 8-bit 阶梯量化失真，消除廉价复古电子毛刺）。"""
+    drive = 1.6 + max(0.0, (12.0 - bits) * 0.22)
+    y = np.tanh(drive * (x + 0.08)) - np.tanh(drive * 0.08)
     if down > 1:
-        idx = (np.arange(len(y)) // down) * down
-        y = y[idx]
-    return y
+        cut = min(NYQ * 0.85, max(1800.0, SR / (down * 2.2)))
+        y = lp(y, cut, 2)
+    m = np.max(np.abs(y))
+    return y / m * np.max(np.abs(x)) if m > 0 else y
 
 
 # ---------------------------------------------------------------- 混响
 ## 空间预设：rt 为中频混响时间（秒），lo / hi 为低频与高频衰减时间的倍率，er 为早期反射（延时秒, 增益），
 ## pre 为预延迟，bright 为尾音上限频率，build 为扩散尾音的建立时间。
 SPACES = {
-    "yard": {"rt": 0.9, "lo": 1.1, "hi": 0.45, "er": [(0.017, 0.5), (0.031, 0.32), (0.052, 0.26), (0.083, 0.18)],
-             "pre": 0.008, "bright": 7000.0, "build": 0.02},
-    "valley": {"rt": 1.6, "lo": 1.25, "hi": 0.35, "er": [(0.045, 0.42), (0.11, 0.34), (0.19, 0.28), (0.31, 0.2), (0.47, 0.13)],
-               "pre": 0.02, "bright": 5000.0, "build": 0.06},
-    "hangar": {"rt": 2.1, "lo": 1.0, "hi": 0.6, "er": [(0.012, 0.45), (0.024, 0.38), (0.041, 0.3), (0.066, 0.22), (0.095, 0.16)],
-               "pre": 0.01, "bright": 9000.0, "build": 0.04},
-    "cockpit": {"rt": 0.28, "lo": 0.8, "hi": 0.6, "er": [(0.0023, 0.55), (0.0041, 0.45), (0.0067, 0.35), (0.0098, 0.25)],
-                "pre": 0.001, "bright": 8000.0, "build": 0.004},
-    "nest": {"rt": 1.2, "lo": 1.2, "hi": 0.3, "er": [(0.009, 0.4), (0.021, 0.3), (0.037, 0.22)],
-             "pre": 0.005, "bright": 4000.0, "build": 0.03},
-    "ui": {"rt": 0.18, "lo": 0.7, "hi": 0.8, "er": [(0.003, 0.3), (0.0071, 0.2)],
-           "pre": 0.001, "bright": 12000.0, "build": 0.003},
+    "yard": {"rt": 0.42, "lo": 1.12, "hi": 0.35,
+             "er": [(0.009, 0.32), (0.019, 0.24), (0.033, 0.18), (0.052, 0.12)],
+             "pre": 0.004, "bright": 4200.0, "build": 0.012},
+    "valley": {"rt": 1.15, "lo": 1.25, "hi": 0.28,
+               "er": [(0.022, 0.34), (0.048, 0.26), (0.092, 0.20), (0.165, 0.14)],
+               "pre": 0.010, "bright": 3800.0, "build": 0.032},
+    "hangar": {"rt": 0.95, "lo": 1.10, "hi": 0.42,
+               "er": [(0.010, 0.34), (0.021, 0.26), (0.038, 0.19), (0.064, 0.13)],
+               "pre": 0.006, "bright": 4800.0, "build": 0.022},
+    "cockpit": {"rt": 0.14, "lo": 0.85, "hi": 0.48,
+                "er": [(0.0025, 0.28), (0.0058, 0.18), (0.0095, 0.11)],
+                "pre": 0.0008, "bright": 5200.0, "build": 0.0025},
+    "nest": {"rt": 0.78, "lo": 1.22, "hi": 0.26,
+             "er": [(0.008, 0.32), (0.019, 0.24), (0.036, 0.16)],
+             "pre": 0.004, "bright": 3200.0, "build": 0.018},
+    "ui": {"rt": 0.09, "lo": 0.72, "hi": 0.55,
+           "er": [(0.0028, 0.22), (0.0062, 0.12)],
+           "pre": 0.0006, "bright": 6200.0, "build": 0.0018},
 }
 _IR = {}
 
 
 def impulse(kind, stereo, seed=0):
-    """按空间预设合成的脉冲响应：三段频带各自指数衰减的噪声尾音 + 离散早期反射，能量归一。"""
+    """按空间预设合成的脉冲响应：三段频带各自指数衰减的扩散尾音 + 微扩散早期反射，能量归一（彻底消除单采样狄拉克尖刺导致的金属桶梳状滤波）。"""
     key = (kind, bool(stereo), seed)
     if key in _IR:
         return _IR[key]
@@ -335,7 +348,7 @@ def impulse(kind, stereo, seed=0):
     for c in range(2 if stereo else 1):
         w = rng.standard_normal(n)
         lo_b = lp(w, 250.0)
-        hi_b = hp(w, 2500.0)
+        hi_b = hp(w, 2400.0)
         mid_b = w - lo_b - hi_b
 
         def dec(r):
@@ -349,11 +362,14 @@ def impulse(kind, stereo, seed=0):
         tail /= np.sqrt(np.sum(tail ** 2)) + 1e-12
         er = np.zeros(n)
         for dly, g in sp["er"]:
-            j = int(round(dly * (1.0 + 0.07 * c * rng.uniform(-1.0, 1.0)) * SR))
+            j = int(round(dly * (1.0 + 0.08 * (c + 1) * rng.uniform(-1.0, 1.0)) * SR))
             if j < n:
-                er[j] += g * (1.0 if rng.random() > 0.3 else -1.0)
-        er = lp(er, sp["bright"] * 0.8)
-        ir = tail * 0.8 + er
+                span = min(n - j, ns(0.005))
+                burst_er = rng.standard_normal(span) * np.exp(-tt(span) / 0.0015)
+                er[j:j + span] += g * burst_er
+        er = lp(er, sp["bright"] * 0.7)
+        er /= np.sqrt(np.sum(er ** 2)) + 1e-12
+        ir = tail * 0.94 + er * 0.18
         ir /= np.sqrt(np.sum(ir ** 2)) + 1e-12
         chans.append(ir)
     ir = np.stack(chans, 1) if stereo else chans[0]
@@ -366,15 +382,16 @@ def space(x, kind, wet=0.25, stereo=False, seed=0, dry=1.0, width=1.0):
     stereo 为真时左右声道的湿声去相关，width 调整其宽度。输出长度包含混响尾音。"""
     ir = impulse(kind, stereo, seed)
     mono = x if x.ndim == 1 else x.mean(axis=1)
+    eff_wet = float(wet) * 0.55
     if stereo:
         base = x if x.ndim == 2 else np.stack([x, x], 1)
         wl = sps.fftconvolve(mono, ir[:, 0])
         wr = sps.fftconvolve(mono, ir[:, 1])
         m, s = 0.5 * (wl + wr), 0.5 * (wl - wr) * width
-        out = wet * np.stack([m + s, m - s], 1)
+        out = eff_wet * np.stack([m + s, m - s], 1)
         out[: len(base)] += dry * base
         return out
-    out = wet * sps.fftconvolve(mono, ir)
+    out = eff_wet * sps.fftconvolve(mono, ir)
     out[: len(mono)] += dry * mono
     return out
 
@@ -419,14 +436,14 @@ def _kw(x):
 
 def loudness(x, win=0.4):
     """K 加权响度，取 win 秒滑动窗口的最大值（LUFS 刻度）。立体声取左右功率平均，
-    所以左右相同的立体声与同样内容的单声道读数一致；短于窗口的声音按补零后的窗口计。"""
+    所以左右相同的立体声与同样内容的单声道读数一致；极短促瞬态声音按实际有效窗口计，避免被静默补零过度推大造成失真。"""
     y = _kw(x)
     p = y ** 2 if y.ndim == 1 else np.mean(y ** 2, axis=1)
-    w = ns(win)
+    w = min(ns(win), max(ns(0.065), len(p)))
     if len(p) < w:
         p = np.concatenate([p, np.zeros(w - len(p))])
     c = np.concatenate([[0.0], np.cumsum(p)])
-    hop = ns(0.01)
+    hop = max(1, min(ns(0.01), len(p) - w + 1))
     idx = np.arange(0, len(p) - w + 1, hop)
     m = np.max((c[idx + w] - c[idx]) / w)
     return -0.691 + 10.0 * np.log10(m + 1e-20)
@@ -525,8 +542,26 @@ def master(x, target, ceil_db=-1.0, max_gr=8.0, hpf=25.0, fin=0.0008, fout=0.02,
         cut_long = True
     y = y[:end]
     y = fade_in(y, fin)
-    y = fade_out(y, min(0.12, 0.25 * len(y) / SR) if cut_long else fout)
+    y = fade_out(y, max(0.025, min(0.14, 0.25 * len(y) / SR)) if cut_long else max(fout, 0.022))
     z, gr, g_db = level(y, target, ceil_db, max_gr)
+    z = fade_in(z, max(fin, 0.001))
+    z = fade_out(z, max(fout, 0.022))
+    k_tail = min(len(z) // 4, ns(0.007))
+    if len(z) > 8:
+        mid = z[1:-1]
+        mid -= np.mean(mid, axis=0, keepdims=True)
+        z = fade_in(z, max(fin, 0.001))
+        z = fade_out(z, max(fout, 0.022))
+    if k_tail > 2:
+        ramp = (np.linspace(1.0, 0.0, k_tail) ** 2.2)
+        z[-k_tail:] *= ramp if z.ndim == 1 else ramp[:, None]
+    if len(z) > 8:
+        dc_err = np.mean(z, axis=0, keepdims=True)
+        w_mid = np.sin(np.pi * np.arange(len(z)) / (len(z) - 1))
+        w_mid = w_mid / (np.mean(w_mid) + 1e-12)
+        z -= dc_err * (w_mid if z.ndim == 1 else w_mid[:, None])
+    z[0] = 0.0
+    z[-1] = 0.0
     return z, {"dur": len(z) / SR, "lufs": loudness(z), "gain": g_db, "gr": gr}
 
 
@@ -574,20 +609,153 @@ def true_peak_db(z):
 
 
 def write_wav(path, z):
+    import time as _t
     q = np.round(np.clip(z, -1.0, 1.0) * 32767.0).astype(np.int16)
-    wavfile.write(path, SR, q)
+    for _ in range(30):
+        try:
+            wavfile.write(path, SR, q)
+            return
+        except OSError:
+            _t.sleep(0.1)
 
 
+# ---------------------------------------------------------------- 扩展工具函数与配方登记
+def env_exp(dur_or_n, decay_rate=10.0):
+    n = ns(dur_or_n) if isinstance(dur_or_n, float) else int(dur_or_n)
+    return np.exp(-tt(n) * float(decay_rate))
 
-# ---------------------------------------------------------------- 配方登记
+
+def env_adsr(dur_or_n, a=0.01, d=0.08, s=0.6, r=0.15):
+    n = ns(dur_or_n) if isinstance(dur_or_n, float) else int(dur_or_n)
+    dur_s = n / SR
+    t_rel = max(a + d, dur_s - r)
+    return env([(0.0, 0.0), (a, 1.0), (a + d, s), (t_rel, s), (dur_s, 0.0)], n)
+
+
+def velvet(dur_or_n, density=60.0, rng=None):
+    n = ns(dur_or_n) if isinstance(dur_or_n, float) else int(dur_or_n)
+    if rng is None:
+        rng = np.random.default_rng(1337)
+    out = np.zeros(n)
+    k = max(2, int((n / SR) * float(density)))
+    idx = rng.integers(0, n, k)
+    out[idx] = rng.choice([-1.0, 1.0], k) * rng.uniform(0.5, 1.0, k)
+    return out
+
+
+def place(a, b, c=None, d=1.0):
+    if isinstance(b, (int, float, np.floating, np.integer)):
+        sig = np.asarray(a, float)
+        o = max(0, int(round(float(b) * SR)))
+        tot = max(o + len(sig), ns(float(c)) if c is not None else 0)
+        out = np.zeros(tot) if sig.ndim == 1 else np.zeros((tot, sig.shape[1]))
+        m = min(len(sig), tot - o)
+        if m > 0:
+            out[o:o + m] = sig[:m]
+        return out
+    dst = a
+    src_ = b
+    at = float(c) if c is not None else 0.0
+    gain = float(d)
+    o = int(round(at * SR))
+    if o >= len(dst) or o < 0:
+        return dst
+    m = min(len(src_), len(dst) - o)
+    dst[o:o + m] += gain * src_[:m]
+    return dst
+
+
+def mix(*arrays):
+    valid = [np.asarray(x, float) for x in arrays if x is not None and len(x) > 0]
+    if not valid:
+        return np.zeros(ns(0.05))
+    n = max(len(x) for x in valid)
+    out = np.zeros(n)
+    for x in valid:
+        m = x if x.ndim == 1 else x.mean(axis=1)
+        out[:len(m)] += m
+    return out
+
+
+def reverb_tail(x, wet=0.2, rt=0.22):
+    """自然紧凑的扩散声学余音（按实际 rt 合成平滑指数衰减尾音，不叠加离散梳状早反射，保持瞬态干脆清晰）。"""
+    sig = np.asarray(x, float)
+    mono = sig if sig.ndim == 1 else sig.mean(axis=1)
+    rt_s = float(np.clip(rt, 0.06, 0.65))
+    n_ir = ns(rt_s * 1.15)
+    t = tt(n_ir)
+    rng = np.random.default_rng(seed_of("rtail", int(rt_s * 1000), len(mono)))
+    w = rng.standard_normal(n_ir)
+    lo_b = lp(w, 220.0) * np.exp(-6.9078 * t / (rt_s * 1.05))
+    mid_b = bp(w, 220.0, 2200.0) * np.exp(-6.9078 * t / (rt_s * 0.85))
+    hi_b = hp(w, 2200.0) * np.exp(-6.9078 * t / (rt_s * 0.42))
+    ir = lp(lo_b + mid_b + 0.45 * hi_b, 3800.0)
+    ir *= 1.0 - np.exp(-t / 0.004)
+    ir /= np.sqrt(np.sum(ir ** 2)) + 1e-12
+    tail = sps.fftconvolve(mono, ir)
+    eff_wet = float(wet) * 0.36
+    out = eff_wet * tail
+    out[:len(mono)] += mono
+    return out[:len(mono) + ns(rt_s * 0.45)]
+
+
 RECIPES = {}
+_QUICK_PREF = ("wpn_mg_fire", "wpn_shotgun_fire", "wpn_laser_fire", "wpn_flamer_ignite", "wpn_railgun_fire",
+               "wpn_arc_fire", "wpn_mortar_fire", "wpn_plasma_fire", "wpn_drone_fire", "hit_", "ui_", "explosion",
+               "shield_hit", "skill_denied", "use_denied", "cargo_full", "wpn_empty", "mech_hurt", "step_", "story_text")
 
 
 def sfx(sid, n=1, target=-18.0, dur=None, loop=None, reps=4, fout=0.02, fin=0.0008, hpf=25.0, max_gr=8.0):
     """登记一个音效配方：n 为变体数，target 为响度目标（LUFS，400 毫秒窗口最大值），dur 为最长时长（秒）；
-    loop 为循环一遍的时长（秒）时按循环母带处理，reps 为合成时重复的遍数。"""
+    loop 为循环一遍的时长（秒）时按循环母带处理，reps 为合成时重复的遍数。同时支持 fn(c) 与 fn(v, rng)。"""
     def deco(fn):
-        RECIPES[sid] = {"fn": fn, "n": n, "target": target, "dur": dur, "loop": loop, "reps": reps,
+        nargs = fn.__code__.co_argcount
+        if nargs >= 2:
+            def _wrapped(c):
+                raw = np.asarray(fn(c.v, c.rng), float)
+                if c.loop:
+                    p = c.period
+                    if len(raw) < p:
+                        raw = np.pad(raw, (0, p - len(raw)))
+                    seg = raw[:p].copy()
+                    xf = min(p // 6, ns(0.06))
+                    if xf > 4:
+                        w = 0.5 - 0.5 * np.cos(np.pi * np.arange(xf) / (xf - 1))
+                        seg[:xf] = seg[:xf] * w + seg[-xf:] * (1.0 - w)
+                    return np.tile(seg, c.reps)
+                if dur is not None and len(raw) > ns(dur):
+                    raw = raw[:ns(dur)]
+                if sid.startswith(_QUICK_PREF):
+                    e = np.abs(raw if raw.ndim == 1 else raw.mean(axis=1))
+                    pk_val = float(e.max()) if len(e) else 0.0
+                    if pk_val > 0 and float(np.argmax(e >= 0.5 * pk_val) / SR) > 0.045:
+                        k_tr = min(len(raw), ns(0.024))
+                        t_tr = tt(k_tr)
+                        # 自然清脆物理瞬态冲量（兼顾中频密度与高频触点清晰度）
+                        sub_p = np.sin(2.0 * np.pi * phase(110.0 + 180.0 * np.exp(-t_tr / 0.006), k_tr)) * np.exp(-t_tr / 0.009)
+                        snap_p = bp(0.55 * white(k_tr, c.rng) + 0.45 * pink(k_tr, c.rng), 320.0, 3800.0, 2) * np.exp(-t_tr / 0.004)
+                        tr = 0.45 * sub_p + 0.65 * snap_p
+                        tr = tr / (np.max(np.abs(tr)) + 1e-12) * (pk_val * 0.65)
+                        if raw.ndim == 1:
+                            raw[:k_tr] += tr
+                        else:
+                            raw[:k_tr, 0] += tr
+                            raw[:k_tr, 1] += tr
+                if c.stereo and raw.ndim == 1:
+                    if sid.startswith(("ui_", "story_text", "comm_")):
+                        dly = ns(0.00022)
+                        r_ch = np.concatenate([np.zeros(dly), raw[:-dly]]) if len(raw) > dly else raw.copy()
+                        raw = np.stack([raw, 0.93 * raw + 0.07 * r_ch], axis=1)
+                    else:
+                        sp_kind = "ui" if sid.startswith(("story_", "grow_", "shop_", "cargo_", "request_", "hub_")) else "cockpit"
+                        raw = space(raw, sp_kind, wet=0.05, stereo=True, seed=c.v)
+                    if dur is not None and len(raw) > ns(dur):
+                        raw = raw[:ns(dur)]
+                return raw
+            use_fn = _wrapped
+        else:
+            use_fn = fn
+        RECIPES[sid] = {"fn": use_fn, "n": n, "target": target, "dur": dur, "loop": loop, "reps": reps,
                         "fout": fout, "fin": fin, "hpf": hpf, "max_gr": max_gr}
         return fn
     return deco

@@ -25,12 +25,12 @@ const REQUEST_POOL := [
 ]
 const ITEMS := {
 		"gift_watch": {"name": "铜壳怀表", "cat": "misc", "w": 0.2, "v": 240, "rar": 1, "gift": {"char": "lina", "points": 2}},
-		"gift_wrench": {"name": "钨钢扳手", "cat": "misc", "w": 0.8, "v": 180, "rar": 1, "gift": {"char": "laojiao", "points": 2}},
+			"gift_wrench": {"name": "钨钢扳手", "cat": "misc", "w": 0.8, "v": 180, "rar": 1, "gift": {"char": "mia", "points": 2}},
 		"gift_cocoa": {"name": "旧世界可可粉", "cat": "misc", "w": 0.4, "v": 220, "rar": 1, "gift": {"char": "ajin", "points": 2}},
 		"gift_chart": {"name": "航线图册", "cat": "misc", "w": 0.6, "v": 260, "rar": 2, "gift": {"char": "xiaoman", "points": 2}},
 		"gift_flask": {"name": "银质酒壶", "cat": "misc", "w": 0.5, "v": 300, "rar": 2},
 	}
-const SHOP := ["arm_flamer", "arm_laser", "legs_quad", "back_shield", "back_missile", "legs_hover", "core_heavy", "gen_crystal"]
+const SHOP := ["arm_flamer", "arm_laser", "legs_quad", "legs_quad_crab", "back_shield", "back_missile", "legs_hex", "legs_hex_beetle", "core_heavy", "gen_crystal"]
 const SFX := {
 	"grow_upgrade": {"files": ["grow_upgrade.wav"], "when": "飞空艇设施升级完成（growth_panel.gd）", "bus": "UI", "d3": false, "pitch": 0.0, "max": 2},
 	"grow_research": {"files": ["grow_research.wav"], "when": "研究节点完成（growth_panel.gd）", "bus": "UI", "d3": false, "pitch": 0.0, "max": 2},
@@ -131,18 +131,18 @@ const RESEARCH := {
 		"stat": {"energy": 12.0}, "shop": [], "effect": "能源上限 +12"},
 	"res_armor": {"name": "复合虫甲装甲", "lab": 1, "needs": [], "cost": {"money": 1200, "items": {"chitin": 4, "circuit": 2}},
 		"stat": {"armor": 0.03}, "shop": ["back_shield"], "effect": "护甲 +3% · 商店上架：相位护盾"},
-	"res_lens": {"name": "聚焦透镜阵列", "lab": 2, "needs": [], "cost": {"money": 1700, "items": {"circuit": 3, "bug_crystal": 1}},
-		"stat": {}, "shop": ["arm_laser"], "effect": "商店上架：聚焦激光"},
-	"res_flame": {"name": "高压燃料喷嘴", "lab": 2, "needs": [], "cost": {"money": 1300, "items": {"wire": 2, "bolts": 3}},
-		"stat": {}, "shop": ["arm_flamer"], "effect": "商店上架：火焰喷射器"},
+	"res_lens": {"name": "多级电磁加速线圈", "lab": 2, "needs": [], "cost": {"money": 1700, "items": {"circuit": 3, "bug_crystal": 1}},
+		"stat": {}, "shop": ["arm_laser"], "effect": "商店上架：电磁线圈步枪"},
+	"res_flame": {"name": "增压铝热弹投射机构", "lab": 2, "needs": [], "cost": {"money": 1300, "items": {"wire": 2, "bolts": 3}},
+		"stat": {}, "shop": ["arm_flamer"], "effect": "商店上架：燃烧弹投射器"},
 	"res_quad": {"name": "多足步态控制", "lab": 2, "needs": [], "cost": {"money": 1600, "items": {"circuit": 3, "chitin": 2}},
-		"stat": {"speed": 0.2, "load": 2.0}, "shop": ["legs_quad"], "effect": "速度 +0.2 · 承重 +2 · 商店上架：四足 Arachne"},
+		"stat": {"speed": 0.2, "load": 2.0}, "shop": ["legs_quad", "legs_quad_crab"], "effect": "速度 +0.2 · 承重 +2 · 商店上架：多地形四足 / 堡垒四足"},
 	"res_missile": {"name": "蜂巢弹巢", "lab": 3, "needs": [], "cost": {"money": 2300, "items": {"circuit": 4, "wire": 3}},
 		"stat": {}, "shop": ["back_missile"], "effect": "商店上架：蜂巢导弹"},
-	"res_hover": {"name": "反重力悬浮环", "lab": 3, "needs": [], "cost": {"money": 2800, "items": {"bug_crystal": 2, "hdd": 1}},
-		"stat": {"speed": 0.3}, "shop": ["legs_hover"], "effect": "速度 +0.3 · 商店上架：悬浮 Skimmer"},
+	"res_hex": {"name": "六足步态协同", "lab": 3, "needs": [], "cost": {"money": 2800, "items": {"bug_crystal": 2, "hdd": 1}},
+		"stat": {"load": 6.0, "speed": 0.2}, "shop": ["legs_hex", "legs_hex_beetle"], "effect": "承重 +6 · 速度 +0.2 · 商店上架：六足巡航 / 甲虫六足"},
 	"res_core": {"name": "重装躯干试制", "lab": 3, "needs": [], "cost": {"money": 2600, "items": {"chitin": 6, "circuit": 4}},
-		"stat": {"hp": 10.0}, "shop": ["core_heavy"], "effect": "结构 +10 · 商店上架：重装躯干 Bulwark"},
+		"stat": {"hp": 10.0}, "shop": ["core_heavy"], "effect": "结构 +10 · 商店上架：重型框架"},
 	"res_recycle": {"name": "生态循环净水", "lab": 2, "needs": [], "cost": {"money": 1400, "items": {"water_tab": 4, "circuit": 1}},
 		"stat": {"drain": -0.006}, "shop": [], "effect": "耗能 -0.006"},
 	"res_quiet": {"name": "消音缓冲机架", "lab": 3, "needs": [], "cost": {"money": 2100, "items": {"chitin": 3, "bolts": 4}},
@@ -171,7 +171,7 @@ const PILOTS := {
 		"name": "零",
 		"level_stat": {"energy": 5.0, "drain": -0.003},
 		"talents": [
-			{"id": "t_rei_cap", "name": "激光电容", "level": 2, "points": 1, "stat": {"energy": 15.0}, "effect": "能源上限 +15"},
+			{"id": "t_rei_cap", "name": "脉冲储能电容", "level": 2, "points": 1, "stat": {"energy": 15.0}, "effect": "能源上限 +15"},
 			{"id": "t_rei_step", "name": "静默步态", "level": 3, "points": 1, "stat": {"speed": 0.3}, "effect": "速度 +0.3"},
 			{"id": "t_rei_cool", "name": "低温回路", "level": 4, "points": 1, "stat": {"drain": -0.008}, "effect": "耗能 -0.008"},
 			{"id": "t_rei_focus", "name": "长距瞄准", "level": 6, "points": 2, "stat": {"energy": 20.0, "hp": 10.0}, "effect": "能源上限 +20 · 结构 +10"},
@@ -192,7 +192,7 @@ const PILOTS := {
 const CREW := {
 	"lina": {"name": "莉娜", "stat": {"energy": 2.0}, "preferred": "gift_watch",
 		"levels": ["能源上限 +2", "能源上限 +4", "能源上限 +6", "能源上限 +8", "能源上限 +10"]},
-		"laojiao": {"name": "米娅", "stat": {"armor": 0.01}, "preferred": "gift_wrench",
+		"mia": {"name": "米娅", "stat": {"armor": 0.01}, "preferred": "gift_wrench",
 		"levels": ["护甲 +1%", "护甲 +2%", "护甲 +3%", "护甲 +4%", "护甲 +5%"]},
 	"ajin": {"name": "阿堇", "stat": {"hp": 3.0}, "preferred": "gift_cocoa",
 		"levels": ["结构上限 +3", "结构上限 +6", "结构上限 +9", "结构上限 +12", "结构上限 +15"]},
@@ -221,73 +221,87 @@ const MEAL := {
 	"ration": "能量 +8 · 结构 +4",
 }
 
-const WHO_CHAR := {"厨师阿堇": "ajin", "机械师米娅": "laojiao", "装甲工坊": "laojiao"}
+const WHO_CHAR := {"厨师阿堇": "ajin", "机械师米娅": "mia", "装甲工坊": "mia"}
 const GENERIC_GIFTS := {"coffee": 1, "toy": 1}
 
 ## ---------------------------------------------------------------- 机库「技能」页签（v0.6）
 ## MATERIALS   技能页显示的打捞杂物（升级材料）顺序；数量从仓库实时统计，花费时从仓库扣除。
 const MATERIALS := ["bolts", "wire", "circuit", "chitin", "bug_crystal", "hdd", "can_food", "water_tab", "coffee"]
 
-## ABILITIES   主角能力强化：花钱 + 杂物直接升级，只对主角（玩家）机体生效。
-##             {"name", "max", "stat": 每级叠加的机体数值, "effect": 每级文字（单级增量）,
-##              "cost": [第 1..max 级的费用 {"money", "items"}]}
+## ABILITIES   塔科夫式实战熟练度技能（Use-Based Proficiency Skills）：
+##             不消耗任何信用点或打捞物资，仅在战区实战执行对应动作（移动、负重行军、抗伤损管、装甲卸力、
+##             实弹射击、炉心耗能、搜刮检视、战术撤离）时自动累积熟练度点数并升级；单局初段享精力充沛加成，
+##             同局过度重复同一动作触发疲劳递减，新出击重置精力状态。达到满级 Lv.10 额外激活「精英专精」。
 const ABILITIES := {
-	"ab_frame": {"name": "骨架补强", "max": 5, "stat": {"hp": 8.0}, "effect": "结构 +8",
-		"cost": [
-			{"money": 400, "items": {"bolts": 2}},
-			{"money": 700, "items": {"bolts": 3, "wire": 1}},
-			{"money": 1100, "items": {"bolts": 4, "chitin": 2}},
-			{"money": 1600, "items": {"chitin": 4, "circuit": 1}},
-			{"money": 2300, "items": {"chitin": 5, "bug_crystal": 1}},
-		]},
-	"ab_reactor": {"name": "反应堆调校", "max": 5, "stat": {"energy": 8.0}, "effect": "能源上限 +8",
-		"cost": [
-			{"money": 450, "items": {"wire": 2}},
-			{"money": 800, "items": {"wire": 2, "circuit": 1}},
-			{"money": 1200, "items": {"circuit": 2, "wire": 2}},
-			{"money": 1700, "items": {"circuit": 3, "bug_crystal": 1}},
-			{"money": 2400, "items": {"bug_crystal": 2, "hdd": 1}},
-		]},
-	"ab_servo": {"name": "伺服增压", "max": 5, "stat": {"speed": 0.15}, "effect": "速度 +0.15",
-		"cost": [
-			{"money": 500, "items": {"bolts": 2, "wire": 1}},
-			{"money": 850, "items": {"wire": 2, "circuit": 1}},
-			{"money": 1300, "items": {"circuit": 2, "bolts": 3}},
-			{"money": 1800, "items": {"circuit": 3, "hdd": 1}},
-			{"money": 2600, "items": {"hdd": 2, "bug_crystal": 1}},
-		]},
-	"ab_rack": {"name": "挂架扩容", "max": 5, "stat": {"cargo": 1.5, "load": 2.0}, "effect": "货舱 +1.5 · 承重 +2",
-		"cost": [
-			{"money": 400, "items": {"bolts": 3}},
-			{"money": 700, "items": {"bolts": 3, "chitin": 1}},
-			{"money": 1100, "items": {"chitin": 3, "wire": 1}},
-			{"money": 1600, "items": {"chitin": 4, "circuit": 1}},
-			{"money": 2200, "items": {"chitin": 5, "hdd": 1}},
-		]},
-	"ab_plating": {"name": "复合贴甲", "max": 5, "stat": {"armor": 0.012}, "effect": "护甲 +1.2%",
-		"cost": [
-			{"money": 600, "items": {"chitin": 2}},
-			{"money": 1000, "items": {"chitin": 3, "bolts": 2}},
-			{"money": 1500, "items": {"chitin": 4, "circuit": 1}},
-			{"money": 2100, "items": {"chitin": 5, "bug_crystal": 1}},
-			{"money": 2900, "items": {"bug_crystal": 2, "hdd": 1}},
-		]},
+	"ab_servo": {
+		"name": "机动耐力", "en": "ENDURANCE", "cat": "机动", "icon": "legs_biped_scout", "max": 10,
+		"stat": {"speed": 0.08, "drain": -0.0012},
+		"effect": "移速 +0.08 · 耗能 -0.0012",
+		"elite": "底盘推进机动冷却 -15%",
+		"how": "战区行进移动 · 施展底盘推进机动",
+	},
+	"ab_rack": {
+		"name": "负重肌力", "en": "STRENGTH", "cat": "体能", "icon": "back_rack", "max": 10,
+		"stat": {"cargo": 1.0, "load": 1.5},
+		"effect": "货舱 +1.0 · 承重 +1.5",
+		"elite": "超载减速惩罚减轻 30%",
+		"how": "高负载/超载负重行军 · 携重物资撤离",
+	},
+	"ab_frame": {
+		"name": "抗损损管", "en": "VITALITY", "cat": "生存", "icon": "repair_kit", "max": 10,
+		"stat": {"hp": 5.0},
+		"effect": "结构上限 +5",
+		"elite": "战地维修包结构与部位修复量 +25%",
+		"how": "承受实战火力冲击 · 战地抢修受损机体",
+	},
+	"ab_plating": {
+		"name": "重装卸力", "en": "HEAVY ARMOR", "cat": "重装", "icon": "core_heavy", "max": 10,
+		"stat": {"armor": 0.008},
+		"effect": "护甲减伤 +0.8%",
+		"elite": "部位受损耐久折损减轻 20%",
+		"how": "机体装甲减伤吸收 · 护盾拦截 · 击毁重甲目标",
+	},
+	"ab_firearm": {
+		"name": "实弹火控", "en": "FIREARMS", "cat": "战斗", "icon": "arm_ac30", "max": 10,
+		"stat": {"ergo": 2.2},
+		"effect": "人机工效 +2.2（压散布 / 快换弹）",
+		"elite": "双臂装填速度额外 +15%",
+		"how": "实弹开火射击 · 有效命中与击毁 · 战术换弹",
+	},
+	"ab_reactor": {
+		"name": "炉心代谢", "en": "METABOLISM", "cat": "能源", "icon": "gen_reactor", "max": 10,
+		"stat": {"energy": 5.0},
+		"effect": "能源上限 +5",
+		"elite": "电池与口粮补给回能 +20%",
+		"how": "消耗反应堆电力 · 释放背部武装 · 使用能源饮食补给",
+	},
+	"ab_search": {
+		"name": "搜刮感知", "en": "ATTENTION", "cat": "搜刮", "icon": "hdd", "max": 10,
+		"stat": {"cargo": 0.5, "recon": 0.25},
+		"effect": "搜刮检视 +4% · 视野 +0.25 · 货舱 +0.5",
+		"elite": "开启容器瞬间立即显现首件战利品",
+		"how": "开启物资容器 · 逐格检视显现 · 拾取高稀有物资",
+	},
+	"ab_covert": {
+		"name": "战术撤收", "en": "RAID OPS", "cat": "战术", "icon": "extract_flare", "max": 10,
+		"stat": {"speed": 0.04, "ergo": 1.0},
+		"effect": "撤离读秒 -2% · 移速 +0.04 · 工效 +1.0",
+		"elite": "实弹开火警觉噪音半径 -15%",
+		"how": "发现战区地标 · 投放战术器材 · 成功撤离与讨伐首领",
+	},
 }
-
-## TRAINING    模拟舱训练：花钱 + 杂物给主角直接加经验（每次固定 xp）。
-const TRAINING := {"xp": 120, "cost": {"money": 600, "items": {"hdd": 1, "coffee": 1}}}
 
 ## PODS        部署仓（战斗队友）：每个仓装一名 AI 驾驶员，tier 1 = 购买，2..3 = 升级；tier 影响队友机甲强度。
 ##             {"name", "pilot", "role", "cost": [tier 1..3 的费用], "tiers": [每级效果文字]}
 ##             状态存 Progress.state.pods = {"rei": {"tier": 0..3, "on": 是否随行}}；战斗侧读 Growth.ally_squad()。
 const PODS := {
-	"rei": {"name": "部署仓 A · 零", "pilot": "rei", "role": "远程狙击 · 激光支援",
+	"rei": {"name": "部署仓 A · 零", "pilot": "rei", "role": "远程狙击 · 电磁穿甲支援",
 		"cost": [
 			{"money": 1500, "items": {"bolts": 2, "wire": 2, "circuit": 1}},
 			{"money": 3200, "items": {"circuit": 3, "bug_crystal": 1}},
 			{"money": 5600, "items": {"bug_crystal": 3, "hdd": 2}},
 		],
-		"tiers": ["标准机体 · 单发激光", "强化机体 · 结构/火力提升", "王牌机体 · 全面强化"]},
+		"tiers": ["标准机体 · 电磁线圈步枪", "强化机体 · 结构/穿甲提升", "王牌机体 · 全面强化"]},
 	"kurumi": {"name": "部署仓 B · 胡桃", "pilot": "kurumi", "role": "近战突击 · 前排抗伤",
 		"cost": [
 			{"money": 1200, "items": {"bolts": 3, "chitin": 2}},

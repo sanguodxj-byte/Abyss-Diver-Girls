@@ -17,14 +17,18 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for k in 4:
 		var ch = Vector3(r.randf_range(1.0, 2.6), r.randf_range(0.4, 1.2), 0.7)
 		A.add(raid.world, A.bevel_box(ch, 0.08), A.concrete(WALL.darkened(0.18)), c + Vector3(r.randf_range(-5.8, 5.8), 7.0 + ch.y * 0.4, -5.2))
-	# 窗：两层深色玻璃带
+	# 窗：两层带钢窗框与十字棂条的深色玻璃窗 + 红十字背板框
+	var M_DARK := A.metal(Color(0.18, 0.19, 0.20))
 	for y in [2.2, 4.6]:
 		for x in [-4.4, -1.5, 1.5, 4.4]:
-			A.add(raid.world, A.bevel_box(Vector3(1.6, 1.1, 0.12), 0.02), A.paint(Color(0.06, 0.08, 0.09), 0.3, 0.3), c + Vector3(x, y, -4.84), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(1.72, 1.22, 0.10), 0.02), M_DARK, c + Vector3(x, y, -4.86), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(1.56, 1.06, 0.12), 0.01), A.paint(Color(0.06, 0.08, 0.09), 0.3, 0.28), c + Vector3(x, y, -4.84), Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.bevel_box(Vector3(0.05, 1.08, 0.14), 0.005), M_DARK, c + Vector3(x, y, -4.83), Vector3.ZERO, Vector3.ONE, false)
 	# 门厅雨棚
 	K.canopy(raid, c + Vector3(0, 0, -3.4), Vector2(9.0, 4.2), 3.6, 0.0, Color(0.5, 0.48, 0.45))
 	A.add(raid.world, A.bevel_box(Vector3(2.6, 2.8, 0.16), 0.03), A.paint(Color(0.08, 0.1, 0.1), 0.3, 0.4), c + Vector3(0, 1.4, -4.82))
-	# 红十字：两根发光板
+	# 红十字：钢框背板 + 两根发光板
+	A.add(raid.world, A.bevel_box(Vector3(2.8, 2.8, 0.10), 0.03), M_DARK, c + Vector3(0, 5.4, -4.86))
 	var RED := A.emit(Color(0.85, 0.12, 0.1), 1.2)
 	A.add(raid.world, A.bevel_box(Vector3(0.7, 2.4, 0.14), 0.02), RED, c + Vector3(0, 5.4, -4.8), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(2.4, 0.7, 0.14), 0.02), RED, c + Vector3(0, 5.4, -4.8), Vector3.ZERO, Vector3.ONE, false)
@@ -33,14 +37,17 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.wall_line(raid, c + Vector3(8.6, 0, -3.2), 10.0, 3.6, 0.0, [[-4.4, -1.8]], WALL)
 	K.wall_line(raid, c + Vector3(8.6, 0, 6.4), 10.0, 2.8, 0.0, [[1.0, 4.0]], WALL.darkened(0.12))
 	K.wall_line(raid, c + Vector3(13.4, 0, 1.6), 9.6, 3.4, 90.0, [[-2.0, 0.6]], WALL)
-	# 病床
+	# 病床：床架 + 床头床尾钢管护栏 + 枕垫
+	var M_BED_F := A.metal(Color(0.45, 0.46, 0.44))
 	for i in 3:
 		var p := c + Vector3(6.2, 0, -1.4 + i * 2.6)
 		A.add(raid.world, A.bevel_box(Vector3(1.1, 0.16, 2.2), 0.03), A.paint(Color(0.62, 0.63, 0.6), 0.1, 0.7, {"wear": 0.5, "dust": 0.6}), p + Vector3(0, 0.62, 0))
-		for sx in [-0.45, 0.45]:
-			for sz in [-0.9, 0.9]:
-				A.add(raid.world, A.cyl(0.05, 0.6, 0.05, 6), A.metal(Color(0.45, 0.45, 0.43)), p + Vector3(sx, 0.3, sz), Vector3.ZERO, Vector3.ONE, false)
-		A.add(raid.world, A.bevel_box(Vector3(1.2, 0.5, 0.9), 0.02), A.paint(Color(0.3, 0.3, 0.28), 0.0, 0.9, {"wear": 0.6, "dust": 0.6}), p + Vector3(0, 0.86, -0.5))
+		for sz in [-1.06, 1.06]:
+			A.add(raid.world, A.bevel_box(Vector3(1.06, 0.05, 0.05), 0.01), M_BED_F, p + Vector3(0, 1.02 if sz < 0.0 else 0.88, sz), Vector3.ZERO, Vector3.ONE, false)
+			for sx in [-0.50, 0.50]:
+				A.add(raid.world, A.cyl(0.04, 1.02 if sz < 0.0 else 0.88, 0.04, 6), M_BED_F, p + Vector3(sx, 0.51 if sz < 0.0 else 0.44, sz), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.bevel_box(Vector3(1.02, 0.18, 0.55), 0.03), A.paint(Color(0.72, 0.72, 0.68), 0.0, 0.85, {"dust": 0.5}), p + Vector3(0, 0.76, -0.72))
+		A.add(raid.world, A.bevel_box(Vector3(1.14, 0.14, 1.15), 0.02), A.paint(Color(0.32, 0.38, 0.36), 0.0, 0.9, {"wear": 0.6, "dust": 0.6}), p + Vector3(0, 0.74, 0.35))
 		raid.blocks.append(raid._rect_for(p, Vector3(1.4, 1, 2.4)))
 	K.shelf(raid, c + Vector3(12.2, 0, -1.8), 90.0, 2.2, 2.2)
 	# 西翼发电机棚
@@ -50,13 +57,15 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for i in 3:
 		A.add(raid.world, A.cyl(0.4, 1.2, 0.4, 12), A.paint(Color(0.35, 0.24, 0.14), 0.5, 0.6, {"rust": 0.9, "panel_scale": 0.0}), c + Vector3(-12.0 + i * 1.1, 0.6, 6.6))
 	raid.blocks.append(raid._rect_for(c + Vector3(-12.0, 0, 6.6), Vector3(3.4, 1, 2.0)))
-	# 三防帐篷：斜拉帆布 + 四根杆
-	var TENT := A.paint(Color(0.4, 0.42, 0.33), 0.0, 0.9, {"wear": 0.5, "dust": 0.7, "panel_scale": 0.0})
-	for i in 2:
-		A.add(raid.world, A.bevel_box(Vector3(4.6, 0.06, 3.4), 0.01), TENT, c + Vector3(2.4, 1.9 + i * 0.55, 5.4), Vector3(-16 + i * 4, 0, 0))
+	# 军用三防医疗帐篷：双坡人字屋脊帆布 + 侧围布墙 + 钢支撑杆与拉绳（消除悬浮斜板）
+	var TENT := A.paint(Color(0.38, 0.41, 0.32), 0.0, 0.92, {"wear": 0.5, "dust": 0.65, "panel_scale": 0.0})
+	var tp_m := c + Vector3(2.4, 0, 5.4)
+	A.add(raid.world, A.prism(PackedVector2Array([Vector2(-2.4, 0), Vector2(0, 1.05), Vector2(2.4, 0)]), 3.8, 0.04), TENT, tp_m + Vector3(0, 1.75, 0))
+	A.add(raid.world, A.cyl(0.045, 3.95, 0.045, 8), M_BED_F, tp_m + Vector3(0, 2.78, 0), Vector3(90, 0, 0))
 	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			A.add(raid.world, A.cyl(0.05, 2.0, 0.05, 6), A.metal(Color(0.3, 0.3, 0.29)), c + Vector3(2.4 + sx * 2.2, 1.0, 5.4 + sz * 1.6))
+		A.add(raid.world, A.bevel_box(Vector3(0.06, 1.15, 3.65), 0.01), TENT, tp_m + Vector3(sx * 2.28, 1.22, 0))
+		for sz in [-1.75, 0.0, 1.75]:
+			A.add(raid.world, A.cyl(0.045, 1.82, 0.045, 8), M_DARK, tp_m + Vector3(sx * 2.28, 0.91, sz))
 	# 担架床与输液架
 	for p in [Vector3(-1.8, 0, 1.2), Vector3(-1.8, 0, 4.6), Vector3(1.4, 0, 8.2)]:
 		A.add(raid.world, A.bevel_box(Vector3(0.9, 0.1, 2.0), 0.02), A.paint(Color(0.55, 0.56, 0.52), 0.1, 0.6, {"wear": 0.6, "dust": 0.6}), c + p + Vector3(0, 0.7, 0))
@@ -65,15 +74,31 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for p in [Vector3(0.6, 0, -0.6), Vector3(-3.2, 0, 7.4)]:
 		A.add(raid.world, A.cyl(0.035, 1.9, 0.035, 5), A.metal(Color(0.55, 0.56, 0.54)), c + p + Vector3(0, 0.95, 0))
 		A.add(raid.world, A.bevel_box(Vector3(0.22, 0.34, 0.08), 0.02), A.glass(Color(0.4, 0.7, 0.5)), c + p + Vector3(0.12, 1.72, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 救护车：方舱车身 + 红色腰线 + 顶灯
-	var AMB := Color(0.68, 0.68, 0.64)
-	var ab := A.add(raid.world, A.bevel_box(Vector3(2.2, 1.9, 4.6), 0.1, 0.92), A.paint(AMB, 0.2, 0.6, {"wear": 0.5, "dust": 0.5, "rust": 0.3}), c + Vector3(-5.4, 1.05, 0.4), Vector3(0, 12, 0))
-	A.add(ab, A.bevel_box(Vector3(2.24, 0.22, 4.64), 0.02), A.paint(Color(0.55, 0.14, 0.12), 0.2, 0.6), Vector3(0, 0.1, 0))
-	A.add(ab, A.bevel_box(Vector3(1.9, 0.9, 0.1), 0.02), A.glass(Color(0.25, 0.4, 0.45)), Vector3(0, 0.4, -2.32))
-	A.add(ab, A.bevel_box(Vector3(0.7, 0.16, 0.3), 0.02), A.emit(Color(0.9, 0.2, 0.15), 1.6), Vector3(0, 0.98, -1.4), Vector3.ZERO, Vector3.ONE, false)
-	for wz in [-1.6, 1.6]:
-		for wx in [-1.1, 1.1]:
-			A.add(ab, A.cyl(0.42, 0.26, 0.42, 12), A.rubber(), Vector3(wx, -0.85, wz), Vector3(0, 0, 90))
+	# 重型方舱救护车：独立驾驶楼 + 医疗方舱 + 红十字腰线 + 对开后门 + 双联警示灯排（Node3D 容器）
+	var AMB := A.paint(Color(0.68, 0.68, 0.64), 0.25, 0.58, {"wear": 0.55, "dust": 0.5, "rust": 0.35})
+	var M_RED := A.paint(Color(0.58, 0.14, 0.12), 0.2, 0.6, {"wear": 0.5})
+	var ab := Node3D.new()
+	raid.world.add_child(ab)
+	ab.position = c + Vector3(-5.4, 0, 0.4)
+	ab.rotation_degrees = Vector3(0, 12, 0)
+	A.add(ab, A.bevel_box(Vector3(2.05, 0.42, 4.75), 0.04), M_DARK, Vector3(0, 0.48, 0))
+	A.add(ab, A.bevel_box(Vector3(1.96, 1.25, 1.55), 0.08, 0.86), AMB, Vector3(0, 1.18, -1.52))
+	A.add(ab, A.bevel_box(Vector3(1.94, 0.38, 0.65), 0.06), AMB, Vector3(0, 0.88, -2.22), Vector3(12, 0, 0))
+	A.add(ab, A.bevel_box(Vector3(1.74, 0.52, 0.10), 0.02), A.glass(Color(0.18, 0.30, 0.36)), Vector3(0, 1.36, -2.26), Vector3(14, 0, 0))
+	A.add(ab, A.bevel_box(Vector3(2.22, 1.78, 3.18), 0.08, 0.94), AMB, Vector3(0, 1.48, 0.78))
+	A.add(ab, A.bevel_box(Vector3(2.26, 0.22, 3.22), 0.02), M_RED, Vector3(0, 1.18, 0.78))
+	for sx_a in [-1.13, 1.13]:
+		A.add(ab, A.bevel_box(Vector3(0.04, 0.65, 0.18), 0.01), M_RED, Vector3(sx_a, 1.72, 0.78), Vector3.ZERO, Vector3.ONE, false)
+		A.add(ab, A.bevel_box(Vector3(0.04, 0.18, 0.65), 0.01), M_RED, Vector3(sx_a, 1.72, 0.78), Vector3.ZERO, Vector3.ONE, false)
+	A.add(ab, A.bevel_box(Vector3(0.05, 1.45, 0.06), 0.01), M_DARK, Vector3(0, 1.48, 2.38), Vector3.ZERO, Vector3.ONE, false)
+	for dx_a in [-0.52, 0.52]:
+		A.add(ab, A.bevel_box(Vector3(0.62, 0.48, 0.06), 0.01), A.glass(Color(0.18, 0.30, 0.36)), Vector3(dx_a, 1.75, 2.38), Vector3.ZERO, Vector3.ONE, false)
+	for lx_a in [-0.55, 0.55]:
+		A.add(ab, A.bevel_box(Vector3(0.56, 0.15, 0.26), 0.02), A.emit(Color(0.92, 0.18, 0.14), 1.6), Vector3(lx_a, 2.44, -0.58), Vector3.ZERO, Vector3.ONE, false)
+	for wz in [-1.55, 1.45]:
+		for wx in [-1.04, 1.04]:
+			A.add(ab, A.cyl(0.42, 0.28, 0.42, 14), A.rubber(), Vector3(wx, 0.42, wz), Vector3(0, 0, 90))
+			A.add(ab, A.cyl(0.22, 0.30, 0.22, 12), M_BED_F, Vector3(wx, 0.42, wz), Vector3(0, 0, 90), Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(c + Vector3(-5.4, 0, 0.4), Vector3(3.2, 1, 5.2)))
 	K.blocker(raid, c + Vector3(-5.4, 0, 0.4), Vector3(2.2, 1.9, 4.6), 12.0)
 	# 分诊台与散落的病历车

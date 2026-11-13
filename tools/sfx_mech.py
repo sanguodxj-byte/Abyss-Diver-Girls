@@ -1,578 +1,590 @@
-"""
-机甲底盘、落地、技能、护盾、机甲状态、能源与消耗品的音效配方。
-"""
+# -*- coding: utf-8 -*-
+"""机甲底盘步态（履带/双足/四足/六足）、推进闪避、战术技能、护盾、受击损毁与能源反应堆音效（写实重型机械重制版）。"""
 import numpy as np
-from sfx_dsp import (sfx, SR, ns, tt, white, pink, brown, lp, hp, bp, peak, reson, sweep, sine, harm, fm, saw_amps,
-                     square_amps, expdec, ad, env, ahr, sat, crush, space, Mix)
-from sfx_lib import (place, norm, att, fold, thump, crack, burst, modal, clank, tick, rattle, scrape, servo, hiss,
-                     whoosh, debris, tone, chime, roar, crackle, turbine, engine, arc, buzz, crunch, PLATE, BAR, TUBE,
-                     HEAVY, BELL)
+from sfx_dsp import (
+    SR, ns, tt, sfx, env_exp, env_adsr, lp, hp, bp, biquad, reson, sweep,
+    white, pink, brown, smooth_noise, velvet, sat, asym, place, mix, reverb_tail,
+)
+from sfx_lib import (
+    norm, att, thump, crack, burst, crunch, tick, clank, modal, METAL_HEAVY, METAL_HOLLOW, METAL_LIGHT,
+    GLASS_MODES, servo, hiss, whoosh, roar, rumble, zap, buzz, turbine, squelch,
+)
 
 
-# ---------------------------------------------------------------- 底盘
-@sfx("step_biped", n=4, target=-17.0, dur=0.6, fout=0.06)
-def step_biped(c):
-    """四个变体的落脚方式不同：整足踏地、脚跟脚尖两段着地、沉重拖擦、金属件碰响。"""
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    if v == 0:
-        m.add(thump(rng, 88.0, 42.0, 0.4, 0.09, 0.025, 2.2, 0.35), 0.0, 0.4)
-        m.add(crunch(rng, 0.12, 30, 0.04, 600.0, 6000.0, 0.3, 250.0), 0.0, 0.75)
-        m.add(clank(rng, 480.0, 0.05, HEAVY, 0.3, 0.5, 0.6), 0.004, 0.55)
-    elif v == 1:
-        m.add(thump(rng, 105.0, 52.0, 0.25, 0.05, 0.015, 1.8, 0.4), 0.0, 0.3)
-        m.add(thump(rng, 82.0, 40.0, 0.4, 0.09, 0.025, 2.2, 0.3), 0.042, 0.4)
-        m.add(clank(rng, 530.0, 0.05, HEAVY, 0.3, 0.5, 0.6), 0.044, 0.6)
-        m.add(crunch(rng, 0.1, 22, 0.03, 700.0, 6000.0, 0.3, 260.0), 0.04, 0.6)
-    elif v == 2:
-        m.add(thump(rng, 74.0, 34.0, 0.5, 0.13, 0.035, 2.6, 0.3), 0.0, 0.4)
-        m.add(crunch(rng, 0.2, 50, 0.07, 400.0, 5000.0, 0.5, 200.0), 0.0, 0.85)
-        m.add(scrape(rng, 0.16, 300.0, 2500.0, 40.0, None, 30.0, [(0, 0), (0.02, 1.0), (0.16, 0.0)]), 0.03, 0.3)
-        m.add(clank(rng, 420.0, 0.06, HEAVY, 0.3, 0.5, 0.6), 0.004, 0.45)
-    else:
-        m.add(thump(rng, 112.0, 55.0, 0.3, 0.065, 0.018, 2.0, 0.4), 0.0, 0.42)
-        m.add(clank(rng, 610.0, 0.07, PLATE, 0.4, 0.7, 0.4), 0.002, 0.7)
-        m.add(rattle(rng, 0.22, 60.0, 1500.0, 4500.0, 0.06), 0.02, 0.25)
-        m.add(crunch(rng, 0.08, 15, 0.03, 900.0, 6000.0, 0.2, 300.0), 0.0, 0.3)
-    m.add(hiss(rng, 0.22, 2500.0, 9000.0, 0.005, 0.02, 0.15, (3600.0, 6000.0), 4.0, 0.4), 0.035, [0.07, 0.05, 0.06, 0.12][v])
-    m.add(servo(rng, 0.16, [520.0, 560.0, 480.0, 600.0][v], 380.0, 0.15, 0.01, 5.0, 0.2), 0.05, 0.06)
-    m.add(debris(rng, 0.3, 30.0, 0.08, 1500.0, 5000.0, 0.1), 0.01, 0.12)
-    return space(sat(m.render(), 1.3), "yard", 0.12, False, v)
+# ─────────────────────────────────────────────────────────────
+# 底盘移动：双足重型踏步 / 四足与六足机械爪踏步 / 履带碾压循环 / 落地重震
+# ─────────────────────────────────────────────────────────────
+@sfx("step_biped", n=4, target=-19.5, dur=0.22, fout=0.028)
+def _step_biped(v, rng):
+    """十余吨双足机甲利落踏步：
+    0ms 合金脚掌砸击地表清脆瞬态 + 砂石碎裂咬地声 + 胫甲机械连杆紧凑顿挫 + 干净紧致的低频落脚重量（不轰头、不糊成一团）。"""
+    p = [1.0, 0.93, 1.06, 0.96][v]
+    heel_crack = crack(0.022, 1650.0 * p, rng, 1.6) * 0.58
+    grit_crunch = crunch(rng, dur=0.075, grains=24 + v * 3, spread=0.018, lo=380.0 * p, hi=4600.0, body=0.45, body_f=260.0 * p) * 0.78
+    strut_settle = clank(0.070, 290.0 * p, METAL_HEAVY, 32.0, rng, 0.55) * 0.62
+    joint_tick = tick(0.012, 1850.0 * p, rng) * 0.46
+    foot_thud = thump(0.095, 118.0 * p, 44.0 * p, 26.0, rng, 1.5) * 0.42
+    out = mix(
+        place(heel_crack, 0.0),
+        place(grit_crunch, 0.001),
+        place(foot_thud, 0.002),
+        place(strut_settle, 0.008),
+        place(joint_tick, 0.015 + 0.002 * v),
+    )
+    return sat(out, 1.35)
 
 
-@sfx("step_quad", n=4, target=-18.0, dur=0.45, fout=0.05)
-def step_quad(c):
-    """四足落地：轻快的爪尖着地，变体分别为单点、爪尖加足垫两段、偏沉、偏金属。"""
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    if v == 1:
-        m.add(tick(rng, 2800.0, 0.006, 0.04, 0.6), 0.0, 0.45)
-        m.add(thump(rng, 140.0, 66.0, 0.25, 0.05, 0.015, 1.8, 0.4), 0.024, 0.45)
-        m.add(clank(rng, 1300.0, 0.025, PLATE, 0.15, 0.7, 0.3), 0.024, 0.5)
-    elif v == 2:
-        m.add(thump(rng, 112.0, 50.0, 0.3, 0.07, 0.02, 2.0, 0.3), 0.0, 0.5)
-        m.add(crunch(rng, 0.12, 30, 0.04, 700.0, 6000.0, 0.4, 240.0), 0.0, 0.5)
-        m.add(clank(rng, 1000.0, 0.025, PLATE, 0.15, 0.7, 0.3), 0.0, 0.3)
-    elif v == 3:
-        m.add(thump(rng, 150.0, 72.0, 0.2, 0.04, 0.012, 1.6, 0.4), 0.0, 0.32)
-        m.add(clank(rng, 1250.0, 0.045, PLATE, 0.25, 0.7, 0.3), 0.0, 0.8)
-        m.add(modal(rng, 2300.0, BAR, 0.06, 0.25, 0.02, 0.8, 0.6), 0.003, 0.25)
-    else:
-        m.add(thump(rng, 130.0, 60.0, 0.25, 0.05, 0.015, 1.8, 0.4), 0.0, 0.45)
-        m.add(clank(rng, 1150.0, 0.025, PLATE, 0.15, 0.7, 0.3), 0.0, 0.55)
-    m.add(crunch(rng, 0.08, 18, 0.025, 1000.0, 7000.0, 0.2, 300.0), 0.002, 0.3)
-    f0 = [700.0, 760.0, 650.0, 820.0][v]
-    m.add(servo(rng, 0.12, f0, f0 * 1.35, 0.08, 0.03, 4.0, 0.2), 0.025, [0.12, 0.1, 0.08, 0.2][v])
-    m.add(tick(rng, c.r(3500, 5000), 0.003, 0.02), 0.06, 0.15)
-    return space(sat(m.render(), 1.2), "yard", 0.1, False, v)
+@sfx("step_quad", n=4, target=-20.5, dur=0.17, fout=0.022)
+def _step_quad(v, rng):
+    """四足蜘蛛底盘合金驻锄利落点地：0ms 合金尖足叩击岩土脆响 + 机械趾骨清脆咬合 + 紧凑轻盈的低频支撑。"""
+    p = [1.0, 0.92, 1.07, 0.95][v]
+    claw_snap = tick(0.012, 2200.0 * p, rng) * 0.72
+    rock_bite = crunch(rng, dur=0.055, grains=18 + v * 2, spread=0.014, lo=480.0 * p, hi=5200.0, body=0.42, body_f=310.0 * p) * 0.75
+    joint_tap = clank(0.055, 360.0 * p, METAL_LIGHT, 36.0, rng, 0.52) * 0.58
+    toe_strike = thump(0.075, 132.0 * p, 52.0 * p, 32.0, rng, 1.4) * 0.36
+    out = mix(
+        place(claw_snap, 0.0),
+        place(rock_bite, 0.001),
+        place(toe_strike, 0.002),
+        place(joint_tap, 0.007),
+    )
+    return sat(out, 1.32)
 
 
-@sfx("legs_tread_loop", n=1, target=-19.0, loop=2.0, reps=4)
-def tread_loop(c):
-    rng = c.rng
-    p = c.period
-    n = c.total
-    beats = 28
-    one = np.zeros(p + ns(0.3))
-    for k in range(beats):
-        t0 = (k + 0.18 * rng.uniform(-1, 1)) * c.loop / beats % c.loop
-        g = rng.uniform(0.5, 1.0) * (1.4 if k % 7 == 0 else 1.0)
-        place(one, clank(rng, rng.uniform(650.0, 950.0), 0.02, PLATE, 0.12, 0.8, 0.4), t0, g)
-        place(one, burst(rng, 0.05, 0.01, 300.0, 3000.0, -3.0, 0.001), t0, 0.5 * g)
-    clat = np.tile(fold(one, p), c.reps)
-    eng = engine(rng, n, c.qf(46.0), 0.2, 420.0, 0.5, p)
-    rum = lp(np.tile(brown(p, rng), c.reps), 160.0) * (1.0 + 0.3 * c.plfo(4.0))
-    sq = reson(np.tile(white(p, rng), c.reps), 1650.0, 40.0) * np.clip(c.plfo(0.8) + 0.2, 0.0, 1.0)
-    gr = np.zeros(p + ns(0.2))
-    for _ in range(14):
-        place(gr, burst(rng, 0.08, 0.015, 500.0, 5000.0, -3.0, 0.002), rng.uniform(0, c.loop), rng.uniform(0.2, 0.6))
-    grav = np.tile(fold(gr, p), c.reps)
-    x = 0.8 * norm(clat) + 0.45 * norm(eng) + 0.25 * norm(rum) + 0.08 * norm(sq) + 0.3 * norm(grav)
-    return space(sat(norm(x), 1.3), "yard", 0.1, False, 0)
-
-
-@sfx("legs_hover_loop", n=1, target=-20.0, loop=3.0, reps=4)
-def hover_loop(c):
-    rng = c.rng
-    p = c.period
-    n = c.total
-    t = np.arange(n) / SR
-    f1 = c.qf(96.0)
-    f2 = f1 + 2.0 / c.loop
-    hum = harm(np.full(n, f1), [1.0, 0.55, 0.3, 0.2, 0.12, 0.08]) + 0.7 * harm(np.full(n, f2), [1.0, 0.5, 0.25])
-    wh = (np.sin(2 * np.pi * c.qf(2400.0) * t) + 0.5 * np.sin(2 * np.pi * c.qf(3610.0) * t)) * (0.7 + 0.3 * c.plfo(1.5))
-    thr = sweep(np.tile(pink(p, rng), c.reps), "bp", 700.0 * (1.0 + 0.25 * c.plfo(0.7)), 0.9)
-    air = hp(np.tile(white(p, rng), c.reps), 5000.0) * (0.8 + 0.2 * c.plfo(2.0))
-    x = 0.8 * norm(hum) + 0.18 * norm(wh) + 0.55 * norm(thr) + 0.12 * norm(air)
-    return space(norm(x), "yard", 0.1, False, 0)
-
-
-@sfx("mech_land", n=2, target=-15.0, dur=1.0, fout=0.1)
-def mech_land(c):
-    """变体 1 整机一次砸地；变体 2 先单脚触地、再整机压实，两段着地。"""
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    if v == 0:
-        m.add(thump(rng, 100.0, 38.0, 0.6, 0.15, 0.03, 2.4, 0.4), 0.0, 0.36)
-        m.add(clank(rng, 400.0, 0.08, HEAVY, 0.5, 0.6, 0.8), 0.005, 0.6)
-    else:
-        m.add(thump(rng, 125.0, 55.0, 0.3, 0.06, 0.02, 2.0, 0.4), 0.0, 0.28)
-        m.add(clank(rng, 560.0, 0.05, PLATE, 0.3, 0.6, 0.5), 0.0, 0.4)
-        m.add(thump(rng, 84.0, 34.0, 0.6, 0.16, 0.035, 2.6, 0.3), 0.075, 0.36)
-        m.add(clank(rng, 380.0, 0.09, HEAVY, 0.5, 0.6, 0.8), 0.078, 0.5)
-    m.add(hiss(rng, 0.45, 1500.0, 8000.0, 0.005, 0.05, 0.3, (2800.0, 5200.0), 4.0, 0.5), 0.03, 0.2)
-    m.add(crunch(rng, 0.2, 40, 0.06, 500.0, 6000.0, 0.4, 260.0), 0.0, 0.75)
-    m.add(rattle(rng, 0.3, 50.0, 1500.0, 4500.0, 0.08), 0.03, 0.2)
-    m.add(servo(rng, 0.3, 300.0, 520.0, 0.1, 0.12, 5.0, 0.2), 0.12, 0.12)
-    return space(sat(m.render(), 1.4), "yard", 0.15, False, v)
-
-
-# ---------------------------------------------------------------- 位移技能（冷却 0.9 至 4 秒，时长不超过冷却）
-@sfx("skill_dash", n=2, target=-15.0, dur=0.75, fout=0.1)
-def skill_dash(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(crack(rng, 0.05, 0.008, 1500.0), 0.0, 0.5)
-    m.add(thump(rng, [120.0, 105.0][v], 55.0, 0.25, 0.05, 0.02, 1.6, 0.4), 0.0, 0.6)
-    n = ns(0.6)
+@sfx("legs_tread_loop", n=1, target=-20.5, loop=1.6, reps=4)
+def _legs_tread_loop(v, rng):
+    """重型履带底盘行进循环：深沉柴油涡轮底盘轰鸣 + 连续厚重履带板啮合与碾过砂石地面的滚动摩擦。"""
+    dur = 1.6
+    n = ns(dur)
+    eng_low = rumble(dur, 62.0, 5.5, rng, 1.45) * 0.38
     t = tt(n)
-    jet = sweep(pink(n, rng), "lp", 900.0 + 7000.0 * np.exp(-t / 0.18), 0.7)
-    m.add(sat(norm(jet) * ad(n, 0.006, 0.16), 1.5), 0.0, 0.9)
-    m.add(tone(np.geomspace([2400.0, 2100.0][v], 900.0, n), 0.6, "saw", 0.15, bright=5000.0), 0.01, 0.12)
-    m.add(whoosh(rng, 0.45, 300.0, 2200.0, 0.3, 1.0, -3.0), 0.03, 0.4)
-    return space(m.render(), "yard", 0.15, False, v)
+    roll_mod = 0.68 + 0.32 * np.sin(2.0 * np.pi * (8.0 / dur) * t + 0.3 * smooth_noise(n, rng, 4.0))
+    gravel_bed = bp(0.75 * pink(n, rng) + 0.25 * white(n, rng), 240.0, 2200.0, 2) * roll_mod * 0.62
+    links = np.zeros(n)
+    n_links = 8
+    step_t = dur / n_links
+    for i in range(n_links):
+        t0 = i * step_t + 0.008 * np.sin(i * 1.7)
+        th = thump(0.065, 110.0 + (i % 3) * 8.0, 46.0, 32.0, rng, 1.35) * 0.22
+        cl = clank(0.055, 290.0 + (i % 4) * 18.0, METAL_HEAVY, 36.0, rng, 0.42) * 0.32
+        links = mix(links, place(th, t0, dur), place(cl, t0 + 0.002, dur))
+    return sat(mix(eng_low, gravel_bed, links), 1.32)
 
 
-@sfx("skill_ram", n=1, target=-14.5, dur=1.2, fout=0.12)
-def skill_ram(c):
-    rng = c.rng
-    n = ns(1.0)
-    t = tt(n)
-    m = Mix()
-    f = 42.0 + 50.0 * (1.0 - np.exp(-t / 0.25))
-    m.add(sat(engine(rng, n, f, 0.25, 600.0, 0.6) * ahr(n, 0.03, 0.55, 0.4), 2.0), 0.0, 1.0)
-    one = np.zeros(n)
-    tk = 0.04
-    while tk < 0.9:
-        place(one, clank(rng, rng.uniform(650.0, 950.0), 0.02, PLATE, 0.1, 0.8, 0.4), tk, 0.8 * (1.0 - tk))
-        tk += 0.09 * np.exp(-tk * 2.2) + 0.035
-    m.add(one, 0.0, 0.5)
-    m.add(whoosh(rng, 0.8, 120.0, 900.0, 0.5, 0.8, -4.0), 0.05, 0.5)
-    m.add(hiss(rng, 0.3, 2000.0, 9000.0, 0.004, 0.03, 0.2, (3500.0, 6000.0), 4.0, 0.3), 0.0, 0.2)
-    return space(sat(m.render(), 1.3), "yard", 0.14, False, 0)
+@sfx("mech_land", n=2, target=-14.5, dur=0.72, fout=0.08)
+def _mech_land(v, rng):
+    """机甲推进跳跃后重砸着陆：0ms 全车重量砸地低频巨震 + 岩石砂砾崩裂 + 液压减震筒深压缓冲。"""
+    p = 1.0 + (v - 0.5) * 0.06
+    impact_sub = thump(0.42, 118.0 * p, 24.0 * p, 8.5, rng, 2.5)
+    ground_crunch = crunch(rng, dur=0.22, grains=48, spread=0.055, lo=240.0 * p, hi=4200.0, body=0.72, body_f=175.0 * p) * 0.85
+    chassis_slam = clank(0.26, 168.0 * p, METAL_HEAVY, 14.0, rng, 0.55) * 0.72
+    shock_air = whoosh(0.32, 680.0 * p, 180.0 * p, rng, 1.3) * 0.52
+    settle_thud = thump(0.18, 76.0 * p, 26.0 * p, 18.0, rng, 1.7) * 0.48
+    out = mix(
+        place(impact_sub, 0.0),
+        place(ground_crunch, 0.002),
+        place(chassis_slam, 0.006),
+        place(shock_air, 0.045),
+        place(settle_thud, 0.16),
+    )
+    return reverb_tail(sat(out, 1.65), 0.14, 0.16)
 
 
-@sfx("skill_leap", n=1, target=-15.0, dur=0.9, fout=0.1)
-def skill_leap(c):
-    rng = c.rng
-    m = Mix()
-    m.add(hiss(rng, 0.35, 1500.0, 9000.0, 0.003, 0.05, 0.25, (3000.0, 5400.0), 4.0, 0.5), 0.0, 0.6)
-    m.add(thump(rng, 110.0, 55.0, 0.3, 0.06, 0.02, 1.8, 0.3), 0.0, 0.8)
-    for k in range(4):
-        f0 = c.r(650.0, 850.0)
-        m.add(servo(rng, 0.14, f0, f0 * 1.5, 0.08, 0.03, 4.0, 0.25), 0.01 + 0.025 * k, 0.18)
-    m.add(whoosh(rng, 0.6, 300.0, 2600.0, 0.55, 1.2, -3.0), 0.05, 0.5)
-    m.add(modal(rng, 520.0, BAR, 0.12, 0.5, 0.02, 0.8, 0.5), 0.02, 0.2)
-    return space(m.render(), "yard", 0.14, False, 0)
+# ─────────────────────────────────────────────────────────────
+# 底盘位移与主动战术技能（skill_*）
+# ─────────────────────────────────────────────────────────────
+@sfx("skill_dash", n=2, target=-14.5, dur=0.72, fout=0.08)
+def _skill_dash(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    ignite = thump(0.28, 128.0 * p, 30.0 * p, 11.0, rng, 2.4)
+    valve = clank(0.14, 260.0 * p, METAL_HEAVY, 22.0, rng, 0.65) * 0.65
+    jet_roar = roar(0.55, 220.0 * p, 4.5, rng, 2.0) * 0.85
+    air_shear = whoosh(0.48, 280.0 * p, 1350.0 * p, rng, 1.5) * 0.78
+    return reverb_tail(sat(mix(
+        place(ignite, 0.0),
+        place(valve, 0.004),
+        place(jet_roar, 0.015),
+        place(air_shear, 0.025),
+    ), 1.65), 0.16, 0.16)
 
 
-@sfx("skill_blink", n=2, target=-15.5, dur=1.0, fout=0.12)
-def skill_blink(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    n0 = ns(0.12)
-    sw = sweep(white(n0, rng), "bp", np.geomspace(800.0, 6000.0, n0), 2.0) * np.linspace(0.0, 1.0, n0) ** 2
-    m.add(norm(sw), 0.0, 0.5)
-    n1 = ns(0.5)
-    t1 = tt(n1)
-    fc = 300.0 + [2700.0, 2200.0][v] * np.exp(-t1 / 0.07)
-    z = fm(fc, [1.41, 2.5][v], 6.0 * np.exp(-t1 / 0.1) + 0.5) * expdec(n1, 0.12)
-    m.add(att(z), 0.12, 0.8)
-    m.add(burst(rng, 0.08, 0.012, 2500.0, 12000.0, 0.0, 0.0005), 0.12, 0.5)
-    m.add(thump(rng, 160.0, 70.0, 0.15, 0.03, 0.01, 1.2, 0.0), 0.12, 0.4)
-    n2 = ns(0.6)
-    sh = sum(np.sin(2 * np.pi * f * tt(n2) * (1 + 0.004 * k)) for k, f in enumerate([1200.0, 1800.0, 2400.0, 3010.0]))
-    m.add(norm(sh) * ad(n2, 0.02, 0.18) * (0.7 + 0.3 * np.sin(2 * np.pi * 11.0 * tt(n2))), 0.15, 0.18)
-    return space(m.render(), "yard", 0.2, False, v)
+@sfx("skill_ram", n=1, target=-13.5, dur=0.95, fout=0.12)
+def _skill_ram(v, rng):
+    rev = roar(0.75, 165.0, 3.2, rng, 2.2) * 0.88
+    plow_drop = clank(0.26, 180.0, METAL_HEAVY, 14.0, rng, 0.75)
+    slam_sub = thump(0.45, 125.0, 24.0, 8.0, rng, 2.7)
+    armor_crunch = crunch(rng, dur=0.25, grains=55, spread=0.06, lo=280.0, hi=4400.0, body=0.75, body_f=185.0) * 0.85
+    return reverb_tail(sat(mix(
+        place(plow_drop, 0.0),
+        place(slam_sub, 0.005),
+        place(armor_crunch, 0.015),
+        place(rev, 0.02),
+    ), 1.75), 0.2, 0.18)
 
 
-# ---------------------------------------------------------------- 背部与躯干、动力炉技能
-@sfx("skill_missile", n=1, target=-14.0, dur=2.0, fout=0.3)
-def skill_missile(c):
-    rng = c.rng
-    m = Mix(2.0)
-    m.add(clank(rng, 600.0, 0.05, HEAVY, 0.3, 0.7, 0.6), 0.0, 0.5)
-    m.add(hiss(rng, 0.2, 2000.0, 9000.0, 0.003, 0.02, 0.15, (3500.0, 6000.0), 4.0), 0.0, 0.3)
-    for k in range(6):
-        t0 = 0.07 + 0.085 * k + c.r(-0.012, 0.012)
-        m.add(thump(rng, c.r(150.0, 190.0), 70.0, 0.2, 0.035, 0.012, 1.8, 0.4), t0, 0.55)
-        m.add(crack(rng, 0.05, 0.006, 1800.0), t0, 0.35)
-        m.add(whoosh(rng, 0.55, c.r(500.0, 700.0), c.r(2500.0, 3500.0), 0.25, 1.4, -2.0), t0 + 0.01, 0.45, c.r(-0.6, 0.6))
-    n = ns(1.6)
-    m.add(roar(rng, n, 200.0, 4000.0, 20.0, 0.4) * ahr(n, 0.2, 0.4, 0.95), 0.12, 0.35)
-    return space(sat(m.render(), 1.3), "yard", 0.22, False, 0)
+@sfx("skill_leap", n=1, target=-14.5, dur=0.8, fout=0.1)
+def _skill_leap(v, rng):
+    piston_fire = thump(0.34, 130.0, 26.0, 9.5, rng, 2.5)
+    latch_pop = clank(0.22, 230.0, METAL_HEAVY, 16.0, rng, 0.72)
+    ground_push = crunch(rng, dur=0.16, grains=36, spread=0.04, lo=260.0, hi=3800.0, body=0.68, body_f=190.0) * 0.72
+    lift_whoosh = whoosh(0.52, 220.0, 1250.0, rng, 1.5) * 0.78
+    return reverb_tail(sat(mix(
+        place(piston_fire, 0.0),
+        place(latch_pop, 0.005),
+        place(ground_push, 0.01),
+        place(lift_whoosh, 0.04),
+    ), 1.65), 0.16, 0.16)
 
 
-@sfx("skill_shield", n=1, target=-16.0, dur=1.7, fout=0.3)
-def skill_shield(c):
-    rng = c.rng
-    m = Mix(1.7)
-    n = ns(0.5)
-    t = tt(n)
-    up = fm(220.0 * (1.0 + t / 0.5), 2.0, 2.5 * (1.0 - t / 0.5) + 0.5) * (t / 0.5) ** 1.5
-    m.add(up, 0.0, 0.5)
-    m.add(thump(rng, 140.0, 60.0, 0.4, 0.1, 0.03, 1.2, 0.0), 0.45, 0.6)
-    m.add(chime(880.0, 0.9, 0.35, ((1.0, 1.0), (1.5, 0.5), (2.0, 0.4), (3.0, 0.2))), 0.45, 0.35)
-    m.add(arc(rng, 0.25, 500.0, 3000.0, 0.0, 0.6, 8), 0.45, 0.12)
-    n2 = ns(1.2)
-    t2 = tt(n2)
-    hum = sine(np.full(n2, 220.0)) + 0.6 * sine(np.full(n2, 221.5)) + 0.3 * sine(np.full(n2, 440.0))
-    m.add(norm(hum) * ad(n2, 0.05, 0.45), 0.48, 0.3)
-    return space(m.render(), "yard", 0.18, False, 0)
+@sfx("skill_missile", n=1, target=-14.0, dur=0.95, fout=0.12)
+def _skill_missile(v, rng):
+    hatch = clank(0.16, 280.0, METAL_HEAVY, 18.0, rng, 0.7) * 0.72
+    out = place(hatch, 0.0, 0.95)
+    for i in range(4):
+        t0 = 0.03 + i * 0.085
+        pf = 1.0 + i * 0.04
+        pop = thump(0.16, 128.0 * pf, 38.0 * pf, 18.0, rng, 2.1) * 0.75
+        jet = whoosh(0.34, 420.0 * pf, 1850.0 * pf, rng, 1.6) * 0.72
+        hss = hiss(0.28, 2200.0 * pf, 1400, 10.0, rng) * 0.52
+        out = mix(out, place(pop, t0, 0.95), place(jet, t0 + 0.01, 0.95), place(hss, t0 + 0.02, 0.95))
+    return reverb_tail(sat(out, 1.65), 0.18, 0.18)
 
 
-@sfx("skill_decoy", n=1, target=-16.0, dur=1.6, fout=0.2)
-def skill_decoy(c):
-    rng = c.rng
-    m = Mix(1.6)
-    m.add(thump(rng, 220.0, 120.0, 0.15, 0.03, 0.01, 1.4, 0.5), 0.0, 0.6)
-    m.add(hiss(rng, 0.15, 2000.0, 9000.0, 0.002, 0.01, 0.1, (3500.0, 6000.0), 4.0), 0.0, 0.3)
-    n = ns(1.1)
-    t = tt(n)
-    fb = 180.0 * (1.08 - 0.16 * t / 1.1)
-    prop = harm(fb, saw_amps(30, 1.1)) * (1.0 + 0.3 * np.sin(2 * np.pi * phase_of(fb * 0.5)))
-    m.add(lp(norm(prop), 3500.0) * env([(0, 0), (0.05, 1.0), (0.6, 0.6), (1.1, 0.0)], n), 0.03, 0.4)
-    for k in range(3):
-        m.add(tone(1760.0, 0.06, "sine", 0.03), 0.4 + 0.3 * k, 0.4 * (0.75 ** k))
-    return space(m.render(), "yard", 0.2, False, 0)
+@sfx("skill_shield", n=1, target=-15.0, dur=0.9, fout=0.1)
+def _skill_shield(v, rng):
+    latch = clank(0.20, 240.0, METAL_HEAVY, 15.0, rng, 0.75)
+    sub_swell = thump(0.42, 110.0, 32.0, 8.5, rng, 2.2)
+    expand_air = whoosh(0.55, 220.0, 1150.0, rng, 1.5) * 0.75
+    arc_hum = zap(0.45, 1950.0, rng, 34) * 0.55
+    return reverb_tail(sat(mix(
+        place(latch, 0.0),
+        place(sub_swell, 0.01),
+        place(expand_air, 0.03),
+        place(arc_hum, 0.06),
+    ), 1.6), 0.16, 0.16)
 
 
-def phase_of(f):
-    return np.concatenate([[0.0], np.cumsum(f[:-1])]) / SR
+@sfx("skill_decoy", n=1, target=-15.5, dur=0.85, fout=0.1)
+def _skill_decoy(v, rng):
+    pop = thump(0.24, 118.0, 36.0, 14.0, rng, 2.1)
+    latch = clank(0.20, 260.0, METAL_HEAVY, 16.0, rng, 0.75)
+    air = whoosh(0.38, 320.0, 980.0, rng, 1.5) * 0.65
+    arc = zap(0.32, 2000.0, rng, 32) * 0.52
+    return sat(mix(
+        place(pop, 0.0),
+        place(latch, 0.005),
+        place(air, 0.04),
+        place(arc, 0.22),
+    ), 1.5)
 
 
-@sfx("skill_overdrive", n=1, target=-15.0, dur=1.6, fout=0.25)
-def skill_overdrive(c):
-    rng = c.rng
-    m = Mix(1.6)
-    m.add(clank(rng, 380.0, 0.08, HEAVY, 0.4, 0.8, 0.8), 0.0, 0.8)
-    m.add(arc(rng, 0.15, 900.0, 2000.0, 0.0, 0.5, 7), 0.0, 0.3)
-    n = ns(0.9)
-    t = tt(n)
-    f = 250.0 * (3200.0 / 250.0) ** ((t / 0.9) ** 0.6)
-    m.add(tone(f, 0.9, "saw", None, 0.02, bright=6000.0) * env([(0, 0.2), (0.8, 1.0), (0.9, 0.0)], n), 0.02, 0.4)
-    ns_ = ns(1.4)
-    t2 = tt(ns_)
-    bass = harm(np.full(ns_, 55.0), saw_amps(40))
-    bass = sweep(bass, "lp", 150.0 + 1600.0 * np.clip(t2 / 0.7, 0, 1), 1.5)
-    m.add(norm(bass) * env([(0, 0), (0.1, 0.6), (0.7, 1.0), (1.4, 0.0)], ns_), 0.02, 0.6)
-    m.add(clank(rng, 500.0, 0.06, HEAVY, 0.3, 0.6, 0.7), 0.88, 0.6)
-    m.add(thump(rng, 120.0, 55.0, 0.3, 0.07, 0.02, 1.8, 0.2), 0.88, 0.6)
-    return space(sat(m.render(), 1.6), "yard", 0.15, False, 0)
+@sfx("skill_overdrive", n=1, target=-14.0, dur=1.2, fout=0.15)
+def _skill_overdrive(v, rng):
+    limiter_break = clank(0.26, 220.0, METAL_HEAVY, 14.0, rng, 0.8)
+    core_kick = thump(0.42, 128.0, 24.0, 8.0, rng, 2.6)
+    spool_up = turbine(0.95, 75.0, 210.0, rng, 6, 0.1) * 0.78
+    furnace_roar = roar(0.95, 220.0, 3.0, rng, 2.1) * 0.82
+    arc_burst = zap(0.55, 2100.0, rng, 42) * 0.65
+    return reverb_tail(sat(mix(
+        place(limiter_break, 0.0),
+        place(core_kick, 0.005),
+        place(spool_up, 0.04),
+        place(furnace_roar, 0.06),
+        place(arc_burst, 0.12),
+    ), 1.75), 0.2, 0.18)
 
 
-@sfx("skill_quake", n=1, target=-13.5, dur=1.3, fout=0.2)
-def skill_quake(c):
-    """与 explosion 同时触发：这里只有机体砸地的液压与结构声，爆炸由 explosion 负责。"""
-    rng = c.rng
-    m = Mix(1.3)
-    m.add(hiss(rng, 0.25, 1500.0, 8000.0, 0.004, 0.03, 0.18, (2800.0, 5200.0), 4.0, 0.5), 0.0, 0.4)
-    m.add(thump(rng, 80.0, 28.0, 0.8, 0.22, 0.05, 2.6, 0.4), 0.0, 0.38)
-    m.add(crunch(rng, 0.5, 80, 0.2, 300.0, 5000.0, 0.7, 200.0), 0.0, 0.8)
-    m.add(clank(rng, 300.0, 0.12, HEAVY, 0.7, 0.6, 0.9), 0.0, 0.5)
-    m.add(debris(rng, 1.1, 40.0, 0.35, 400.0, 3500.0, 0.6), 0.05, 0.35)
-    return space(sat(m.render(), 1.6), "valley", 0.2, False, 0)
+@sfx("skill_quake", n=1, target=-13.0, dur=1.1, fout=0.15)
+def _skill_quake(v, rng):
+    slam_sub = thump(0.55, 132.0, 20.0, 6.0, rng, 2.8)
+    ground_break = crunch(rng, dur=0.30, grains=62, spread=0.07, lo=240.0, hi=4200.0, body=0.78, body_f=170.0) * 0.9
+    hull_clank = clank(0.34, 175.0, METAL_HEAVY, 11.0, rng, 0.8)
+    roar_q = roar(0.75, 185.0, 3.5, rng, 2.2) * 0.82
+    return reverb_tail(sat(mix(
+        place(slam_sub, 0.0),
+        place(ground_break, 0.004),
+        place(hull_clank, 0.008),
+        place(roar_q, 0.02),
+    ), 1.8), 0.22, 0.2)
 
 
-@sfx("skill_charge", n=1, target=-16.0, dur=1.6, fout=0.2)
-def skill_charge(c):
-    rng = c.rng
-    m = Mix(1.6)
-    m.add(clank(rng, 700.0, 0.04, PLATE, 0.2, 0.8, 0.5), 0.0, 0.6)
-    n = ns(1.1)
-    t = tt(n)
-    f = 180.0 * (4200.0 / 180.0) ** ((t / 1.1) ** 1.3)
-    am = 1.0 + 0.35 * np.sin(2 * np.pi * phase_of(6.0 + 50.0 * t / 1.1))
-    w = (sine(f) + 0.3 * sine(2.0 * f) + 0.15 * sine(3.0 * f)) * am
-    m.add(norm(w) * env([(0, 0.1), (1.0, 1.0), (1.1, 0.0)], n), 0.03, 0.4)
-    m.add(arc(rng, 1.0, 300.0, 2500.0, 0.0, 0.8, 8) * env([(0, 0.2), (0.9, 1.0), (1.0, 0.0)], ns(1.0)), 0.08, 0.1)
-    m.add(chime(1568.0, 0.4, 0.15), 1.12, 0.3)
-    m.add(chime(2093.0, 0.45, 0.18), 1.2, 0.3)
-    m.add(thump(rng, 160.0, 80.0, 0.2, 0.04, 0.01, 1.2, 0.0), 1.12, 0.3)
-    return space(m.render(), "yard", 0.16, False, 0)
+@sfx("skill_charge", n=1, target=-15.0, dur=0.95, fout=0.12)
+def _skill_charge(v, rng):
+    sw = clank(0.20, 250.0, METAL_HEAVY, 16.0, rng, 0.75)
+    th = thump(0.28, 115.0, 30.0, 12.0, rng, 2.2)
+    spool = turbine(0.75, 80.0, 230.0, rng, 6, 0.09) * 0.72
+    arc = zap(0.45, 2100.0, rng, 38) * 0.58
+    return reverb_tail(sat(mix(
+        place(sw, 0.0),
+        place(th, 0.005),
+        place(spool, 0.04),
+        place(arc, 0.25),
+    ), 1.6), 0.16, 0.16)
 
 
-@sfx("skill_vent", n=1, target=-14.0, dur=1.8, fout=0.3)
-def skill_vent(c):
-    """与 explosion 同时触发：高压蒸汽泄放与阀门，热浪的爆裂由 explosion 负责。"""
-    rng = c.rng
-    m = Mix(1.8)
-    m.add(clank(rng, 480.0, 0.06, HEAVY, 0.3, 0.8, 0.7), 0.0, 0.7)
-    n = ns(1.5)
-    st = hiss(rng, 1.5, 700.0, 12000.0, 0.008, 0.25, 1.1, (2600.0, 4800.0, 7600.0), 3.0, 0.55)
-    m.add(sat(st, 1.4), 0.0, 1.0)
-    m.add(roar(rng, n, 80.0, 900.0, 10.0, 0.4, -4.0) * ad(n, 0.01, 0.45), 0.0, 0.6)
-    for k in range(5):
-        m.add(tick(rng, c.r(2500, 4500), 0.008, 0.04), 0.9 + c.r(0.0, 0.8), 0.15)
-    return space(m.render(), "yard", 0.18, False, 0)
+@sfx("skill_vent", n=1, target=-14.5, dur=0.95, fout=0.12)
+def _skill_vent(v, rng):
+    valve = clank(0.22, 235.0, METAL_HEAVY, 15.0, rng, 0.78)
+    pop = thump(0.28, 118.0, 28.0, 11.0, rng, 2.3)
+    steam = hiss(0.75, 1950.0, 1350, 3.8, rng) * 0.82
+    blast = whoosh(0.65, 950.0, 220.0, rng, 1.5) * 0.72
+    return reverb_tail(sat(mix(
+        place(valve, 0.0),
+        place(pop, 0.006),
+        place(steam, 0.02),
+        place(blast, 0.03),
+    ), 1.65), 0.18, 0.18)
 
 
-@sfx("skill_repair", n=1, target=-17.0, dur=2.0, fout=0.3)
-def skill_repair(c):
-    rng = c.rng
-    m = Mix(2.0)
-    m.add(whoosh(rng, 0.35, 300.0, 1800.0, 0.6, 1.0, -3.0), 0.0, 0.4)
-    for k, f in enumerate([1318.5, 1661.2, 1975.5]):
-        m.add(chime(f, 0.5, 0.2), 0.05 + 0.07 * k, 0.3)
-    n = ns(1.8)
-    tw = np.zeros(n)
-    tk = 0.1
-    while tk < 1.7:
-        place(tw, tick(rng, c.r(4000, 9000), 0.004, 0.02, 0.2), tk, c.r(0.3, 1.0) * (1.0 - tk / 1.8))
-        tk += rng.exponential(1.0 / 45.0)
-    m.add(tw, 0.0, 0.25)
-    m.add(arc(rng, 1.5, 250.0, 3500.0, 0.0, 0.9, 8) * ahr(ns(1.5), 0.1, 0.8, 0.6), 0.15, 0.08)
-    m.add(servo(rng, 1.2, 500.0, 900.0, 0.3, 0.4, 6.0, 0.2), 0.2, 0.12)
-    return space(m.render(), "yard", 0.18, False, 0)
+@sfx("skill_repair", n=1, target=-15.5, dur=1.0, fout=0.12)
+def _skill_repair(v, rng):
+    cl1 = clank(0.18, 280.0, METAL_HEAVY, 18.0, rng, 0.75)
+    th1 = thump(0.20, 112.0, 34.0, 16.0, rng, 2.0) * 0.75
+    weld = zap(0.45, 2050.0, rng, 40) * 0.65
+    spray = hiss(0.45, 1850.0, 1200, 6.0, rng) * 0.52
+    cl2 = clank(0.18, 320.0, METAL_LIGHT, 20.0, rng, 0.7) * 0.68
+    return reverb_tail(sat(mix(
+        place(cl1, 0.0),
+        place(th1, 0.004),
+        place(weld, 0.12),
+        place(spray, 0.22),
+        place(cl2, 0.58),
+    ), 1.55), 0.14, 0.14)
 
 
-@sfx("skill_denied", n=1, target=-20.0, dur=0.32, fout=0.02)
-def skill_denied(c):
-    rng = c.rng
-    m = Mix()
-    m.add(tick(rng, 2200.0, 0.004, 0.03), 0.0, 0.4)
-    m.add(buzz(140.0, 0.26, (2, 0.62), 1500.0), 0.004, 0.7)
-    m.add(arc(rng, 0.08, 800.0, 2500.0, 0.0, 0.3, 7), 0.004, 0.12)
-    return space(m.render(c.stereo), "cockpit", 0.15, c.stereo, 0)
+@sfx("skill_emp", n=1, target=-13.5, dur=1.1, fout=0.15)
+def _skill_emp(v, rng):
+    coil_thump = thump(0.52, 140.0, 20.0, 6.5, rng, 2.8)
+    snap = crack(0.055, 2200.0, rng, 2.4) * 0.88
+    emp_arc = zap(0.75, 2100.0, rng, 52) * 0.85
+    mag_drop = whoosh(0.65, 1350.0, 95.0, rng, 1.6) * 0.75
+    ring_plate = modal(0.55, 195.0, METAL_HOLLOW, 8.5, rng, 0.6) * 0.55
+    return reverb_tail(sat(mix(
+        place(snap, 0.0),
+        place(coil_thump, 0.003),
+        place(emp_arc, 0.008),
+        place(mag_drop, 0.02),
+        place(ring_plate, 0.04),
+    ), 1.8), 0.22, 0.2)
 
 
-@sfx("shield_hit", n=3, target=-17.0, dur=0.7, fout=0.08)
-def shield_hit(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    n = ns(0.4)
-    t = tt(n)
-    f = [880.0, 1046.0, 784.0][v] * (1.0 + 0.6 * np.exp(-t / 0.02))
-    m.add(fm(f, [3.5, 2.76, 4.2][v], 3.0 * np.exp(-t / 0.05) + 0.3) * expdec(n, 0.1), 0.0, 0.6)
-    m.add(arc(rng, 0.1, 1500.0, 2500.0, 0.0, 0.3, 8), 0.0, 0.3)
-    m.add(crack(rng, 0.04, 0.005, 2000.0), 0.0, 0.4)
-    m.add(thump(rng, 180.0, 90.0, 0.12, 0.03, 0.01, 1.0, 0.0), 0.0, 0.35)
-    n2 = ns(0.5)
-    sh = np.sin(2 * np.pi * 2200.0 * tt(n2)) + np.sin(2 * np.pi * 2213.0 * tt(n2))
-    m.add(norm(sh) * ad(n2, 0.01, 0.15), 0.01, 0.12)
-    return space(m.render(), "yard", 0.15, False, v)
+@sfx("skill_cloak", n=1, target=-16.0, dur=0.85, fout=0.12)
+def _skill_cloak(v, rng):
+    shutter = tick(0.02, 1650.0, rng) * 0.7
+    relay = clank(0.16, 280.0, METAL_LIGHT, 20.0, rng, 0.55) * 0.62
+    field_in = whoosh(0.58, 980.0, 140.0, rng, 1.5) * 0.78
+    sub_hum = thump(0.38, 82.0, 28.0, 10.0, rng, 1.6) * 0.68
+    return reverb_tail(sat(mix(
+        place(shutter, 0.0),
+        place(relay, 0.015),
+        place(sub_hum, 0.03),
+        place(field_in, 0.04),
+    ), 1.4), 0.16, 0.16)
 
 
-@sfx("shield_down", n=1, target=-17.0, dur=1.2, fout=0.2)
-def shield_down(c):
-    rng = c.rng
-    m = Mix(1.2)
-    n = ns(0.9)
-    t = tt(n)
-    f = 880.0 * (110.0 / 880.0) ** ((t / 0.9) ** 0.8)
-    pad = fm(f, 2.0, 1.5 + t / 0.9 * 2.0) * (1.0 - t / 0.9) ** 1.3
-    m.add(pad * (0.75 + 0.25 * np.sin(2 * np.pi * phase_of(14.0 + 10.0 * t / 0.9))), 0.0, 0.6)
-    m.add(arc(rng, 0.7, 400.0, 2500.0, 0.0, 0.9, 7) * env([(0, 0.2), (0.4, 1.0), (0.7, 0.0)], ns(0.7)), 0.1, 0.25)
-    m.add(burst(rng, 0.1, 0.02, 1500.0, 8000.0, -3.0, 0.002), 0.85, 0.35)
-    m.add(thump(rng, 120.0, 60.0, 0.2, 0.05, 0.02, 1.0, 0.0), 0.85, 0.35)
-    return space(m.render(), "yard", 0.16, False, 0)
+@sfx("skill_guard", n=1, target=-14.5, dur=0.85, fout=0.1)
+def _skill_guard(v, rng):
+    srv = servo(0.18, 150.0, 240.0, rng, 0.4) * 0.55
+    slam1 = clank(0.28, 195.0, METAL_HEAVY, 12.0, rng, 0.75)
+    th1 = thump(0.32, 115.0, 28.0, 10.0, rng, 2.4)
+    lock2 = clank(0.22, 260.0, METAL_HEAVY, 16.0, rng, 0.7) * 0.78
+    th2 = thump(0.24, 92.0, 28.0, 14.0, rng, 2.0) * 0.72
+    return reverb_tail(sat(mix(
+        place(slam1, 0.0),
+        place(th1, 0.004),
+        place(srv, 0.02),
+        place(lock2, 0.16),
+        place(th2, 0.165),
+    ), 1.7), 0.16, 0.16)
 
 
-# ---------------------------------------------------------------- 机甲状态（驾驶舱视角，2D 立体声）
-@sfx("mech_hurt", n=3, target=-16.0, dur=0.7, fout=0.08)
-def mech_hurt(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(thump(rng, [150.0, 130.0, 170.0][v], 60.0, 0.3, 0.06, 0.02, 2.2, 0.5), 0.0, 0.5)
-    m.add(crack(rng, 0.05, 0.006, 1500.0), 0.0, 0.4)
-    m.add(modal(rng, [240.0, 210.0, 280.0][v], HEAVY, 0.1, 0.5, 0.03, 0.6, 0.5), 0.0, 0.5)
-    m.add(rattle(rng, 0.3, 60.0, 1500.0, 4500.0, 0.07), 0.02, 0.25, c.r(-0.5, 0.5))
-    if v == 1:
-        m.add(crunch(rng, 0.15, 40, 0.05, 1000.0, 7000.0, 0.3, 400.0), 0.0, 0.4)
-        m.add(arc(rng, 0.12, 900.0, 3000.0, 0.0, 0.5, 7), 0.04, 0.15, 0.4)
-    elif v == 2:
-        m.add(scrape(rng, 0.25, 900.0, 4500.0, 50.0, [2100.0, 3300.0], 30.0), 0.02, 0.2, -0.3)
-    else:
-        m.add(clank(rng, 620.0, 0.06, PLATE, 0.3, 0.6, 0.5), 0.0, 0.4)
-    return space(sat(m.render(c.stereo), 1.4), "cockpit", 0.2, c.stereo, v)
+@sfx("skill_jam", n=1, target=-15.0, dur=0.95, fout=0.12)
+def _skill_jam(v, rng):
+    trig = clank(0.16, 260.0, METAL_HEAVY, 18.0, rng, 0.7)
+    pulse_sub = thump(0.35, 118.0, 28.0, 10.0, rng, 2.3)
+    static_roar = roar(0.68, 280.0, 4.0, rng, 1.9) * 0.78
+    arc_crackle = zap(0.65, 1950.0, rng, 46) * 0.75
+    return reverb_tail(sat(mix(
+        place(trig, 0.0),
+        place(pulse_sub, 0.01),
+        place(static_roar, 0.03),
+        place(arc_crackle, 0.04),
+    ), 1.65), 0.16, 0.16)
 
 
-@sfx("mech_part_lost", n=1, target=-14.5, dur=1.3, fout=0.15)
-def mech_part_lost(c):
-    rng = c.rng
-    m = Mix(1.3)
-    m.add(thump(rng, 120.0, 45.0, 0.5, 0.12, 0.03, 2.4, 0.5), 0.0, 0.5)
-    m.add(crunch(rng, 0.3, 70, 0.1, 600.0, 8000.0, 0.5, 300.0), 0.0, 0.6)
-    m.add(scrape(rng, 0.5, 700.0, 5000.0, 60.0, [1500.0, 2400.0, 3600.0], 25.0,
-                 [(0, 0), (0.03, 1.0), (0.35, 0.6), (0.5, 0.0)]), 0.02, 0.5, 0.3)
-    m.add(arc(rng, 0.25, 900.0, 2500.0, 0.0, 0.6, 7), 0.05, 0.3, -0.4)
-    m.add(debris(rng, 0.9, 35.0, 0.3, 800.0, 5000.0, 0.4), 0.06, 0.3, 0.5)
-    m.add(tone(1320.0, 0.07, "square", 0.03, bright=4000.0), 0.35, 0.18)
-    m.add(tone(990.0, 0.1, "square", 0.04, bright=4000.0), 0.45, 0.18)
-    return space(sat(m.render(c.stereo), 1.3), "cockpit", 0.22, c.stereo, 0)
+@sfx("skill_denied", n=1, target=-18.5, dur=0.24, fout=0.025)
+def _skill_denied(v, rng):
+    tk1 = tick(0.013, 1780.0, rng) * 0.85
+    c1 = clank(0.065, 420.0, METAL_HEAVY, 36.0, rng, 0.65) * 0.72
+    t1 = thump(0.045, 142.0, 60.0, 38.0, rng, 1.35) * 0.26
+    tk2 = tick(0.013, 1440.0, rng) * 0.88
+    c2 = clank(0.080, 330.0, METAL_HEAVY, 30.0, rng, 0.70) * 0.76
+    t2 = thump(0.055, 125.0, 52.0, 34.0, rng, 1.4) * 0.28
+    return sat(mix(
+        place(tk1, 0.0),
+        place(c1, 0.001),
+        place(t1, 0.003),
+        place(tk2, 0.075),
+        place(c2, 0.076),
+        place(t2, 0.078),
+    ), 1.35)
 
 
-@sfx("mech_destroyed", n=1, target=-13.0, dur=3.6, fout=0.4)
-def mech_destroyed(c):
-    rng = c.rng
-    m = Mix(3.6)
-    m.add(thump(rng, 90.0, 28.0, 1.4, 0.35, 0.05, 2.6, 0.5), 0.0, 1.0)
-    m.add(crack(rng, 0.1, 0.012, 1200.0), 0.0, 0.6)
-    n = ns(1.6)
-    t = tt(n)
-    body = sweep(sat(norm(pink(n, rng)) * ad(n, 0.004, 0.3), 2.2), "lp", 300.0 + 5000.0 * np.exp(-t / 0.15), 0.8)
-    m.add(norm(body), 0.0, 0.7)
-    for k, (f0, at, pn) in enumerate([(360.0, 0.0, -0.4), (520.0, 0.07, 0.5), (300.0, 0.18, 0.1)]):
-        m.add(clank(rng, f0, 0.1, HEAVY, 0.6, 0.5, 0.7), at, 0.5, pn)
-    n2 = ns(2.4)
-    t2 = tt(n2)
-    fr = 75.0 * (6.0 / 75.0) ** ((t2 / 2.4) ** 0.7)
-    tb = turbine(rng, n2, fr, 11, 0.5, 0.3)
-    m.add(tb * env([(0, 0.0), (0.15, 1.0), (1.6, 0.4), (2.4, 0.0)], n2), 0.1, 0.45)
-    m.add(arc(rng, 0.8, 600.0, 2500.0, 0.2, 0.9, 6) * env([(0, 0), (0.1, 1.0), (0.8, 0.0)], ns(0.8)), 0.3, 0.25, 0.3)
-    m.add(debris(rng, 2.0, 30.0, 0.6, 500.0, 4000.0, 0.5), 0.1, 0.35, -0.2)
-    m.add(hiss(rng, 1.4, 900.0, 7000.0, 0.1, 0.3, 1.0, (2200.0, 4000.0), 3.0, 0.6), 0.5, 0.25, 0.4)
-    for k in range(3):
-        m.add(tone(440.0, 0.16, "square", 0.08, bright=2500.0), 1.2 + 0.42 * k, 0.12 * (0.7 ** k))
-    return space(sat(m.render(c.stereo), 1.5), "cockpit", 0.22, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 偏导护盾（shield_up / shield_hit / shield_down）
+# ─────────────────────────────────────────────────────────────
+@sfx("shield_up", n=1, target=-15.0, dur=0.9, fout=0.1)
+def _shield_up(v, rng):
+    latch = clank(0.20, 240.0, METAL_HEAVY, 15.0, rng, 0.75)
+    sub_swell = thump(0.42, 110.0, 32.0, 8.5, rng, 2.2)
+    expand_air = whoosh(0.55, 220.0, 1150.0, rng, 1.5) * 0.75
+    arc_hum = zap(0.45, 1950.0, rng, 34) * 0.55
+    return reverb_tail(sat(mix(
+        place(latch, 0.0),
+        place(sub_swell, 0.01),
+        place(expand_air, 0.03),
+        place(arc_hum, 0.06),
+    ), 1.6), 0.16, 0.16)
 
 
-@sfx("mech_vent", n=1, target=-17.5, dur=1.8, fout=0.25)
-def mech_vent(c):
-    rng = c.rng
-    m = Mix(1.8)
-    m.add(clank(rng, 820.0, 0.04, PLATE, 0.2, 0.8, 0.5), 0.0, 0.5)
-    m.add(hiss(rng, 1.0, 900.0, 11000.0, 0.01, 0.2, 0.7, (2400.0, 4600.0, 7200.0), 3.0, 0.5), 0.02, 0.8)
-    m.add(hiss(rng, 0.6, 1200.0, 9000.0, 0.02, 0.1, 0.45, (3000.0, 5400.0), 3.0, 0.5), 0.95, 0.45)
-    m.add(servo(rng, 0.6, 260.0, 480.0, 0.2, 0.2, 5.0, 0.2), 0.3, 0.2)
-    m.add(clank(rng, 560.0, 0.05, HEAVY, 0.25, 0.6, 0.6), 0.85, 0.35)
-    return space(m.render(), "yard", 0.16, False, 0)
+@sfx("shield_hit", n=3, target=-14.5, dur=0.5, fout=0.06)
+def _shield_hit(v, rng):
+    p = 1.0 + (v - 1.0) * 0.06
+    th = thump(0.24, 128.0 * p, 34.0 * p, 14.0, rng, 2.3)
+    crk = crack(0.045, 2100.0 * p, rng, 2.1) * 0.82
+    arc = zap(0.26, 2200.0 * p, rng, 38) * 0.72
+    body = clank(0.22, 320.0 * p, METAL_HEAVY, 18.0, rng, 0.65) * 0.58
+    return reverb_tail(sat(mix(
+        place(crk, 0.0),
+        place(th, 0.002),
+        place(body, 0.005),
+        place(arc, 0.008),
+    ), 1.65), 0.12, 0.14)
 
 
-@sfx("energy_low", n=1, target=-17.0, dur=1.2, fout=0.15)
-def energy_low(c):
-    rng = c.rng
-    m = Mix(1.2)
-    for k in range(2):
-        m.add(tone(1046.5, 0.13, "tri", 0.07, bright=6000.0), 0.0 + 0.5 * k, 0.6)
-        m.add(tone(784.0, 0.2, "tri", 0.1, bright=6000.0), 0.16 + 0.5 * k, 0.6)
-    n = ns(1.1)
-    hum = harm(np.geomspace(120.0, 95.0, n), [1.0, 0.5, 0.3, 0.2])
-    m.add(norm(hum) * ahr(n, 0.05, 0.5, 0.5), 0.0, 0.12)
-    return space(m.render(c.stereo), "cockpit", 0.25, c.stereo, 0)
+@sfx("shield_down", n=1, target=-15.0, dur=0.85, fout=0.1)
+def _shield_down(v, rng):
+    shatter = crack(0.08, 1950.0, rng, 2.3) * 0.85
+    sub_drop = thump(0.38, 118.0, 24.0, 9.0, rng, 2.4)
+    collapse_whoosh = whoosh(0.48, 1250.0, 150.0, rng, 1.5) * 0.78
+    arc_die = zap(0.38, 1850.0, rng, 36) * 0.62
+    steam = hiss(0.45, 1750.0, 1100, 6.5, rng) * 0.52
+    return reverb_tail(sat(mix(
+        place(shatter, 0.0),
+        place(sub_drop, 0.004),
+        place(arc_die, 0.01),
+        place(collapse_whoosh, 0.02),
+        place(steam, 0.08),
+    ), 1.65), 0.16, 0.16)
 
 
-@sfx("energy_emergency", n=1, target=-14.0, dur=1.7, fout=0.25)
-def energy_emergency(c):
-    """主电源断开、系统掉电，随后应急电源的继电器接通；循环告警由同时开始的 energy_alarm_loop 负责，这里不叠警报。"""
-    rng = c.rng
-    m = Mix(1.7)
-    m.add(clank(rng, 330.0, 0.1, HEAVY, 0.5, 0.8, 0.8), 0.0, 0.7)
-    m.add(thump(rng, 110.0, 40.0, 0.5, 0.12, 0.03, 2.0, 0.3), 0.0, 0.7)
-    n = ns(0.75)
-    t = tt(n)
-    m.add(tone(900.0 * (60.0 / 900.0) ** ((t / 0.75) ** 0.6), 0.75, "saw", None, 0.005, bright=3000.0), 0.02, 0.4)
-    m.add(arc(rng, 0.3, 700.0, 2500.0, 0.0, 0.7, 6), 0.02, 0.22, -0.3)
-    m.add(clank(rng, 820.0, 0.04, PLATE, 0.2, 0.8, 0.5), 0.82, 0.45, 0.25)
-    m.add(arc(rng, 0.08, 1200.0, 2500.0, 0.0, 0.3, 7), 0.82, 0.15, 0.25)
-    n2 = ns(0.8)
-    hum = harm(np.full(n2, 62.0), [1.0, 0.6, 0.45, 0.3, 0.2, 0.12])
-    m.add(norm(hum) * env([(0, 0), (0.12, 1.0), (0.45, 0.7), (0.8, 0.0)], n2), 0.85, 0.3)
-    return space(m.render(c.stereo), "cockpit", 0.25, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 机体受击、部件断离与反应堆殉爆（mech_hurt / mech_part_lost / mech_destroyed / mech_vent）
+# ─────────────────────────────────────────────────────────────
+@sfx("mech_hurt", n=3, target=-14.0, dur=0.52, fout=0.06)
+def _mech_hurt(v, rng):
+    p = 1.0 + (v - 1.0) * 0.06
+    hull_thud = thump(0.28, 125.0 * p, 28.0 * p, 12.0, rng, 2.5)
+    armor_slam = clank(0.24, 210.0 * p, METAL_HEAVY, 15.0, rng, 0.72)
+    spall = crunch(rng, dur=0.14, grains=32, spread=0.035, lo=380.0 * p, hi=4600.0, body=0.65, body_f=220.0 * p) * 0.72
+    short_arc = zap(0.18, 1950.0 * p, rng, 30) * 0.48
+    return reverb_tail(sat(mix(
+        place(hull_thud, 0.0),
+        place(armor_slam, 0.003),
+        place(spall, 0.005),
+        place(short_arc, 0.02),
+    ), 1.7), 0.12, 0.14)
 
 
-@sfx("energy_alarm_loop", n=1, target=-19.0, loop=1.2, reps=4)
-def energy_alarm_loop(c):
-    one = np.zeros(c.period)
-    place(one, tone(880.0, 0.12, "square", None, 0.004, bright=3200.0), 0.0, 0.8)
-    place(one, tone(880.0, 0.12, "square", None, 0.004, bright=3200.0), 0.18, 0.8)
-    x = np.tile(one, c.reps)
-    return space(x, "cockpit", 0.25, False, 0)
+@sfx("mech_part_lost", n=1, target=-13.0, dur=1.2, fout=0.15)
+def _mech_part_lost(v, rng):
+    bolt_snap = crack(0.11, 1850.0, rng, 2.4) * 0.9
+    blast_sub = thump(0.48, 130.0, 22.0, 7.0, rng, 2.8)
+    tear_clank = clank(0.42, 185.0, METAL_HEAVY, 9.0, rng, 0.85)
+    arc_burst = zap(0.45, 2100.0, rng, 44) * 0.72
+    pipe_burst = hiss(0.65, 1950.0, 1300, 4.5, rng) * 0.65
+    fall_clank = clank(0.28, 240.0, METAL_HOLLOW, 13.0, rng, 0.7) * 0.72
+    fall_thump = thump(0.25, 95.0, 28.0, 14.0, rng, 2.1) * 0.68
+    return reverb_tail(sat(mix(
+        place(bolt_snap, 0.0),
+        place(blast_sub, 0.004),
+        place(tear_clank, 0.008),
+        place(arc_burst, 0.02),
+        place(pipe_burst, 0.06),
+        place(fall_clank, 0.42),
+        place(fall_thump, 0.425),
+    ), 1.8), 0.2, 0.18)
 
 
-@sfx("energy_restored", n=1, target=-16.0, dur=1.6, fout=0.2)
-def energy_restored(c):
-    rng = c.rng
-    m = Mix(1.6)
-    m.add(clank(rng, 720.0, 0.04, PLATE, 0.2, 0.8, 0.5), 0.0, 0.6)
-    m.add(arc(rng, 0.12, 900.0, 2500.0, 0.0, 0.4, 7), 0.0, 0.25)
-    n = ns(0.7)
-    t = tt(n)
-    m.add(tone(150.0 * (2000.0 / 150.0) ** ((t / 0.7) ** 1.2), 0.7, "saw", None, 0.01, bright=5000.0), 0.03, 0.25)
-    n2 = ns(1.2)
-    m.add(norm(harm(np.full(n2, 110.0), [1.0, 0.5, 0.3, 0.2])) * env([(0, 0), (0.6, 1.0), (1.2, 0.0)], n2), 0.1, 0.15)
-    for k, f in enumerate([1046.5, 1318.5, 1568.0]):
-        m.add(chime(f, 0.5, 0.2), 0.62 + 0.09 * k, 0.35, -0.3 + 0.3 * k)
-    return space(m.render(c.stereo), "cockpit", 0.25, c.stereo, 0)
+@sfx("mech_destroyed", n=1, target=-11.5, dur=2.6, fout=0.35)
+def _mech_destroyed(v, rng):
+    init_boom = thump(0.75, 135.0, 20.0, 5.0, rng, 3.0)
+    init_roar = roar(1.2, 210.0, 2.8, rng, 2.4) * 0.9
+    hull_rip = clank(0.65, 165.0, METAL_HEAVY, 6.5, rng, 0.85)
+    arc_storm = zap(1.1, 2200.0, rng, 50) * 0.75
+    core_det = thump(0.95, 145.0, 18.0, 3.8, rng, 3.2)
+    core_roar = roar(1.6, 175.0, 1.9, rng, 2.6) * 0.95
+    collapse_clank = clank(0.55, 150.0, METAL_HEAVY, 7.5, rng, 0.8) * 0.85
+    collapse_thump = thump(0.55, 98.0, 22.0, 7.0, rng, 2.6) * 0.85
+    steam_die = hiss(1.1, 1750.0, 1100, 3.0, rng) * 0.55
+    return reverb_tail(sat(mix(
+        place(init_boom, 0.0),
+        place(init_roar, 0.01),
+        place(hull_rip, 0.02),
+        place(arc_storm, 0.05),
+        place(core_det, 0.48),
+        place(core_roar, 0.49),
+        place(collapse_clank, 1.18),
+        place(collapse_thump, 1.19),
+        place(steam_die, 1.25),
+    ), 1.95), 0.28, 0.25)
 
 
-# ---------------------------------------------------------------- 消耗品（2D 立体声）
-@sfx("use_fuel_cell", n=1, target=-16.0, dur=1.5, fout=0.2)
-def use_fuel_cell(c):
-    rng = c.rng
-    m = Mix(1.5)
-    m.add(clank(rng, 560.0, 0.06, HEAVY, 0.3, 0.7, 0.7), 0.0, 0.8, -0.2)
-    m.add(thump(rng, 140.0, 70.0, 0.2, 0.04, 0.015, 1.5, 0.3), 0.0, 0.5)
-    m.add(tick(rng, 3600.0, 0.004, 0.03), 0.09, 0.4, 0.2)
-    m.add(arc(rng, 0.1, 1200.0, 2500.0, 0.0, 0.3, 7), 0.15, 0.3)
-    n = ns(0.9)
-    t = tt(n)
-    f = 90.0 * (2.0 ** (t / 0.9 * 1.5))
-    hum = harm(f, [1.0, 0.6, 0.4, 0.25, 0.15]) * (1.0 + 0.25 * np.sin(2 * np.pi * 12.0 * t))
-    m.add(norm(hum) * env([(0, 0), (0.1, 0.7), (0.8, 1.0), (0.9, 0.0)], n), 0.18, 0.3)
-    m.add(tone(500.0 * (3000.0 / 500.0) ** (t / 0.9), 0.9, "sine", None, 0.05), 0.18, 0.15)
-    m.add(tone(1568.0, 0.08, "sine", 0.03), 1.12, 0.3)
-    m.add(tone(2093.0, 0.12, "sine", 0.05), 1.2, 0.3)
-    return space(m.render(c.stereo), "cockpit", 0.22, c.stereo, 0)
+@sfx("mech_vent", n=1, target=-15.5, dur=1.1, fout=0.15)
+def _mech_vent(v, rng):
+    valve_pop = clank(0.22, 240.0, METAL_HEAVY, 15.0, rng, 0.75)
+    sub_th = thump(0.26, 108.0, 30.0, 12.0, rng, 2.1) * 0.75
+    steam = hiss(0.85, 1850.0, 1250, 3.5, rng) * 0.78
+    air = whoosh(0.72, 780.0, 195.0, rng, 1.4) * 0.65
+    return reverb_tail(sat(mix(
+        place(valve_pop, 0.0),
+        place(sub_th, 0.005),
+        place(steam, 0.02),
+        place(air, 0.04),
+    ), 1.55), 0.16, 0.16)
 
 
-@sfx("use_repair_kit", n=1, target=-17.0, dur=1.7, fout=0.2)
-def use_repair_kit(c):
-    rng = c.rng
-    m = Mix(1.7)
-    m.add(tick(rng, 2400.0, 0.006, 0.04), 0.0, 0.5)
-    n = ns(0.9)
-    t = tt(n)
-    spray = bp(white(n, rng), 3000.0, 12000.0) * (0.75 + 0.25 * np.sin(2 * np.pi * 6.5 * t))
-    m.add(norm(spray) * ahr(n, 0.03, 0.6, 0.25), 0.05, 0.45, 0.3)
-    m.add(arc(rng, 0.7, 350.0, 3000.0, 0.0, 0.9, 8) * ahr(ns(0.7), 0.05, 0.4, 0.25), 0.25, 0.12, -0.3)
-    m.add(servo(rng, 0.6, 450.0, 780.0, 0.2, 0.2, 6.0, 0.2), 0.35, 0.18)
-    m.add(tone(1318.5, 0.1, "sine", 0.05), 1.15, 0.3)
-    m.add(tone(1760.0, 0.16, "sine", 0.07), 1.25, 0.3)
-    return space(m.render(c.stereo), "cockpit", 0.2, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 能源反应堆监控与战地消耗品（energy_* / use_*）
+# ─────────────────────────────────────────────────────────────
+@sfx("energy_low", n=1, target=-16.5, dur=0.75, fout=0.08)
+def _energy_low(v, rng):
+    cl1 = clank(0.18, 250.0, METAL_HEAVY, 18.0, rng, 0.72)
+    th1 = thump(0.20, 98.0, 32.0, 16.0, rng, 2.0) * 0.75
+    spool_dn = whoosh(0.45, 580.0, 140.0, rng, 1.4) * 0.62
+    cl2 = clank(0.20, 210.0, METAL_HEAVY, 16.0, rng, 0.75) * 0.85
+    th2 = thump(0.22, 86.0, 28.0, 15.0, rng, 2.0) * 0.78
+    return sat(mix(
+        place(cl1, 0.0),
+        place(th1, 0.004),
+        place(spool_dn, 0.03),
+        place(cl2, 0.22),
+        place(th2, 0.224),
+    ), 1.5)
 
 
-@sfx("use_beacon", n=1, target=-15.0, dur=2.6, fout=0.4)
-def use_beacon(c):
-    rng = c.rng
-    m = Mix(2.6)
-    m.add(thump(rng, 200.0, 90.0, 0.2, 0.04, 0.015, 1.6, 0.5), 0.0, 0.7)
-    m.add(crack(rng, 0.06, 0.008, 1500.0), 0.0, 0.4)
-    m.add(whoosh(rng, 0.8, 500.0, 4500.0, 0.25, 1.4, -2.0), 0.02, 0.6)
-    n = ns(0.8)
-    m.add(roar(rng, n, 300.0, 5000.0, 20.0, 0.4) * ad(n, 0.01, 0.25), 0.02, 0.35)
-    for k in range(3):
-        t0 = 0.7 + 0.45 * k
-        n1 = ns(0.6)
-        t1 = tt(n1)
-        m.add(fm(np.full(n1, 1320.0), 2.0, 0.8 * np.exp(-t1 / 0.1)) * expdec(n1, 0.16), t0, 0.5 * (0.8 ** k))
-    m.add(norm(bp(white(ns(0.18), rng), 1500.0, 5000.0)) * ahr(ns(0.18), 0.005, 0.12, 0.05), 2.1, 0.12, 0.3)
-    m.add(tick(rng, 2000.0, 0.005, 0.03), 2.3, 0.2, 0.3)
-    return space(m.render(c.stereo), "valley", 0.3, c.stereo, 0)
+@sfx("energy_emergency", n=1, target=-14.0, dur=1.2, fout=0.15)
+def _energy_emergency(v, rng):
+    breaker_trip = clank(0.32, 195.0, METAL_HEAVY, 11.0, rng, 0.82)
+    power_drop_sub = thump(0.48, 122.0, 22.0, 7.5, rng, 2.6)
+    turbine_die = whoosh(0.85, 820.0, 95.0, rng, 1.5) * 0.78
+    vent_steam = hiss(0.65, 1850.0, 1200, 4.5, rng) * 0.58
+    aux_latch = clank(0.22, 275.0, METAL_HOLLOW, 16.0, rng, 0.7) * 0.72
+    return reverb_tail(sat(mix(
+        place(breaker_trip, 0.0),
+        place(power_drop_sub, 0.008),
+        place(turbine_die, 0.03),
+        place(vent_steam, 0.08),
+        place(aux_latch, 0.62),
+    ), 1.7), 0.18, 0.18)
 
 
-@sfx("use_denied", n=1, target=-20.0, dur=0.3, fout=0.03)
-def use_denied(c):
-    rng = c.rng
-    m = Mix()
-    m.add(thump(rng, 230.0, 150.0, 0.12, 0.025, 0.01, 1.0, 0.4), 0.0, 0.7)
-    m.add(tone(330.0, 0.09, "tri", 0.04, bright=3000.0), 0.01, 0.5)
-    m.add(tone(247.0, 0.13, "tri", 0.05, bright=3000.0), 0.11, 0.5)
-    return space(m.render(c.stereo), "cockpit", 0.15, c.stereo, 0)
+@sfx("energy_alarm_loop", n=1, target=-18.5, loop=1.2, reps=4)
+def _energy_alarm_loop(v, rng):
+    dur = 1.2
+    pump_sub = rumble(dur, 48.0, 4.0, rng, 1.45) * 0.52
+    hit1 = thump(0.18, 92.0, 30.0, 18.0, rng, 1.9) * 0.78
+    cl1 = clank(0.14, 230.0, METAL_HEAVY, 22.0, rng, 0.65) * 0.72
+    hit2 = thump(0.16, 78.0, 28.0, 20.0, rng, 1.8) * 0.65
+    cl2 = clank(0.12, 195.0, METAL_HOLLOW, 24.0, rng, 0.6) * 0.62
+    air_puff = hiss(0.22, 1450.0, 900, 12.0, rng) * 0.35
+    return sat(mix(
+        pump_sub,
+        place(hit1, 0.04, dur),
+        place(cl1, 0.044, dur),
+        place(hit2, 0.26, dur),
+        place(cl2, 0.264, dur),
+        place(air_puff, 0.30, dur),
+    ), 1.4)
+
+
+@sfx("energy_restored", n=1, target=-15.0, dur=1.1, fout=0.15)
+def _energy_restored(v, rng):
+    slam_on = clank(0.28, 225.0, METAL_HEAVY, 13.0, rng, 0.8)
+    sub_on = thump(0.38, 112.0, 30.0, 9.5, rng, 2.3)
+    spool_up = turbine(0.78, 68.0, 185.0, rng, 6, 0.09) * 0.72
+    roar_up = roar(0.68, 190.0, 4.0, rng, 1.8) * 0.65
+    ready_lock = clank(0.18, 310.0, METAL_LIGHT, 20.0, rng, 0.68) * 0.68
+    return reverb_tail(sat(mix(
+        place(slam_on, 0.0),
+        place(sub_on, 0.008),
+        place(spool_up, 0.05),
+        place(roar_up, 0.08),
+        place(ready_lock, 0.65),
+    ), 1.6), 0.16, 0.16)
+
+
+@sfx("use_fuel_cell", n=1, target=-15.5, dur=1.0, fout=0.12)
+def _use_fuel_cell(v, rng):
+    insert_clank = clank(0.22, 250.0, METAL_HEAVY, 16.0, rng, 0.78)
+    insert_thump = thump(0.24, 112.0, 34.0, 14.0, rng, 2.1)
+    inject_hiss = hiss(0.45, 1850.0, 1200, 6.5, rng) * 0.62
+    burn_roar = roar(0.55, 210.0, 4.5, rng, 1.9) * 0.72
+    seal_lock = clank(0.18, 320.0, METAL_LIGHT, 20.0, rng, 0.7) * 0.68
+    return reverb_tail(sat(mix(
+        place(insert_clank, 0.0),
+        place(insert_thump, 0.006),
+        place(inject_hiss, 0.12),
+        place(burn_roar, 0.25),
+        place(seal_lock, 0.58),
+    ), 1.6), 0.14, 0.14)
+
+
+@sfx("use_repair_kit", n=1, target=-15.5, dur=1.2, fout=0.12)
+def _use_repair_kit(v, rng):
+    rivet1 = clank(0.18, 290.0, METAL_HEAVY, 18.0, rng, 0.78)
+    th1 = thump(0.18, 115.0, 36.0, 18.0, rng, 2.1) * 0.78
+    rivet2 = clank(0.18, 315.0, METAL_HEAVY, 18.0, rng, 0.78)
+    th2 = thump(0.18, 120.0, 36.0, 18.0, rng, 2.1) * 0.78
+    weld_arc = zap(0.48, 2100.0, rng, 42) * 0.68
+    spray_hiss = hiss(0.45, 1950.0, 1200, 6.5, rng) * 0.55
+    return reverb_tail(sat(mix(
+        place(rivet1, 0.0),
+        place(th1, 0.004),
+        place(rivet2, 0.16),
+        place(th2, 0.164),
+        place(weld_arc, 0.34),
+        place(spray_hiss, 0.42),
+    ), 1.6), 0.14, 0.14)
+
+
+@sfx("use_beacon", n=1, target=-15.5, dur=1.1, fout=0.12)
+def _use_beacon(v, rng):
+    th = thump(0.26, 118.0, 32.0, 13.0, rng, 2.2)
+    cl = clank(0.22, 270.0, METAL_HEAVY, 15.0, rng, 0.78)
+    launch_whoosh = whoosh(0.55, 340.0, 1450.0, rng, 1.6) * 0.75
+    flare_hiss = hiss(0.65, 2100.0, 1350, 5.0, rng) * 0.58
+    return reverb_tail(sat(mix(
+        place(th, 0.0),
+        place(cl, 0.005),
+        place(launch_whoosh, 0.03),
+        place(flare_hiss, 0.06),
+    ), 1.6), 0.16, 0.16)
+
+
+@sfx("use_denied", n=1, target=-18.5, dur=0.24, fout=0.025)
+def _use_denied(v, rng):
+    tk1 = tick(0.013, 1850.0, rng) * 0.85
+    c1 = clank(0.065, 450.0, METAL_HOLLOW, 36.0, rng, 0.65) * 0.72
+    t1 = thump(0.045, 140.0, 58.0, 38.0, rng, 1.35) * 0.25
+    tk2 = tick(0.013, 1480.0, rng) * 0.88
+    c2 = clank(0.080, 350.0, METAL_HOLLOW, 30.0, rng, 0.68) * 0.75
+    t2 = thump(0.055, 122.0, 52.0, 34.0, rng, 1.4) * 0.28
+    return sat(mix(
+        place(tk1, 0.0),
+        place(c1, 0.001),
+        place(t1, 0.003),
+        place(tk2, 0.072),
+        place(c2, 0.073),
+        place(t2, 0.075),
+    ), 1.35)

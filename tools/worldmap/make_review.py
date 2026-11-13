@@ -22,7 +22,7 @@ def text(dr, xy, t, c=CREAM):
 def vs_ingame():
     meta = json.load(open(os.path.join(ROOT, "assets/ui/worldmap/worldmap.json"), encoding="utf-8"))
     wm = Image.open(os.path.join(ROOT, "assets/ui/worldmap/wm_1m.png")).convert("RGB")
-    ids = [m for m in ["greyport", "redlake", "ironbelt", "dustfield", "canyon", "abyss_maw"] if m in meta["maps"]]
+    ids = [m for m in ["greyport", "redlake", "bayport", "ironbelt", "dustfield", "canyon", "abyss_maw"] if m in meta["maps"]]
     S, PAD, HEAD = 360, 12, 22
     W = PAD + 3 * (S + PAD)
     H = 40 + len(ids) * (S + HEAD + PAD)

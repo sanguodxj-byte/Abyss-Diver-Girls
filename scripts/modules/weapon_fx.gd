@@ -17,58 +17,51 @@ void fragment() {
 """
 
 
-## 双层光束：白热内芯 + 有色外层，沿局部 Z 收缩淡出
-static func beam(raid, a: Vector3, b: Vector3, c: Color, w: float, life := 0.18) -> void:
+## 重工业实体长杆穿甲箭弹高速掠过表现（取代旧版双层发光光束）
+static func beam(raid, a: Vector3, b: Vector3, _c: Color, w: float, life := 0.18) -> void:
 	var span := a.distance_to(b)
 	if span < 0.05:
 		return
-	var n := Node3D.new()
-	raid.fx.add_child(n)
-	n.global_position = (a + b) * 0.5
-	n.look_at(b, Vector3.UP if abs((b - a).normalized().y) < 0.95 else Vector3.FORWARD)
-	A.add(n, A.cyl(w, span, w, 8), A.emit(Color(1, 1, 1), 10.0), Vector3.ZERO, Vector3(90, 0, 0), Vector3.ONE, false)
-	A.add(n, A.cyl(w * 3.4, span, w * 3.4, 10), A.emit(c, 3.2), Vector3.ZERO, Vector3(90, 0, 0), Vector3.ONE, false)
-	var tw := n.create_tween()
-	tw.tween_property(n, "scale", Vector3(0.1, 0.1, 1.0), life).set_ease(Tween.EASE_IN)
-	tw.tween_callback(n.queue_free)
+	var dart := Node3D.new()
+	raid.fx.add_child(dart)
+	dart.global_position = a
+	var fwd := (b - a) / span
+	dart.look_at(b, Vector3.UP if abs(fwd.y) < 0.95 else Vector3.FORWARD)
+	var r := clampf(w * 0.85, 0.024, 0.055)
+	var L := clampf(r * 24.0, 0.65, 1.35)
+	var m_tung := A.metal(Color(0.22, 0.24, 0.26))
+	var m_tip := A.chrome()
+	var m_copper := A.paint(Color(0.84, 0.46, 0.24), 0.88, 0.28, {"panel_scale": 0.0})
+	A.add(dart, A.cyl(r * 0.82, L * 0.72, r, 10), m_tung, Vector3(0, 0, L * 0.08), Vector3(90, 0, 0), Vector3.ONE, false)
+	A.add(dart, A.cyl(0.005, L * 0.30, r * 0.82, 10), m_tip, Vector3(0, 0, -L * 0.42), Vector3(-90, 0, 0), Vector3.ONE, false)
+	A.add(dart, A.cyl(r * 1.18, L * 0.07, r * 1.18, 10), m_copper, Vector3(0, 0, -L * 0.05), Vector3(90, 0, 0), Vector3.ONE, false)
+	for fi in 4:
+		A.add(dart, A.bevel_box(Vector3(r * 0.24, r * 2.4, L * 0.22), 0.002), m_tung, Vector3(0, 0, L * 0.34), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+	A.burst(raid.fx, a + fwd * minf(1.2, span * 0.35), {"amount": 4, "life": 0.42, "size": 0.45, "tex": A.smoke_tex(), "additive": false,
+		"dir": fwd, "spread": 18.0, "vmin": 1.2, "vmax": 3.5, "gravity": Vector3(0, 0.5, 0), "damp": 3.0,
+		"c0": Color(0.72, 0.70, 0.66, 0.42), "c1": Color(0.50, 0.48, 0.45, 0.0), "grow0": 0.5, "grow1": 1.7})
+	var dur := clampf(span / 120.0, 0.04, maxf(life, 0.08))
+	var tw := dart.create_tween()
+	tw.tween_property(dart, "global_position", b, dur)
+	tw.tween_callback(dart.queue_free)
 
 
-## 折线电弧：两到三股随机折线，适合链式闪电
+## 重工业电磁钢针齐射表现（取代旧版折线电弧闪电）
 static func bolt(raid, a: Vector3, b: Vector3, c: Color, life := 0.14, w := 0.05) -> void:
-	var d := b - a
-	var span := d.length()
-	if span < 0.2:
-		return
-	var n := Node3D.new()
-	raid.fx.add_child(n)
-	n.global_position = a
-	var fwd := d.normalized()
-	var up := Vector3.UP if abs(fwd.y) < 0.95 else Vector3.FORWARD
-	var s1 := fwd.cross(up).normalized()
-	var s2 := fwd.cross(s1).normalized()
-	for strand in 3:
-		var pts: Array = []
-		var segs: int = maxi(3, int(span / 0.7) + 2)
-		for i in segs + 1:
-			var t := float(i) / segs
-			var p: Vector3 = d * t
-			if i > 0 and i < segs:
-				var amp := sin(t * PI) * minf(0.5, span * 0.07)
-				p += s1 * randf_range(-amp, amp) + s2 * randf_range(-amp, amp)
-			pts.append(p)
-		var r := w * (1.0 if strand == 0 else 0.45)
-		A.add(n, A.tube(pts, r, 5, 4), A.emit(Color(1, 1, 1) if strand == 0 else c, 9.0 if strand == 0 else 2.6), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	var tw := n.create_tween()
-	tw.tween_property(n, "scale", Vector3.ONE * 0.55, life).set_ease(Tween.EASE_IN)
-	tw.tween_callback(n.queue_free)
+	beam(raid, a, b, c, w * 0.75, life)
 
 
-## 冲击环：贴地的圆环由小撑开
+## 冲击环：贴地的双层立体激波环由小撑开
 static func ring(raid, p: Vector3, c: Color, radius: float, life := 0.4) -> void:
-	var n := A.add(raid.fx, A.torus(radius * 0.86, radius, 40), A.emit(c, 4.0), p + Vector3(0, 0.12, 0), Vector3.ZERO, Vector3(0.25, 0.12, 0.25), false)
-	var tw := n.create_tween()
-	tw.tween_property(n, "scale", Vector3(1, 0.3, 1), life).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_callback(n.queue_free)
+	var root := Node3D.new()
+	raid.fx.add_child(root)
+	root.global_position = p + Vector3(0, 0.12, 0)
+	root.scale = Vector3(0.22, 0.12, 0.22)
+	A.add(root, A.torus(radius * 0.86, radius, 40), A.emit(c, 4.8), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.add(root, A.torus(radius * 0.68, radius * 0.76, 32), A.emit(c.lightened(0.4), 3.0), Vector3(0, 0.06, 0), Vector3.ZERO, Vector3.ONE, false)
+	var tw := root.create_tween()
+	tw.tween_property(root, "scale", Vector3(1, 0.32, 1), life).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(root.queue_free)
 
 
 ## 落点标记：地面上的加色圆环，随飞行时间收缩

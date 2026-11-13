@@ -128,8 +128,16 @@ class SynthError(Exception):
 
 
 def request_tts(text, reference_id, key, timeout=180):
-    body = json.dumps({"text": text, "reference_id": reference_id, "format": "mp3"},
-                      ensure_ascii=False).encode("utf-8")
+    body = json.dumps({
+        "text": text,
+        "reference_id": reference_id,
+        "format": "mp3",
+        "language": "ja",
+        "temperature": 0.9,
+        "top_p": 0.85,
+        "prosody": {"speed": 1.0, "volume": 0, "normalize_loudness": True},
+        "normalize": True
+    }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         API_URL, data=body, method="POST",
         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json",

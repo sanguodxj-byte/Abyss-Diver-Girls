@@ -33,9 +33,9 @@ func run() -> void:
 		if not check(Growth.subst("{player_name}姐") == "测试名姐", "自定义姓名文本替换未生效"):
 			return
 		Growth.set_player_name(Growth.DEFAULT_PLAYER_NAME)
-	if not check(GameData.map_available("greyport") and not GameData.map_available("ironbelt"), "初始战区准入不对：灰港市应开放、铁锈工业带应锁定"):
+	if not check(GameData.map_available("greyport") and GameData.map_available("ironbelt"), "战区准入不对：灰港市与铁锈工业带应默认开放"):
 		return
-	if not check(not GameData.map_available("abyss_maw"), "初始零号深渊井应锁定"):
+	if not check(GameData.map_available("abyss_maw"), "零号深渊井应默认开放"):
 		return
 	if not check(GameData.ITEMS.has("gift_watch") and GameData.LOOT_TABLES.supply.pool.has("gift_cocoa"), "赠礼物品或掉落池没有并入扩展数据"):
 		return
@@ -73,7 +73,7 @@ func run() -> void:
 	# ---- 研究：虫晶燃料电池组 +12 能源；聚焦透镜阵列上架聚焦激光 ----
 	if not check(Growth.can_research("res_lens") == "", "研究室 2 级时聚焦透镜阵列应可研究：%s" % Growth.can_research("res_lens")):
 		return
-	if not check(Growth.can_research("res_hover") == "研究室 Lv3", "研究室 2 级时反重力悬浮环应被研究室等级挡住"):
+	if not check(Growth.can_research("res_hex") == "研究室 Lv3", "研究室 2 级时六足步态协同应被研究室等级挡住"):
 		return
 	if not check(not Growth.shop_allowed("arm_laser"), "未研究时聚焦激光不应上架"):
 		return
@@ -128,12 +128,14 @@ func run() -> void:
 	if not check(Growth.crew_level("lina") == 2 and not GameData.stash.has("gift_watch"), "铜壳怀表没有把莉娜送到 2 级或没有扣除赠礼"):
 		return
 
-	# ---- 后勤委托：提交后按委托人加好感 ----
-	GameData.request = {"id": "can_food", "count": 1, "reward": 10, "who": "厨师阿堇"}
-	GameData.stash.append("can_food")
-	if not check(GameData.fulfill_request(), "提交后勤委托失败"):
+	# ---- 后勤委托：接取后提交，按委托人加好感 ----
+	GameData.quest_state = {}
+	GameData.accept_quest("ajin", 0)
+	for _k in 3:
+		GameData.stash.append("can_food")
+	if not check(GameData.fulfill_quest("ajin", 0), "提交后勤委托失败"):
 		return
-	if not check(Growth.crew_level("ajin") == 1, "阿堇的委托没有加好感"):
+	if not check(Growth.crew_level("ajin") >= 1, "阿堇的委托没有加好感"):
 		return
 
 	# ---- 出击食堂：烹制餐点 +12 能源 / +3 结构，行动结束后清空 ----
@@ -259,23 +261,47 @@ func run() -> void:
 	if not check(Growth.can_buy_pod("rei") == "信用点不足" and not Growth.buy_pod("rei"), "钱不够时仍能升级部署仓"):
 		return
 	GameData.money = 20000
-	# ---- v0.6 主角能力强化：钱 + 杂物升级，数值进入机体合计 ----
+	# ---- 塔科夫式实战熟练度技能：零货币/物资消耗，按使用动作累积经验升级 + 单局专注/疲劳曲线 + 存档还原 ----
+	Growth.reset_raid_skill_fatigue()
+	if not check(Growth.ability_cost("ab_frame").is_empty() and not Growth.upgrade_ability("ab_frame") and Growth.train_protagonist().is_empty(), "角色技能不应允许消耗资源或付费模拟训练升级"):
+		return
+	var money_pre := GameData.money
+	var stash_pre := GameData.stash.size()
 	var pre_ab := GameData.compute_stats(GameData.STARTER)
-	if not check(Growth.upgrade_ability("ab_frame"), "骨架补强升级失败：%s" % Growth.can_upgrade_ability("ab_frame")):
+	if not check(is_equal_approx(Growth.ability_focus_mult("ab_frame"), 1.29), "新局初始专注倍率应为 1.29x"):
+		return
+	var r_ab := Growth.record_skill_xp("ab_frame", 8.0)
+	if not check(int(r_ab.get("levels", 0)) == 1 and Growth.ability_level("ab_frame") == 1, "实战动作累积经验没有把抗损损管升到 Lv1：%s" % [r_ab]):
+		return
+	if not check(GameData.money == money_pre and GameData.stash.size() == stash_pre, "实战熟练度升级不应扣除任何信用点或仓库物资"):
 		return
 	var post_ab := GameData.compute_stats(GameData.STARTER)
-	if not check(is_equal_approx(post_ab.hp, pre_ab.hp + 8.0), "骨架补强没有加 8 结构"):
+	if not check(is_equal_approx(post_ab.hp, pre_ab.hp + 5.0), "抗损损管 Lv1 没有加 5 结构（%.1f→%.1f）" % [pre_ab.hp, post_ab.hp]):
 		return
-	var lv0 := Growth.pilot_level("nao")
-	var xp0 := Growth.pilot_xp("nao")
-	if not check(not Growth.train_protagonist().is_empty() and (Growth.pilot_level("nao") > lv0 or Growth.pilot_xp("nao") > xp0), "模拟舱训练没有加经验：%s" % Growth.can_train()):
+	Growth.record_skill_xp("ab_frame", 26.0)
+	if not check(is_equal_approx(Growth.ability_focus_mult("ab_frame"), 0.5), "单局重复动作超阈值后疲劳倍率应降为 0.5x"):
 		return
+	Growth.reset_raid_skill_fatigue()
+	if not check(is_equal_approx(Growth.ability_focus_mult("ab_frame"), 1.29), "新局重置后专注倍率应恢复 1.29x"):
+		return
+	var pre_fw := GameData.compute_stats(GameData.STARTER)
+	Growth.record_skill_xp("ab_firearm", 9.0)
+	var post_fw := GameData.compute_stats(GameData.STARTER)
+	if not check(Growth.ability_level("ab_firearm") == 1 and is_equal_approx(post_fw.ergo, pre_fw.ergo + 2.2), "实弹火控 Lv1 没有加 2.2 人机工效"):
+		return
+	var xp_before_use := Growth.ability_xp("ab_frame")
+	var lv_before_use := Growth.ability_level("ab_frame")
+	Events.item_used.emit("repair_kit")
+	if not check(Growth.ability_level("ab_frame") > lv_before_use or Growth.ability_xp("ab_frame") > xp_before_use, "使用维修包事件没有增加抗损损管熟练度"):
+		return
+	var saved_ab_lv := Growth.ability_level("ab_frame")
+	var saved_ab_xp := Growth.ability_xp("ab_frame")
 	GameData.save_game()
 	Progress.state = {}
-	if not check(GameData.load_game(), "读档失败（部署仓）"):
+	if not check(GameData.load_game(), "读档失败（部署仓与实战熟练度）"):
 		return
 	sq = Growth.ally_squad()
-	if not check(sq.size() == 2 and int(sq[0].tier) == 2 and Growth.ability_level("ab_frame") == 1, "部署仓 / 能力强化没有随存档还原：%s" % [sq]):
+	if not check(sq.size() == 2 and int(sq[0].tier) == 2 and Growth.ability_level("ab_frame") == saved_ab_lv and is_equal_approx(Growth.ability_xp("ab_frame"), saved_ab_xp), "部署仓 / 熟练度等级或小数经验没有随存档还原：%s" % [sq]):
 		return
 	log_line("pods ok: squad=%s" % [sq])
 

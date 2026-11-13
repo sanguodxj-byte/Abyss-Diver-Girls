@@ -22,10 +22,10 @@ const FORMATION := [Vector3.ZERO, Vector3(-4.0, 0, 4.5), Vector3(4.0, 0, 4.5), V
 ## 驾驶员的惯用装配（模块不存在时逐槽退回初始装配）
 const PILOT_LOADOUT := {
 	"nao": {"core": "core_std", "legs": "legs_biped", "arm_l": "arm_mg", "arm_r": "arm_shotgun", "back": "back_cargo", "gen": "gen_reactor"},
-	"rei": {"core": "core_scout", "legs": "legs_reverse", "arm_l": "arm_laser", "arm_r": "arm_laser", "back": "back_jump", "gen": "gen_crystal"},
+	"rei": {"core": "core_scout", "legs": "legs_biped_scout", "arm_l": "arm_laser", "arm_r": "arm_laser", "back": "back_jump", "gen": "gen_crystal"},
 	"kurumi": {"core": "core_heavy", "legs": "legs_tread", "arm_l": "arm_flamer", "arm_r": "arm_mg", "back": "back_shield", "gen": "gen_fission"},
 	"lina": {"core": "core_std", "legs": "legs_quad", "arm_l": "arm_flak", "arm_r": "arm_mg", "back": "back_repair", "gen": "gen_reactor"},
-	"laojiao": {"core": "core_heavy", "legs": "legs_titan", "arm_l": "arm_shotgun", "arm_r": "arm_shotgun", "back": "back_shield", "gen": "gen_fission"},
+	"mia": {"core": "core_heavy", "legs": "legs_titan", "arm_l": "arm_shotgun", "arm_r": "arm_shotgun", "back": "back_shield", "gen": "gen_fission"},
 }
 
 static var test_ally_squad = null    ## 测试注入：Array 时代替 growth.gd 的 ally_squad()
@@ -43,7 +43,7 @@ var _allies_pending: Array = []
 
 func setup(r, drop: Vector3) -> void:
 	raid = r
-	rng.randomize()
+	rng.seed = r._map_seed(20)
 	next_t = rng.randf_range(FIRST_SQUAD.x, FIRST_SQUAD.y)
 	if raid.hud and raid.hud.radar:
 		overlay = RadarOverlay.new()
@@ -140,7 +140,7 @@ func _spawn_allies(at: Vector3) -> void:
 					n.slam = 0.8
 					raid.explode_fx(land, 2.5, Color(0.8, 0.7, 0.55)))
 	if not allies.is_empty() and raid.hud:
-		raid.hud.msg("战斗队友 %d 台已随行，自动跟随并攻击虫群与流浪者" % allies.size())
+		raid.hud.msg(Loc.t("战斗队友 %d 台已随行，自动跟随并攻击虫群与流浪者" % allies.size(), "%d combat wingmate(s) deployed — following & engaging bugs and Rovers" % allies.size()))
 
 
 static func pilot_loadout(pilot: String) -> Dictionary:
@@ -186,11 +186,10 @@ func spawn_squad(n := -1, route: Array = []) -> Dictionary:
 		route = make_route()
 	if route.size() < 2:
 		return {}
-	# 路点夹进地图内（出口在边界上，离边 6 米即视为到达）
-	var H: float = raid.HALF - 6.0
+	# 路点夹进不规则战区周界内（出口贴近周界，离边 6 米即视为到达）
 	var clamped: Array = []
 	for q: Vector3 in route:
-		clamped.append(Vector3(clampf(q.x, -H, H), q.y, clampf(q.z, -H, H)))
+		clamped.append(_clamp_in_zone(q, 6.0))
 	route = clamped
 	if n < 0:
 		n = rng.randi_range(2, 4)
@@ -293,7 +292,7 @@ static func rover_loadout(r: RandomNumberGenerator) -> Dictionary:
 			continue
 		if slot == "arm":
 			var w := str(m.get("weapon", ""))
-			if w in ["mortar", "grenade", "drill"] or float(m.get("range", 0.0)) < 9.0:
+			if w in ["mortar", "grenade", "drill"] or GameData.weapon_range_m(m) < 12.0:
 				continue
 			if not GameData.AMMO.has(w):
 				continue
@@ -311,22 +310,21 @@ static func rover_loadout(r: RandomNumberGenerator) -> Dictionary:
 	return lo
 
 
-## 进场路线：沿一条通到地图边缘的道路走；格网道路有六成概率在路口拐上另一条通边缘的路，
-## 只有一端通边缘的路先走到另一头的遗迹再折向最近的边缘路口。入口选离玩家 90 米以外的那一端。
+## 进场路线：沿一条延伸至不规则战区周界的道路行进；入口选离玩家 90 米以外的那一端。
 func make_route() -> Array:
 	var H: float = raid.HALF - 6.0
 	var paths: Array = []
-	for r: Dictionary in raid.roads:
-		var a := Vector2(r.c, maxf(r.a, -H)) if r.v else Vector2(maxf(r.a, -H), r.c)
-		var b := Vector2(r.c, minf(r.b, H)) if r.v else Vector2(minf(r.b, H), r.c)
-		if a.distance_to(b) > 60.0:
-			paths.append({"pts": [a, b], "grid": true, "v": r.v, "c": r.c, "lo": maxf(r.a, -H), "hi": minf(r.b, H)})
 	for cv: Dictionary in raid.curves:
-		var pts: Array = []
+		var run: Array = []
 		for q: Vector2 in cv.pts:
-			pts.append(Vector2(clampf(q.x, -H, H), clampf(q.y, -H, H)))
-		if pts.size() >= 2:
-			paths.append({"pts": pts, "grid": false})
+			if _in_zone2(q, 5.5):
+				run.append(q)
+			else:
+				if run.size() >= 2:
+					paths.append({"pts": run, "grid": false})
+				run = []
+		if run.size() >= 2:
+			paths.append({"pts": run, "grid": false})
 	var mp: Vector3 = raid.mech.global_position if Npc._ok(raid.mech) else Vector3.ZERO
 	var player := Vector2(mp.x, mp.z)
 	var cands: Array = []
@@ -334,52 +332,61 @@ func make_route() -> Array:
 		var pts: Array = p.pts
 		for end in [0, 1]:
 			var s: Vector2 = pts[0] if end == 0 else pts[-1]
-			if _at_edge(s, H) and s.distance_to(player) > 90.0:
+			if _at_zone_edge(s, H) and s.distance_to(player) > 90.0:
 				var seq: Array = pts.duplicate()
 				if end == 1:
 					seq.reverse()
 				cands.append({"path": p, "seq": seq})
 	if cands.is_empty():
-		# 没有通边缘的路：从离玩家最远的一条边的中点横穿
-		var edges := [Vector2(0, -H), Vector2(0, H), Vector2(-H, 0), Vector2(H, 0)]
+		var edges: Array = []
+		if raid.get("zone_poly") != null and (raid.zone_poly as PackedVector2Array).size() >= 3:
+			var zp: PackedVector2Array = raid.zone_poly
+			for i in zp.size():
+				var mid: Vector2 = zp[i].lerp(zp[(i + 1) % zp.size()], 0.5)
+				var c3 := _clamp_in_zone(Vector3(mid.x, 0.0, mid.y), 8.0)
+				edges.append(Vector2(c3.x, c3.z))
+		else:
+			edges = [Vector2(0, -H), Vector2(0, H), Vector2(-H, 0), Vector2(H, 0)]
 		edges.sort_custom(func(x, y): return x.distance_to(player) > y.distance_to(player))
-		return [_v3(edges[0]), Vector3.ZERO, _v3(-edges[0])]
+		var e_start: Vector2 = edges[0]
+		var e_end: Vector2 = edges[edges.size() / 2]
+		return [_v3(e_start), Vector3.ZERO, _v3(e_end)]
 	var pick: Dictionary = cands[rng.randi() % cands.size()]
 	var seq: Array = pick.seq
-	var out: Array = [seq[0]]
-	if pick.path.grid and rng.randf() < 0.6:
-		# 在路口拐弯：找一条与之垂直、在路口处相交、另一头通边缘的格网路
-		var turns: Array = []
-		for q: Dictionary in paths:
-			if not q.get("grid", false) or q.v == pick.path.v:
-				continue
-			if q.c < pick.path.lo or q.c > pick.path.hi or pick.path.c < q.lo or pick.path.c > q.hi:
-				continue
-			var cross := Vector2(pick.path.c, q.c) if pick.path.v else Vector2(q.c, pick.path.c)
-			if cross.distance_to(seq[0]) < 50.0:
-				continue
-			for e in q.pts:
-				if _at_edge(e, H) and e.distance_to(cross) > 50.0:
-					turns.append([cross, e])
-		if not turns.is_empty():
-			var t: Array = turns[rng.randi() % turns.size()]
-			out.append(t[0])
-			out.append(t[1])
-			return _to3(out)
-	for i in range(1, seq.size()):
-		out.append(seq[i])
-	if not _at_edge(out[-1], H) and not raid.poi_centers.is_empty():
+	var out: Array = seq.duplicate()
+	if not _at_zone_edge(out[-1], H) and not raid.poi_centers.is_empty():
 		var poi: Vector3 = raid.poi_centers[rng.randi() % raid.poi_centers.size()]
 		out.append(Vector2(poi.x, poi.z))
-		var best := Vector2(0, H)
+		var best: Vector2 = out[0]
 		var bd := INF
 		for p: Dictionary in paths:
 			for e in [p.pts[0], p.pts[-1]]:
-				if _at_edge(e, H) and e.distance_to(seq[0]) > 80.0 and e.distance_to(Vector2(poi.x, poi.z)) < bd:
+				if _at_zone_edge(e, H) and e.distance_to(seq[0]) > 80.0 and e.distance_to(Vector2(poi.x, poi.z)) < bd:
 					bd = e.distance_to(Vector2(poi.x, poi.z))
 					best = e
 		out.append(best)
 	return _to3(out)
+
+
+func _in_zone2(p: Vector2, margin: float) -> bool:
+	if raid != null and raid.has_method("in_bounds_xz"):
+		return raid.in_bounds_xz(p, margin)
+	var H: float = raid.HALF - margin
+	return absf(p.x) <= H and absf(p.y) <= H
+
+
+func _at_zone_edge(p: Vector2, h: float) -> bool:
+	if raid != null and raid.has_method("border_dist"):
+		var d: float = raid.border_dist(p)
+		return d >= 4.0 and d <= 20.0
+	return _at_edge(p, h)
+
+
+func _clamp_in_zone(p: Vector3, margin := 6.0) -> Vector3:
+	if raid != null and raid.has_method("clamp_to_zone"):
+		return raid.clamp_to_zone(p, margin)
+	var H: float = raid.HALF - margin
+	return Vector3(clampf(p.x, -H, H), p.y, clampf(p.z, -H, H))
 
 
 static func _at_edge(p: Vector2, h: float) -> bool:
@@ -398,11 +405,10 @@ static func _to3(a: Array) -> Array:
 
 
 func _free_near(p: Vector3) -> Vector3:
-	var H: float = raid.HALF - 6.0
 	for i in 12:
 		var q := p + (Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)) * 2.5 * i if i > 0 else Vector3.ZERO)
-		q.x = clampf(q.x, -H, H)
-		q.z = clampf(q.z, -H, H)
+		q = _clamp_in_zone(q, 6.0)
 		if not raid._blocked(q, 1.6, false):
 			return Vector3(q.x, 0.3, q.z)
-	return Vector3(clampf(p.x, -H, H), 0.3, clampf(p.z, -H, H))
+	var fb := _clamp_in_zone(p, 6.0)
+	return Vector3(fb.x, 0.3, fb.z)

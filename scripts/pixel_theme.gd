@@ -22,16 +22,17 @@ static func build() -> Theme:
 	t.default_font_size = 12
 
 	# 面板与容器
-	t.set_stylebox("panel", "Panel", px9("panel9", 12, 12, 10, 8))
-	t.set_stylebox("panel", "PanelContainer", px9("panel9", 12, 12, 10, 8))
-	t.set_stylebox("panel", "PopupPanel", px9("panel9", 12, 12, 8, 8))
-	t.set_stylebox("panel", "TabContainer", px9("panel9", 12, 12, 10, 8))
+	t.set_stylebox("panel", "Panel", px9("panel9", 16, 16, 10, 8))
+	t.set_stylebox("panel", "PanelContainer", px9("panel9", 16, 16, 10, 8))
+	t.set_stylebox("panel", "PopupPanel", px9("panel9", 16, 16, 8, 8))
+	t.set_stylebox("panel", "TabContainer", px9("panel9", 16, 16, 10, 8))
 
 	# 按钮 / 下拉 / 页签
 	for c in ["Button", "OptionButton", "MenuButton", "CheckBox", "CheckButton"]:
 		t.set_stylebox("normal", c, px9("btn9_n", 10, 10, 9, 5))
 		t.set_stylebox("hover", c, px9("btn9_h", 10, 10, 9, 5))
 		t.set_stylebox("pressed", c, px9("btn9_p", 10, 10, 9, 5))
+		t.set_stylebox("hover_pressed", c, px9("btn9_p", 10, 10, 9, 5))
 		t.set_stylebox("disabled", c, px9("btn9_d", 10, 10, 9, 5))
 		t.set_stylebox("focus", c, StyleBoxEmpty.new())
 		t.set_color("font_color", c, TEXT)
@@ -54,7 +55,7 @@ static func build() -> Theme:
 	# 输入框
 	for c in ["LineEdit", "TextEdit"]:
 		t.set_stylebox("normal", c, px9("inset9", 6, 6, 6, 4))
-		t.set_stylebox("focus", c, px9("inset9", 6, 6, 6, 4))
+		t.set_stylebox("focus", c, px9("card9_on", 6, 6, 6, 4))
 		t.set_color("font_color", c, TEXT)
 		t.set_color("caret_color", c, ACCENT)
 		t.set_color("selection_color", c, Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.25))
@@ -92,8 +93,8 @@ static func build() -> Theme:
 	t.set_color("font_hovered_color", "ItemList", Color(1.0, 0.94, 0.78))
 	t.set_constant("v_separation", "ItemList", 6)
 	t.set_constant("h_separation", "ItemList", 8)
-	t.set_stylebox("panel", "PopupMenu", px9("panel9", 12, 12, 8, 6))
-	t.set_stylebox("hover", "PopupMenu", px9("cell9_hover", 4, 4, 4, 3))
+	t.set_stylebox("panel", "PopupMenu", px9("panel9", 16, 16, 8, 6))
+	t.set_stylebox("hover", "PopupMenu", px9("card9_on", 6, 6, 6, 3))
 	t.set_color("font_color", "PopupMenu", TEXT)
 	t.set_color("font_hover_color", "PopupMenu", Color(1.0, 0.94, 0.78))
 	t.set_constant("v_separation", "PopupMenu", 6)
@@ -157,6 +158,7 @@ static func flat(bg: Color, border: Color, bw := 1, pad := 4) -> StyleBoxFlat:
 	sb.corner_radius_top_right = 0
 	sb.corner_radius_bottom_left = 0
 	sb.corner_radius_bottom_right = 0
+	sb.anti_aliasing = false
 	return sb
 
 
@@ -166,7 +168,7 @@ static func _tex_from(img: Image) -> ImageTexture:
 
 ## 下拉箭头：4x6 像素阶梯三角，放大 2 倍显示
 static func pix_arrow() -> Texture2D:
-	var img := Image.create(8, 10, false, Image.FORMAT_RGBA8)
+	var img := Image.create(14, 16, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	for row in 6:
 		var w := 6 - row

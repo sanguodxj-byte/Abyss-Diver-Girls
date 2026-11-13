@@ -26,10 +26,9 @@ func gen(mid: String, s: int) -> Vector3:
 	return drop
 
 
-## _load_map 之后立刻定种子：start() 里 rng.randomize() 紧接着就是 _load_map，后面所有随机都走 rng
+## 地图已按战区固定种子完全固化（_map_seed），导出与实机出击 100% 一致
 func _load_map() -> void:
 	super._load_map()
-	rng.seed = export_seed
 
 
 ## 导出时不生成虫子（军营 / 遗迹里的守卫虫）

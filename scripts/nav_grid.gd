@@ -6,7 +6,8 @@ extends RefCounted
 ##   盒子按朝向包围盒（OBB）、圆柱 / 胶囊 / 球按圆、其它形状按调试网格的包围盒，算出每个格子中心到形状的距离；
 ##   距离 < 单位半径（R_BUG / R_MECH）的格子记为不可走 —— 这就是「按单位半径腐蚀」的通行间隙。
 ##   竖直方向只算挡在 BLOCK_MIN_Y ~ BLOCK_MAX_Y 之间的形状：地面、路沿、低矮踏板能踩过去，悬空构件不挡路。
-## 两张网格：bug（虫子：层 1，间隙 0.8 米）与 mech（机甲：层 1 + 8，间隙 1.15 米），各自一个 AStarGrid2D（C++ 实现，单次寻路很便宜）。
+## 两张网格：bug（虫子：层 1 + 8，间隙 0.8 米）与 mech（机甲：层 1 + 8，间隙 1.15 米），各自一个 AStarGrid2D（C++ 实现，单次寻路很便宜）；
+## 有水的河湖（raid.water_cells，桥面除外）两张网格都不可走。
 ## 寻路预算：每个物理帧最多算 PATHS_PER_FRAME 条新路径，超出的请求返回 null 让调用方下一帧再来（150+ 只虫同时重算也不会卡帧）；
 ##   同一起点格 → 终点格的结果缓存约 1 秒（同群挤在一起的虫会命中缓存）。
 
@@ -63,16 +64,25 @@ func build(root: Node, half_size: float) -> void:
 				if layer & (1 | 8):
 					for cs in ch.get_children():
 						if cs is CollisionShape3D and not cs.disabled and cs.shape != null:
-							_raster(cs, (layer & 1) != 0, dist_bug, dist_mech)
+							_raster(cs, true, dist_bug, dist_mech)   # 层 8（河湖）现在也挡地面虫子
 			if ch.get_child_count() > 0:
 				stack.append(ch)
 	solid_bug.resize(n * n)
 	solid_mech.resize(n * n)
 	var edge_c := int(ceil(EDGE / CELL))
+	# 有水的河湖：格心落在水面里的格子两张网格都不可走（桥面除外，由 raid.water_cells 给出）
+	var wet := PackedByteArray()
+	if root.has_method("water_cells"):
+		wet = root.water_cells(origin, n, CELL)
+	var has_wet := wet.size() == n * n
+	var has_in_bounds := root.has_method("in_bounds_xz")
 	for j in n:
+		var wz := origin.y + (j + 0.5) * CELL
 		for i in n:
 			var k := j * n + i
-			var border := i < edge_c or j < edge_c or i >= n - edge_c or j >= n - edge_c
+			var wx := origin.x + (i + 0.5) * CELL
+			var out_zone: bool = (not root.in_bounds_xz(Vector2(wx, wz), EDGE)) if has_in_bounds else (i < edge_c or j < edge_c or i >= n - edge_c or j >= n - edge_c)
+			var border := out_zone or (has_wet and wet[k] != 0)
 			solid_bug[k] = 1 if (border or dist_bug[k] < R_BUG) else 0
 			solid_mech[k] = 1 if (border or dist_mech[k] < R_MECH) else 0
 	astar_bug = _make_astar(solid_bug)

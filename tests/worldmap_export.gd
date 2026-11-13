@@ -19,6 +19,7 @@ var out_dir := ""
 func run() -> void:
 	await frames(2)
 	WorldLink.force_open = true
+	WC.use_gate_table = false
 	out_dir = ProjectSettings.globalize_path("res://tools/worldmap/data")
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	await Dump.dump(self)
@@ -29,6 +30,7 @@ func run() -> void:
 		if only != "" and not (mid in only.split(",")):
 			continue
 		await _export(mid, seeds)
+	WC.use_gate_table = true
 	WorldLink.force_open = false
 
 
@@ -66,7 +68,15 @@ func _export(mid: String, seeds: int) -> void:
 		var drop: Vector3 = raid.gen(mid, s)
 		for g: Dictionary in raid.world_link.gate_list():
 			if not gates.has(g.edge):
-				gates[g.edge] = {"edge": g.edge, "to": g.to, "along": []}
+				var gp: Vector2 = g.get("pos", Vector2.ZERO)
+				var tg: Vector2 = g.get("tangent", Vector2.RIGHT)
+				var iw: Vector2 = g.get("inward", Vector2.DOWN)
+				gates[g.edge] = {
+					"edge": g.edge, "to": g.to, "along": [],
+					"pos": [snappedf(gp.x, 0.1), snappedf(gp.y, 0.1)],
+					"tangent": [snappedf(tg.x, 0.001), snappedf(tg.y, 0.001)],
+					"inward": [snappedf(iw.x, 0.001), snappedf(iw.y, 0.001)],
+				}
 			gates[g.edge].along.append(float(g.along))
 		var lms: Array = raid.get_meta("ext_landmarks", [])
 		for i in lms.size():
@@ -112,9 +122,12 @@ func _static_data(raid, mid: String, drop: Vector3) -> Dictionary:
 	var parent := ""
 	if not WC.is_surface(mid):
 		parent = "canyon"
+	var poly_pts: Array = []
+	for qp: Vector2 in raid.zone_poly:
+		poly_pts.append(_v2(qp))
 	return {
 		"id": mid, "name": str(md.get("name", mid)), "tag": str(md.get("tag", "")), "half": raid.HALF, "tile": [tt.x, tt.y],
-		"origin_world": [o.x, o.y], "surface": WC.is_surface(mid), "shaft_parent": parent,
+		"origin_world": [o.x, o.y], "surface": WC.is_surface(mid), "shaft_parent": parent, "poly": poly_pts,
 		"zones": md.zones, "pois": pois, "labels": md.get("labels", []), "extracts": extracts, "landmarks": lms,
 		"ridge_pts": ridges, "small_seed1": small, "drop_seed1": [drop.x, drop.z],
 	}

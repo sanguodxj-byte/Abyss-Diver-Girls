@@ -39,12 +39,12 @@ const RULE := Color(1, 1, 1, 0.14)
 const DIM := Color(0.48, 0.5, 0.54)
 
 ## 主角团（顶栏阵列顺序）与黑市商人
-const CREW := ["nao", "rei", "kurumi", "lina", "laojiao"]
+const CREW := ["nao", "rei", "kurumi", "lina", "mia"]
 const MERCHANT_IDS := ["ajin", "xiaoman", "shiori", "karasu", "nihong", "gin"]
 ## 头像底色（每人一个识别色，取自立绘主色）
 const TINT := {
 	"nao": Color(0.42, 0.44, 0.5), "rei": Color(0.28, 0.4, 0.3), "kurumi": Color(0.62, 0.32, 0.12),
-	"lina": Color(0.16, 0.22, 0.45), "laojiao": Color(0.45, 0.18, 0.14), "ajin": Color(0.5, 0.42, 0.32),
+	"lina": Color(0.16, 0.22, 0.45), "mia": Color(0.45, 0.18, 0.14), "ajin": Color(0.5, 0.42, 0.32),
 	"xiaoman": Color(0.12, 0.38, 0.36), "shiori": Color(0.42, 0.38, 0.5), "karasu": Color(0.22, 0.22, 0.24),
 	"nihong": Color(0.5, 0.28, 0.5), "gin": Color(0.42, 0.12, 0.16),
 }
@@ -254,6 +254,7 @@ static func tpanel(title: String, en := "", right := "", pad := 8) -> Array:
 	var tl := UI.label(title, 12, CREAM)
 	hh.add_child(tl)
 	var el := UI.label(en.to_upper(), 12, CREAM_DIM)
+	el.visible = UI._is_en() and en != ""
 	hh.add_child(el)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -308,7 +309,7 @@ static func section(title: String, en := "", right := "") -> Array:
 	blk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(blk)
 	h.add_child(UI.label(title, 12, CREAM))
-	if en != "":
+	if en != "" and UI._is_en():
 		h.add_child(UI.label(en.to_upper(), 12, CREAM_DIM))
 	var r := Rule.new()
 	r.solid = true
@@ -363,7 +364,7 @@ static func cost_row(parts: Array, item_name: Callable) -> HFlowContainer:
 	f.add_theme_constant_override("h_separation", 10)
 	f.add_theme_constant_override("v_separation", 2)
 	if parts.is_empty():
-		f.add_child(UI.label("已满级", 12, UI.GOOD))
+		f.add_child(UI.label(UI._lt("已满级", "MAX LEVEL"), 12, UI.GOOD))
 		return f
 	for p in parts:
 		var ok: bool = int(p.have) >= int(p.need)
@@ -433,12 +434,12 @@ static func req_row(text: String, have: String, ok: bool, neutral := false) -> H
 static func req_list(parts: Array, item_name: Callable) -> VBoxContainer:
 	var v := vbox(3)
 	if parts.is_empty():
-		v.add_child(req_row("已满级", "", true))
+		v.add_child(req_row(UI._lt("已满级", "Maxed"), "", true))
 		return v
 	for p in parts:
 		var ok: bool = int(p.have) >= int(p.need)
 		if str(p.id) == "money":
-			v.add_child(req_row("信用点", "¥%s" % _money_text(int(p.need)), ok))
+			v.add_child(req_row(UI._lt("信用点", "Credits"), "¥%s" % _money_text(int(p.need)), ok))
 		else:
 			v.add_child(req_row(str(item_name.call(str(p.id))), "%d / %d" % [int(p.have), int(p.need)], ok))
 	return v
@@ -457,17 +458,30 @@ const ABBR := {
 	"arch_research_note": "观测记", "arch_shift_log": "班次卡", "arch_tape": "磁带",
 	"gift_chart": "图册", "gift_cocoa": "可可粉", "gift_flask": "酒壶", "gift_watch": "怀表", "gift_wrench": "扳手",
 }
+const ABBR_EN := {
+	"credit_s": "CHIPS", "credit_l": "CHIPL", "gold": "GOLD", "energy_rod": "ROD", "extract_flare": "SMOKE",
+	"extract_barrier": "WALL", "sonic_decoy": "DECOY", "coolant_pack": "COOL", "surge_cell": "SURGE", "fuel_cell": "CELL",
+	"repair_kit": "KIT", "beacon": "BEACN", "water_tab": "TABS", "can_food": "MEAT", "biscuit": "RATS", "coffee": "BEANS",
+	"bug_crystal": "CRYS", "chitin": "CHITN", "circuit": "PCB", "wire": "WIRE", "bolts": "BOLTS", "hdd": "HDD", "toy": "TOY",
+	"arch_blueprint": "PLAN", "arch_child_drawing": "DRAW", "arch_deep_record": "DRILL", "arch_duty_log": "DUTY",
+	"arch_flight_log": "FLGT", "arch_letter": "MAIL", "arch_manifest": "LIST", "arch_observation": "WATR", "arch_photo": "PHOT",
+	"arch_research_note": "NOTE", "arch_shift_log": "CARD", "arch_tape": "TAPE",
+	"gift_chart": "MAP", "gift_cocoa": "COCOA", "gift_flask": "FLASK", "gift_watch": "WATCH", "gift_wrench": "WRNCH",
+}
 static var _re_model: RegEx
 
 
 static func short_name(id: String) -> String:
 	var gd = Engine.get_main_loop().root.get_node_or_null("GameData")
 	var base := id if gd == null else str(gd.base_id(id))
+	var en := UI._is_en()
+	if en and ABBR_EN.has(base):
+		return ABBR_EN[base]
 	if gd != null:
 		var it: Dictionary = gd.item(id)
-		if it.has("short"):
+		if it.has("short") and not en:
 			return str(it.short)
-	if ABBR.has(base):
+	if not en and ABBR.has(base):
 		return ABBR[base]
 	var n := id if gd == null else str(gd.item_name(id))
 	if _re_model == null:
@@ -478,8 +492,8 @@ static func short_name(id: String) -> String:
 		return m.get_string()
 	var re := RegEx.new()
 	re.compile("[（(].*?[)）]")
-	n = re.sub(n.replace("旧世界", ""), "", true).strip_edges()
-	return n.substr(0, 3)
+	n = re.sub(n.replace("旧世界", "").replace("Old-World ", ""), "", true).strip_edges()
+	return n.substr(0, 5 if en else 3)
 
 
 ## 按像素宽度裁字（不加省略号：格子里宁可少一个字也不压到邻格）
@@ -631,14 +645,9 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 		var side := minf(r.size.x, r.size.y)
 		var sc := 2 if side < 72.0 else maxi(2, int(floor((side - 24.0) / 16.0)))
 		var isz := Vector2(16 * sc, 16 * sc)
-		var ip := (r.position + (r.size - isz) * 0.5 + Vector2(0, 3)).floor()
+		var ip := (r.position + (r.size - isz) * 0.5).floor()
 		ip = Vector2(floorf(ip.x / 2.0) * 2.0, floorf(ip.y / 2.0) * 2.0)
 		ci.draw_texture_rect(tex, Rect2(ip, isz), false, Color(1, 1, 1, 0.45 if e.get("dim", false) else 1.0))
-	var asc := font.get_ascent(12)
-	var tw := r.size.x - 8
-	var nm := fit_text(font, str(e.get("label", short_name(id))), tw)
-	ci.draw_string(font, r.position + Vector2(5, 4 + asc), nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 12, Color(0, 0, 0, 0.85))
-	ci.draw_string(font, r.position + Vector2(4, 3 + asc), nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 12, CREAM)
 	var by := r.end.y - 3 - font.get_descent(12)
 	if e.has("price"):
 		var pt := "¥%s" % _money_text(int(e.price))
@@ -762,9 +771,10 @@ class ItemGrid extends Control:
 			if i < 0:
 				return
 			if ev.button_index == MOUSE_BUTTON_LEFT:
+				var was_sel := (selected == i)
 				selected = i
 				queue_redraw()
-				if ev.double_click:
+				if ev.double_click or was_sel:
 					item_activated.emit(i)
 				else:
 					item_selected.emit(i)
@@ -870,14 +880,16 @@ class DeployButton extends Button:
 			icon_rect = K.icon_rect(tex, 40)
 			icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			v.add_child(icon_rect)
+		var is_e: bool = UI._is_en()
 		cn_lbl = Label.new()
-		cn_lbl.text = cn
+		cn_lbl.text = en_text if (is_e and en_text != "") else cn
 		cn_lbl.add_theme_font_size_override("font_size", 12)
 		cn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		v.add_child(cn_lbl)
 		en_lbl = Label.new()
 		en_lbl.text = en_text
+		en_lbl.visible = false
 		en_lbl.add_theme_font_size_override("font_size", 12)
 		en_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		en_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -980,14 +992,16 @@ class NavButton extends Button:
 		v.alignment = BoxContainer.ALIGNMENT_CENTER
 		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		h.add_child(v)
+		var is_e: bool = UI._is_en()
 		cn_lbl = Label.new()
-		cn_lbl.text = cn
+		cn_lbl.text = en_text if (is_e and en_text != "") else cn
 		cn_lbl.add_theme_font_size_override("font_size", 12)
 		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cn_lbl.name = "CN"
 		v.add_child(cn_lbl)
 		en_lbl = Label.new()
 		en_lbl.text = en_text
+		en_lbl.visible = false
 		en_lbl.add_theme_font_size_override("font_size", 12)
 		en_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		en_lbl.name = "EN"
@@ -999,8 +1013,8 @@ class NavButton extends Button:
 		var K = load("res://scripts/hub_kit.gd")
 		add_theme_stylebox_override("normal", K.px9("nav9_n", 12, 12, 6, 4))
 		add_theme_stylebox_override("hover", K.px9("nav9_p" if down else "nav9_h", 12, 12, 6, 4))
-		add_theme_stylebox_override("pressed", K.px9("nav9_p", 12, 12, 6, 4))
-		add_theme_stylebox_override("hover_pressed", K.px9("nav9_p", 12, 12, 6, 4))
+		add_theme_stylebox_override("pressed", K.px9("nav9_p" if down else "nav9_on", 12, 12, 6, 4))
+		add_theme_stylebox_override("hover_pressed", K.px9("nav9_p" if down else "nav9_on", 12, 12, 6, 4))
 
 	func _tint() -> void:
 		var on := button_pressed

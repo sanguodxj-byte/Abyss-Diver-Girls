@@ -2,9 +2,11 @@ extends Node3D
 ## 子弹/火焰/酸液/导弹。每帧用射线检测，避免高速穿透。
 
 const Prof = preload("res://scripts/prof.gd")
+const Growth = preload("res://scripts/progression/growth.gd")
 
 var vel := Vector3.ZERO
 var dmg := 10.0
+var ap := 0.0                ## 穿甲系数（0.0 ~ 0.85）：按武器穿深削减目标护甲与正面折射
 var life := 1.0
 var mask := 1
 var pierce := false
@@ -17,6 +19,9 @@ var grow := 0.0
 var tail: Node3D = null      ## 曳光尾迹：从枪口逐渐拉长到 tail_len
 var tail_len := 0.0
 var traveled := 0.0
+var body_node: Node3D = null ## 3D 实体弹头/导弹/酸囊节点（用于膛线自旋或脉动翻滚）
+var spin_spd := 0.0          ## 沿弹轴 (-Z) 的自旋角速度（弧度/秒）
+var tumble := Vector3.ZERO   ## 三轴翻滚角速度（用于酸液团/火焰团）
 ## 命中音效 id；空串时按命中对象自动选 hit_chitin / hit_metal，"-" 为不发声（火焰等高频命中）
 var hit_sfx := ""
 ## 开火者（玩家机甲 / 流浪者 / 队友）：命中虫子或机甲时记为它的仇恨来源，用于反击与击杀归属
@@ -29,6 +34,7 @@ var pool_key := ""
 func reset_state() -> void:
 	vel = Vector3.ZERO
 	dmg = 10.0
+	ap = 0.0
 	life = 1.0
 	mask = 1
 	pierce = false
@@ -41,6 +47,8 @@ func reset_state() -> void:
 	hit_sfx = ""
 	source = null
 	scale = Vector3.ONE
+	if body_node != null and is_instance_valid(body_node):
+		body_node.rotation = Vector3.ZERO
 
 
 func _retire() -> void:
@@ -56,6 +64,18 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	if get_meta("net_visual", false):
+		position += vel * delta
+		if tail:
+			traveled += vel.length() * delta
+			var L := minf(traveled, tail_len)
+			tail.scale.z = maxf(L, 0.01)
+			tail.position.z = L * 0.5
+		if body_node != null and is_instance_valid(body_node) and spin_spd != 0.0:
+			body_node.rotation.z += spin_spd * delta
+		life -= delta
+		if life <= 0: queue_free()
+		return
 	if homing:
 		var t = raid.nearest_bug(global_position, 30.0)
 		if t:
@@ -77,8 +97,13 @@ func _physics_tick(delta: float) -> void:
 		if source != null and is_instance_valid(source) and "aggressor" in c:
 			c.aggressor = source
 		if c.has_method("take_damage"):
-			c.take_damage(dmg)
-		raid.impact(r.position, r.normal, color, c.has_method("take_damage"), vel)
+			if c.is_in_group("bugs"):
+				c.take_damage(dmg, from, ap)
+			else:
+				c.take_damage(dmg)
+			if source != null and is_instance_valid(source) and source.has_method("_is_local_actor") and source._is_local_actor():
+				Growth.record_skill_xp("ab_firearm", clampf(dmg * 0.025, 0.14, 1.15))
+		raid.impact(r.position, r.normal, color, c.has_method("take_damage"), vel, organic)
 		if hit_sfx != "-":
 			Audio.play_sfx(hit_sfx if hit_sfx != "" else ("hit_chitin" if organic else "hit_metal"), r.position)
 		if pierce and c.has_method("take_damage"):
@@ -94,6 +119,11 @@ func _physics_tick(delta: float) -> void:
 		tail.position.z = L * 0.5
 	if vel.length() > 0.1:
 		look_at(global_position + vel, Vector3.UP if abs(vel.normalized().y) < 0.95 else Vector3.FORWARD)
+	if body_node != null and is_instance_valid(body_node):
+		if spin_spd != 0.0:
+			body_node.rotation.z += spin_spd * delta
+		if tumble != Vector3.ZERO:
+			body_node.rotation += tumble * delta
 	if grow > 0.0:
 		scale += Vector3.ONE * grow * delta
 	life -= delta

@@ -1,0 +1,12 @@
+{
+  "talk_neutral": {
+    "prompt_id": "f57ca967-97a2-4e3d-85e4-dbad0d71bcbb",
+    "seed": 8811001,
+    "length": 124
+  },
+  "talk_smile": {
+    "prompt_id": "2efc7706-054e-4321-b545-dbe4a41f06e1",
+    "seed": 8811002,
+    "length": 124
+  }
+}

@@ -1,291 +1,279 @@
-"""
-Boss 与 Boss 形态虫群的音效配方。
-三只 Boss 各有自己的体量与材质：赤湖巢母是湿润的巨腔与卵囊，裂谷铁甲王虫是金属化的厚甲与双柱巨足，
-深渊母皇是深渊里的低频长鸣与裸露晶核。Boss 形态的虫群共用一套动作，按体量放大、放到更长的混响里。
-"""
+# -*- coding: utf-8 -*-
+"""三大巨型领主 Boss（育母虫后 broodmother / 铠甲虫王 king_beetle / 深渊女皇 abyss_queen）
+专属技能咆哮与本体受击/攻击/死亡音效（超低频生物胸腔谐振+地壳崩裂重制版）。"""
 import numpy as np
-
-from sfx_dsp import sfx, ns, tt, white, pink, brown, lp, hp, bp, peak, reson, sweep, phase, sine, harm, saw_amps, \
-    expdec, ad, env, sat, space, Mix
-from sfx_lib import tick, clank, modal, thump, crack, burst, whoosh, hiss, servo, debris, scrape, rattle, \
-    roar, crackle, arc, buzz, tone, chime, bubbles, slime, crunch, bug_hiss, chitter, voice, scrabble, \
-    PLATE, BAR, TUBE, HEAVY, BELL
-
-
-def st(c, m, kind="valley", wet=0.3):
-    return space(m.render(), kind, wet, c.stereo, c.v)
-
-
-def boss_cry(c, dur, pts, form, env_pts, sub=0.5, rough=0.45, drive=2.0):
-    """Boss 的胸腔共鸣：低八度成分与强饱和让体量压过普通虫鸣。"""
-    return voice(c.rng, dur, pts, 0.02, (0.0, 22.0), rough, 55.0, form, 0.35, "pulse", 0.22, drive, sub, env_pts)
+from sfx_dsp import (
+    SR, sfx, env_exp, env_adsr, biquad, reson, sweep,
+    white, pink, brown, velvet, sat, place, mix, reverb_tail,
+)
+from sfx_lib import (
+    thump, crack, tick, clank, modal, METAL_HEAVY, METAL_HOLLOW,
+    GLASS_MODES, CHITIN_MODES, hiss, whoosh, roar, rumble,
+    zap, buzz, squelch, voice,
+)
 
 
-def glide_chime(freq, dur, tau, partials=((1.0, 1.0), (1.5, 0.35), (2.3, 0.2))):
-    """频率随时间移动的钟体共鸣，高分音衰减更快。"""
-    n = ns(dur)
-    t = tt(n)
-    f = np.asarray(freq, float)
-    if f.ndim:
-        f = np.interp(np.linspace(0.0, 1.0, n), np.linspace(0.0, 1.0, len(f)), f)
-    x = np.zeros(n)
-    for r, g in partials:
-        x += g * np.sin(2 * np.pi * phase(f * r, n)) * np.exp(-t / max(tau / np.sqrt(r), 1e-3))
-    return x * np.clip(t / 0.01, 0.0, 1.0)
+# ─────────────────────────────────────────────────────────────
+# 领主专属大招与转阶段（boss_*）
+# ─────────────────────────────────────────────────────────────
+@sfx("boss_brood_roar", n=2, target=-13.0, dur=2.4, fout=0.35)
+def _brood_roar(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 育母虫后震天咆哮：深渊巨型胸腔双声带次声波共鸣 + 粘稠气道喷发 + 洞窟混响
+    sub_tremor = thump(0.75, 115 * p, 20 * p, 4.5, rng, 2.8)
+    chest_roar = roar(2.0, 165 * p, 1.8, rng, 2.4) * 0.9
+    vox_low = voice(1.9, 58 * p, 95 * p, rng, 6.5, 0.42, 2.5) * 0.92
+    vox_mid = voice(1.8, 112 * p, 68 * p, rng, 8.5, 0.38, 2.3) * 0.78
+    phlegm = squelch(1.2, 220 * p, 1150 * p, rng, 2.1) * 0.65
+    return reverb_tail(sat(mix(
+        place(sub_tremor, 0.0),
+        place(chest_roar, 0.03),
+        place(vox_low, 0.05),
+        place(vox_mid, 0.08),
+        place(phlegm, 0.15),
+    ), 1.9), 0.35, 0.3)
 
 
-# ====================================================================== 登场与部位
-@sfx("boss_brood_roar", n=2, target=-12.5, dur=2.8, fout=0.4, max_gr=12, hpf=42.0)
-def brood_roar(c):
-    """巢母从菌毯里撑起身体：湿腔深处的低频咆哮、层层叠起的菌毯撕裂、卵囊挤压的气泡，尾音沉进巢穴的混响。"""
-    rng = c.rng
-    m = Mix(2.8)
-    m.add(boss_cry(c, 2.2, [(0, 120.0), (0.28, 195.0), (0.62, 160.0), (1.0, 95.0)],
-                   ((520.0, 5.0), (980.0, 6.0)), [(0, 0), (0.12, 1.0), (1.6, 0.55), (2.2, 0.0)], 0.6, 0.5), 0.0, 0.7)
-    m.add(roar(rng, ns(2.4), 38.0, 900.0, 5.0, 0.6, -5.0) * env([(0, 0), (0.2, 0.8), (1.8, 0.4), (2.4, 0)], ns(2.4)), 0.0, 0.7)
-    m.add(slime(rng, 0.9, 1400.0, 180.0, 1.2, 0.4, 0.9), 0.02, 0.45)
-    m.add(bubbles(rng, 1.6, 16.0, 120.0, 600.0, 0.08), 0.1, 0.3)
-    m.add(thump(rng, 72.0, 26.0, 1.4, 0.4, 0.06, 2.6, 0.3), 0.04, 0.55)
-    m.add(bug_hiss(rng, 1.2, 1800.0, 7000.0, (2800.0, 4600.0), (0.5, 12.0)), 0.3, 0.15)
-    return st(c, m, "nest", 0.34)
+@sfx("boss_brood_hatch", n=2, target=-14.0, dur=1.6, fout=0.2)
+def _brood_hatch(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 虫后产卵孵化：巨大育儿囊连环爆裂 + 羊水粘液狂喷 + 幼虫嘶鸣
+    sac1 = thump(0.42, 112 * p, 26 * p, 8.5, rng, 2.5)
+    rip1 = squelch(0.75, 240 * p, 1480 * p, rng, 2.4) * 0.92
+    sac2 = thump(0.38, 98 * p, 24 * p, 9.0, rng, 2.4) * 0.85
+    rip2 = squelch(0.65, 280 * p, 1550 * p, rng, 2.4) * 0.88
+    mother_groan = voice(1.1, 68 * p, 108 * p, rng, 7.5, 0.4, 2.2) * 0.78
+    return reverb_tail(sat(mix(
+        place(sac1, 0.0),
+        place(rip1, 0.02),
+        place(mother_groan, 0.08),
+        place(sac2, 0.42),
+        place(rip2, 0.44),
+    ), 1.75), 0.25, 0.22)
 
 
-@sfx("boss_brood_hatch", n=2, target=-14.0, dur=1.8, fout=0.25, max_gr=12, hpf=42.0)
-def brood_hatch(c):
-    """卵囊裂开：囊壁被撑破的湿裂声、黏液泼洒、成群幼虫的第一声口器咔哒。"""
-    rng = c.rng
-    m = Mix(1.8)
-    m.add(crack(rng, 0.12, 0.02, 400.0), 0.0, 0.4)
-    m.add(slime(rng, 0.55, 1800.0, 200.0, 1.0, 0.3, 0.9), 0.0, 0.7)
-    m.add(burst(rng, 0.5, 0.09, 80.0, 2200.0, -2.0, 0.002, 1.5), 0.02, 0.5)
-    m.add(bubbles(rng, 0.9, 26.0, 150.0, 700.0, 0.1), 0.06, 0.35)
-    m.add(chitter(rng, 0.7, 46.0, (2400.0, 5600.0)), 0.22, 0.4)
-    m.add(chitter(rng, 0.5, 60.0, (3200.0, 7000.0)), 0.55, 0.25)
-    m.add(thump(rng, 80.0, 34.0, 0.6, 0.18, 0.04, 1.8, 0.2), 0.0, 0.35)
-    return st(c, m, "nest", 0.3)
+@sfx("boss_king_roar", n=2, target=-12.5, dur=2.5, fout=0.35)
+def _king_roar(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 铠甲虫王咆哮：重型几丁质胸甲共鸣撞击 + 50Hz超低频威压吼叫 + 狂暴气浪
+    plate_slam = modal(0.55, 165 * p, CHITIN_MODES, 7.0, rng, 0.92)
+    sub_boom = thump(0.85, 125 * p, 20 * p, 4.2, rng, 3.0)
+    bellow_sub = voice(2.1, 52 * p, 88 * p, rng, 5.8, 0.45, 2.6) * 0.95
+    roar_body = roar(2.1, 175 * p, 1.7, rng, 2.5) * 0.92
+    air_blast = whoosh(1.6, 220 * p, 1250 * p, rng, 2.4) * 0.72
+    return reverb_tail(sat(mix(
+        place(sub_boom, 0.0),
+        place(plate_slam, 0.01),
+        place(roar_body, 0.03),
+        place(bellow_sub, 0.05),
+        place(air_blast, 0.10),
+    ), 1.95), 0.36, 0.3)
 
 
-@sfx("boss_king_roar", n=2, target=-11.5, dur=3.2, fout=0.45, max_gr=12, hpf=42.0)
-def king_roar(c):
-    """王虫撞开岩壁：金属化甲壳摩擦出的低频吼声、背甲板材的共振、脚下碎石被震落，尾音在裂谷里来回。"""
-    rng = c.rng
-    m = Mix(3.2)
-    m.add(boss_cry(c, 2.6, [(0, 88.0), (0.25, 148.0), (0.6, 126.0), (1.0, 78.0)],
-                   ((680.0, 4.0), (1500.0, 5.0)), [(0, 0), (0.1, 1.0), (1.9, 0.5), (2.6, 0.0)], 0.7, 0.55, 2.4), 0.0, 0.75)
-    m.add(roar(rng, ns(2.8), 30.0, 700.0, 4.0, 0.55, -5.0) * env([(0, 0), (0.15, 0.9), (2.0, 0.45), (2.8, 0)], ns(2.8)), 0.0, 0.75)
-    m.add(modal(rng, 118.0, HEAVY, 0.9, 2.4, 0.03, 0.8, 0.7), 0.05, 0.45)
-    m.add(rattle(rng, 1.6, 22.0, 500.0, 3500.0, 0.6, 0.01), 0.15, 0.3)
-    m.add(debris(rng, 2.0, 25.0, 0.7, 200.0, 3000.0, 0.6), 0.3, 0.25)
-    m.add(hiss(rng, 1.0, 2500.0, 9000.0, 0.02, 0.2, 0.6, (4000.0, 7000.0), 4.0), 0.6, 0.12)
-    return st(c, m, "valley", 0.36)
+@sfx("boss_king_stomp", n=2, target=-12.0, dur=1.6, fout=0.25)
+def _king_stomp(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 虫王崩山践踏：百吨重足砸裂地壳 + 岩石崩碎 + 次声波震荡
+    quake1 = thump(0.85, 138 * p, 18 * p, 4.2, rng, 3.2)
+    quake2 = thump(0.65, 95 * p, 18 * p, 5.5, rng, 2.8) * 0.85
+    erupt = roar(1.15, 185 * p, 3.0, rng, 2.6) * 0.95
+    carapace = modal(0.55, 175 * p, CHITIN_MODES, 7.5, rng, 0.92)
+    rock_snap = crack(0.32, 1450 * p, rng, 2.4) * 0.82
+    return reverb_tail(sat(mix(
+        place(quake1, 0.0),
+        place(erupt, 0.008),
+        place(carapace, 0.012),
+        place(rock_snap, 0.02),
+        place(quake2, 0.28),
+    ), 1.95), 0.32, 0.28)
 
 
-@sfx("boss_king_stomp", n=2, target=-12.0, dur=2.0, fout=0.3, max_gr=12, hpf=42.0)
-def king_stomp(c):
-    """双柱巨足砸地：第一记闷到胸口的冲击、另一条腿紧跟的第二记、岩面碎裂与久久不散的余震。"""
-    rng = c.rng
-    m = Mix(2.0)
-    for t0, g in ((0.0, 1.0), (0.42, 0.85)):
-        m.add(thump(rng, 62.0 * c.j(1.0, 0.05), 22.0, 1.0, 0.3, 0.06, 3.2, 0.3), t0, 0.9 * g)
-        m.add(burst(rng, 0.6, 0.09, 30.0, 900.0, -3.0, 0.001, 2.4), t0, 0.65 * g)
-        m.add(clank(rng, 160.0, 0.3, HEAVY, 1.0, 0.6, 0.8), t0, 0.45 * g)
-        m.add(debris(rng, 0.9, 50.0, 0.3, 200.0, 4000.0, 0.55), t0 + 0.03, 0.4 * g)
-    m.add(roar(rng, ns(1.4), 26.0, 300.0, 3.0, 0.4, -5.0) * expdec(ns(1.4), 0.5), 0.0, 0.4)
-    src = lp(m.render(), 900.0)
-    m2 = Mix(2.0)
-    m2.add(src, 0.0, 1.0)
-    m2.add(src, 0.34, 0.2)
-    m2.add(src, 0.72, 0.1)
-    return st(c, m2, "valley", 0.32)
+@sfx("boss_king_core", n=1, target=-13.5, dur=1.8, fout=0.25)
+def _king_core(v, rng):
+    # 虫王熔核暴露过载：背部甲壳向两侧沉重裂开 + 核心生物电浆狂暴喷涌
+    shell_split = modal(0.48, 185, CHITIN_MODES, 8.0, rng, 0.9)
+    sub_pop = thump(0.55, 125, 24, 6.5, rng, 2.7)
+    plasma_arc = zap(0.95, 2250, rng, 52) * 0.78
+    core_roar = roar(1.45, 210, 2.4, rng, 2.3) * 0.88
+    steam = hiss(1.25, 2100, 1400, 3.2, rng) * 0.62
+    return reverb_tail(sat(mix(
+        place(shell_split, 0.0),
+        place(sub_pop, 0.02),
+        place(core_roar, 0.08),
+        place(plasma_arc, 0.12),
+        place(steam, 0.18),
+    ), 1.85), 0.28, 0.25)
 
 
-@sfx("boss_king_core", n=1, target=-13.0, dur=2.6, fout=0.35, max_gr=12, hpf=42.0)
-def king_core(c):
-    """背甲裂开、晶核暴露：厚甲被从内部顶开的断裂声、碎片落地的金属声，晶核升起后稳定下来的嗡鸣。"""
-    rng = c.rng
-    m = Mix(2.6)
-    m.add(clank(rng, 190.0, 0.4, HEAVY, 1.4, 0.7, 0.85), 0.0, 0.7)
-    m.add(crunch(rng, 0.3, 80, 0.1, 800.0, 8000.0, 0.6, 200.0), 0.0, 0.55)
-    m.add(burst(rng, 0.5, 0.07, 40.0, 1200.0, -2.0, 0.001, 1.8), 0.0, 0.5)
-    n0 = ns(1.5)
-    u = tt(n0) / 1.5
-    m.add(glide_chime(420.0 + 260.0 * u, 1.5, 0.6, ((1.0, 1.0), (1.5, 0.4), (2.3, 0.2), (3.1, 0.1))), 0.3, 0.32)
-    m.add(harm(96.0, [1.0, 0.5, 0.3], n0) * env([(0, 0), (0.4, 1), (1.5, 0.6)], n0), 0.3, 0.25)
-    m.add(debris(rng, 1.4, 30.0, 0.4, 300.0, 5000.0, 0.5), 0.15, 0.35)
-    return st(c, m, "valley", 0.34)
+@sfx("boss_queen_roar", n=2, target=-12.5, dur=2.6, fout=0.35)
+def _queen_roar(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 深渊女皇君临咆哮：双重胸腔/咽腔声带共振（低频威压+中频凄厉生物共鸣，绝不用方波）+ 灵能风暴
+    sub_boom = thump(0.85, 128 * p, 20 * p, 4.2, rng, 3.0)
+    abyss_roar = roar(2.2, 180 * p, 1.6, rng, 2.5) * 0.92
+    vox_sub = voice(2.2, 56 * p, 98 * p, rng, 6.0, 0.42, 2.5) * 0.92
+    vox_harmonic = voice(2.1, 145 * p, 225 * p, rng, 9.5, 0.35, 2.3) * 0.82
+    cryst_res = modal(1.4, 480 * p, GLASS_MODES, 4.5, rng, 0.65) * 0.55
+    return reverb_tail(sat(mix(
+        place(sub_boom, 0.0),
+        place(abyss_roar, 0.02),
+        place(vox_sub, 0.04),
+        place(vox_harmonic, 0.06),
+        place(cryst_res, 0.12),
+    ), 1.95), 0.38, 0.32)
 
 
-@sfx("boss_queen_roar", n=2, target=-12.0, dur=3.6, fout=0.5, max_gr=12, hpf=42.0)
-def queen_roar(c):
-    """母皇在竖井底部苏醒：比王虫更低的胸腔共鸣、竖井井壁把声音压回来的长混响、晶簇随声压颤动的高频。"""
-    rng = c.rng
-    m = Mix(3.6)
-    m.add(boss_cry(c, 3.0, [(0, 62.0), (0.2, 104.0), (0.55, 88.0), (1.0, 55.0)],
-                   ((420.0, 4.0), (900.0, 5.0)), [(0, 0), (0.12, 1.0), (2.2, 0.55), (3.0, 0.0)], 0.8, 0.5, 2.6), 0.0, 0.8)
-    m.add(roar(rng, ns(3.2), 24.0, 520.0, 3.0, 0.55, -6.0) * env([(0, 0), (0.25, 0.85), (2.4, 0.5), (3.2, 0)], ns(3.2)), 0.0, 0.75)
-    m.add(chime(1480.0, 2.4, 1.0, ((1.0, 1.0), (1.47, 0.4), (2.1, 0.25))), 0.4, 0.12)
-    m.add(slime(rng, 0.8, 1200.0, 160.0, 1.0, 0.35, 0.8), 0.05, 0.35)
-    m.add(bubbles(rng, 2.0, 12.0, 100.0, 500.0, 0.08), 0.3, 0.22)
-    return st(c, m, "valley", 0.4)
+@sfx("boss_queen_wail", n=2, target=-13.5, dur=2.2, fout=0.3)
+def _queen_wail(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 女皇深渊悲鸣冲击：剧烈气道抽吸 -> 凄厉咽腔共振长啸 + 精神震波低频脉动
+    inhale = whoosh(0.35, 950 * p, 260 * p, rng, 2.2) * 0.78
+    pulse_sub = thump(0.65, 118 * p, 22 * p, 5.5, rng, 2.7)
+    wail_vox = voice(1.75, 185 * p, 82 * p, rng, 11.0, 0.38, 2.4) * 0.9
+    wail_low = voice(1.75, 92 * p, 48 * p, rng, 6.5, 0.42, 2.4) * 0.85
+    glass_shimmer = modal(1.3, 520 * p, GLASS_MODES, 5.0, rng, 0.62) * 0.58
+    return reverb_tail(sat(mix(
+        place(inhale, 0.0),
+        place(pulse_sub, 0.22),
+        place(wail_vox, 0.24),
+        place(wail_low, 0.25),
+        place(glass_shimmer, 0.28),
+    ), 1.85), 0.35, 0.3)
 
 
-@sfx("boss_queen_wail", n=2, target=-12.5, dur=3.6, fout=0.5, max_gr=12, hpf=42.0)
-def queen_wail(c):
-    """阶段长鸣：音高从胸腔一路拔到颅顶的哀鸣、颤音在尾段散开、湿腔与晶体的泛音一起拖长。"""
-    rng = c.rng
-    m = Mix(3.6)
-    m.add(boss_cry(c, 3.2, [(0, 90.0), (0.35, 240.0), (0.62, 420.0), (0.8, 300.0), (1.0, 120.0)],
-                   ((700.0, 5.0), (1600.0, 6.0)), [(0, 0), (0.15, 0.9), (2.4, 0.6), (3.2, 0.0)], 0.55, 0.6, 2.2), 0.0, 0.75)
-    n0 = ns(3.2)
-    u = tt(n0) / 3.2
-    m.add(glide_chime(660.0 * (1.0 + 0.6 * u), 3.0, 0.9, ((1.0, 1.0), (1.5, 0.35), (2.2, 0.2))), 0.15, 0.18)
-    m.add(bug_hiss(rng, 2.6, 1500.0, 7000.0, (2600.0, 5000.0), (0.45, 9.0)), 0.2, 0.2)
-    m.add(roar(rng, n0, 30.0, 600.0, 3.0, 0.4, -6.0) * env([(0, 0), (0.4, 0.7), (2.4, 0.35), (3.2, 0)], n0), 0.0, 0.5)
-    return st(c, m, "valley", 0.4)
+@sfx("boss_queen_core", n=1, target=-13.0, dur=2.0, fout=0.3)
+def _queen_core(v, rng):
+    # 女皇深渊核心解放：地壳震动 + 生物电弧风暴 + 晶态几丁质共鸣爆裂
+    sub = thump(0.75, 132, 20, 4.8, rng, 2.9)
+    roar_b = roar(1.65, 195, 2.0, rng, 2.4) * 0.9
+    arc_storm = zap(1.25, 2350, rng, 55) * 0.78
+    cryst = modal(1.2, 460, GLASS_MODES, 5.0, rng, 0.75) * 0.68
+    vox = voice(1.4, 78, 145, rng, 8.5, 0.4, 2.3) * 0.8
+    return reverb_tail(sat(mix(
+        place(sub, 0.0),
+        place(roar_b, 0.02),
+        place(arc_storm, 0.05),
+        place(cryst, 0.08),
+        place(vox, 0.12),
+    ), 1.9), 0.32, 0.28)
 
 
-@sfx("boss_queen_core", n=1, target=-13.0, dur=2.8, fout=0.4, max_gr=12, hpf=42.0)
-def queen_core(c):
-    """胸口晶核暴露：覆盖晶核的甲片被剥开的碎裂、晶体暴露后第一声干净的鸣响、低频的压力从下方顶上来。"""
-    rng = c.rng
-    m = Mix(2.8)
-    m.add(crunch(rng, 0.35, 90, 0.12, 2000.0, 12000.0, 0.4, 260.0), 0.0, 0.55)
-    m.add(slime(rng, 0.5, 1600.0, 220.0, 1.2, 0.25, 0.7), 0.0, 0.5)
-    m.add(chime(520.0, 2.4, 0.9, ((1.0, 1.0), (1.5, 0.45), (2.0, 0.25), (2.7, 0.12))), 0.18, 0.4)
-    m.add(chime(780.0, 2.0, 0.7, ((1.0, 0.6), (1.5, 0.3))), 0.22, 0.18)
-    m.add(roar(rng, ns(2.2), 28.0, 420.0, 3.0, 0.4, -6.0) * expdec(ns(2.2), 0.9), 0.0, 0.45)
-    m.add(debris(rng, 1.6, 28.0, 0.5, 600.0, 9000.0, 0.4), 0.1, 0.3)
-    return st(c, m, "valley", 0.38)
+@sfx("boss_phase_shift", n=2, target=-12.5, dur=2.2, fout=0.3)
+def _phase_shift(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 领主狂暴转阶段：旧甲壳爆裂褪去 + 毁天灭地冲击波 + 狂暴觉醒咆哮
+    shatter_sub = thump(0.85, 138 * p, 20 * p, 4.5, rng, 3.1)
+    molt_crack = crack(0.28, 1650 * p, rng, 2.5) * 0.9
+    carapace = modal(0.65, 185 * p, CHITIN_MODES, 6.5, rng, 0.92)
+    shock_roar = roar(1.85, 190 * p, 1.9, rng, 2.5) * 0.92
+    awaken_vox = voice(1.75, 62 * p, 125 * p, rng, 7.5, 0.42, 2.5) * 0.9
+    shock_air = whoosh(1.45, 240 * p, 1450 * p, rng, 2.6) * 0.78
+    return reverb_tail(sat(mix(
+        place(shatter_sub, 0.0),
+        place(molt_crack, 0.008),
+        place(carapace, 0.015),
+        place(shock_roar, 0.03),
+        place(awaken_vox, 0.08),
+        place(shock_air, 0.12),
+    ), 1.95), 0.35, 0.3)
 
 
-@sfx("boss_phase_shift", n=2, target=-12.5, dur=2.0, fout=0.3, max_gr=12, hpf=42.0)
-def phase_shift(c):
-    """阶段切换：整片甲壳与晶簇同时崩开、冲击波把碎石扫出去、低频一路下坠到底。"""
-    rng = c.rng
-    m = Mix(2.0)
-    m.add(crunch(rng, 0.4, 120, 0.12, 600.0, 12000.0, 0.6, 180.0), 0.0, 0.7)
-    for k in range(6):
-        m.add(clank(rng, 180.0 + 120.0 * k, 0.25, HEAVY, 0.9, 0.6, 0.6), 0.01 * k, 0.3)
-    m.add(thump(rng, 70.0, 22.0, 1.2, 0.35, 0.06, 2.8, 0.3), 0.0, 0.7)
-    m.add(whoosh(rng, 1.0, 2400.0, 120.0, 0.12, 1.2, -3.0, 1.8), 0.0, 0.45)
-    n0 = ns(1.6)
-    m.add(sweep(white(n0, rng), "bp", np.geomspace(6000.0, 200.0, n0), 1.2) * expdec(n0, 0.5), 0.0, 0.3)
-    m.add(debris(rng, 1.3, 60.0, 0.4, 200.0, 7000.0, 0.5), 0.03, 0.4)
-    return st(c, m, "valley", 0.34)
+# ─────────────────────────────────────────────────────────────
+# 三大 Boss 标准虫族动作集（appear / windup / attack / hurt / death）
+# ─────────────────────────────────────────────────────────────
+def _make_boss_unit_sfx(kind, f_vox_lo, f_vox_hi, f_chitin, has_crystal=False):
+    @sfx(f"bug_{kind}_appear", n=2, target=-13.5, dur=1.4, fout=0.18)
+    def _appear(v, rng):
+        p = 1.0 + (v - 0.5) * 0.05
+        stomp1 = thump(0.48, 120 * p, 22 * p, 7.0, rng, 2.7)
+        stomp2 = thump(0.55, 110 * p, 20 * p, 6.5, rng, 2.8)
+        plate = modal(0.45, f_chitin * p, CHITIN_MODES, 8.0, rng, 0.88)
+        bellow = voice(1.05, f_vox_lo * p, f_vox_hi * p, rng, 7.0, 0.42, 2.4) * 0.9
+        roar_b = roar(0.95, 175 * p, 3.0, rng, 2.2) * 0.82
+        sig = mix(
+            place(stomp1, 0.0),
+            place(plate, 0.01),
+            place(bellow, 0.12),
+            place(roar_b, 0.15),
+            place(stomp2, 0.38),
+        )
+        if has_crystal:
+            sig = mix(sig, place(modal(0.65, 460 * p, GLASS_MODES, 6.5, rng, 0.65) * 0.55, 0.16))
+        return reverb_tail(sat(sig, 1.85), 0.26, 0.24)
+
+    @sfx(f"bug_{kind}_windup", n=2, target=-14.0, dur=1.0, fout=0.12)
+    def _windup(v, rng):
+        p = 1.0 + (v - 0.5) * 0.05
+        brace = thump(0.42, 108 * p, 24 * p, 8.5, rng, 2.5)
+        creak = modal(0.48, f_chitin * p, CHITIN_MODES, 7.5, rng, 0.85)
+        snort = hiss(0.55, 1450 * p, 950, 5.0, rng) * 0.65
+        growl = voice(0.75, f_vox_lo * p, f_vox_hi * 1.15 * p, rng, 8.0, 0.4, 2.3) * 0.88
+        return reverb_tail(sat(mix(
+            place(brace, 0.0),
+            place(creak, 0.03),
+            place(growl, 0.06),
+            place(snort, 0.12),
+        ), 1.75), 0.2, 0.18)
+
+    @sfx(f"bug_{kind}_attack", n=2, target=-12.5, dur=1.2, fout=0.16)
+    def _attack(v, rng):
+        p = 1.0 + (v - 0.5) * 0.05
+        rush = whoosh(0.32, 180 * p, 920 * p, rng, 2.4) * 0.82
+        slam_sub = thump(0.65, 132 * p, 20 * p, 5.5, rng, 3.0)
+        erupt = roar(0.85, 190 * p, 3.5, rng, 2.5) * 0.9
+        plate = modal(0.48, f_chitin * p, CHITIN_MODES, 7.5, rng, 0.92)
+        crk = crack(0.18, 1550 * p, rng, 2.4) * 0.88
+        atk_vox = voice(0.72, f_vox_hi * p, f_vox_lo * p, rng, 8.5, 0.42, 2.4) * 0.88
+        sig = mix(
+            place(rush, 0.0),
+            place(slam_sub, 0.12),
+            place(erupt, 0.125),
+            place(plate, 0.13),
+            place(crk, 0.135),
+            place(atk_vox, 0.15),
+        )
+        if has_crystal:
+            sig = mix(sig, place(zap(0.45, 2250 * p, rng, 42) * 0.62, 0.14))
+        return reverb_tail(sat(sig, 1.9), 0.26, 0.24)
+
+    @sfx(f"bug_{kind}_hurt", n=2, target=-14.0, dur=0.85, fout=0.1)
+    def _hurt(v, rng):
+        p = 1.0 + (v - 0.5) * 0.05
+        th = thump(0.42, 118 * p, 24 * p, 9.0, rng, 2.6)
+        shell = modal(0.38, f_chitin * p, CHITIN_MODES, 9.0, rng, 0.88)
+        crk = crack(0.12, 1650 * p, rng, 2.2) * 0.82
+        gore = squelch(0.42, 250 * p, 1320 * p, rng, 2.2) * 0.82
+        roar_hurt = voice(0.58, f_vox_hi * p, f_vox_lo * 0.85 * p, rng, 8.0, 0.42, 2.3) * 0.85
+        return sat(mix(
+            place(th, 0.0),
+            place(shell, 0.006),
+            place(crk, 0.01),
+            place(gore, 0.025),
+            place(roar_hurt, 0.04),
+        ), 1.75)
+
+    @sfx(f"bug_{kind}_death", n=2, target=-12.0, dur=2.6, fout=0.35)
+    def _death(v, rng):
+        p = 1.0 + (v - 0.5) * 0.05
+        # 领主级巨兽轰然倒塌：连环内爆 + 背甲彻底崩解 + 绝命深渊哀嚎 + 山崩地裂倒地巨震
+        sub1 = thump(0.75, 130 * p, 20 * p, 5.0, rng, 3.0)
+        shatter = modal(0.68, f_chitin * p, CHITIN_MODES, 6.0, rng, 0.95)
+        snap = crack(0.24, 1550 * p, rng, 2.5) * 0.9
+        gore_burst = squelch(1.25, 230 * p, 1580 * p, rng, 2.6) * 0.92
+        death_bellow = voice(1.65, f_vox_hi * p, 42 * p, rng, 7.0, 0.45, 2.6) * 0.92
+        roar_tail = roar(1.85, 180 * p, 2.0, rng, 2.5) * 0.9
+        collapse_quake = thump(0.95, 105 * p, 18 * p, 4.2, rng, 3.1) * 0.95
+        return reverb_tail(sat(mix(
+            place(sub1, 0.0),
+            place(shatter, 0.01),
+            place(snap, 0.015),
+            place(gore_burst, 0.04),
+            place(roar_tail, 0.06),
+            place(death_bellow, 0.08),
+            place(collapse_quake, 0.95),
+        ), 1.95), 0.36, 0.32)
 
 
-# ====================================================================== Boss 形态的虫群动作
-BOSS_KINDS = {
-    "broodmother": {"mat": "brood", "f0": 165.0, "form": ((480.0, 4.0), (1050.0, 5.0)), "body": 62.0,
-                    "t": {"appear": -15.5, "windup": -15.5, "attack": -13.5, "hurt": -15.0, "death": -12.5}},
-    "king_beetle": {"mat": "king", "f0": 120.0, "form": ((360.0, 3.5), (820.0, 4.5)), "body": 55.0,
-                    "t": {"appear": -15.5, "windup": -15.5, "attack": -13.5, "hurt": -15.0, "death": -12.5}},
-    "abyss_queen": {"mat": "queen", "f0": 150.0, "form": ((420.0, 4.0), (960.0, 5.0)), "body": 50.0,
-                    "t": {"appear": -15.0, "windup": -15.5, "attack": -13.0, "hurt": -14.5, "death": -12.0}},
-}
-BOSS_DUR = {"appear": 1.8, "windup": 1.2, "attack": 1.0, "hurt": 0.9, "death": 2.8}
-BOSS_FOUT = {"appear": 0.2, "windup": 0.15, "attack": 0.15, "hurt": 0.12, "death": 0.35}
-
-
-def _register_boss_bug(kind, K):
-    mat = K["mat"]
-    P = BOSS_KINDS[kind]
-
-    @sfx("bug_%s_appear" % kind, n=2, target=P["t"]["appear"], dur=BOSS_DUR["appear"], fout=BOSS_FOUT["appear"], max_gr=12, hpf=42.0)
-    def appear(c, K=K, mat=mat):
-        rng = c.rng
-        m = Mix(BOSS_DUR["appear"])
-        m.add(thump(rng, K["body"] * 1.3, K["body"] * 0.5, 1.0, 0.28, 0.05, 2.4, 0.25), 0.0, 0.6)
-        m.add(roar(rng, ns(1.4), 30.0, 700.0, 4.0, 0.5, -5.0) * env([(0, 0), (0.3, 0.8), (1.4, 0)], ns(1.4)), 0.0, 0.5)
-        if mat == "brood":
-            m.add(slime(rng, 0.7, 1200.0, 180.0, 1.2, 0.3, 0.8), 0.02, 0.5)
-            m.add(bubbles(rng, 1.2, 16.0, 120.0, 600.0, 0.08), 0.1, 0.3)
-        elif mat == "king":
-            m.add(clank(rng, 150.0, 0.35, HEAVY, 1.2, 0.65, 0.85), 0.0, 0.5)
-            m.add(rattle(rng, 1.0, 20.0, 400.0, 3000.0, 0.45, 0.01), 0.05, 0.3)
-        else:
-            m.add(slime(rng, 0.6, 1400.0, 160.0, 1.1, 0.3, 0.7), 0.0, 0.45)
-            m.add(chime(760.0, 1.4, 0.5, ((1.0, 1.0), (1.5, 0.35), (2.3, 0.2))), 0.1, 0.2)
-        m.add(boss_cry(c, 1.2, [(0, K["f0"]), (0.5, K["f0"] * 1.35), (1.0, K["f0"] * 0.9)],
-                       K["form"], [(0, 0), (0.2, 1), (1.2, 0)], 0.6, 0.5, 2.0), 0.15, 0.45)
-        return st(c, m, "valley", 0.3)
-
-    @sfx("bug_%s_windup" % kind, n=2, target=P["t"]["windup"], dur=BOSS_DUR["windup"], fout=BOSS_FOUT["windup"], max_gr=12, hpf=42.0)
-    def windup(c, K=K, mat=mat):
-        rng = c.rng
-        m = Mix(BOSS_DUR["windup"])
-        n0 = ns(1.1)
-        u = tt(n0) / 1.1
-        m.add(roar(rng, n0, 35.0, 600.0, 3.0, 0.45, -5.0) * u, 0.0, 0.45)
-        if mat == "brood":
-            m.add(slime(rng, 0.5, 1400.0, 200.0, 1.2, 0.2, 0.7), 0.0, 0.4)
-            m.add(bubbles(rng, 0.9, 18.0, 120.0, 600.0, 0.1), 0.1, 0.25)
-        elif mat == "king":
-            m.add(servo(rng, 0.8, 90.0, 260.0, 0.7, 0.1, 5.0, 0.35), 0.0, 0.35)
-            m.add(clank(rng, 130.0, 0.2, HEAVY, 0.9, 0.6, 0.8), 0.15, 0.35)
-        else:
-            m.add(chime(900.0, 1.1, 0.4, ((1.0, 1.0), (1.5, 0.3))) * u, 0.0, 0.25)
-            m.add(bug_hiss(rng, 0.9, 1500.0, 7000.0, (2600.0, 4800.0), (0.4, 14.0)), 0.05, 0.22)
-        m.add(boss_cry(c, 0.9, [(0, K["f0"] * 0.9), (1.0, K["f0"] * 1.25)], K["form"],
-                       [(0, 0), (0.25, 1), (0.9, 0)], 0.6, 0.5, 2.0), 0.15, 0.4)
-        return st(c, m, "valley", 0.28)
-
-    @sfx("bug_%s_attack" % kind, n=2, target=P["t"]["attack"], dur=BOSS_DUR["attack"], fout=BOSS_FOUT["attack"], max_gr=12, hpf=42.0)
-    def attack(c, K=K, mat=mat):
-        rng = c.rng
-        m = Mix(BOSS_DUR["attack"])
-        m.add(thump(rng, K["body"] * 1.1, K["body"] * 0.42, 0.9, 0.24, 0.04, 2.8, 0.3), 0.0, 0.8)
-        m.add(burst(rng, 0.6, 0.08, 35.0, 1200.0, -2.5, 0.001, 2.0), 0.0, 0.6)
-        if mat == "brood":
-            m.add(slime(rng, 0.45, 2000.0, 220.0, 1.2, 0.18, 0.8), 0.0, 0.6)
-            m.add(bubbles(rng, 0.5, 30.0, 150.0, 700.0, 0.1), 0.05, 0.25)
-        elif mat == "king":
-            m.add(clank(rng, 170.0, 0.3, HEAVY, 1.1, 0.7, 0.9), 0.0, 0.6)
-            m.add(crunch(rng, 0.2, 40, 0.05, 700.0, 6000.0, 0.5, 250.0), 0.0, 0.3)
-        else:
-            m.add(crunch(rng, 0.25, 70, 0.07, 1500.0, 11000.0, 0.4, 220.0), 0.0, 0.45)
-            m.add(chime(620.0, 1.0, 0.4, ((1.0, 1.0), (1.6, 0.3))), 0.0, 0.2)
-        m.add(debris(rng, 0.8, 40.0, 0.3, 200.0, 4000.0, 0.5), 0.05, 0.3)
-        return st(c, m, "valley", 0.32)
-
-    @sfx("bug_%s_hurt" % kind, n=2, target=P["t"]["hurt"], dur=BOSS_DUR["hurt"], fout=BOSS_FOUT["hurt"], max_gr=12, hpf=42.0)
-    def hurt(c, K=K, mat=mat):
-        rng = c.rng
-        m = Mix(BOSS_DUR["hurt"])
-        if mat == "king":
-            m.add(clank(rng, 240.0, 0.22, HEAVY, 0.8, 0.7, 0.8), 0.0, 0.65)
-        elif mat == "queen":
-            m.add(crunch(rng, 0.15, 30, 0.04, 1800.0, 11000.0, 0.3, 260.0), 0.0, 0.45)
-            m.add(chime(880.0, 0.6, 0.22, ((1.0, 1.0), (1.6, 0.3))), 0.0, 0.25)
-        else:
-            m.add(slime(rng, 0.3, 1600.0, 200.0, 1.2, 0.12, 0.6), 0.0, 0.55)
-        m.add(thump(rng, K["body"], K["body"] * 0.45, 0.5, 0.14, 0.02, 2.2, 0.2), 0.0, 0.45)
-        m.add(boss_cry(c, 0.55, [(0, K["f0"] * 1.1), (1.0, K["f0"] * 0.8)], K["form"],
-                       [(0, 0), (0.2, 0.8), (0.55, 0)], 0.6, 0.5, 2.0), 0.02, 0.35)
-        return st(c, m, "valley", 0.26)
-
-    @sfx("bug_%s_death" % kind, n=2, target=P["t"]["death"], dur=BOSS_DUR["death"], fout=BOSS_FOUT["death"], max_gr=12, hpf=42.0)
-    def death(c, K=K, mat=mat):
-        rng = c.rng
-        m = Mix(BOSS_DUR["death"])
-        m.add(thump(rng, K["body"] * 0.9, K["body"] * 0.32, 1.6, 0.45, 0.08, 2.8, 0.3), 0.0, 0.8)
-        m.add(roar(rng, ns(2.0), 26.0, 500.0, 3.0, 0.45, -6.0) * env([(0, 0), (0.3, 0.8), (2.0, 0)], ns(2.0)), 0.0, 0.55)
-        if mat == "brood":
-            m.add(slime(rng, 0.9, 1400.0, 160.0, 1.0, 0.35, 0.8), 0.0, 0.55)
-            m.add(bubbles(rng, 1.2, 18.0, 100.0, 500.0, 0.08), 0.2, 0.3)
-        elif mat == "king":
-            m.add(clank(rng, 150.0, 0.6, HEAVY, 2.0, 0.65, 0.9), 0.0, 0.55)
-            m.add(rattle(rng, 1.6, 18.0, 300.0, 3000.0, 0.7, 0.012), 0.15, 0.35)
-        else:
-            m.add(crunch(rng, 0.5, 90, 0.15, 1200.0, 12000.0, 0.5, 200.0), 0.0, 0.5)
-            m.add(chime(520.0, 2.2, 0.8, ((1.0, 1.0), (1.5, 0.4), (2.2, 0.2))), 0.2, 0.25)
-        m.add(debris(rng, 1.8, 35.0, 0.6, 180.0, 6000.0, 0.55), 0.15, 0.4)
-        m.add(boss_cry(c, 1.4, [(0, K["f0"] * 1.1), (0.4, K["f0"] * 0.9), (1.0, K["f0"] * 0.6)], K["form"],
-                       [(0, 0), (0.15, 1), (1.4, 0)], 0.65, 0.55, 2.2), 0.1, 0.4)
-        return st(c, m, "valley", 0.36)
-
-
-for _kind, _K in BOSS_KINDS.items():
-    _register_boss_bug(_kind, _K)
-
-del _kind, _K
+_make_boss_unit_sfx("broodmother", f_vox_lo=58.0, f_vox_hi=96.0, f_chitin=185.0, has_crystal=False)
+_make_boss_unit_sfx("king_beetle", f_vox_lo=52.0, f_vox_hi=88.0, f_chitin=165.0, has_crystal=False)
+_make_boss_unit_sfx("abyss_queen", f_vox_lo=64.0, f_vox_hi=118.0, f_chitin=205.0, has_crystal=True)

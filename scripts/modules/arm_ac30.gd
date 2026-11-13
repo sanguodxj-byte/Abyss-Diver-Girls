@@ -32,16 +32,16 @@ static func build(ctx: Dictionary) -> Node3D:
 	# 装甲防盾（正面多边形板）
 	K.plate(g, K.crect(0.52, 0.5, [0.1, 0.1, 0.14, 0.14]), 0.12, M_ARM, Vector3(0, -0.02, -0.57), Vector3.ZERO, 0.03)
 	K.plate(g, K.crect(0.48, 0.05), 0.125, K.accent(), Vector3(0, 0.17, -0.57), Vector3.ZERO, 0.005)
-	# 后坐套筒 + 身管 + 制退器
-	K.cy(g, 0.1, 0.32, M_DARK, Vector3(0, -0.02, -0.8), Vector3(90, 0, 0), -1.0, 18)
-	for zz in [-0.68, -0.92]:
-		K.cy(g, 0.11, 0.03, A.metal(Color(0.35, 0.35, 0.36)), Vector3(0, -0.02, zz), Vector3(90, 0, 0), -1.0, 18)
-	K.cy(g, 0.055, 1.5, M_STEEL, Vector3(0, -0.02, -1.7), Vector3(90, 0, 0), -1.0, 14)
-	K.bb(g, Vector3(0.16, 0.02, 0.55), A.metal(Color(0.24, 0.25, 0.26)), Vector3(0, 0.05, -1.2), Vector3.ZERO, 0.006)
-	K.bb(g, Vector3(0.2, 0.15, 0.24), M_DARK, Vector3(0, -0.02, -2.55), Vector3.ZERO, 0.02)
-	for zz in [-2.5, -2.6]:
-		for sx in [-1.0, 1.0]:
-			K.bb(g, Vector3(0.012, 0.09, 0.04), A.metal(Color(0.02, 0.02, 0.02)), Vector3(sx * 0.1, -0.02, zz), Vector3.ZERO, 0.002)
+	# 后坐套筒 + 散热纵向槽身管 + 刚性防颤支架 + 双室制退器与深膛孔
+	K.cy(g, 0.105, 0.34, M_DARK, Vector3(0, -0.02, -0.80), Vector3(90, 0, 0), -1.0, 18)
+	for zz in [-0.68, -0.94]:
+		K.cy(g, 0.116, 0.032, K.gunmetal(), Vector3(0, -0.02, zz), Vector3(90, 0, 0), -1.0, 18)
+	K.cy(g, 0.058, 1.50, M_STEEL, Vector3(0, -0.02, -1.70), Vector3(90, 0, 0), -1.0, 16)
+	# Bushmaster 式身管外骨骼三角加强桁架
+	K.bb(g, Vector3(0.14, 0.022, 0.68), K.gunmetal(), Vector3(0, 0.06, -1.22), Vector3.ZERO, 0.005)
+	for rz in [-0.98, -1.22, -1.46]:
+		K.bb(g, Vector3(0.14, 0.09, 0.025), M_DARK, Vector3(0, 0.015, rz), Vector3.ZERO, 0.004)
+	K.muzzle_brake(g, 0.088, 0.26, M_DARK, Vector3(0, -0.02, -2.55), 2)
 	# 腹下弹舱 + 双供弹槽
 	K.bb(g, Vector3(0.32, 0.28, 0.5), M_ARM2, Vector3(0, -0.36, 0.05), Vector3.ZERO, 0.03)
 	A.stencil(g, "30x113", Vector3(side * 0.165, -0.36, 0.05), Vector3(0, side * 90.0, 0), 0.0026, Color(0.9, 0.85, 0.5, 0.85))

@@ -150,14 +150,17 @@ func _build_visual() -> void:
 
 
 # ================= 受击与死亡 =================
-## 受击：先过常驻减伤与正面折射，再过弱点倍率；前摇期间的累计伤害够多就打断这次出手。
-func take_damage(amount: float, from := Vector3.ZERO) -> void:
+## 受击：先按武器穿甲系数 ap 削减常驻护甲与正面折射，再过弱点倍率；前摇期间的累计伤害够多就打断这次出手。
+func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	_wake()
 	if hp <= 0.0 or dying or guard_t > 0.0 or underground:
 		return
-	var amt: float = maxf(amount, 0.0) * (1.0 - clampf(armor, 0.0, 0.9))
+	var pen_k := clampf(ap, 0.0, 0.85)
+	var eff_armor := clampf(armor * (1.0 - pen_k), 0.0, 0.9)
+	var amt: float = maxf(amount, 0.0) * (1.0 - eff_armor)
 	if front_resist > 0.0 and _from_front(from):
-		var blocked := amt * clampf(front_resist, 0.0, 0.9)
+		var eff_front := clampf(front_resist * (1.0 - pen_k * 0.65), 0.0, 0.9)
+		var blocked := amt * eff_front
 		amt -= blocked
 		_refract(blocked)
 	amt *= _weak_scale(from)
@@ -386,15 +389,17 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 		return Vector3.ZERO
 	if act != "":
 		return Vector3.ZERO
+	var in_view := _in_player_view(d)
+	var can_engage := in_view and (target_los or d < 6.0)
 	match ai:
 		"lancer":
-			if atk_cd <= 0.0 and d < 16.0:
+			if atk_cd <= 0.0 and d < 16.0 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["charge", charge_time], ["strike", 0.14], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
 			return _approach(fwd, d, 4.0, 9.0)
 		"shell":
-			if atk_cd <= 0.0 and d < 9.0:
+			if atk_cd <= 0.0 and d < 9.0 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["charge", charge_time], ["strike", 0.16], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
@@ -409,19 +414,19 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 				return Vector3.ZERO
 			return fwd
 		"burrower":
-			if atk_cd <= 0.0 and d < 22.0:
+			if atk_cd <= 0.0 and d < 17.0 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["burrow_move", burrow_time], ["wind", 0.55], ["strike", 0.3], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
 			return fwd
 		"jammer":
-			if atk_cd <= 0.0 and d < jam_r:
+			if atk_cd <= 0.0 and d < jam_r and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["jam", 0.3], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
 			return fwd if d > float(data.range) * 0.8 else Vector3.ZERO
 		"flyer":
-			if atk_cd <= 0.0 and d < 15.0:
+			if atk_cd <= 0.0 and d < 15.0 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["dive", charge_time], ["strike", 0.16], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
@@ -438,22 +443,27 @@ func _think(delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 				av.y = 0.0
 				if av.length() > 6.0:
 					base += av.normalized() * 0.8
-			if atk_cd <= 0.0 and d < 20.0:
+			if atk_cd <= 0.0 and d < 18.0 and in_view:
 				atk_cd = _rate() + 2.0
 				_start_act([["wind", windup_t], ["pulse", 0.3], ["recover", recover_t]], fwd)
 			return base.normalized() * 0.7
 		"artillery":
-			if atk_cd <= 0.0 and d < float(data.range) and d > flee * 0.6:
+			var max_r := float(data.range)
+			if raid != null and target == raid.mech and raid.has_method("vision_toward_player"):
+				max_r = minf(max_r, raid.vision_toward_player(global_position))
+			var eff_keep := minf(keep, max_r * 0.82)
+			var eff_flee := minf(flee, eff_keep * 0.6)
+			if atk_cd <= 0.0 and d < max_r and d > eff_flee * 0.6 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["volley", 0.25], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
-			if d < flee:
+			if d < eff_flee:
 				return -fwd
-			if d > keep + 8.0:
+			if d > eff_keep + 2.5 or not in_view or not target_los:
 				return fwd
 			return fwd.cross(Vector3.UP) * strafe * 0.5
 		"juggernaut":
-			if atk_cd <= 0.0 and d < 14.0:
+			if atk_cd <= 0.0 and d < 14.0 and can_engage:
 				atk_cd = _rate()
 				_start_act([["wind", windup_t], ["charge", charge_time], ["strike", 0.18], ["recover", recover_t]], fwd)
 				return Vector3.ZERO
@@ -1029,6 +1039,11 @@ func _animate_impl(delta: float, mv: float) -> void:
 		elif act == "strike":
 			rx = -0.4
 		sc2.rotation.x = lerp(sc2.rotation.x, rx, clampf(14.0 * delta, 0.0, 1.0))
+	for sp in spinners:
+		if sp is Array and sp.size() >= 4 and is_instance_valid(sp[0]):
+			var on: bool = act != "" and act != "recover"
+			var w: float = float(sp[3]) if on else float(sp[2])
+			sp[0].rotate_object_local(sp[1], w * delta)
 	if core_mi and core_mi.material_override is StandardMaterial3D:
 		var em: StandardMaterial3D = core_mi.material_override
 		var e0: float = 1.6 + sin(anim_t * 3.2) * 0.4

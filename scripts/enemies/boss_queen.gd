@@ -30,6 +30,8 @@ func _think(_delta: float, to: Vector3, d: float, valid: bool) -> Vector3:
 	if act != "":
 		return Vector3.ZERO
 	var fwd := to / maxf(d, 0.01)
+	if not _in_player_view(d):
+		return fwd * 0.85
 	if atk_cd > 0.0:
 		if d > float(data.range) + 2.0:
 			return fwd * 0.55

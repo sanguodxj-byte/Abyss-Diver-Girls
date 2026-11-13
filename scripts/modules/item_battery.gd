@@ -9,12 +9,12 @@ const CELL := Color(1.0, 0.78, 0.2)
 
 static func use(mech, _id) -> bool:
 	if mech.energy >= mech.max_energy - 0.1 and mech.emergency <= 0.0:
-		mech.message.emit("能源已满")
+		mech.message.emit(Loc.t("能源已满", "Energy full"))
 		Audio.play_sfx("use_denied")
 		return false
 	mech.energy = minf(mech.max_energy, mech.energy + 70.0)
 	mech.emergency = 0.0
-	mech.message.emit("高能电池棒接入 +70 能量")
+	mech.message.emit(Loc.t("高能电池棒接入 +70 能量", "Energy rod plugged +70 EN"))
 	FX.shell(mech, CELL, 2.0, 0.4)
 	var raid = mech.raid
 	if raid != null and is_instance_valid(raid):

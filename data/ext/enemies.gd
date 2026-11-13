@@ -22,6 +22,11 @@ const ENEMY := "res://scripts/enemies/enemy.gd"
 const BOSS_BROOD := "res://scripts/enemies/boss_brood.gd"
 const BOSS_KING := "res://scripts/enemies/boss_king.gd"
 const BOSS_QUEEN := "res://scripts/enemies/boss_queen.gd"
+const BOSS_REAPER := "res://scripts/enemies/boss_reaper.gd"
+const BOSS_ARTILLERY := "res://scripts/enemies/boss_artillery.gd"
+const BOSS_BURROWER := "res://scripts/enemies/boss_burrower.gd"
+const BOSS_WARDEN := "res://scripts/enemies/boss_warden.gd"
+const BOSS_DREADNOUGHT := "res://scripts/enemies/boss_dreadnought.gd"
 
 const ENEMIES := {
 	# ---------------- 常规虫群：九种，各有专精与破绽 ----------------
@@ -61,10 +66,10 @@ const ENEMIES := {
 		"ai": "support", "windup": 1.0, "strike": 0.3, "recover": 0.6, "pulse_r": 9.0, "pulse_heal": 18.0,
 		"pulse_shield": 12.0, "keep": 13.0, "aggro": 16.0, "interrupt": 0.22, "loot": "bug"},
 	# 曲炮虫：曲线炮击手。远距离抬起腹部抛射酸壳，落点有地面预警圈；贴身时会后退。
-	"mortar": {"name": "曲炮虫", "hp": 110.0, "speed": 3.8, "dmg": 24.0, "range": 34.0, "rate": 5.5, "radius": 1.0,
+	"mortar": {"name": "曲炮虫", "hp": 110.0, "speed": 3.8, "dmg": 24.0, "range": 22.0, "rate": 5.5, "radius": 1.0,
 		"color": Color(0.24, 0.28, 0.16), "scale": 1.25, "drop": 0.6, "script": ENEMY, "sfx": "mortar",
 		"ai": "artillery", "windup": 1.2, "strike": 0.25, "recover": 0.9, "volley": 3, "shell_time": 1.4,
-		"blast_r": 3.6, "keep": 30.0, "flee": 16.0, "aggro": 40.0, "interrupt": 0.3, "loot": "bug"},
+		"blast_r": 3.6, "keep": 15.0, "flee": 9.0, "aggro": 20.0, "interrupt": 0.3, "loot": "bug"},
 	# 铁颚虫：甲虫的精英变体。双层叠甲、铁颚冲锋，半血后进入暴怒，冲锋间隔减半。
 	"ironjaw": {"name": "铁颚虫", "hp": 380.0, "speed": 5.0, "dmg": 26.0, "range": 3.4, "rate": 1.8, "radius": 1.5,
 		"color": Color(0.2, 0.18, 0.16), "scale": 1.95, "drop": 1.0, "script": ENEMY, "sfx": "ironjaw",
@@ -72,6 +77,21 @@ const ENEMIES := {
 		"aggro": 18.0, "armor": 0.35, "interrupt": 0.3, "loot": "elite"},
 
 	# ---------------- Boss：登场、阶段、弱点全部走事件总线 ----------------
+	# 灰港巢母：盘踞灰港东南弹坑地菌毯的幼生巢母，背部酸液卵囊是弱点。
+	"grey_brood": {"name": "灰港巢母", "hp": 560.0, "speed": 3.2, "dmg": 20.0, "range": 4.2, "rate": 2.5, "radius": 2.3,
+		"color": Color(0.22, 0.28, 0.26), "scale": 2.1, "drop": 1.0, "script": BOSS_BROOD, "sfx": "broodmother", "boss": true,
+		"ai": "boss", "windup": 0.9, "strike": 0.3, "recover": 0.9, "weak_back": 2.2, "loot": "boss_brood",
+		"phases": [1.0, 0.62, 0.28]},
+	# 铁锈重甲王虫：盘踞铁锈工业带废渣池的重装王虫，吞噬高炉废钢硬化甲壳，三阶段背甲裂开暴露电弧晶核。
+	"iron_warden": {"name": "铁锈重甲王虫", "hp": 1150.0, "speed": 3.4, "dmg": 28.0, "range": 4.6, "rate": 2.3, "radius": 2.8,
+		"color": Color(0.28, 0.2, 0.16), "scale": 2.6, "drop": 1.0, "script": BOSS_KING, "sfx": "king_beetle", "boss": true,
+		"ai": "boss", "windup": 1.0, "strike": 0.3, "recover": 1.0, "weak_back": 2.0, "weak_core": 2.6, "loot": "boss_king",
+		"phases": [1.0, 0.6, 0.25]},
+	# 荒原沙巢母：盘踞尘土平原南部虫巢的沙暴巢母，卵囊能抛射高腐蚀酸雨并孵化爆浆虫群。
+	"dust_matriarch": {"name": "荒原沙巢母", "hp": 800.0, "speed": 3.5, "dmg": 24.0, "range": 4.4, "rate": 2.4, "radius": 2.5,
+		"color": Color(0.36, 0.28, 0.16), "scale": 2.3, "drop": 1.0, "script": BOSS_BROOD, "sfx": "broodmother", "boss": true,
+		"ai": "boss", "windup": 0.9, "strike": 0.3, "recover": 0.9, "weak_back": 2.2, "loot": "boss_brood",
+		"phases": [1.0, 0.6, 0.28]},
 	# 赤湖巢母：盘踞菌毯的区域 Boss，背部卵囊是弱点；半血后开始齐射酸雨。
 	"broodmother": {"name": "赤湖巢母", "hp": 900.0, "speed": 3.4, "dmg": 26.0, "range": 4.5, "rate": 2.4, "radius": 2.6,
 		"color": Color(0.3, 0.16, 0.24), "scale": 2.4, "drop": 1.0, "script": BOSS_BROOD, "sfx": "broodmother", "boss": true,
@@ -80,13 +100,79 @@ const ENEMIES := {
 	# 裂谷铁甲王虫：双柱巨足震地，半血后连续冲撞，破甲后露出背部晶核。
 	"king_beetle": {"name": "裂谷铁甲王虫", "hp": 1900.0, "speed": 3.6, "dmg": 34.0, "range": 5.0, "rate": 2.2, "radius": 3.2,
 		"color": Color(0.18, 0.17, 0.15), "scale": 3.0, "drop": 1.0, "script": BOSS_KING, "sfx": "king_beetle", "boss": true,
-		"ai": "boss", "windup": 1.0, "strike": 0.3, "recover": 1.0, "weak_back": 2.0, "loot": "boss_king",
+		"ai": "boss", "windup": 1.0, "strike": 0.3, "recover": 1.0, "weak_back": 2.0, "weak_core": 2.6, "loot": "boss_king",
 		"phases": [1.0, 0.6, 0.25]},
 	# 深渊母皇：终章三阶段母体，胸口晶核在三阶段完全暴露。
 	"abyss_queen": {"name": "深渊母皇", "hp": 2800.0, "speed": 2.8, "dmg": 40.0, "range": 6.0, "rate": 2.0, "radius": 3.4,
 		"color": Color(0.26, 0.14, 0.34), "scale": 3.3, "drop": 1.0, "script": BOSS_QUEEN, "sfx": "abyss_queen", "boss": true,
 		"ai": "boss", "windup": 1.1, "strike": 0.35, "recover": 1.1, "weak_back": 1.8, "weak_core": 3.0, "loot": "boss_queen",
 		"phases": [1.0, 0.66, 0.3]},
+	# 灰港猎潮镰王：盘踞灰港码头与航道区的四臂水栖镰王，高频冲刺斩击并释放三道破浪刃波，三阶段胸腔电浆核心暴露。
+	"harbor_reaper": {"name": "灰港猎潮镰王", "hp": 680.0, "speed": 4.5, "dmg": 24.0, "range": 4.4, "rate": 2.2, "radius": 2.2,
+		"color": Color(0.18, 0.32, 0.36), "scale": 2.2, "drop": 1.0, "script": BOSS_REAPER, "sfx": "mantis", "boss": true,
+		"ai": "boss", "windup": 0.85, "strike": 0.28, "recover": 0.85, "armor_pierce": 0.45, "weak_back": 2.2, "weak_core": 2.5, "loot": "boss_reaper",
+		"phases": [1.0, 0.62, 0.28]},
+	# 熔渣巨炮皇虫：盘踞铁锈工业带北段高炉与编组站的八足重炮皇虫，背负双联攻城榴弹炮与旋转迫击转轮。
+	"slag_colossus": {"name": "熔渣巨炮皇虫", "hp": 1350.0, "speed": 2.9, "dmg": 32.0, "range": 5.0, "rate": 2.4, "radius": 2.9,
+		"color": Color(0.36, 0.24, 0.2), "scale": 2.7, "drop": 1.0, "script": BOSS_ARTILLERY, "sfx": "mortar", "boss": true,
+		"ai": "boss", "windup": 1.0, "strike": 0.3, "recover": 0.95, "armor": 0.18, "weak_back": 2.1, "weak_core": 2.7, "loot": "boss_colossus",
+		"phases": [1.0, 0.62, 0.26]},
+	# 荒原噬沙钻皇：游弋在尘土平原矿坑与田埂间的五节钻地巨虫，前端双级反转破岩钻头可掀起三向地裂刺并抛洒岩浆碎石。
+	"dune_devourer": {"name": "荒原噬沙钻皇", "hp": 980.0, "speed": 4.0, "dmg": 28.0, "range": 4.6, "rate": 2.3, "radius": 2.6,
+		"color": Color(0.46, 0.35, 0.2), "scale": 2.5, "drop": 1.0, "script": BOSS_BURROWER, "sfx": "burrower", "boss": true,
+		"ai": "boss", "windup": 0.9, "strike": 0.3, "recover": 0.9, "weak_back": 2.2, "weak_core": 2.6, "loot": "boss_devourer",
+		"phases": [1.0, 0.62, 0.28]},
+	# 赤湖棱镜主宰：矗立在赤湖晶簇区的八棱高脚晶甲主宰，正面折射镜盾可偏转弹药，头顶旋转紫晶圣环倾泻棱镜光球。
+	"prism_archon": {"name": "赤湖棱镜主宰", "hp": 1120.0, "speed": 3.2, "dmg": 30.0, "range": 4.8, "rate": 2.3, "radius": 2.6,
+		"color": Color(0.34, 0.22, 0.48), "scale": 2.5, "drop": 1.0, "script": BOSS_ARTILLERY, "sfx": "crystal_bug", "boss": true,
+		"ai": "boss", "windup": 0.95, "strike": 0.3, "recover": 0.9, "front_resist": 0.38, "weak_back": 2.2, "weak_core": 2.8, "loot": "boss_archon",
+		"phases": [1.0, 0.62, 0.28]},
+	# 裂谷碎岩暴君：封锁裂谷矿区采掘场的六足双圆锯泰坦，挥舞十二齿金刚石圆盘岩锯发动连续突进与震地碎岩波。
+	"gorge_tyrant": {"name": "裂谷碎岩暴君", "hp": 2150.0, "speed": 3.8, "dmg": 38.0, "range": 5.0, "rate": 2.1, "radius": 3.0,
+		"color": Color(0.42, 0.34, 0.2), "scale": 2.9, "drop": 1.0, "script": BOSS_REAPER, "sfx": "ironjaw", "boss": true,
+		"ai": "boss", "windup": 0.9, "strike": 0.3, "recover": 0.9, "armor": 0.15, "armor_pierce": 0.5, "weak_back": 2.0, "weak_core": 2.7, "loot": "boss_reaper",
+		"phases": [1.0, 0.6, 0.26]},
+	# 深渊先驱魔像：拱卫零号深渊井外环的六翼黑曜石魔像，胸口双环陀螺暗星核驱动虚空陨石雨与裂地晶刺。
+	"abyss_harbinger": {"name": "深渊先驱魔像", "hp": 2550.0, "speed": 3.4, "dmg": 38.0, "range": 5.4, "rate": 2.1, "radius": 3.2,
+		"color": Color(0.28, 0.16, 0.38), "scale": 3.1, "drop": 1.0, "script": BOSS_BURROWER, "sfx": "abyss_queen", "boss": true,
+		"ai": "boss", "windup": 1.0, "strike": 0.32, "recover": 0.95, "armor": 0.12, "weak_back": 1.9, "weak_core": 2.9, "loot": "boss_queen",
+		"phases": [1.0, 0.64, 0.28]},
+	# ---------------- 地标专属首领（Landmark Bosses，驻守六大战区核心重工业地标） ----------------
+	# 总站铁卫·巡道猎杀者：驻守灰港中央穹顶总站的四足重装巡道机兵，配备楔形排障铲、双肩转轮实弹炮与八联高爆火箭巢。
+	"terminus_warden": {"name": "总站巡道铁卫", "hp": 740.0, "speed": 4.2, "dmg": 25.0, "range": 5.2, "rate": 2.2, "radius": 2.3,
+		"color": Color(0.22, 0.28, 0.33), "scale": 2.25, "drop": 1.0, "script": BOSS_WARDEN, "sfx": "mech_beetle", "boss": true,
+		"ai": "boss", "windup": 0.88, "strike": 0.28, "recover": 0.85, "charge_speed": 17.5, "charge_time": 0.56,
+		"armor": 0.12, "weak_back": 2.2, "weak_core": 2.6, "loot": "boss_warden", "phases": [1.0, 0.62, 0.28]},
+	# 转炉铁甲·熔渣无畏舰：驻守二号转炉钢厂铸锭跨的八足铁水包无畏舰，倾泻高爆尾翼火箭与重型钨芯穿甲排炮。
+	"foundry_dreadnought": {"name": "转炉熔渣无畏舰", "hp": 1480.0, "speed": 3.0, "dmg": 34.0, "range": 5.2, "rate": 2.35, "radius": 2.95,
+		"color": Color(0.32, 0.22, 0.18), "scale": 2.75, "drop": 1.0, "script": BOSS_DREADNOUGHT, "sfx": "king_beetle", "boss": true,
+		"ai": "boss", "windup": 0.96, "strike": 0.32, "recover": 0.92, "charge_speed": 15.0, "charge_time": 0.60,
+		"armor": 0.18, "weak_back": 2.1, "weak_core": 2.7, "loot": "boss_dreadnought", "phases": [1.0, 0.62, 0.26]},
+	# 井群猎犬·弹道集群兽：驻守尘土平原洲际发射井阵地的四足机动导弹发射兽，背负八管冷发射尾翼火箭箱与制导雷达。
+	"silo_warhead": {"name": "井群弹道猎犬", "hp": 1060.0, "speed": 4.1, "dmg": 29.0, "range": 5.6, "rate": 2.25, "radius": 2.55,
+		"color": Color(0.34, 0.32, 0.23), "scale": 2.45, "drop": 1.0, "script": BOSS_WARDEN, "sfx": "mortar", "boss": true,
+		"ai": "boss", "windup": 0.88, "strike": 0.28, "recover": 0.86, "charge_speed": 17.0, "charge_time": 0.56,
+		"armor": 0.10, "weak_back": 2.2, "weak_core": 2.7, "loot": "boss_warhead", "phases": [1.0, 0.62, 0.28]},
+	# 闸枢巨鳌·深水破城兽：驻守赤湖溢洪闸枢消力池的六足水工重甲巨鳌，挥舞液压弧形闸门剪钳并发射重型破甲火箭。
+	"spillway_leviathan": {"name": "溢洪闸枢巨鳌", "hp": 1220.0, "speed": 3.4, "dmg": 31.0, "range": 5.0, "rate": 2.3, "radius": 2.7,
+		"color": Color(0.20, 0.32, 0.36), "scale": 2.55, "drop": 1.0, "script": BOSS_DREADNOUGHT, "sfx": "ironjaw", "boss": true,
+		"ai": "boss", "windup": 0.92, "strike": 0.30, "recover": 0.88, "charge_speed": 15.8, "charge_time": 0.60,
+		"armor": 0.14, "weak_back": 2.2, "weak_core": 2.7, "loot": "boss_leviathan", "phases": [1.0, 0.62, 0.28]},
+	# 斗轮泰坦·裂岩掘进兽：驻守裂谷斗轮挖掘机平台的六足矿山泰坦，双臂高速旋转十齿切削斗轮，兼具碎岩横扫与实弹轰击。
+	"excavator_titan": {"name": "斗轮裂岩泰坦", "hp": 2280.0, "speed": 3.6, "dmg": 39.0, "range": 5.2, "rate": 2.15, "radius": 3.05,
+		"color": Color(0.46, 0.35, 0.16), "scale": 2.95, "drop": 1.0, "script": BOSS_DREADNOUGHT, "sfx": "king_beetle", "boss": true,
+		"ai": "boss", "windup": 0.92, "strike": 0.30, "recover": 0.90, "charge_speed": 16.2, "charge_time": 0.62,
+		"armor": 0.16, "armor_pierce": 0.48, "weak_back": 2.0, "weak_core": 2.8, "loot": "boss_titan", "phases": [1.0, 0.60, 0.26]},
+	# 裂隙主宰·磁暴晶骸王：驻守零号深渊井地热磁约束腔的六足超导涡轮主宰，双肩电磁轨道炮平射高速钨芯穿甲长杆弹。
+	"core_overlord": {"name": "地热磁暴主宰", "hp": 2680.0, "speed": 3.5, "dmg": 40.0, "range": 5.8, "rate": 2.05, "radius": 3.2,
+		"color": Color(0.22, 0.24, 0.30), "scale": 3.1, "drop": 1.0, "script": BOSS_WARDEN, "sfx": "abyss_queen", "boss": true,
+		"ai": "boss", "windup": 0.90, "strike": 0.30, "recover": 0.88, "charge_speed": 16.8, "charge_time": 0.58,
+		"armor": 0.15, "weak_back": 1.9, "weak_core": 3.0, "loot": "boss_overlord", "phases": [1.0, 0.64, 0.28]},
+	# 船坞巨兽·深水龙门王：驻守东湾船坞港巨型潜艇干船坞的六足造船重装巨兽，潜艇耐压壳甲板挂载双联鱼雷火箭罐与龙门液压钳。
+	"drydock_behemoth": {"name": "船坞龙门巨兽", "hp": 1620.0, "speed": 3.3, "dmg": 35.0, "range": 5.2, "rate": 2.25, "radius": 2.95,
+		"color": Color(0.20, 0.28, 0.34), "scale": 2.8, "drop": 1.0, "script": BOSS_DREADNOUGHT, "sfx": "king_beetle", "boss": true,
+		"ai": "boss", "windup": 0.92, "strike": 0.30, "recover": 0.88, "charge_speed": 15.8, "charge_time": 0.60,
+		"armor": 0.16, "weak_back": 2.1, "weak_core": 2.7, "loot": "boss_behemoth", "phases": [1.0, 0.62, 0.26]},
 	# ---------------- 第二批补充：重装、远狙、支援与重锤 ----------------
 	# 盾卫虫：正面挂着整块复合盾的推进体，正面极硬，逼玩家绕后。
 	"aegis": {"name": "盾卫虫", "hp": 420.0, "speed": 3.2, "dmg": 26.0, "range": 3.2, "rate": 1.9, "radius": 1.35,
@@ -94,10 +180,10 @@ const ENEMIES := {
 		"ai": "shell", "windup": 0.9, "strike": 0.24, "recover": 0.75, "charge_speed": 11.0, "charge_time": 0.32,
 		"aggro": 20.0, "armor": 0.12, "front_resist": 0.65, "interrupt": 0.3, "loot": "crystal"},
 	# 狙击虫：极远距离单发酸弹，弹道慢但伤害高，站在开阔地最危险。
-	"lancer": {"name": "狙击虫", "hp": 70.0, "speed": 4.4, "dmg": 30.0, "range": 30.0, "rate": 3.6, "radius": 0.7,
+	"lancer": {"name": "狙击虫", "hp": 70.0, "speed": 4.4, "dmg": 30.0, "range": 22.0, "rate": 3.6, "radius": 0.7,
 		"color": Color(0.34, 0.3, 0.22), "scale": 1.0, "drop": 0.45, "script": ENEMY, "sfx": "wasp",
 		"ai": "artillery", "windup": 1.25, "strike": 0.2, "recover": 0.9, "volley": 1, "shell_time": 1.1,
-		"keep": 20.0, "flee": 8.0, "aggro": 26.0, "loot": "mantis"},
+		"keep": 15.0, "flee": 8.0, "aggro": 20.0, "loot": "mantis"},
 	# 指挥虫：不冲阵，靠脉冲给周围虫群补盾与修甲，优先点掉。
 	"overseer": {"name": "指挥虫", "hp": 110.0, "speed": 4.2, "dmg": 10.0, "range": 16.0, "rate": 1.4, "radius": 0.9,
 		"color": Color(0.3, 0.28, 0.36), "scale": 1.25, "drop": 0.7, "script": ENEMY, "sfx": "shielder",
@@ -120,15 +206,18 @@ const ENEMIES := {
 		"aggro": 24.0, "armor": 0.15, "front_resist": 0.45, "interrupt": 0.4, "loot": "elite"},
 }
 const SPAWNS := {
-	# 灰港市：城区街巷密度中等，跳虫与酸液虫为主，开阔地混少量啸翅虫。
+	# 灰港市：城区街巷密度中等，跳虫与酸液虫为主，开阔地混少量啸翅虫；东南弹坑虫巢由 spawn_greyport.gd 布置灰港巢母。
 	"greyport": {"packs": {"D": 1.6, "R": 1.8, "I": 1.6, "H": 1.5, "Y": 1.0, "M": 1.8, "P": 1.2, "F": 0.8, "W": 0.7, "T": 0.9, "C": 1.3, "S": 2.2, "K": 0.0},
-		"kinds": {"ling": 40, "spitter": 22, "beetle": 15, "wasp": 10, "mantis": 4, "bomber": 4, "shielder": 3, "crystal_bug": 2, "burrower": 2, "mech_beetle": 2, "mortar": 2, "ironjaw": 1}, "pack_size": [2, 4]},
-	# 铁锈工业带：厂房掩体多、零件多，镰爪虫在编组站与厂区之间巡逻。
+		"kinds": {"ling": 40, "spitter": 22, "beetle": 15, "wasp": 10, "mantis": 4, "bomber": 4, "shielder": 3, "crystal_bug": 2, "burrower": 2, "mech_beetle": 2, "mortar": 2, "ironjaw": 1}, "pack_size": [2, 4],
+		"script": "res://scripts/enemies/spawn_greyport.gd"},
+	# 铁锈工业带：厂房掩体多、零件多，镰爪虫在编组站与厂区之间巡逻；东南废渣池由 spawn_ironbelt.gd 布置铁锈重甲王虫。
 	"ironbelt": {"packs": {"D": 1.2, "R": 1.5, "I": 2.2, "H": 1.4, "Y": 1.9, "M": 1.6, "P": 1.0, "F": 0.7, "W": 0.9, "T": 1.1, "C": 1.5, "S": 2.6, "K": 0.0},
-		"kinds": {"ling": 28, "spitter": 17, "beetle": 13, "mantis": 20, "shielder": 8, "mech_beetle": 5, "mortar": 3, "wasp": 3, "bomber": 2, "burrower": 2, "crystal_bug": 1, "ironjaw": 1, "ripper": 8, "aegis": 5}, "pack_size": [2, 4]},
-	# 尘土平原：视野开阔、虫群分散成小群，自爆虫贴着田埂冲过来。
+		"kinds": {"ling": 28, "spitter": 17, "beetle": 13, "mantis": 20, "shielder": 8, "mech_beetle": 5, "mortar": 3, "wasp": 3, "bomber": 2, "burrower": 2, "crystal_bug": 1, "ironjaw": 1, "ripper": 8, "aegis": 5}, "pack_size": [2, 4],
+		"script": "res://scripts/enemies/spawn_ironbelt.gd"},
+	# 尘土平原：视野开阔、虫群分散成小群，自爆虫贴着田埂冲过来；南部虫巢由 spawn_dustfield.gd 布置荒原沙巢母。
 	"dustfield": {"packs": {"D": 1.1, "R": 1.5, "I": 0.6, "H": 0.4, "Y": 0.4, "M": 1.3, "P": 1.0, "F": 1.0, "W": 0.9, "T": 1.2, "C": 1.7, "S": 2.3, "K": 0.3},
-		"kinds": {"ling": 34, "spitter": 20, "beetle": 12, "bomber": 22, "wasp": 4, "burrower": 3, "mantis": 3, "shielder": 2, "mortar": 2, "crystal_bug": 1, "mech_beetle": 1, "ironjaw": 1, "lancer": 6}, "pack_size": [2, 3]},
+		"kinds": {"ling": 34, "spitter": 20, "beetle": 12, "bomber": 22, "wasp": 4, "burrower": 3, "mantis": 3, "shielder": 2, "mortar": 2, "crystal_bug": 1, "mech_beetle": 1, "ironjaw": 1, "lancer": 6}, "pack_size": [2, 3],
+		"script": "res://scripts/enemies/spawn_dustfield.gd"},
 	# 赤湖新区：林地与湖畔，晶背虫与盾脉虫成群；巢母由 spawn_redlake.gd 布置。
 	"redlake": {"packs": {"D": 1.4, "R": 1.7, "I": 0.8, "H": 0.8, "Y": 0.5, "M": 1.4, "P": 1.6, "F": 1.2, "W": 0.9, "T": 1.8, "C": 1.6, "S": 2.4, "K": 0.0},
 		"kinds": {"ling": 26, "spitter": 20, "beetle": 13, "crystal_bug": 17, "shielder": 9, "wasp": 5, "mortar": 3, "mantis": 2, "bomber": 2, "burrower": 2, "mech_beetle": 1, "ironjaw": 1, "overseer": 5}, "pack_size": [2, 4],
@@ -137,6 +226,10 @@ const SPAWNS := {
 	"canyon": {"packs": {"D": 0.8, "R": 0.6, "I": 1.3, "H": 0.6, "Y": 0.9, "M": 1.5, "P": 0.4, "F": 0.4, "W": 1.4, "T": 0.8, "C": 1.9, "S": 2.7, "K": 0.0},
 		"kinds": {"ling": 10, "beetle": 14, "mantis": 15, "burrower": 19, "mech_beetle": 12, "mortar": 13, "ironjaw": 7, "spitter": 4, "crystal_bug": 3, "wasp": 2, "bomber": 2, "shielder": 2, "lancer": 6, "ripper": 7}, "pack_size": [2, 3],
 		"script": "res://scripts/enemies/spawn_canyon.gd"},
+	# 东湾船坞港：造船厂、海军驻地与集装箱码头，改装机甲虫与重炮单位密集巡逻；潜艇干船坞驻守船坞龙门巨兽。
+	"bayport": {"packs": {"D": 1.4, "R": 1.6, "I": 2.0, "H": 1.9, "Y": 1.8, "M": 1.8, "P": 1.1, "F": 0.6, "W": 0.9, "T": 1.0, "C": 1.6, "S": 2.6, "K": 0.0},
+		"kinds": {"ling": 22, "spitter": 15, "beetle": 14, "mantis": 18, "mech_beetle": 11, "mortar": 9, "shielder": 8, "crystal_bug": 5, "wasp": 5, "bomber": 4, "burrower": 4, "ironjaw": 4, "aegis": 6, "ripper": 6, "lancer": 4, "overseer": 4}, "pack_size": [2, 4],
+		"script": "res://scripts/enemies/spawn_bayport.gd"},
 
 }
 
@@ -157,6 +250,17 @@ const LOOT_TABLES := {
 	"boss_brood": {"name": "巢母残骸", "rolls": [3, 4], "pool": {"bug_crystal": 40, "@module": 26, "gen_crystal": 8, "credit_l": 14, "chitin": 12}},
 	"boss_king": {"name": "王虫残骸", "rolls": [3, 5], "pool": {"bug_crystal": 32, "@module": 30, "credit_l": 18, "gen_crystal": 10, "repair_kit": 10}},
 	"boss_queen": {"name": "母皇残骸", "rolls": [4, 6], "pool": {"bug_crystal": 34, "@module": 30, "credit_l": 20, "gold": 8, "gen_crystal": 8}},
+	"boss_reaper": {"name": "镰王残骸", "rolls": [3, 5], "pool": {"bug_crystal": 34, "@module": 28, "credit_l": 16, "gen_crystal": 10, "chitin": 12}},
+	"boss_colossus": {"name": "巨炮皇虫残骸", "rolls": [3, 5], "pool": {"bug_crystal": 30, "@module": 30, "credit_l": 18, "gen_crystal": 10, "repair_kit": 12}},
+	"boss_devourer": {"name": "钻皇残骸", "rolls": [3, 5], "pool": {"bug_crystal": 36, "@module": 26, "credit_l": 16, "gen_crystal": 10, "chitin": 12}},
+	"boss_archon": {"name": "棱镜主宰残骸", "rolls": [3, 5], "pool": {"bug_crystal": 42, "@module": 28, "gen_crystal": 12, "credit_l": 18}},
+	"boss_warden": {"name": "总站铁卫残骸", "rolls": [3, 5], "pool": {"circuit": 26, "@module": 30, "credit_l": 18, "gen_crystal": 12, "repair_kit": 14}},
+	"boss_dreadnought": {"name": "熔渣无畏舰残骸", "rolls": [4, 5], "pool": {"@module": 32, "bug_crystal": 26, "credit_l": 20, "gen_crystal": 12, "repair_kit": 10}},
+	"boss_warhead": {"name": "弹道猎犬残骸", "rolls": [3, 5], "pool": {"@module": 30, "circuit": 24, "credit_l": 18, "gen_crystal": 14, "fuel_cell": 14}},
+	"boss_leviathan": {"name": "闸枢巨鳌残骸", "rolls": [3, 5], "pool": {"bug_crystal": 34, "@module": 30, "credit_l": 18, "gen_crystal": 10, "chitin": 8}},
+	"boss_titan": {"name": "斗轮泰坦残骸", "rolls": [4, 6], "pool": {"@module": 32, "bug_crystal": 28, "credit_l": 20, "gen_crystal": 12, "gold": 8}},
+	"boss_overlord": {"name": "磁暴主宰残骸", "rolls": [4, 6], "pool": {"@module": 34, "bug_crystal": 30, "credit_l": 20, "gold": 8, "gen_crystal": 8}},
+	"boss_behemoth": {"name": "龙门巨兽残骸", "rolls": [4, 5], "pool": {"@module": 32, "bug_crystal": 28, "credit_l": 20, "gen_crystal": 12, "repair_kit": 8}},
 }
 const SFX := {
 	# ---- 镰爪虫：骨刃出鞘、冲刺破风 ----

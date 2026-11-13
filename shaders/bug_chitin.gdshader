@@ -49,19 +49,24 @@ void fragment() {
 	// 腹面浅色
 	float belly = smoothstep(0.1, -0.7, wnrm.y);
 	col = mix(col, base_color.rgb * belly_tint.rgb * 1.3, belly * 0.4);
+	// 掠射角甲壳微虹彩光泽
+	vec3 irid = mix(base_color.rgb * 1.25, vec3(0.18, 0.38, 0.46), 0.35);
+	col = mix(col, irid, fres * (1.0 - fres) * wet * 0.55);
 	col = mix(col, col * 0.35 + vec3(0.05, 0.0, 0.0), vein);
 	ALBEDO = col;
 	METALLIC = 0.0;
 	float rough = mix(0.55, 0.14, wet * smoothstep(0.3, 0.75, n1 + n2 * 0.3));
 	vec3 dn = fwidth(NORMAL);
 	ROUGHNESS = clamp(sqrt(rough * rough + min(2.0 * dot(dn, dn), 0.25)), 0.1, 1.0);
-	SPECULAR = 0.6;
+	SPECULAR = 0.68;
+	AO = clamp(1.0 - vein * 0.55 - smoothstep(0.62, 0.75, n2) * 0.2, 0.28, 1.0);
+	AO_LIGHT_AFFECT = 0.5;
 	CLEARCOAT = wet;
 	CLEARCOAT_ROUGHNESS = clamp(0.18 + min(2.0 * dot(dn, dn), 0.3), 0.0, 1.0);
-	RIM = 0.35;
-	RIM_TINT = 0.7;
+	RIM = 0.38;
+	RIM_TINT = 0.72;
 	BACKLIGHT = base_color.rgb * translucency;
 	vec3 nm = texture(normal_tex, (w.x > 0.5 ? p.zy : (w.y > 0.5 ? p.xz : p.xy)) * 2.0).rgb;
 	float nfade = clamp(1.0 - length(fwidth(p * 2.0)) * 3.0, 0.0, 1.0);
-	NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nm, (0.2 + vein * 0.4) * nfade);
+	NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nm, (0.24 + vein * 0.45) * nfade);
 }

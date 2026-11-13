@@ -64,6 +64,8 @@ func setup_npc(lo: Dictionary, fac: String, t := 1) -> void:
 	max_hp = maxf(90.0, max_hp * hp_mul)
 	hp = max_hp
 	_strafe = 1.0 if randf() < 0.5 else -1.0
+	if faction == "rover":
+		_add_raider_kit()
 	_paint()
 	_add_marker()
 
@@ -75,22 +77,72 @@ func is_rover() -> bool:
 # ================================================================ 外观
 static var _tint_cache := {}
 
-## 敌对涂装：流浪者的装甲漆成锈红、灯光改成红色；队友只把灯光换成青色识别灯
+## 流浪者战地改装件：躯干顶部防滚护杠、双联锈蚀排烟直管（深黑烟膛）、鞭状敌我识别天线与前向格栅附加装甲
+func _add_raider_kit() -> void:
+	if torso == null:
+		return
+	var kit := Node3D.new()
+	kit.name = "RaiderKit"
+	torso.add_child(kit)
+	var m_iron := A2.metal(Color(0.18, 0.19, 0.20))
+	var m_rust := A2.paint(Color(0.42, 0.22, 0.15), 0.30, 0.72, {"rust": 0.65, "wear": 0.60})
+	var m_bore := A2.rubber()
+	var m_haz := A2.hazard()
+	# 顶部战地焊接防滚横梁 + 警示黄端牌 + 敌我识别红闪信标座
+	A2.add(kit, A2.bevel_box(Vector3(1.16, 0.06, 0.08), 0.015), m_iron, Vector3(0, 0.92, 0.18))
+	for sx: float in [-1.0, 1.0]:
+		A2.add(kit, A2.bevel_box(Vector3(0.06, 0.34, 0.06), 0.012), m_iron, Vector3(sx * 0.54, 0.76, 0.18), Vector3(0, 0, sx * -8.0))
+		A2.add(kit, A2.bevel_box(Vector3(0.16, 0.12, 0.03), 0.008), m_haz, Vector3(sx * 0.54, 0.88, 0.13))
+		# 双侧锈蚀柴油直排烟管 + 空心黑烟口
+		A2.add(kit, A2.cyl(0.055, 0.56, 0.065, 10), m_rust, Vector3(sx * 0.44, 0.88, 0.42), Vector3(-10, 0, sx * -4.0))
+		A2.add(kit, A2.cyl(0.042, 0.10, 0.042, 8), m_bore, Vector3(sx * 0.46, 1.14, 0.47), Vector3(-10, 0, sx * -4.0), Vector3.ONE, false)
+	# 右后鞭状通讯天线 + 装甲信标灯罩
+	A2.add(kit, A2.cyl(0.045, 0.12, 0.055, 8), m_iron, Vector3(0.36, 0.96, 0.18))
+	A2.add(kit, A2.cyl(0.032, 0.09, 0.032, 8), A2.emit(ROVER_GLOW, 2.2), Vector3(0.36, 1.05, 0.18), Vector3.ZERO, Vector3.ONE, false)
+	A2.add(kit, A2.cyl(0.008, 0.82, 0.016, 6), m_iron, Vector3(-0.38, 1.32, 0.18), Vector3(-6, 0, 5), Vector3.ONE, false)
+	# 胸前战地焊接双横档格栅防破甲护栏（Slat Armor）
+	for sx: float in [-1.0, 1.0]:
+		A2.add(kit, A2.bevel_box(Vector3(0.04, 0.24, 0.14), 0.008), m_iron, Vector3(sx * 0.46, 0.16, -0.58))
+	for ky in 2:
+		A2.add(kit, A2.bevel_box(Vector3(1.02, 0.038, 0.028), 0.006), m_rust if ky == 0 else m_iron, Vector3(0, 0.08 + ky * 0.15, -0.65))
+
+
+## 敌对涂装：流浪者的装甲赋予高风化铁锈炭灰涂装（保留裸钢/镀铬/橡胶与警示条对比度）、光学窗改为猩红；队友仅替换青色识别灯
 func _paint() -> void:
 	for mi in visual.find_children("*", "MeshInstance3D", true, false):
 		var m = mi.material_override
-		if not (m is StandardMaterial3D):
+		if m == null:
 			continue
 		var key := "%s_%d" % [faction, m.get_instance_id()]
-		if not _tint_cache.has(key):
-			var d: StandardMaterial3D = m.duplicate()
-			if d.emission_enabled:
-				d.emission = ROVER_GLOW if faction == "rover" else ALLY_GLOW
-				d.albedo_color = d.emission
-			elif faction == "rover":
-				d.albedo_color = d.albedo_color.lerp(ROVER_TINT, 0.55)
-			_tint_cache[key] = d
-		mi.material_override = _tint_cache[key]
+		if m is StandardMaterial3D:
+			if not _tint_cache.has(key):
+				var d: StandardMaterial3D = m.duplicate()
+				if d.emission_enabled:
+					d.emission = ROVER_GLOW if faction == "rover" else ALLY_GLOW
+					d.albedo_color = d.emission
+				elif faction == "rover":
+					if d.metallic >= 0.68:
+						d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.48, 0.44), 0.22)
+					else:
+						d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.30, 0.22), 0.42)
+				_tint_cache[key] = d
+			mi.material_override = _tint_cache[key]
+		elif m is ShaderMaterial and m.shader != null and m.shader.resource_path == "res://shaders/mech_paint.gdshader":
+			if not _tint_cache.has(key):
+				var sm: ShaderMaterial = m.duplicate()
+				sm.set_shader_parameter("takes_damage", 0.0)
+				if faction == "rover":
+					var mb := float(sm.get_shader_parameter("metal_base") if sm.get_shader_parameter("metal_base") != null else 0.15)
+					var stp := float(sm.get_shader_parameter("stripes") if sm.get_shader_parameter("stripes") != null else 0.0)
+					if mb < 0.55 and stp < 0.5:
+						var bc: Color = sm.get_shader_parameter("base_color")
+						sm.set_shader_parameter("base_color", Color(bc.r * 0.86, bc.g * 0.66, bc.b * 0.56, bc.a))
+						sm.set_shader_parameter("rust", 0.52)
+						sm.set_shader_parameter("wear", 0.60)
+						sm.set_shader_parameter("grime", 0.58)
+						sm.set_shader_parameter("dust", 0.34)
+				_tint_cache[key] = sm
+			mi.material_override = _tint_cache[key]
 
 
 func _add_marker() -> void:
@@ -98,14 +150,19 @@ func _add_marker() -> void:
 	marker = Node3D.new()
 	add_child(marker)
 	marker.position.y = 5.6
-	var mi := MeshInstance3D.new()
-	var pm := PrismMesh.new()
-	pm.size = Vector3(0.7, 0.8, 0.12)
-	mi.mesh = pm
-	mi.rotation_degrees.z = 180.0
-	mi.material_override = A2.emit(c, 4.0)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	marker.add_child(mi)
+	# 精悍战术菱形双折角敌我识别标（取代厚重发光三角块）
+	var m_em := A2.emit(c, 2.8)
+	var m_dk := A2.metal(Color(0.12, 0.13, 0.15))
+	for sx: float in [-1.0, 1.0]:
+		var bar := A2.add(marker, A2.bevel_box(Vector3(0.065, 0.48, 0.045), 0.01), m_em,
+			Vector3(sx * 0.14, 0.0, 0.0), Vector3(0, 0, sx * -32.0), Vector3.ONE, false)
+		bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var top_bar := A2.add(marker, A2.bevel_box(Vector3(0.045, 0.24, 0.04), 0.008), m_dk,
+			Vector3(sx * 0.19, 0.24, 0.0), Vector3(0, 0, sx * 32.0), Vector3.ONE, false)
+		top_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var core_dot := A2.add(marker, A2.bevel_box(Vector3(0.11, 0.11, 0.05), 0.015), m_em,
+		Vector3(0, 0.12, 0), Vector3(0, 0, 45.0), Vector3.ONE, false)
+	core_dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ring := A2.ground_decal(self, A2.ring_tex(), Color(c.r, c.g, c.b, 0.55), 3.6, Vector3(0, 0.05, 0), true)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	name_label = Label3D.new()
@@ -117,18 +174,15 @@ func _add_marker() -> void:
 	name_label.outline_size = 8
 	name_label.outline_modulate = Color(0, 0, 0, 0.85)
 	name_label.position.y = 6.5
-	name_label.text = "流浪者" if faction == "rover" else _pilot_name()
+	name_label.text = Loc.t("流浪者", "Rover") if faction == "rover" else _pilot_name()
 	add_child(name_label)
 
 
 func _pilot_name() -> String:
-	var tbl: Dictionary = {}
-	var p := "res://data/ext/progression.gd"
-	if ResourceLoader.exists(p):
-		var c: Dictionary = load(p).get_script_constant_map()
-		for k in ["PILOTS", "CREW"]:
-			tbl.merge(c.get(k, {}))
-	var nm := str(tbl.get(pilot, {}).get("name", pilot if pilot != "" else "队友"))
+	var d: Dictionary = Growth.pilot_data(pilot)
+	if d.is_empty():
+		d = Growth.crew_data(pilot)
+	var nm := str(d.get("name", pilot if pilot != "" else Loc.t("队友", "Ally")))
 	return "%s · T%d" % [nm, tier]
 
 
@@ -139,6 +193,13 @@ func _lod_dt(delta: float) -> float:
 		d2 = global_position.distance_squared_to(raid.mech.global_position)
 	_near = d2 < 30.0 * 30.0
 	lod = 0 if d2 < 48.0 * 48.0 else (1 if d2 < 120.0 * 120.0 else 2)
+	var vis := lod == 0 or raid == null
+	if vis_anchor != null and vis_anchor.visible != vis:
+		vis_anchor.visible = vis
+	if marker != null and marker.visible != vis:
+		marker.visible = vis
+	if name_label != null and name_label.visible != vis:
+		name_label.visible = vis
 	if lod == 0:
 		delta += _lod_acc
 		_lod_acc = 0.0
@@ -194,7 +255,7 @@ func _physics_tick(delta: float) -> void:
 	_slide(delta)
 	_vis_sync()
 	Prof.add("npc.slide", _t3)
-	if move.length() > 0.1 and leg_type != "hover":
+	if move.length() > 0.1:
 		legs.rotation.y = lerp_angle(legs.rotation.y, atan2(-move.x, -move.z), clampf(6.0 * delta, 0.0, 1.0))
 	var valid := _ok(ai_target)
 	var face := Vector3.ZERO
@@ -211,14 +272,18 @@ func _physics_tick(delta: float) -> void:
 		to.y = 0.0
 		var dist := to.length()
 		var aim := aim_dir()
-		if aim.dot(to / maxf(dist, 0.01)) > 0.93:
+		var max_fire_d := INF
+		if faction == "rover" and ai_target == raid.mech and raid != null and raid.has_method("vision_toward_player"):
+			max_fire_d = raid.vision_toward_player(global_position)
+		if dist <= max_fire_d and aim.dot(to / maxf(dist, 0.01)) > 0.93:
 			for slot in ["arm_l", "arm_r"]:
 				var id: String = loadout.get(slot, "")
-				if id != "" and dist < float(GameData.module(id).get("range", 20.0)) * 0.95:
+				if id != "" and dist < GameData.weapon_range_m(GameData.module(id)) * 0.95:
 					var _t5 := Prof.t0()
 					_npc_fire(slot)
 					Prof.add("npc.fire", _t5)
 	# 程序动画（双足 IK 等）很贵：30 米内逐帧，画面边缘降到 30Hz，画面外不跑
+	_npc_audio_tick()
 	if lod == 0:
 		_anim_acc += delta
 		if _near or _anim_acc >= 0.033:
@@ -229,7 +294,7 @@ func _physics_tick(delta: float) -> void:
 
 
 static func _ok(n) -> bool:
-	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true
+	return is_instance_valid(n) and n.get("dead") != true and n.get("dying") != true and n.get("net_done") != true
 
 
 ## 画面外（LOD 中 / 远）不跑物理：直接平移，用建筑占地格子挡一下（撞上就沿侧面绕），近处照常 move_and_slide
@@ -239,8 +304,9 @@ func _slide(dt: float) -> void:
 		if step.length_squared() < 0.0001:
 			return
 		var np := global_position + step
+		var has_ib: bool = raid.has_method("in_bounds")
 		var H: float = raid.HALF - 4.0
-		if raid.ai_free(np, 1.2, true) and absf(np.x) < H and absf(np.z) < H:
+		if raid.ai_free(np, 1.2, true) and (raid.in_bounds(np, 4.0) if has_ib else (absf(np.x) < H and absf(np.z) < H)):
 			global_position = np
 			return
 		if raid.ai_free(global_position, 1.2, true):
@@ -250,7 +316,7 @@ func _slide(dt: float) -> void:
 			# 沿侧面挪一步；两侧都堵（墙角）就交给下面的真实物理去滑
 			for side in [_detour, -_detour]:
 				var alt: Vector3 = global_position + side * step.length()
-				if raid.ai_free(alt, 1.2, true) and absf(alt.x) < H and absf(alt.z) < H:
+				if raid.ai_free(alt, 1.2, true) and (raid.in_bounds(alt, 4.0) if has_ib else (absf(alt.x) < H and absf(alt.z) < H)):
 					global_position = alt
 					return
 		# 已经压在建筑占地格子里（或贴着地图边）：退回真实物理 move_and_slide，不然会原地踏步
@@ -288,10 +354,11 @@ func _choose_target() -> void:
 	var bs := INF
 	var cur_ok := _ok(ai_target)
 	if faction == "rover":
-		var m = raid.mech
+		var m = raid.nearest_player(p)
 		if _ok(m):
 			var d: float = p.distance_to(m.global_position)
-			var known: bool = (ai_target == m or aggressor == m) and d < _lose_r()
+			var ally_agg: bool = is_instance_valid(aggressor) and aggressor.is_in_group("allies") and raid.has_los(p, m.global_position)
+			var known: bool = (ai_target == m or aggressor == m or ally_agg) and d < _lose_r()
 			if known or _sees(m, d):
 				best = m
 				# 小队里单号成员专盯玩家机甲（队友和虫子吸走全部火力时玩家也照样挨打）
@@ -303,11 +370,11 @@ func _choose_target() -> void:
 				if d < bs and (known or _sees(a, d)):
 					best = a
 					bs = d
-		# 盯玩家的成员只在虫子贴脸（8 米内）时才回头打虫
+		# 盯玩家的成员只在虫子贴脸（8 米内）时才回头打虫；流浪者不主动招惹战区首领
 		var bug_r: float = 8.0 if (slot_i % 2 == 1 and best == m) else 34.0
 		if raid.has_method("vision_range"):
 			bug_r = minf(bug_r, raid.vision_range())
-		var b = raid.nearest_bug(p, bug_r)
+		var b = raid.nearest_bug(p, bug_r, false)
 		if b != null and p.distance_to(b.global_position) < bs and (b == ai_target or _sees(b, p.distance_to(b.global_position))):
 			best = b
 			bs = p.distance_to(b.global_position)
@@ -351,6 +418,8 @@ func _steer(delta: float) -> Vector3:
 		var d := to.length()
 		var fwd := to / maxf(d, 0.01)
 		var keep := clampf(_weapon_range() * 0.6, 7.0, 22.0)
+		if faction == "rover" and ai_target == raid.mech and raid != null and raid.has_method("vision_toward_player"):
+			keep = minf(keep, raid.vision_toward_player(p) * 0.8)
 		_strafe_t -= delta
 		if _strafe_t <= 0.0:
 			_strafe_t = randf_range(1.5, 3.5)
@@ -389,7 +458,7 @@ func _steer(delta: float) -> Vector3:
 	return want
 
 
-## 朝 to 走的方向：直线可走就直线，被建筑挡住就沿导航网格（机甲间隙）的 A* 路径绕；悬浮腿也照样受建筑碰撞，同样寻路
+## 朝 to 走的方向：直线可走就直线，被建筑挡住就沿导航网格（机甲间隙）的 A* 路径绕
 func _nav_to(to: Vector3, delta: float) -> Vector3:
 	if raid == null or raid.get("nav") == null:
 		var w := to - global_position
@@ -403,7 +472,7 @@ func _weapon_range() -> float:
 	for slot in ["arm_l", "arm_r"]:
 		var id: String = loadout.get(slot, "")
 		if id != "":
-			r = maxf(r, float(GameData.module(id).get("range", 20.0)))
+			r = maxf(r, GameData.weapon_range_m(GameData.module(id)))
 	return r if r > 0.0 else 20.0
 
 
@@ -433,7 +502,7 @@ func _npc_fire(slot: String) -> void:
 		var w := str(m.get("weapon", "mg"))
 		if float(m.get("rate", 1.0)) < 4.0 or _sfx_gap[slot] % 3 == 0:
 			Audio.play_sfx("wpn_%s_fire" % w if not bool(GameData.AMMO.get(w, {}).get("fire_loop", false)) else "wpn_%s_ignite" % w, origin)
-		raid.muzzle_flash(origin, m.get("color", Color(1, 0.7, 0.3)), dir, w)
+		raid.muzzle_flash(origin, m.get("color", Color(1, 0.7, 0.3)), dir, w, float(m.get("dmg", 10.0)))
 
 
 func _reload(slot: String) -> void:
@@ -447,56 +516,35 @@ func _reload(slot: String) -> void:
 func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
 	var mask := ROVER_MASK if faction == "rover" else ALLY_MASK
 	var dmg: float = float(m.get("dmg", 8.0)) * dmg_mul
+	var raw_dmg: float = float(m.get("dmg", 8.0))
 	var w := str(m.get("weapon", "mg"))
-	var rng_m: float = float(m.get("range", 20.0))
+	var rng_m: float = GameData.weapon_range_m(m)
 	var speed: float = float(m.get("speed", 40.0))
 	var c: Color = m.get("color", Color(1, 0.7, 0.3))
 	match w:
 		"laser", "arc":
-			_beam(origin, dir, rng_m, dmg, mask, c)
+			var is_rail := raw_dmg >= 60.0
+			var spd_l := maxf(speed, 135.0 if is_rail else 96.0)
+			var p_l = raid._tracer(origin, dir * spd_l, dmg, rng_m / spd_l, Color(0.76, 0.74, 0.70), 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
+			p_l.mask = mask
+			p_l.source = self
 		"flamer", "cryo":
-			var p = raid._proj(origin, dir * maxf(speed, 12.0) * randf_range(0.8, 1.1), dmg, rng_m / maxf(speed, 12.0), mask, c, 0.35)
+			var p = raid._proj(origin, dir * maxf(speed, 12.0) * randf_range(0.86, 1.12), dmg, rng_m / maxf(speed, 12.0), mask, c, 0.34, false, w)
 			p.pierce = true
-			p.grow = 3.0
+			p.grow = 0.0
 			p.hit_sfx = "-"
 			p.source = self
 		_:
 			if speed <= 0.0:
 				speed = 60.0
 			var n: int = int(m.get("pellets", 1))
+			var wake_c := Color(0.76, 0.70, 0.66) if faction == "rover" else Color(0.78, 0.75, 0.70)
 			for i in n:
 				var a := deg_to_rad(randf_range(-float(m.get("spread", 2.0)), float(m.get("spread", 2.0))) * 0.5)
-				var p = raid._tracer(origin, dir.rotated(Vector3.UP, a) * speed, dmg, rng_m / speed, Color(1.0, 0.35, 0.25) if faction == "rover" else Color(0.5, 0.9, 1.0), 0.12, 0.065)
+				var cal := "cannon" if (w == "shotgun" and raw_dmg >= 55.0) else ("slug" if (w == "shotgun" and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else "mg")))
+				var p = raid._tracer(origin, dir.rotated(Vector3.UP, a) * speed, dmg, rng_m / speed, wake_c, 0.12, 0.065, cal)
 				p.mask = mask
 				p.source = self
-
-
-func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, mask: int, c: Color) -> void:
-	var to := origin + dir * length
-	var q := PhysicsRayQueryParameters3D.create(origin, to, mask)
-	var r := get_world_3d().direct_space_state.intersect_ray(q)
-	var end := to
-	if not r.is_empty():
-		end = r.position
-		if "aggressor" in r.collider:
-			r.collider.aggressor = self
-		if r.collider.has_method("take_damage"):
-			r.collider.take_damage(dmg)
-		if lod == 0:
-			raid.spark(end, c, 10)
-	if lod > 0:
-		return
-	var len := origin.distance_to(end)
-	if len < 0.2:
-		return
-	var beam := Node3D.new()
-	raid.fx.add_child(beam)
-	beam.global_position = (origin + end) * 0.5
-	beam.look_at(end, Vector3.UP)
-	A2.add(beam, A2.cyl(0.12, len, 0.12, 8), raid._beam_mat(c), Vector3.ZERO, Vector3(90, 0, 0), Vector3.ONE, false)
-	var tw := beam.create_tween()
-	tw.tween_property(beam, "scale", Vector3(0.05, 0.05, 1.0), 0.16).set_ease(Tween.EASE_IN)
-	tw.tween_callback(beam.queue_free)
 
 
 # ================================================================ 受击 / 死亡
@@ -508,13 +556,13 @@ func take_damage(amount: float) -> void:
 	hp -= eff
 	hurt_flash = 0.2
 	kick_v += Vector3(randf_range(0.8, 1.6), randf_range(-1.0, 1.0), randf_range(-1.2, 1.2)) * clampf(eff / 14.0, 0.3, 1.2)
-	if _ok(aggressor) and (aggressor == raid.mech or aggressor.is_in_group("allies")):
+	if _ok(aggressor) and (aggressor == raid.mech or aggressor.is_in_group("coop_players") or aggressor.is_in_group("allies")):
 		killed_by_player = true
 	elif aggressor == null and faction == "rover":
 		killed_by_player = true   # 爆炸等无来源伤害只来自玩家
 	if hp <= 0.0:
 		hp = 0.0
-		die("击毁")
+		die("destroyed")
 
 
 func die(_reason: String) -> void:
@@ -544,9 +592,9 @@ func die(_reason: String) -> void:
 		if killed_by_player:
 			raid.kills += 1
 			if raid.hud:
-				raid.hud.msg("流浪者机甲被击毁，残骸里散出物资箱。")
+				raid.hud.msg(Loc.t("流浪者机甲被击毁，残骸里散出物资箱。", "Rover mech destroyed; supply crate dropped in wreckage."))
 	elif faction == "ally" and raid and raid.hud:
-		raid.hud.msg("▲ 队友 %s 的机甲失去战斗能力" % _pilot_name().split(" · ")[0])
+		raid.hud.msg(Loc.t("▲ 队友 %s 的机甲失去战斗能力" % _pilot_name().split(" · ")[0], "▲ Wingmate %s's mech incapacitated" % _pilot_name().split(" · ")[0]))
 	npc_died.emit(self)
 	var tw := create_tween()
 	tw.tween_interval(14.0)
@@ -570,14 +618,39 @@ func _drop_loot(p: Vector3) -> void:
 		items = ["bolts"]
 	var b = raid._place_box("military", Vector3(p.x + 1.5, 0, p.z), items)
 	if b:
-		b.title = "流浪者残骸"
+		b.set_meta("rover_wreck", true)
+		b.title = Loc.t("流浪者残骸", "Rover Wreck")
+
+
+func refresh_lang() -> void:
+	if name_label != null and is_instance_valid(name_label):
+		name_label.text = Loc.t("流浪者", "Rover") if faction == "rover" else _pilot_name()
+
+
+func _npc_audio_tick() -> void:
+	if leg_type != "tread":
+		return
+	if lod != 0 or not _near:
+		Audio.loop_set(_lk("legs"), -48.0, 0.85)
+		return
+	var sp := Vector2(velocity.x, velocity.z).length()
+	var k := clampf(sp / maxf(float(stats.speed), 1.0), 0.0, 1.2)
+	Audio.loop_set(_lk("legs"), lerpf(-42.0, -12.0, minf(k * 1.4, 1.0)), 0.8 + 0.3 * k)
 
 
 func _footfall(leg: Node3D, i: int) -> void:
 	if lod != 0 or raid == null or not is_instance_valid(raid.mech):
 		return
-	if global_position.distance_to(raid.mech.global_position) > 30.0:
+	if global_position.distance_to(raid.mech.global_position) > 26.0:
 		return
 	_step_dip_v -= 1.0 * gait_amt
 	var aj: Node3D = leg.get_meta("ankle")
-	Audio.play_sfx("step_biped", aj.global_position, {"vol": -10.0})
+	Audio.play_sfx("step_biped", aj.global_position, {"vol": -13.5})
+
+
+func _quad_footfall() -> void:
+	if lod != 0 or raid == null or not is_instance_valid(raid.mech):
+		return
+	if global_position.distance_to(raid.mech.global_position) > 26.0:
+		return
+	Audio.play_sfx("step_quad", global_position, {"vol": -14.0})

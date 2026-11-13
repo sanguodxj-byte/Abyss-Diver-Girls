@@ -6,7 +6,7 @@
 import os
 from PIL import Image
 
-IDS = ["nao", "rei", "kurumi", "lina", "laojiao", "ajin", "xiaoman", "shiori", "karasu", "nihong", "gin"]
+IDS = ["nao", "rei", "kurumi", "lina", "mia", "ajin", "xiaoman", "shiori", "karasu", "nihong", "gin"]
 # 每人的裁切框（1024 立绘坐标）：中心 x, 中心 y, 边长
 DEFAULT = (500, 390, 560)
 CROP = {
@@ -14,7 +14,7 @@ CROP = {
     "rei": (500, 360, 640),
     "kurumi": (520, 370, 680),
     "lina": (510, 340, 640),
-    "laojiao": (500, 380, 640),
+    "mia": (500, 380, 640),
     "ajin": (510, 330, 640),
     "xiaoman": (520, 380, 660),
     "shiori": (500, 350, 640),

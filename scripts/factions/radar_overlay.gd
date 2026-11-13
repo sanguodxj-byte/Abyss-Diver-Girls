@@ -36,7 +36,8 @@ func _draw() -> void:
 			draw_colored_polygon(pts, Color(1.0, 0.45, 0.1, 0.95))
 			pts.append(pts[0])
 			draw_polyline(pts, Color(1, 1, 1, 0.9), 1.0)
-	for n in get_tree().get_nodes_in_group("allies"):
+	for n in get_tree().get_nodes_in_group("allies") + get_tree().get_nodes_in_group("coop_players"):
+		if n == raid.mech or n.dead or n.net_done: continue
 		var p := Vector2(n.global_position.x - mp.x, n.global_position.z - mp.z) / rng_m * r
 		if p.length() < r - 4:
 			var q := c + p

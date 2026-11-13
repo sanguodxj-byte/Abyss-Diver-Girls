@@ -705,7 +705,7 @@ def build_terrain():
 WEAPON = {"mg": "arm_mg", "shotgun": "arm_shotgun", "flamer": "arm_flamer", "laser": "arm_laser", "railgun": "arm_railgun",
           "arc": "arm_arc", "mortar": "arm_mortar", "drill": "arm_drill", "plasma": "arm_plasma", "grenade": "arm_grenade",
           "flak": "arm_flak", "cryo": "arm_cryo", "sniper": "arm_sniper", "melee": "arm_drill", "missile": "back_missile"}
-LEGS = {t: "legs_" + t for t in ["biped", "tread", "quad", "hover", "reverse", "titan", "wraith", "spring", "wheel"]}
+LEGS = {t: "legs_" + t for t in ["tread", "biped", "quad", "hex"]}
 BACK = {"missile": "back_missile", "shield": "back_shield", "none": "back_cargo", "cloak": "back_cloak", "drone": "back_drone",
         "jump": "back_jump", "turret": "back_turret", "mines": "back_mines", "repair": "back_repair"}
 SLOT = {"core": "core_std", "legs": "legs_biped", "arm": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}

@@ -10,8 +10,8 @@ const REGULAR := ["ling", "spitter", "beetle", "mantis", "bomber", "crystal_bug"
 
 func run() -> void:
 	Factions.rovers_enabled = false
-	# 生成表：地表五个战区都登记了全部十二种常规虫
-	for mid in ["greyport", "ironbelt", "dustfield", "redlake", "canyon"]:
+	# 生成表：地表六个战区都登记了全部十二种常规虫
+	for mid in ["greyport", "ironbelt", "dustfield", "redlake", "bayport", "canyon"]:
 		var kinds: Dictionary = GameData.SPAWNS.get(mid, {}).get("kinds", {})
 		for k in REGULAR:
 			if not check(kinds.has(k) and float(kinds[k]) > 0.0, "%s 的生成表缺少 %s" % [mid, k]):

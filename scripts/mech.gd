@@ -5,6 +5,10 @@ const Prof = preload("res://scripts/prof.gd")
 
 const MechVisual = preload("res://scripts/mech_visual.gd")
 const A = preload("res://scripts/art.gd")
+const WeaponFX = preload("res://scripts/modules/weapon_fx.gd")
+const Status = preload("res://scripts/modules/status.gd")
+const SlowWeb = preload("res://scripts/modules/slow_web.gd")
+const Growth = preload("res://scripts/progression/growth.gd")
 
 signal died(reason: String)
 signal message(text: String)
@@ -12,6 +16,10 @@ signal fired(slot: String)          ## HUD：子弹栏整体下滑
 signal reloaded(slot: String)       ## HUD：子弹逐颗落回弹槽
 
 var raid
+var net_peer := 1
+var net_move := Vector2.ZERO
+var net_fire := 0
+var net_done := false
 var loadout := {}
 var stats := {}
 var max_hp := 100.0
@@ -34,6 +42,9 @@ var dash_time := 0.0
 var dash_dir := Vector3.ZERO
 var shield_time := 0.0
 var shield_mesh: MeshInstance3D
+var _skill_dist_acc := 0.0
+var _skill_energy_acc := 0.0
+var _skill_shot_acc := 0.0
 ## 新模块带来的状态：防爆力场剩余时间与减伤比例、光学迷彩剩余时间、动力炉耗能倍率、底盘抗性
 var guard_t := 0.0
 var guard_ratio := 0.0
@@ -43,6 +54,8 @@ var acid_immune := false
 var overload_immune := false
 var emergency := 0.0          ## >0：能源耗尽后的应急倒计时
 var aim_point := Vector3.ZERO
+var joy_move := Vector2.ZERO  ## 手机端左摇杆移动向量（-1..1）
+var joy_aim := Vector2.ZERO   ## 手机端右摇杆瞄准/开火向量（-1..1）
 var input_locked := false
 var dead := false
 var walk_phase := 0.0
@@ -54,14 +67,7 @@ var reload_t := {"arm_l": 0.0, "arm_r": 0.0}
 ## 部位完好度 0~1（HUD 全息投影着色；0 = 部位缺失，失去对应功能）
 var parts := {"core": 1.0, "legs": 1.0, "arm_l": 1.0, "arm_r": 1.0, "back": 1.0, "gen": 1.0}
 const PART_W := {"core": 0.3, "legs": 0.24, "arm_l": 0.13, "arm_r": 0.13, "back": 0.1, "gen": 0.1}
-## E / R 技能冷却与持续效果
-var skill_e_cd := 0.0
-var skill_r_cd := 0.0
 var overdrive_t := 0.0
-var heal_t := 0.0
-var heal_rate := 0.0
-var leap_t := 0.0
-var ram_t := 0.0
 ## 动画状态
 var gait_phase := 0.0
 var gait_amt := 0.0
@@ -73,8 +79,9 @@ var slam := 0.0                   ## 空投落地重压（下蹲 + 前俯，缓�
 var land_t := 0.0                 ## 落地 / 急停下蹲
 var idle_t := 0.0
 var _leg_base := []
+var _leg_yaw := []
 ## 双足重型步态参数
-const STRIDE := 2.1               ## 单步跨度（米）
+const STRIDE := 2.45              ## 单步跨度（米）
 const STANCE := 0.56              ## 支撑相占比（重型机甲脚长时间贴地）
 var _foot_prev := [0.0, 0.0]      ## 上一帧每条腿的步态相位，用于检测落脚瞬间
 var _step_dip := 0.0              ## 落脚冲击造成的车身下沉（弹簧）
@@ -93,7 +100,7 @@ var _quad_lift: Array = []
 
 func setup(lo: Dictionary, carry: Array) -> void:
 	loadout = lo.duplicate()
-	stats = GameData.compute_stats(loadout)
+	stats = Net.stats_for(loadout, net_peer)
 	max_hp = max(30.0, stats.hp)
 	hp = max_hp
 	max_energy = max(30.0, stats.energy)
@@ -144,8 +151,8 @@ void fragment() {
 	shield_mesh.position.y = 1.6
 	shield_mesh.visible = false
 	add_child(shield_mesh)
-	if leg_type == "tread" or leg_type == "hover":
-		Audio.loop_start(_lk("legs"), "legs_%s_loop" % leg_type, self)
+	if leg_type == "tread":
+		Audio.loop_start(_lk("legs"), "legs_tread_loop", self)
 
 
 ## 本机甲的循环音效 key（同时存在多台机甲时互不干扰）
@@ -167,7 +174,52 @@ func speed_mult() -> float:
 		f *= 0.45
 	if parts.legs <= 0.0:
 		f *= 0.55
+	elif float(parts.legs) < 0.5:
+		# 底盘受损（完好度 < 50%）：液压管路渗漏导致渐进式减速
+		f *= lerpf(0.78, 1.0, float(parts.legs) / 0.5)
 	return f
+
+
+## 人机工效倍率（0.72 ~ 1.22）：由整机人机工效 stats.ergo 决定躯干回转跟手度与装填速度
+func ergo_factor() -> float:
+	return clampf(0.75 + (float(stats.get("ergo", 60.0)) - 30.0) / 140.0, 0.72, 1.22)
+
+
+## 手臂有效散布角（度）：手臂完好度低于 50% 时伺服电机抖动导致散布扩大（最高 +45%）
+func eff_spread(slot: String, base_spread: float) -> float:
+	var p := float(parts.get(slot, 1.0))
+	var dmg_pen := clampf((0.5 - p) / 0.5, 0.0, 1.0) * 0.45
+	return base_spread * (1.0 + dmg_pen)
+
+
+## 手臂实际装填耗时（秒）：受人机工效加成，且手臂受损低于 50% 时供弹导轨卡滞（最高延长 35%）
+func _reload_dur(slot: String) -> float:
+	var id: String = loadout.get(slot, "")
+	if id == "":
+		return 1.8
+	var w: String = GameData.module(id).weapon
+	var base := float(GameData.AMMO[w].reload)
+	var p := float(parts.get(slot, 1.0))
+	var dmg_pen := clampf((0.5 - p) / 0.5, 0.0, 1.0) * 0.35
+	var elite_mul := 0.85 if (_is_local_actor() and Growth.ability_elite("ab_firearm")) else 1.0
+	return base / ergo_factor() * (1.0 + dmg_pen) * elite_mul
+
+
+func _is_local_actor() -> bool:
+	return not net_done and net_peer == Net.local_id()
+
+
+func refresh_growth_stats() -> void:
+	var old_max_hp := max_hp
+	var old_max_en := max_energy
+	stats = Net.stats_for(loadout, net_peer)
+	max_hp = maxf(30.0, float(stats.hp))
+	max_energy = maxf(30.0, float(stats.energy))
+	if max_hp > old_max_hp and hp > 0.0:
+		hp = minf(max_hp, hp + (max_hp - old_max_hp))
+		parts.core = hp / max_hp
+	if max_energy > old_max_en:
+		energy = minf(max_energy, energy + (max_energy - old_max_en))
 
 func energy_seconds_left() -> float:
 	return energy / max(0.01, float(stats.drain))
@@ -177,7 +229,12 @@ var _shown_damage := -1.0
 
 func _physics_process(delta: float) -> void:
 	var _pt := Prof.t0()
+	if raid != null and raid.coop != null and Net.is_client():
+		return
+	var local_mech = raid.mech if raid != null else null
+	if raid != null and net_peer > 1: raid.mech = self
 	_physics_tick(delta)
+	if raid != null: raid.mech = local_mech
 	Prof.add(_prof_key(), _pt)
 
 
@@ -186,8 +243,9 @@ func _prof_key() -> String:
 
 
 func _physics_tick(delta: float) -> void:
+	if net_done: return
 	var dmg_now := clampf(1.0 - hp / max_hp, 0.0, 1.0)
-	if absf(dmg_now - _shown_damage) > 0.01:
+	if net_peer == Net.local_id() and absf(dmg_now - _shown_damage) > 0.01:
 		_shown_damage = dmg_now
 		RenderingServer.global_shader_parameter_set("mech_damage", dmg_now)
 	if dead:
@@ -195,8 +253,6 @@ func _physics_tick(delta: float) -> void:
 	for k in arm_cd:
 		arm_cd[k] = max(0.0, arm_cd[k] - delta)
 	ability_cd = max(0.0, ability_cd - delta)
-	skill_e_cd = max(0.0, skill_e_cd - delta)
-	skill_r_cd = max(0.0, skill_r_cd - delta)
 	guard_t = max(0.0, guard_t - delta)
 	stealth_t = max(0.0, stealth_t - delta)
 	overdrive_t = max(0.0, overdrive_t - delta)
@@ -213,12 +269,6 @@ func _physics_tick(delta: float) -> void:
 			_fire_held[k] -= delta
 			if _fire_held[k] <= 0.0:
 				Audio.loop_stop(_lk("fire_" + k))
-	if heal_t > 0.0:
-		heal_t -= delta
-		hp = min(max_hp, hp + heal_rate * delta)
-		for k in parts:
-			if parts[k] > 0.0:
-				parts[k] = min(1.0, parts[k] + 0.12 * delta)
 	dash_cd = max(0.0, dash_cd - delta)
 	hurt_flash = max(0.0, hurt_flash - delta)
 	if shield_time > 0.0:
@@ -234,14 +284,7 @@ func _physics_tick(delta: float) -> void:
 		_vis_sync()
 		_animate(delta, Vector3.ZERO)
 		return
-	var move := Vector3.ZERO
-	if not input_locked:
-		move.x = Input.get_axis("move_left", "move_right")
-		move.z = Input.get_axis("move_up", "move_down")
-	if move.length() > 0.1:
-		move = move.normalized()
-	else:
-		move = Vector3.ZERO
+	var move := move_vec()
 
 	var spd: float = float(stats.speed) * speed_mult()
 	if dash_time > 0.0 and leg_type == "biped":
@@ -249,19 +292,20 @@ func _physics_tick(delta: float) -> void:
 		_thrust_fly(delta)
 	elif dash_time > 0.0:
 		dash_time -= delta
-		var dsp := 24.0
+		var dsp := 19.0
 		if leg_type == "tread":
 			dsp = 19.0
 		elif leg_type == "quad":
 			dsp = 15.0
-		elif leg_type == "titan":
-			dsp = 13.0
-			visual.position.y = sin(clampf(1.0 - dash_time / 0.5, 0.0, 1.0) * PI) * 2.2
+			visual.position.y = sin(clampf(1.0 - dash_time / 0.5, 0.0, 1.0) * PI) * 1.9
+		elif leg_type == "hex":
+			dsp = 14.0
+			visual.position.y = sin(clampf(1.0 - dash_time / 0.46, 0.0, 1.0) * PI) * 1.15
 		velocity.x = dash_dir.x * dsp
 		velocity.z = dash_dir.z * dsp
 		if dash_time <= 0.0:
 			visual.position.y = 0.0
-			land_t = 0.35 if leg_type in ["quad", "tread", "titan"] else 0.2
+			land_t = 0.35 if leg_type in ["quad", "tread", "hex"] else 0.2
 			var sk: Dictionary = GameData.SKILLS.get(leg_type, {})
 			if sk.has("dmg"):
 				raid.explode(global_position, float(sk.r), float(sk.dmg), "mech_slam")
@@ -284,30 +328,42 @@ func _physics_tick(delta: float) -> void:
 	else:
 		velocity.y -= 40.0 * delta
 	var _t1 := Prof.t0()
+	var pos_before := global_position
 	move_and_slide()
+	if _is_local_actor():
+		var step_d := Vector2(global_position.x - pos_before.x, global_position.z - pos_before.z).length()
+		if step_d > 0.001 and step_d < 10.0:
+			_skill_dist_acc += step_d
+			if _skill_dist_acc >= 10.0:
+				_skill_dist_acc -= 10.0
+				Growth.record_skill_xp("ab_servo", 0.9)
+				var load_ratio: float = (float(stats.get("mass", 0.0)) + cargo_weight()) / maxf(1.0, float(stats.get("load", 50.0)))
+				if load_ratio >= 0.65:
+					Growth.record_skill_xp("ab_rack", 1.6 if load_ratio > 1.0 else 1.0)
 	_vis_sync()
 	Prof.add("mech.move_and_slide", _t1)
 
 	# 下半身朝移动方向，上半身朝鼠标
-	if move != Vector3.ZERO and leg_type != "hover":
+	if move != Vector3.ZERO:
 		legs.rotation.y = lerp_angle(legs.rotation.y, atan2(-move.x, -move.z), clamp((5.0 if leg_type == "biped" else 10.0) * delta, 0.0, 1.0))
 	var to := aim_point - global_position
 	to.y = 0.0
 	if to.length() > 0.6:
-		torso.rotation.y = lerp_angle(torso.rotation.y, atan2(-to.x, -to.z), clamp(TORSO_TURN * delta, 0.0, 1.0))  # 上半身转向有惯性 → 拖曳感
+		torso.rotation.y = lerp_angle(torso.rotation.y, atan2(-to.x, -to.z), clamp(TORSO_TURN * ergo_factor() * delta, 0.0, 1.0))  # 上半身转向受人机工效影响
 	var _t2 := Prof.t0()
 	_animate(delta, move)
 	Prof.add("mech.anim", _t2)
 
-	# 能源
-	var drain: float = float(stats.drain) * drain_mul * (1.6 if move != Vector3.ZERO else 1.0) * (1.5 if parts.gen <= 0.0 else 1.0)
+	# 能源（动力炉受损低于 50% 时出现渐进漏电，损毁时漏电 +50%）
+	var gen_pen := 1.5 if parts.gen <= 0.0 else (lerpf(1.25, 1.0, float(parts.gen) / 0.5) if float(parts.gen) < 0.5 else 1.0)
+	var drain: float = float(stats.drain) * drain_mul * (1.6 if move != Vector3.ZERO else 1.0) * gen_pen
 	if emergency > 0.0:
 		emergency -= delta
 		if energy > 1.0:
 			emergency = 0.0
-			message.emit("主电源回路重启，退出应急模式")
+			message.emit(Loc.t("主电源回路重启，退出应急模式", "Main reactor restarted — emergency mode cleared"))
 		elif emergency <= 0.0:
-			die("能源耗尽，机甲瘫痪")
+			die(Loc.t("能源耗尽，机甲瘫痪", "Energy depleted — mech immobilized"))
 			return
 	else:
 		use_energy(drain * delta)
@@ -315,25 +371,54 @@ func _physics_tick(delta: float) -> void:
 
 	if input_locked:
 		return
+	if raid != null and raid.coop != null:
+		if net_peer > 1:
+			if net_fire & 1: try_fire("arm_l")
+			if net_fire & 2: try_fire("arm_r")
+			return
+		if raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing(): return
 	var map_on: bool = raid != null and raid.hud != null and raid.hud.map_open()
-	if Input.is_action_pressed("fire_left") and not map_on:
+	var joy_firing: bool = joy_aim.length() >= 0.28
+	var hud_busy: bool = raid != null and raid.hud != null and raid.hud.is_touch_busy()
+	if (joy_firing or (Input.is_action_pressed("fire_left") and not hud_busy)) and not map_on:
 		var _t3 := Prof.t0()
 		try_fire("arm_l")
 		Prof.add("mech.fire", _t3)
-	if Input.is_action_pressed("fire_right") and not map_on:
+	if (joy_firing or (Input.is_action_pressed("fire_right") and not hud_busy)) and not map_on:
 		try_fire("arm_r")
 	if Input.is_action_just_pressed("dash"):
 		try_dash(move)
 	if Input.is_action_just_pressed("ability"):
 		try_ability()
-	if Input.is_action_just_pressed("skill_e"):
-		try_skill_e()
-	if Input.is_action_just_pressed("skill_r"):
-		try_skill_r()
+	if Input.is_action_just_pressed("reload"):
+		reload_all()
 	if Input.is_action_just_pressed("use_fuel"):
 		use_item("fuel_cell")
 	if Input.is_action_just_pressed("use_repair"):
 		use_item("repair_kit")
+
+
+func move_vec() -> Vector3:
+	if net_done: return Vector3.ZERO
+	if raid != null and raid.coop != null:
+		if net_peer > 1 and Net.is_host():
+			return Vector3(net_move.x, 0, net_move.y) if not input_locked else Vector3.ZERO
+		if raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing(): return Vector3.ZERO
+	if input_locked:
+		return Vector3.ZERO
+	var move := Vector3.ZERO
+	if joy_move.length() > 0.12:
+		move = Vector3(joy_move.x, 0.0, joy_move.y)
+	else:
+		move.x = Input.get_axis("move_left", "move_right")
+		move.z = Input.get_axis("move_up", "move_down")
+	return move.normalized() if move.length() > 0.1 else Vector3.ZERO
+
+
+func reload_all() -> void:
+	if _net_action("reload", []): return
+	start_reload("arm_l")
+	start_reload("arm_r")
 
 
 func _animate(delta: float, move: Vector3) -> void:
@@ -351,7 +436,7 @@ func _animate(delta: float, move: Vector3) -> void:
 	var bob := 0.0
 	var dashing := dash_time > 0.0
 	match leg_type:
-		"biped", "reverse", "wraith", "spring":
+		"biped":
 			if dashing:
 				# 推进飞行：双腿收起、向后拖
 				var air := sin(clampf(1.0 - dash_time / DASH_DUR, 0.0, 1.0) * PI)
@@ -374,7 +459,7 @@ func _animate(delta: float, move: Vector3) -> void:
 			_step_dip_v += (-_step_dip * 140.0 - _step_dip_v * 13.0) * delta
 			_step_dip += _step_dip_v * delta
 			bob = _step_dip
-		"quad", "titan":
+		"quad":
 			if _leg_base.is_empty():
 				for lp in leg_parts:
 					_leg_base.append(lp.position)
@@ -388,7 +473,7 @@ func _animate(delta: float, move: Vector3) -> void:
 				var lift := maxf(0.0, cos(ph)) * 0.32 * gait_amt
 				# 抬起的腿重新着地 = 一次落脚
 				if _quad_lift[i] > 0.02 and lift <= 0.0 and gait_amt > 0.3 and not dead:
-					Audio.play_sfx("step_quad", global_position)
+					_quad_footfall()
 				_quad_lift[i] = lift
 				leg_parts[i].rotation.z = lerp(leg_parts[i].rotation.z, sw, clampf(14.0 * delta, 0.0, 1.0))
 				leg_parts[i].position = _leg_base[i] + Vector3(0, lift, 0)
@@ -398,12 +483,32 @@ func _animate(delta: float, move: Vector3) -> void:
 					leg_parts[i].rotation.x = lerp(leg_parts[i].rotation.x, 0.0, clampf(10.0 * delta, 0.0, 1.0))
 			bob = absf(sin(gait_phase * 2.0)) * 0.05 * gait_amt
 			crouch = land_t * 0.8
-		"hover":
-			var lv: Vector3 = legs.global_transform.basis.inverse() * hv
-			legs.rotation.x = lerp(legs.rotation.x, clampf(lv.z * 0.025, -0.25, 0.25), clampf(6.0 * delta, 0.0, 1.0))
-			legs.rotation.z = lerp(legs.rotation.z, clampf(-lv.x * 0.025, -0.25, 0.25), clampf(6.0 * delta, 0.0, 1.0))
-			bob = -sin(idle_t * 2.4) * 0.1
-		"tread", "wheel":
+		"hex":
+			if _leg_base.is_empty():
+				for lp in leg_parts:
+					_leg_base.append(lp.position)
+					_leg_yaw.append(lp.rotation.y)
+			gait_phase += delta * (sp / 1.25) * TAU * 0.5
+			if _quad_lift.size() != leg_parts.size():
+				_quad_lift.resize(leg_parts.size())
+				_quad_lift.fill(0.0)
+			for i in leg_parts.size():
+				# 三角交替步态：组A = [FL(0), MR(3), RL(4)]，组B = [FR(1), ML(2), RR(5)] 相差 180°
+				var tripod := 0.0 if (i == 0 or i == 3 or i == 4) else PI
+				var ph := gait_phase + tripod
+				var side_sgn := -1.0 if i % 2 == 0 else 1.0
+				var swing := -cos(ph) * 0.22 * gait_amt
+				var lift := maxf(0.0, sin(ph)) * 0.24 * gait_amt
+				if i < 2 and _quad_lift[i] > 0.02 and lift <= 0.0 and gait_amt > 0.28 and not dead:
+					_quad_footfall()
+				_quad_lift[i] = lift
+				leg_parts[i].rotation.y = lerp_angle(leg_parts[i].rotation.y, float(_leg_yaw[i]) + side_sgn * swing, clampf(16.0 * delta, 0.0, 1.0))
+				leg_parts[i].position = _leg_base[i] + Vector3(0, lift, 0)
+				var pitch_tgt := -0.26 if dashing else (-maxf(0.0, sin(ph)) * 0.14 * gait_amt)
+				leg_parts[i].rotation.x = lerp(leg_parts[i].rotation.x, pitch_tgt, clampf(14.0 * delta, 0.0, 1.0))
+			bob = absf(sin(gait_phase)) * 0.035 * gait_amt
+			crouch = land_t * 0.65
+		"tread":
 			gait_phase += delta * sp * 3.0
 			bob = sin(gait_phase * 2.3) * 0.015 * gait_amt
 			crouch = land_t * 0.4
@@ -411,7 +516,7 @@ func _animate(delta: float, move: Vector3) -> void:
 			legs.rotation.x = lerp(legs.rotation.x, clampf(lv2.z * 0.01, -0.08, 0.08) + (-0.08 if dashing else 0.0), clampf(4.0 * delta, 0.0, 1.0))
 	var sl := slam * slam * (3.0 - 2.0 * slam)
 	crouch += sl * 0.42
-	if not dashing or leg_type != "quad":
+	if not dashing or not (leg_type in ["quad", "hex"]):
 		legs.position.y = -crouch - bob
 	# 躯干：跟随髋高度、行进前倾、呼吸、后坐/受击
 	var breathe := sin(idle_t * 1.6) * 0.025 * (1.0 - gait_amt)
@@ -493,13 +598,19 @@ func use_energy(amount: float) -> void:
 	if emergency > 0.0 or dead:
 		return
 	energy -= amount
+	if _is_local_actor() and amount > 0.0:
+		_skill_energy_acc += amount
+		if _skill_energy_acc >= 10.0:
+			var ticks := int(_skill_energy_acc / 10.0)
+			_skill_energy_acc -= float(ticks) * 10.0
+			Growth.record_skill_xp("ab_reactor", 0.85 * float(ticks))
 	if energy <= 0.0:
 		energy = 0.0
 		emergency = 15.0
-		message.emit("▲ 动力炉断电 · 应急电源维持 15 秒")
+		message.emit(Loc.t("▲ 动力炉断电 · 应急电源维持 15 秒", "▲ Reactor offline — emergency power for 15s"))
 		Audio.play_sfx("energy_emergency")
 		Audio.loop_start(_lk("alarm"), "energy_alarm_loop", self, {"d3": false})
-		Events.emergency_entered.emit()
+		_event("emergency_entered", [])
 
 
 ## 应急模式的退出（恢复能源）与低能源告警；每个物理帧在扣能之后调用
@@ -508,13 +619,13 @@ func _energy_watch() -> void:
 	if _emerg_was and not em and not dead:
 		Audio.loop_stop(_lk("alarm"))
 		Audio.play_sfx("energy_restored")
-		Events.emergency_exited.emit()
+		_event("emergency_exited", [])
 	_emerg_was = em
 	var left := energy_seconds_left()
 	if not _low_warned and not em and left < 45.0:
 		_low_warned = true
 		Audio.play_sfx("energy_low")
-		Events.energy_low.emit(left)
+		_event("energy_low", [left])
 	elif _low_warned and left > 60.0:
 		_low_warned = false
 
@@ -547,23 +658,24 @@ func try_fire(slot: String) -> void:
 		if ammo[slot] <= 0:
 			Audio.play_sfx("wpn_empty", origin)
 			start_reload(slot)
-	# 子弹沿躯干实际朝向射出（躯干转向有惯性，准星内圈显示真实落点）
+	# 子弹沿躯干实际朝向射出（躯干转向有惯性，准星内圈显示真实落点）；所有武器统一发射实体弹药
 	var dir := aim_dir()
+	if _is_local_actor():
+		_skill_shot_acc += 0.16 if float(m.get("rate", 1.0)) >= 8.0 else (0.35 if float(m.get("rate", 1.0)) >= 2.2 else 0.72)
+		if _skill_shot_acc >= 1.2:
+			_skill_shot_acc -= 1.2
+			Growth.record_skill_xp("ab_firearm", 0.72)
 	var ws = ext_script(GameData.AMMO.get(str(m.weapon), {}))
 	if ws != null:
 		ws.fire(self, slot, origin, dir, m)
 		return
-	match m.weapon:
-		"laser":
-			raid.fire_laser(origin, dir, m)
-			raid.alert_noise(global_position, noise(14.0))
-		_:
-			var n: int = int(m.get("pellets", 1))
-			for i in n:
-				var a := deg_to_rad(randf_range(-float(m.spread), float(m.spread)) * 0.5)
-				raid.spawn_projectile(origin, dir.rotated(Vector3.UP, a), m, true)
-			raid.alert_noise(global_position, noise(24.0 if m.weapon != "flamer" else 12.0))
-	raid.muzzle_flash(origin, m.color, dir, m.weapon)
+	var n: int = int(m.get("pellets", 1))
+	var sp := eff_spread(slot, float(m.get("spread", 0.25)))
+	for i in n:
+		var a := deg_to_rad(randf_range(-sp, sp) * 0.5)
+		raid.spawn_projectile(origin, dir.rotated(Vector3.UP, a), m, true)
+	raid.alert_noise(global_position, noise(16.0 if m.weapon == "laser" else (24.0 if m.weapon != "flamer" else 12.0)))
+	raid.muzzle_flash(origin, m.color, dir, m.weapon, float(m.get("dmg", 10.0)))
 
 
 ## 开火音效：fire_loop 类武器（弹匣表里标注）按住扳机时持续循环，其余每发一次 wpn_<weapon>_fire
@@ -586,9 +698,10 @@ func aim_dir() -> Vector3:
 	return d.normalized()
 
 
-## 开火噪音半径：光学迷彩 / 静默滑步期间只剩很近的虫群能听见
+## 开火噪音半径：光学迷彩 / 静默滑步期间只剩很近的虫群能听见；战术撤收精英专精降低 15% 开火警觉半径
 func noise(radius: float) -> float:
-	return radius * (0.2 if stealth_t > 0.0 else 1.0)
+	var elite_mul := 0.85 if (_is_local_actor() and Growth.ability_elite("ab_covert")) else 1.0
+	return radius * (0.2 if stealth_t > 0.0 else 1.0) * elite_mul
 
 
 func start_reload(slot: String) -> void:
@@ -596,7 +709,9 @@ func start_reload(slot: String) -> void:
 	if id == "" or reload_t[slot] > 0.0 or ammo[slot] >= mag[slot]:
 		return
 	var w: String = GameData.module(id).weapon
-	reload_t[slot] = float(GameData.AMMO[w].reload)
+	reload_t[slot] = _reload_dur(slot)
+	if _is_local_actor():
+		Growth.record_skill_xp("ab_firearm", 0.42)
 	Audio.play_sfx("wpn_%s_reload" % w, global_position + Vector3(0, 2.0, 0))
 
 
@@ -604,12 +719,12 @@ func reload_frac(slot: String) -> float:
 	var id: String = loadout.get(slot, "")
 	if id == "" or reload_t[slot] <= 0.0:
 		return 0.0
-	return reload_t[slot] / float(GameData.AMMO[GameData.module(id).weapon].reload)
+	return reload_t[slot] / maxf(0.1, _reload_dur(slot))
 
 
 ## 技能槽状态，HUD 用：{name, icon, cd(剩余), cd_max, ok}
 func skill_info(key: String) -> Dictionary:
-	var sk: Dictionary
+	var sk: Dictionary = GameData.SKILLS.none
 	var cd := 0.0
 	var ok := true
 	match key:
@@ -627,18 +742,12 @@ func skill_info(key: String) -> Dictionary:
 				sk["cost"] = bm.cost
 			cd = ability_cd
 			ok = ab != "none" and parts.back > 0.0
-		"e":
-			sk = GameData.SKILLS.get(GameData.base_id(loadout.get("core", "")), GameData.SKILLS.none)
-			cd = skill_e_cd
-		"r":
-			sk = GameData.SKILLS.get(GameData.base_id(loadout.get("gen", "")), GameData.SKILLS.none)
-			cd = skill_r_cd
-			ok = parts.gen > 0.0
-	var active := (key == "e" and (overdrive_t > 0.0 or guard_t > 0.0)) or (key == "r" and heal_t > 0.0) or (key == "f" and (shield_time > 0.0 or stealth_t > 0.0)) or (key == "space" and stealth_t > 0.0)
+	var active := (key == "f" and (shield_time > 0.0 or stealth_t > 0.0)) or (key == "space" and (dash_time > 0.0 or stealth_t > 0.0))
 	return {"name": sk.name, "icon": sk.icon, "cd": cd, "cd_max": float(sk.get("cd", 1.0)), "ok": ok, "cost": float(sk.get("cost", 0.0)), "active": active}
 
 
 func try_dash(move: Vector3) -> void:
+	if _net_action("dash", [Vector2(move.x, move.z)]): return
 	var sk: Dictionary = GameData.SKILLS.get(leg_type, GameData.SKILLS.biped)
 	if dash_cd > 0.0:
 		return
@@ -653,124 +762,45 @@ func try_dash(move: Vector3) -> void:
 		return
 	use_energy(float(sk.cost))
 	dash_dir = d.normalized()
-	dash_cd = float(sk.cd)
+	dash_cd = float(sk.cd) * (0.85 if (_is_local_actor() and Growth.ability_elite("ab_servo")) else 1.0)
 	_skill_sfx("space", leg_type, sk)
 	var ss = ext_script(sk)
 	if ss != null:
 		ss.use(self, "space", sk, GameData.module(loadout.get("legs", "")))
 		return
 	match leg_type:
-		"hover":
-			# 闪移：瞬间位移，留下残光
-			raid.spark(global_position + Vector3(0, 1.5, 0), Color(1.0, 0.7, 0.2), 14)
-			var dist: float = float(sk.dist)
-			velocity = Vector3.ZERO
-			global_position += dash_dir * dist
-			move_and_slide()
-			raid.spark(global_position + Vector3(0, 1.5, 0), Color(1.0, 0.7, 0.2), 14)
-			dash_time = 0.0
 		"tread":
 			dash_time = 0.4
 		"quad":
 			dash_time = 0.5
+			if is_instance_valid(raid):
+				var web = SlowWeb.new()
+				web.setup(raid, 3.8, 4.5)
+				raid.fx.add_child(web)
+				web.global_position = global_position
+		"hex":
+			dash_time = 0.46
 		_:
 			dash_time = DASH_DUR
 			_thrust_start()
 
 
-func try_skill_e() -> void:
-	var id: String = GameData.base_id(loadout.get("core", ""))
-	var sk: Dictionary = GameData.SKILLS.get(id, {})
-	if sk.is_empty() or skill_e_cd > 0.0:
-		return
-	if not can_spend(float(sk.cost)):
-		message.emit("能源不足")
-		Audio.play_sfx("skill_denied")
-		return
-	use_energy(float(sk.cost))
-	skill_e_cd = float(sk.cd)
-	_skill_sfx("e", id, sk)
-	var ss = ext_script(sk)
-	if ss != null:
-		ss.use(self, "e", sk, GameData.module(loadout.get("core", "")))
-		return
-	match id:
-		"core_scout":
-			var p := aim_point
-			p.y = 0.0
-			raid.alert_noise(p, 30.0)
-			raid.spark(p + Vector3(0, 0.5, 0), Color(1.0, 0.7, 0.2), 10)
-			get_tree().create_timer(2.5).timeout.connect(func():
-				if is_instance_valid(raid):
-					raid.explode(p, float(sk.r), float(sk.dmg)))
-		"core_std":
-			overdrive_t = float(sk.dur)
-			message.emit("火力过载已启动")
-		"core_heavy":
-			raid.explode(global_position, float(sk.r), float(sk.dmg))
-		"core_assault":
-			overdrive_t = float(sk.dur)
-			message.emit("火控过载已启动")
-		"core_command":
-			var cp := aim_point
-			cp.y = 0.0
-			raid.alert_noise(cp, 30.0)
-			raid.spark(cp + Vector3(0, 0.5, 0), Color(1.0, 0.7, 0.2), 10)
-			get_tree().create_timer(2.5).timeout.connect(func():
-				if is_instance_valid(raid):
-					raid.explode(cp, float(sk.r), float(sk.dmg)))
-		"core_fortress":
-			guard_t = float(sk.dur)
-			message.emit("要塞护盾展开")
-
-
-func try_skill_r() -> void:
-	var id: String = GameData.base_id(loadout.get("gen", ""))
-	var sk: Dictionary = GameData.SKILLS.get(id, {})
-	if sk.is_empty() or skill_r_cd > 0.0 or parts.gen <= 0.0:
-		return
-	if not can_spend(float(sk.cost)):
-		message.emit("动力炉蓄能不足")
-		Audio.play_sfx("skill_denied")
-		return
-	use_energy(float(sk.cost))
-	skill_r_cd = float(sk.cd)
-	_skill_sfx("r", id, sk)
-	var ss = ext_script(sk)
-	if ss != null:
-		ss.use(self, "r", sk, GameData.module(loadout.get("gen", "")))
-		return
-	match id:
-		"gen_cell":
-			energy = min(max_energy, energy + float(sk.amt))
-			emergency = 0.0
-		"gen_reactor":
-			raid.explode(global_position, float(sk.r), float(sk.dmg))
-		"gen_diesel":
-			raid.explode(global_position, float(sk.r), float(sk.dmg))
-		"gen_hfc", "gen_turbine":
-			energy = min(max_energy, energy + float(sk.amt))
-			emergency = 0.0
-		"gen_crystal":
-			heal_t = float(sk.dur)
-			heal_rate = float(sk.amt) / float(sk.dur)
-
-
 func try_ability() -> void:
+	if _net_action("ability", []): return
 	var id: String = loadout.get("back", "")
 	if id == "" or parts.back <= 0.0:
 		return
 	var m: Dictionary = GameData.module(id)
 	if m.ability == "none":
-		message.emit("该背件无主动战术机能")
+		message.emit(Loc.t("该背件无主动战术机能", "Backpack has no active tactical skill"))
 		Audio.play_sfx("skill_denied")
 		return
 	if ability_cd > 0.0:
-		message.emit("%s 冷却中 %.1fs" % [m.name, ability_cd])
+		message.emit(Loc.t("%s 冷却中 %.1fs" % [m.name, ability_cd], "%s on cooldown %.1fs" % [m.name, ability_cd]))
 		Audio.play_sfx("skill_denied")
 		return
 	if not can_spend(float(m.cost)):
-		message.emit("动力炉蓄能不足")
+		message.emit(Loc.t("动力炉蓄能不足", "Insufficient reactor energy"))
 		Audio.play_sfx("skill_denied")
 		return
 	use_energy(float(m.cost))
@@ -788,42 +818,152 @@ func try_ability() -> void:
 			shield_mesh.visible = true
 
 
-func use_item(id: String) -> void:
-	if not cargo.has(id):
-		message.emit("货舱未装载" + GameData.item_name(id))
-		Audio.play_sfx("use_denied")
-		return
-	match id:
+func can_use_item(id: String) -> bool:
+	var b := GameData.base_id(id)
+	if b in ["fuel_cell", "repair_kit", "beacon", "can_food", "biscuit", "water_tab", "coffee"]:
+		return true
+	return str(GameData.item(id).get("script", "")) != ""
+
+
+func use_item_effect(id: String) -> bool:
+	var b := GameData.base_id(id)
+	var en_mul := 1.2 if (_is_local_actor() and Growth.ability_elite("ab_reactor")) else 1.0
+	var hp_mul := 1.25 if (_is_local_actor() and Growth.ability_elite("ab_frame")) else 1.0
+	match b:
 		"fuel_cell":
-			cargo.erase(id)
-			energy = min(max_energy, energy + 35.0)
+			var gain_e := roundf(35.0 * en_mul)
+			energy = min(max_energy, energy + gain_e)
 			emergency = 0.0
-			message.emit("应急燃料电池接入，补充 35 能量")
+			message.emit(Loc.t("应急燃料电池接入，补充 %d 能量" % int(gain_e), "Fuel cell plugged, +%d EN" % int(gain_e)))
 		"repair_kit":
-			if hp >= max_hp:
-				message.emit("机体结构完好，无需维修")
+			var any_damaged := hp < max_hp
+			for k in parts:
+				if float(parts[k]) < 0.99:
+					any_damaged = true
+			if not any_damaged:
+				message.emit(Loc.t("机体结构与各部位完好，无需维修", "Hull and limbs intact, no repair needed"))
 				Audio.play_sfx("use_denied")
-				return
-			cargo.erase(id)
-			hp = min(max_hp, hp + 45.0)
+				return false
+			var gain_hp := roundf(45.0 * hp_mul)
+			hp = min(max_hp, hp + gain_hp)
 			parts.core = hp / max_hp
 			for k in parts:
-				parts[k] = min(1.0, parts[k] + 0.4)
-			message.emit("战地抢修完成，修复 45 结构")
+				parts[k] = min(1.0, parts[k] + 0.4 * hp_mul)
+			message.emit(Loc.t("战地抢修完成，修复 %d 结构与受损部位" % int(gain_hp), "Field repair complete: +%d HP & limb integrity" % int(gain_hp)))
+		"can_food":
+			hp = min(max_hp, hp + 15.0)
+			energy = min(max_energy, energy + roundf(12.0 * en_mul))
+			parts.core = hp / max_hp
+			message.emit(Loc.t("食用战前罐头肉，恢复 15 结构与 %d 能量" % int(roundf(12.0 * en_mul)), "Canned rations consumed: +15 HP, +%d EN" % int(roundf(12.0 * en_mul))))
+		"biscuit":
+			hp = min(max_hp, hp + 8.0)
+			energy = min(max_energy, energy + roundf(10.0 * en_mul))
+			parts.core = hp / max_hp
+			message.emit(Loc.t("食用压缩饼干，恢复 8 结构与 %d 能量" % int(roundf(10.0 * en_mul)), "Compact biscuit consumed: +8 HP, +%d EN" % int(roundf(10.0 * en_mul))))
+		"water_tab":
+			energy = min(max_energy, energy + roundf(14.0 * en_mul))
+			emergency = 0.0
+			message.emit(Loc.t("服用净水补给，恢复 %d 能量" % int(roundf(14.0 * en_mul)), "Purified water consumed: +%d EN" % int(roundf(14.0 * en_mul))))
+		"coffee":
+			energy = min(max_energy, energy + roundf(24.0 * en_mul))
+			emergency = 0.0
+			message.emit(Loc.t("饮用旧世界咖啡，恢复 %d 能量" % int(roundf(24.0 * en_mul)), "Old-world coffee consumed: +%d EN" % int(roundf(24.0 * en_mul))))
 		_:
 			var us = ext_script(GameData.item(id))
 			if us == null or not bool(us.use(self, id)):
-				return
-			cargo.erase(id)
-	Audio.play_sfx("use_" + GameData.base_id(id))
-	Events.item_used.emit(id)
+				return false
+	Audio.play_sfx("use_" + b)
+	_event("item_used", [id])
+	return true
+
+
+func use_item(id: String) -> void:
+	if _net_action("item", [id]): return
+	if id == "beacon" and raid != null:
+		raid.call_transport()
+		return
+	if not cargo.has(id):
+		message.emit(Loc.t("货舱未装载" + GameData.item_name(id), "Not in cargo: " + GameData.item_name(id)))
+		Audio.play_sfx("use_denied")
+		return
+	if use_item_effect(id):
+		cargo.erase(id)
+		check_overload()
+
+
+## 战地现场换装模块：替换指定槽位模块、重算整机属性与弹匣并重建 3D 外观，返回被替换下来的旧模块 id
+func equip_module_in_raid(slot: String, new_id: String) -> String:
+	if not GameData.slot_accepts(slot, new_id):
+		return ""
+	var old_id: String = str(loadout.get(slot, ""))
+	var hp_ratio := clampf(hp / maxf(1.0, max_hp), 0.05, 1.0)
+	loadout[slot] = new_id
+	if raid != null and raid.mech == self:
+		raid.loadout = loadout.duplicate()
+	stats = Net.stats_for(loadout, net_peer)
+	max_hp = max(30.0, float(stats.hp))
+	hp = clampf(hp_ratio * max_hp, 1.0, max_hp)
+	max_energy = max(30.0, float(stats.energy))
+	energy = minf(energy, max_energy)
+	parts[slot] = 1.0
+	parts.core = hp / max_hp
+	if slot == "arm_l" or slot == "arm_r":
+		Audio.loop_stop(_lk("fire_" + slot))
+		_fire_held[slot] = 0.0
+		var wpn := str(GameData.module(new_id).get("weapon", "mg"))
+		mag[slot] = int(GameData.AMMO.get(wpn, {"mag": 30}).get("mag", 30))
+		ammo[slot] = mag[slot]
+		reload_t[slot] = 0.0
+		arm_cd[slot] = 0.0
+	elif slot == "legs":
+		Audio.loop_stop(_lk("legs"))
+		var legs_mod: Dictionary = GameData.module(new_id)
+		acid_immune = bool(legs_mod.get("acid_immune", false))
+		overload_immune = bool(legs_mod.get("overload_immune", false))
+	elif slot == "back":
+		ability_cd = maxf(ability_cd, 1.5)
+	if raid != null and raid.mech == self and raid.hud is CanvasLayer and raid.has_method("update_view_zoom"):
+		raid.update_view_zoom(true)
+	var old_torso_y := torso.rotation.y if torso != null and is_instance_valid(torso) else 0.0
+	var old_legs_y := legs.rotation.y if legs != null and is_instance_valid(legs) else 0.0
+	if visual != null and is_instance_valid(visual):
+		if visual.get_parent():
+			visual.get_parent().remove_child(visual)
+		visual.queue_free()
+	visual = MechVisual.build(loadout)
+	_batch_visual(visual)
+	if vis_anchor != null and is_instance_valid(vis_anchor):
+		vis_anchor.add_child(visual)
+	else:
+		add_child(visual)
+		_anchor_visual()
+	torso = visual.get_meta("torso")
+	legs = visual.get_meta("legs")
+	muzzles = visual.get_meta("muzzles")
+	leg_parts = visual.get_meta("leg_parts")
+	leg_type = visual.get_meta("leg_type")
+	torso_base_y = visual.get_meta("torso_base_y")
+	torso.rotation.y = old_torso_y
+	legs.rotation.y = old_legs_y
+	_leg_base.clear()
+	_leg_yaw.clear()
+	_quad_lift.clear()
+	_foot_prev = [0.0, 0.0]
+	if leg_type == "tread":
+		Audio.loop_start(_lk("legs"), "legs_tread_loop", self)
+	if raid != null and raid.mech == self and raid.hud != null:
+		raid.hud.on_loadout_changed()
 	check_overload()
+	if not (Net.is_client() and raid != null and raid.coop != null and raid.coop.applying):
+		Audio.play_ui("ui_equip")
+		message.emit(Loc.t("战地换装：%s → %s" % [GameData.SLOT_NAMES.get(slot, slot), GameData.item_name(new_id)], "Field swap: %s -> %s" % [GameData.SLOT_NAMES.get(slot, slot), GameData.item_name(new_id)]))
+	return old_id
 
 
 ## 技能音效 skill_<图标名> + 广播 skill_used
 func _skill_sfx(key: String, skill_id: String, sk: Dictionary) -> void:
 	Audio.play_sfx("skill_" + str(sk.get("icon", skill_id)), global_position + Vector3(0, 1.6, 0))
-	Events.skill_used.emit(key, skill_id)
+	_event("skill_used", [key, skill_id])
 
 
 ## 注册表条目的行为脚本（字段 script = 脚本路径，规则见 scripts\game_data.gd「内容注册」一节）；没有时返回 null。
@@ -847,32 +987,36 @@ func check_overload() -> void:
 	_overloaded = over
 	if over:
 		Audio.play_sfx("cargo_overload")
-	Events.overload_changed.emit(over, sf)
+	_event("overload_changed", [over, sf])
 
 
-## 底盘循环音：履带随速度起落，悬浮的嗡鸣音高随速度升高
+## 底盘循环音：履带随速度起落
 func _audio_tick() -> void:
-	if leg_type != "tread" and leg_type != "hover":
+	if leg_type != "tread":
 		return
 	var sp := Vector2(velocity.x, velocity.z).length()
 	var k := clampf(sp / maxf(float(stats.speed), 1.0), 0.0, 1.2)
-	if leg_type == "tread":
-		Audio.loop_set(_lk("legs"), lerpf(-30.0, 0.0, minf(k * 1.4, 1.0)), 0.8 + 0.35 * k)
-	else:
-		Audio.loop_set(_lk("legs"), -4.0 + 4.0 * minf(k, 1.0), 0.9 + 0.3 * k)
+	Audio.loop_set(_lk("legs"), lerpf(-30.0, 0.0, minf(k * 1.4, 1.0)), 0.8 + 0.35 * k)
 
 
 func take_damage(amount: float) -> void:
+	if net_done or (raid != null and raid.coop != null and Net.is_client()): return
 	if dead:
 		return
 	if shield_time > 0.0:
+		if _is_local_actor():
+			Growth.record_skill_xp("ab_plating", clampf(amount * 0.09, 0.3, 2.5))
 		Audio.play_sfx("shield_hit", global_position + Vector3(0, 1.6, 0))
 		return
-	var armor: float = clamp(float(stats.armor), 0.0, 0.6)
+	var ac_bonus := float(maxi(0, int(stats.get("armor_class", 2)) - 2)) * 0.03
+	var armor: float = clamp(float(stats.armor) + ac_bonus, 0.0, 0.65)
 	var eff := amount * (1.0 - armor)
 	if guard_t > 0.0 and guard_ratio > 0.0:
 		eff *= 1.0 - guard_ratio
+	if _is_local_actor() and amount > eff + 0.05:
+		Growth.record_skill_xp("ab_plating", clampf((amount - eff) * 0.22, 0.2, 3.0))
 	hp -= eff
+	var part_loss_mul := 0.8 if (_is_local_actor() and Growth.ability_elite("ab_plating")) else 1.0
 	# 伤害随机落到某个部位：部位完好度下降，归零即缺失（躯干只跟随总结构）
 	var r := randf()
 	var acc := 0.0
@@ -881,11 +1025,11 @@ func take_damage(amount: float) -> void:
 		if r <= acc:
 			if k != "core":
 				var was: float = parts[k]
-				parts[k] = max(0.0, parts[k] - eff / (max_hp * 0.3))
+				parts[k] = max(0.0, parts[k] - eff / (max_hp * 0.3) * part_loss_mul)
 				if was > 0.0 and parts[k] <= 0.0:
-					message.emit("▲ %s 损毁！" % GameData.SLOT_NAMES[k])
+					message.emit(Loc.t("▲ %s 损毁！" % GameData.SLOT_NAMES[k], "▲ %s DESTROYED!" % GameData.SLOT_NAMES[k]))
 					Audio.play_sfx("mech_part_lost")
-					Events.part_destroyed.emit(k)
+					_event("part_destroyed", [k])
 			break
 	parts.core = hp / max_hp
 	hurt_flash = 0.25
@@ -893,10 +1037,10 @@ func take_damage(amount: float) -> void:
 	Audio.play_sfx("mech_hurt")
 	if raid:
 		raid.on_player_hurt(amount)
-	Events.player_damaged.emit(eff, maxf(hp, 0.0), max_hp)
+	_event("player_damaged", [eff, maxf(hp, 0.0), max_hp])
 	if hp <= 0.0:
 		hp = 0.0
-		die("机甲结构损毁")
+		die(Loc.t("机甲结构损毁", "Mech hull destroyed"))
 
 
 func die(reason: String) -> void:
@@ -906,7 +1050,7 @@ func die(reason: String) -> void:
 	for k in ["legs", "alarm", "fire_arm_l", "fire_arm_r"]:
 		Audio.loop_stop(_lk(k))
 	Audio.play_sfx("mech_destroyed")
-	Events.mech_destroyed.emit(reason)
+	_event("mech_destroyed", [reason])
 	# 模块化残骸：各模块从标准接口处崩脱、散落，底盘跪倒
 	MechVisual.scatter(visual)
 	var tw := create_tween()
@@ -925,10 +1069,14 @@ func _footfall(leg: Node3D, i: int) -> void:
 		raid.shake = maxf(raid.shake, 0.06 * w)
 		var aj: Node3D = leg.get_meta("ankle")
 		var fp := aj.global_position
-		Audio.play_sfx("step_biped", fp, {"vol": lerpf(-8.0, 0.0, clampf(w, 0.0, 1.0))})
+		Audio.play_sfx("step_biped", fp, {"vol": lerpf(-9.0, -1.5, clampf(w, 0.0, 1.0))})
 		A.burst(raid.fx, Vector3(fp.x, 0.15, fp.z), {"amount": 5, "life": 0.9, "size": 0.9, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(0, 0.2, 0),
 			"spread": 90.0, "vmin": 1.0, "vmax": 2.2, "gravity": Vector3(0, 0.3, 0), "damp": 3.0, "radius": 0.25,
 			"c0": Color(0.72, 0.66, 0.56, 0.55), "c1": Color(0.68, 0.62, 0.54, 0.0), "grow0": 0.5, "grow1": 1.6})
+
+
+func _quad_footfall() -> void:
+	Audio.play_sfx("step_quad", global_position, {"vol": lerpf(-9.0, -2.0, clampf(gait_amt, 0.0, 1.0))})
 
 
 ## 推进飞行：点火起跳
@@ -1034,6 +1182,7 @@ func _notification(what: int) -> void:
 ## 模块化外观一台机甲约 600 个网格节点：同一父节点下、同材质、不再被引用的静态叶子网格合成一个网格。
 ## 动画只改父节点（腿 / 膝 / 踝 / 躯干 / 武器座）的变换，叶子网格跟着父节点整体动，合批后外观与动画完全一致；
 ## 节点少了，机体移动时的变换传播、渲染实例与绘制调用都随之减少。被任何元数据引用的节点（枪口、膝踝、腿件、模块根）一律保留
+const RB = preload("res://scripts/render_batch.gd")
 static var _vis_merge_cache := {}
 
 
@@ -1052,6 +1201,9 @@ static func _batch_visual(root: Node3D) -> void:
 	var keep := {root.get_instance_id(): true}
 	var all: Array = root.find_children("*", "", true, false)
 	for n in all:
+		var nm: String = n.name
+		if nm == "TorsoMount" or nm.begins_with("Module_") or nm.begins_with("Socket_") or nm.begins_with("Hatch") or nm.begins_with("Missile") or nm == "Plug" or nm == "Receiver":
+			keep[n.get_instance_id()] = true
 		for mk in n.get_meta_list():
 			_collect_refs(n.get_meta(mk), keep)
 	for mk in root.get_meta_list():
@@ -1065,60 +1217,99 @@ static func _batch_visual(root: Node3D) -> void:
 			continue
 		if mi.mesh == null or mi.material_override == null or mi.material_overlay != null or mi.skin != null:
 			continue
-		if not mi.get_meta_list().is_empty() or mi.transparency > 0.0 or mi.visibility_range_end > 0.0:
+		if not mi.get_meta_list().is_empty() or mi.transparency > 0.0 or mi.visibility_range_end > 0.0 or not RB.mergeable(mi.mesh):
 			continue
-		# 往上找最近的“会动的”祖先（被引用的节点或根）：中间没人引用的容器节点从不被改动，叶子网格可以直接并到那个祖先下
+		# 往上找最近的“会动的”祖先（被引用的节点或模块根）：中间没人引用的容器节点从不被改动，叶子网格可以直接并到那个祖先下
 		var xf := mi.transform
 		var p: Node = mi.get_parent()
 		var ok := true
 		while p != null and not keep.has(p.get_instance_id()):
-			if not (p is Node3D) or not p.visible or p.top_level:
+			if not (p is Node3D) or not p.visible or p.top_level or p.has_meta("_detaching"):
 				ok = false
 				break
 			xf = p.transform * xf
 			p = p.get_parent()
-		if not ok or not (p is Node3D):
+		if not ok or not (p is Node3D) or p.has_meta("_detaching"):
 			continue
+		var st := RB.split_tint(mi.material_override, 2)
+		var base_mat: Material = st[0]
+		var tint_col: Color = st[1]
+		var tint_mode := 0 if base_mat == mi.material_override else (2 if base_mat is StandardMaterial3D else 1)
 		mi.set_meta("_bx", xf)
-		var key := "%d|%d|%d|%d" % [mi.material_override.get_instance_id(), mi.cast_shadow, mi.layers, mi.gi_mode]
+		mi.set_meta("_bt", tint_col)
+		mi.set_meta("_bm", tint_mode)
+		var key := "%d|%d|%d" % [base_mat.get_instance_id(), mi.layers, mi.gi_mode]
 		var pid := p.get_instance_id()
 		if not parents.has(pid):
 			parents[pid] = {"node": p, "groups": {}}
 		var g: Dictionary = parents[pid]["groups"]
 		if not g.has(key):
-			g[key] = []
-		g[key].append(mi)
+			g[key] = {"mat": base_mat, "list": []}
+		g[key]["list"].append(mi)
 	for pid in parents:
 		var p: Node3D = parents[pid]["node"]
 		for key in parents[pid]["groups"]:
-			if parents[pid]["groups"][key].size() < 2:
-				for mi: MeshInstance3D in parents[pid]["groups"][key]:
-					mi.remove_meta("_bx")
-		for key in parents[pid]["groups"]:
-			var list: Array = parents[pid]["groups"][key]
+			var b: Dictionary = parents[pid]["groups"][key]
+			var list: Array = b["list"]
 			if list.size() < 2:
+				for mi: MeshInstance3D in list:
+					mi.remove_meta("_bx")
+					mi.remove_meta("_bt")
+					mi.remove_meta("_bm")
 				continue
 			var sig: String = key
+			var sh_mode := GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			for mi: MeshInstance3D in list:
-				sig += "|%d:%s" % [mi.mesh.get_instance_id(), mi.get_meta("_bx")]
+				sig += "|%d:%s:%s" % [mi.mesh.get_instance_id(), mi.get_meta("_bx"), (mi.get_meta("_bt") as Color).to_html()]
+				if mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+					sh_mode = mi.cast_shadow
 			var h := sig.hash()
 			var mesh: Mesh = _vis_merge_cache.get(h)
 			if mesh == null:
-				var st := SurfaceTool.new()
-				st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				var st_tool := SurfaceTool.new()
+				st_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 				for mi: MeshInstance3D in list:
+					var tcol: Color = mi.get_meta("_bt")
+					var tmode: int = mi.get_meta("_bm")
+					var bxf: Transform3D = mi.get_meta("_bx")
 					for si in mi.mesh.get_surface_count():
-						st.append_from(mi.mesh, si, mi.get_meta("_bx"))
-				mesh = st.commit()
+						st_tool.append_from(RB._tinted_surface(mi.mesh, si, tcol, tmode), 0, bxf)
+				mesh = st_tool.commit()
 				_vis_merge_cache[h] = mesh
 			var first: MeshInstance3D = list[0]
 			var merged := MeshInstance3D.new()
 			merged.mesh = mesh
-			merged.material_override = first.material_override
-			merged.cast_shadow = first.cast_shadow
+			merged.material_override = b["mat"]
+			merged.cast_shadow = sh_mode
 			merged.layers = first.layers
 			merged.gi_mode = first.gi_mode
 			p.add_child(merged)
 			for mi: MeshInstance3D in list:
 				mi.get_parent().remove_child(mi)
 				mi.free()
+	for i in range(all.size() - 1, -1, -1):
+		var n = all[i]
+		if is_instance_valid(n) and n is Node3D and n.get_class() == "Node3D" and not keep.has(n.get_instance_id()) and n.get_child_count() == 0:
+			if n.get_parent():
+				n.get_parent().remove_child(n)
+			n.free()
+
+
+func _net_action(action: String, args: Array) -> bool:
+	if raid != null and raid.coop != null and Net.is_client() and not raid.coop.applying:
+		Net.command(action, args)
+		return true
+	return net_done
+
+func _event(event: String, args: Array) -> void:
+	if Net.is_client() and raid != null and raid.coop != null and raid.coop.applying: return
+	Net.player_event(net_peer, event, args)
+
+func use_item_at_cargo(index: int) -> void:
+	if _net_action("item_index", [index]): return
+	if index < 0 or index >= cargo.size(): return
+	var id: String = cargo[index]
+	if use_item_effect(id):
+		cargo.remove_at(index)
+		check_overload()
+		if raid != null and raid.hud != null: raid.hud.refresh_loot()

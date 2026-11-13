@@ -71,7 +71,7 @@ func run() -> void:
 		return
 	if not check(nr.time >= t0 and nr.kills >= 7, "局内时间或击杀数没有保留：%.1f / %d" % [nr.time, nr.kills]):
 		return
-	if not check(nm.global_position.x < -nr.HALF + 30.0, "没有从新战区的西侧进入：%s" % nm.global_position):
+	if not check(nm.global_position.x < -120.0 and nr.border_dist(Vector2(nm.global_position.x, nm.global_position.z)) < 26.0, "没有从新战区的西侧不规则边界进入：%s" % nm.global_position):
 		return
 	if not check(not nr.dropping and not nm.input_locked, "转场后机甲没有恢复操作"):
 		return

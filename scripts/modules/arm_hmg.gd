@@ -38,8 +38,12 @@ static func build(ctx: Dictionary) -> Node3D:
 		for a_deg in [-60.0, 0.0, 60.0, 120.0, 180.0, 240.0]:
 			var a := deg_to_rad(a_deg + 30.0 * (k % 2))
 			A.add(g, A.cyl(0.02, 0.02, 0.02, 8), HOLE, Vector3(cos(a) * 0.088, -0.02 + sin(a) * 0.088, -0.9 - k * 0.12), Vector3(0, 0, rad_to_deg(a) - 90.0), Vector3.ONE, false)
-	K.cy(g, 0.045, 0.5, M_STEEL, Vector3(0, -0.02, -1.9), Vector3(90, 0, 0), -1.0, 12)
-	K.cy(g, 0.05, 0.18, M_DARK, Vector3(0, -0.02, -2.22), Vector3(90, 0, 0), 0.075, 12)
+	K.cy(g, 0.046, 0.50, M_STEEL, Vector3(0, -0.02, -1.90), Vector3(90, 0, 0), -1.0, 14)
+	# 导气管（重机枪标志性枪管下方复进导气筒）+ 锥形开槽消焰器 + 真实深黑枪膛
+	K.cy(g, 0.026, 0.42, K.gunmetal(), Vector3(0, -0.085, -1.84), Vector3(90, 0, 0), -1.0, 10)
+	K.bb(g, Vector3(0.06, 0.11, 0.05), M_DARK, Vector3(0, -0.05, -2.01), Vector3.ZERO, 0.008)
+	K.cy(g, 0.052, 0.18, M_DARK, Vector3(0, -0.02, -2.22), Vector3(90, 0, 0), 0.076, 14)
+	K.barrel_bore(g, 0.076, 0.052, Vector3(0, -0.02, -2.31), 0.07)
 	# 提把
 	K.bb(g, Vector3(0.04, 0.04, 0.3), M_DARK, Vector3(0, 0.17, -1.05), Vector3.ZERO, 0.01)
 	for zz in [-0.92, -1.18]:

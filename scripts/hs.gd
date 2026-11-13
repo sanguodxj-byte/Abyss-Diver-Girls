@@ -206,20 +206,21 @@ static func limb_mesh(len_: float, w: float, h: float, taper := 0.7, bulge := 1.
 
 
 ## 拱形覆甲截面：外弧 + 内弧（厚度 t），半角 ang（度），seg 段
-static func arch(r: float, t: float, ang := 70.0, seg := 6) -> Array:
+static func arch(r: float, t: float, ang := 70.0, seg := 10) -> Array:
+	var s_seg := maxi(seg, 10)
 	var o: Array = []
-	for k in seg + 1:
-		var a := deg_to_rad(lerpf(-ang, ang, float(k) / seg)) + PI * 0.5
+	for k in s_seg + 1:
+		var a := deg_to_rad(lerpf(-ang, ang, float(k) / s_seg)) + PI * 0.5
 		o.append(Vector2(cos(a), sin(a)) * r)
-	for k in range(seg, -1, -1):
-		var a := deg_to_rad(lerpf(-ang, ang, float(k) / seg)) + PI * 0.5
+	for k in range(s_seg, -1, -1):
+		var a := deg_to_rad(lerpf(-ang, ang, float(k) / s_seg)) + PI * 0.5
 		o.append(Vector2(cos(a), sin(a)) * (r - t))
 	return o
 
 
 ## 覆甲壳：沿 Z 从 z0 到 z1，profile = [[t(0..1), 宽比例, 高比例, y偏移], ...]
-static func shell_mesh(r: float, t: float, z0: float, z1: float, profile: Array, ang := 70.0, seg := 6) -> ArrayMesh:
-	var base := arch(r, t, ang, seg)
+static func shell_mesh(r: float, t: float, z0: float, z1: float, profile: Array, ang := 70.0, seg := 10) -> ArrayMesh:
+	var base := arch(r, t, ang, maxi(seg, 10))
 	var secs: Array = []
 	for p in profile:
 		secs.append([lerpf(z0, z1, p[0]), Vector2(p[1], p[2]), Vector2(0, p[3] - r * p[2])])

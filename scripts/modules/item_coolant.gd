@@ -17,7 +17,7 @@ static func use(mech, _id) -> bool:
 		var o = instance_from_id(mid)
 		if o != null and int(o.get_meta("_cool_tok", 0)) == tok:
 			o.drain_mul = 1.0)
-	mech.message.emit("冷却剂注入，耗能减半 20 秒")
+	mech.message.emit(Loc.t("冷却剂注入，耗能减半 20 秒", "Coolant injected, -50% EN drain for 20s"))
 	FX.shell(mech, COOL, 2.0, 0.5, 1.4)
 	var raid = mech.raid
 	if raid != null and is_instance_valid(raid):

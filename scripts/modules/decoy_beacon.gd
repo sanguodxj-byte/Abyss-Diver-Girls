@@ -20,6 +20,8 @@ var _lamp: MeshInstance3D
 
 func setup(r) -> void:
 	raid = r
+	add_to_group("coop_devices")
+	set_meta("coop_device", "decoy")
 
 
 func _ready() -> void:

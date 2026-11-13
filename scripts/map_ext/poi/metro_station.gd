@@ -28,9 +28,14 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for i in 14:
 		var x := -13.0 + i * 2.0
 		A.add(raid.world, A.bevel_box(Vector3(0.42, 0.1, 3.4), 0.01), A.paint(Color(0.26, 0.2, 0.15), 0.0, 0.9, {"wear": 0.6, "dust": 0.6}), c + Vector3(x, 0.12, 5.4), Vector3.ZERO, Vector3.ONE, false)
-	# 月台柱列
+	# 月台柱列与贯通式钢结构月台顶梁框架（不挡俯视视线）
+	var M_ST := A.metal(Color(0.26, 0.27, 0.28))
 	for i in 5:
-		K.pillar(raid, c + Vector3(-9.0 + i * 4.5, 0, -1.6), 0.52, 4.3, CONCRETE.darkened(0.06))
+		var px := -9.0 + i * 4.5
+		K.pillar(raid, c + Vector3(px, 0, -1.6), 0.52, 4.3, CONCRETE.darkened(0.06))
+		A.add(raid.world, A.bevel_box(Vector3(0.36, 0.24, 5.2), 0.03), M_ST, c + Vector3(px, 4.42, -1.2), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(19.6, 0.28, 0.36), 0.03), M_ST, c + Vector3(0, 4.44, -1.6), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(19.6, 0.18, 0.24), 0.02), M_ST, c + Vector3(0, 4.40, 1.2), Vector3.ZERO, Vector3.ONE, false)
 	# 售票亭：三面墙 + 柜台，门朝月台
 	K.wall_line(raid, c + Vector3(-9.6, 0, -6.0), 6.4, 3.4, 0.0, [], CONCRETE.darkened(0.05))
 	K.wall_line(raid, c + Vector3(-12.8, 0, -3.2), 6.2, 3.4, 90.0, [], CONCRETE.darkened(0.05))
@@ -42,14 +47,23 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.steps(raid, c + Vector3(10.8, 0, 2.0), 8, 0.34, 0.62, 3.0, 0.0)
 	for sx in [-1.6, 1.6]:
 		A.add(raid.world, A.bevel_box(Vector3(0.12, 0.9, 5.4), 0.02), A.metal(Color(0.3, 0.3, 0.29)), c + Vector3(10.8 + sx, 1.9, 4.4), Vector3(-24, 0, 0), Vector3.ONE, false)
-	# 售票亭东侧的自动售货机：一台立着，一台倒在地上
-	var VM := A.paint(Color(0.3, 0.38, 0.4), 0.25, 0.5, {"wear": 0.6, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0})
-	var v1 := A.add(raid.world, A.bevel_box(Vector3(1.0, 2.0, 0.75), 0.05), VM, c + Vector3(-4.2, 1.0, -6.4))
-	A.add(v1, A.bevel_box(Vector3(0.66, 1.10, 0.05), 0.02), A.emit(Color(0.25, 0.5, 0.55), 0.35), Vector3(0, 0.34, 0.39), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(v1, "DRINK", Vector3(0, -0.62, 0.39), Vector3.ZERO, 0.02, Color(0.8, 0.8, 0.75, 0.5), 32)
-	K.blocker(raid, c + Vector3(-4.2, 0, -6.4), Vector3(1.0, 2.0, 0.75))
-	var v2 := A.add(raid.world, A.bevel_box(Vector3(1.0, 1.9, 0.75), 0.05), VM, c + Vector3(1.6, 0.42, -4.8), Vector3(0, 22, 88))
+	# 售票亭东侧的自动售货机：独立 Node3D 节点，一台立着，一台倒在地上（带饮料展窗、投币口与取货挡板）
+	var VM := A.paint(Color(0.28, 0.36, 0.40), 0.32, 0.52, {"wear": 0.6, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0})
+	var v1 := Node3D.new()
+	raid.world.add_child(v1)
+	v1.position = c + Vector3(-4.2, 0, -6.4)
+	A.add(v1, A.bevel_box(Vector3(1.04, 2.04, 0.76), 0.05), VM, Vector3(0, 1.02, 0))
+	A.add(v1, A.bevel_box(Vector3(0.68, 1.06, 0.05), 0.02), A.emit(Color(0.22, 0.48, 0.54), 0.38), Vector3(-0.10, 1.34, 0.38), Vector3.ZERO, Vector3.ONE, false)
+	A.add(v1, A.bevel_box(Vector3(0.18, 0.68, 0.05), 0.01), M_ST, Vector3(0.36, 1.28, 0.38), Vector3.ZERO, Vector3.ONE, false)
+	A.add(v1, A.bevel_box(Vector3(0.66, 0.26, 0.06), 0.015), A.paint(Color(0.08, 0.09, 0.10), 0.2, 0.7), Vector3(-0.10, 0.36, 0.38), Vector3.ZERO, Vector3.ONE, false)
+	A.stencil(v1, "DRINK", Vector3(-0.10, 0.66, 0.40), Vector3.ZERO, 0.018, Color(0.84, 0.84, 0.78, 0.55), 32)
+	K.blocker(raid, c + Vector3(-4.2, 0, -6.4), Vector3(1.04, 2.04, 0.76))
+	var v2 := Node3D.new()
+	raid.world.add_child(v2)
+	v2.position = c + Vector3(1.6, 0.40, -4.8)
 	v2.rotation_degrees = Vector3(0, 22, 88)
+	A.add(v2, A.bevel_box(Vector3(1.02, 1.96, 0.76), 0.05), VM, Vector3.ZERO)
+	A.add(v2, A.bevel_box(Vector3(0.66, 0.98, 0.05), 0.015), A.paint(Color(0.06, 0.08, 0.09), 0.2, 0.35), Vector3(-0.10, 0.30, 0.38), Vector3.ZERO, Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(c + Vector3(1.6, 0, -4.8), Vector3(2.2, 1, 1.4)))
 	# 长椅与地上的行李箱
 	K.bench(raid, c + Vector3(-4.4, 0, 0.4), 0.0)
@@ -57,13 +71,19 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.bench(raid, c + Vector3(5.6, 0, 0.4), 0.0)
 	for p in [Vector3(-2.2, 0.3, -0.9), Vector3(3.4, 0.3, -1.2), Vector3(-11.6, 0.3, 1.1)]:
 		A.add(raid.world, A.bevel_box(Vector3(0.9, 0.6, 0.45), 0.05), A.paint(Color(0.4, 0.32, 0.22), 0.1, 0.8, {"wear": 0.6, "dust": 0.5}), c + p, Vector3(0, r.randf() * 90, 0))
-	# 线路牌与站名牌
-	K.sign(raid, c + Vector3(7.6, 2.2, -6.8), 0.0, "LINE 3", 4.4, 1.3)
-	A.stencil(raid.world, "STA-03  PLATFORM 2", c + Vector3(-6.0, 2.6, -6.85), Vector3.ZERO, 0.02, Color(0.85, 0.83, 0.76, 0.7), 48)
-	# 检票闸机：两排立柱
+	# 线路牌与站名牌（置于北侧完整承重墙段中央与顶梁下沿）
+	K.sign(raid, c + Vector3(9.6, 2.2, -6.8), 0.0, "LINE 3", 3.6, 1.2)
+	A.stencil(raid.world, "STA-03  PLATFORM 2", c + Vector3(-2.0, 2.55, -6.82), Vector3.ZERO, 0.019, Color(0.86, 0.84, 0.76, 0.72), 44)
+	# 检票闸机：不锈钢圆角机箱 + 刷卡斜面板 + 半开阻拦扇门
+	var M_GATE := A.metal(Color(0.34, 0.36, 0.37))
+	var M_PADDLE := A.paint(Color(0.62, 0.20, 0.16), 0.2, 0.45)
 	for i in 3:
+		var gx := -6.6 + i * 1.4
 		for z in [-3.4, -2.4]:
-			A.add(raid.world, A.bevel_box(Vector3(0.28, 1.15, 0.7), 0.03), A.metal(Color(0.28, 0.29, 0.3)), c + Vector3(-6.6 + i * 1.4, 0.58, z))
+			A.add(raid.world, A.bevel_box(Vector3(0.28, 1.08, 0.78), 0.04), M_GATE, c + Vector3(gx, 0.54, z))
+			A.add(raid.world, A.bevel_box(Vector3(0.24, 0.06, 0.26), 0.01), A.paint(Color(0.10, 0.12, 0.14), 0.3, 0.3), c + Vector3(gx, 1.10, z - 0.22), Vector3(16, 0, 0), Vector3.ONE, false)
+		if i < 2:
+			A.add(raid.world, A.bevel_box(Vector3(0.44, 0.62, 0.04), 0.01), M_PADDLE, c + Vector3(gx + 0.32, 0.58, -2.9), Vector3(0, 18 if i == 1 else 0, 0), Vector3.ONE, false)
 	# 容器
 	K.fixed(raid, c + Vector3(-11.4, 0, -1.3), ["arch_duty_log", "circuit"], "tool")
 	K.crate(raid, c + Vector3(-11.9, 0, -3.9), "safe")

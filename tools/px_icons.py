@@ -484,22 +484,15 @@ for _id, _k, _ex, _t in [("core_scout", "round", "", (235, 184, 64)), ("core_std
     ICONS[_id] = ((lambda k, ex: (lambda c, t: _core(c, t, k, ex)))(_k, _ex), _t)
 
 
-# ================================================================ 底盘
+# ================================================================ 底盘（4 类 × 4 款 = 16 款，无任何悬浮底盘）
 def _legs(c, t, kind):
     r = T(t, (140, 140, 128))
-    if kind == "biped":
-        c.srect(4, 2, 8, 3, r)
-        for x in (4, 9):
-            c.srect(x, 5, 3, 4, r); c.srect(x + (0 if x == 4 else 0), 9, 3, 3, r)
-            c.px(x + 1, 9, OUT)
-            c.rect(x - 1, 12, 5, 2, GUN[1]); c.rect(x - 1, 12, 5, 1, GUN[2])
-    elif kind == "reverse":
-        c.srect(4, 2, 8, 3, r)
-        for x in (4, 9):
-            c.line(x + 1, 5, x - 1, 8, r[1], 2)
-            c.line(x - 1, 8, x + 2, 11, r[1], 2)
-            c.px(x - 1, 8, AMB[2])
-            c.rect(x, 12, 5, 2, GUN[1])
+    if kind == "tread_light":
+        c.srect(4, 3, 8, 3, r)
+        c.srect(2, 7, 12, 6, GUN)
+        for x in (4, 8, 11):
+            c.sdisc(x + 0.5, 10.0, 1.5, r)
+        c.px(3, 5, AMB[2])
     elif kind == "tread":
         c.srect(4, 2, 8, 4, r)
         c.srect(1, 7, 14, 7, GUN)
@@ -507,39 +500,114 @@ def _legs(c, t, kind):
             c.sdisc(x + 0.5, 10.5, 1.5, METAL)
         for x in range(1, 15, 2):
             c.px(x, 7, GUN[3])
-    elif kind in ("quad", "titan"):
-        th = 2 if kind == "titan" else 1
-        c.srect(3, 3, 10, 4 if kind == "quad" else 5, r)
-        for x0, x1 in [(3, 1), (6, 5), (9, 10), (12, 14)]:
-            c.line(x0, 7, x1, 13, r[1] if x0 in (6, 9) else r[2], th)
-            c.rect(x1 - 1, 13, 2 + th, 1, GUN[1])
-        if kind == "titan":
-            c.rect(4, 4, 8, 1, AMB[2])
-    elif kind == "hover":
-        c.srect(2, 4, 12, 5, r)
-        c.rect(3, 9, 3, 2, GUN[2]); c.rect(10, 9, 3, 2, GUN[2])
-        for x in (3, 4, 5, 10, 11, 12):
-            c.px(x, 11, CYN[1]); c.px(x, 12 + (x % 2), CYN[0])
-    elif kind == "wraith":
-        c.srect(5, 3, 6, 3, r)
-        for x0, x1, kx in [(5, 1, 2), (7, 5, 4), (9, 11, 12), (11, 15, 14)]:
-            c.line(x0, 6, kx, 9, r[2]); c.line(kx, 9, x1 if x1 < 15 else 14, 13, r[1])
-    elif kind == "spring":
+    elif kind == "tread_heavy":
+        c.srect(3, 2, 9, 4, r)
+        c.srect(2, 6, 13, 8, GUN)
+        c.rect(3, 7, 10, 2, r[1])
+        for x in (4, 7, 10, 13):
+            c.px(x, 11, METAL[2]); c.px(x, 12, METAL[1])
+        c.line(1, 8, 0, 13, AMB[2], 2)
+    elif kind == "tread_siege":
+        c.srect(3, 2, 10, 5, r)
+        c.rect(5, 4, 6, 1, AMB[2])
+        c.srect(1, 8, 6, 6, GUN)
+        c.srect(9, 8, 6, 6, GUN)
+        for x in (3, 5, 11, 13):
+            c.px(x, 11, METAL[2]); c.px(x, 12, METAL[1])
+    elif kind == "biped_scout":
+        c.srect(5, 2, 6, 3, r)
+        c.rect(3, 2, 2, 3, GUN[2]); c.rect(11, 2, 2, 3, GUN[2])
+        c.px(3, 4, AMB[2]); c.px(12, 4, AMB[2])
+        for x in (5, 9):
+            c.line(x + 1, 5, x, 9, r[2], 1)
+            c.line(x, 9, x + 1, 12, METAL[2], 1)
+            c.rect(x - 1, 13, 4, 1, GUN[1])
+    elif kind == "biped":
         c.srect(4, 2, 8, 3, r)
         for x in (4, 9):
-            for y in range(5, 11):
-                c.px(x + (y % 2) * 2, y, METAL[2]); c.px(x + 1, y, METAL[0] if y % 2 else METAL[1])
-            c.rect(x - 1, 11, 5, 2, GUN[1])
-    elif kind == "wheel":
-        c.srect(3, 3, 10, 5, r)
-        for x in (4.5, 11.5):
-            c.sdisc(x, 10.5, 3, GUN)
-            c.rect(int(x) - 1 + 0, 10, 1, 1, METAL[2])
+            c.srect(x, 5, 3, 4, r); c.srect(x, 9, 3, 3, r)
+            c.px(x + 1, 9, OUT)
+            c.rect(x - 1, 12, 5, 2, GUN[1]); c.rect(x - 1, 12, 5, 1, GUN[2])
+    elif kind == "biped_assault":
+        c.srect(3, 2, 10, 3, r)
+        for x in (3, 9):
+            c.srect(x, 5, 4, 4, r)
+            c.rect(x, 8, 4, 2, AMB[2] if x == 3 else r[2])
+            c.srect(x, 9, 4, 4, r)
+            c.rect(x - 1, 13, 5, 2, GUN[1])
+    elif kind == "titan":
+        c.srect(2, 1, 12, 4, r)
+        c.rect(4, 3, 8, 1, AMB[2])
+        for x in (2, 9):
+            c.srect(x, 5, 5, 4, r)
+            c.srect(x, 9, 5, 4, r)
+            c.rect(x, 13, 5, 2, GUN[1])
+    elif kind == "quad_hound":
+        c.srect(4, 3, 9, 3, r)
+        c.rect(2, 3, 3, 2, GUN[2]); c.px(2, 3, CYN[2])
+        for x0, x1 in [(5, 3), (7, 6), (10, 10), (12, 13)]:
+            c.line(x0, 6, x1, 13, r[2], 1)
+            c.rect(x1 - 1, 13, 2, 1, GUN[1])
+    elif kind == "quad":
+        c.srect(3, 3, 10, 4, r)
+        for x0, x1 in [(3, 1), (6, 5), (9, 10), (12, 14)]:
+            c.line(x0, 7, x1, 13, r[1] if x0 in (6, 9) else r[2], 1)
+            c.rect(x1 - 1, 13, 3, 1, GUN[1])
+    elif kind == "quad_crab":
+        c.srect(2, 3, 12, 4, r)
+        c.rect(5, 4, 6, 1, AMB[2])
+        for x0, x1 in [(3, 1), (6, 4), (9, 11), (12, 14)]:
+            c.line(x0, 7, x1, 13, r[2], 2)
+            c.rect(x1 - 1, 13, 3, 1, GUN[1])
+    elif kind == "quad_mammoth":
+        c.srect(2, 2, 12, 4, r)
+        for x in (2, 5, 9, 12):
+            c.srect(x, 6, 2, 7, METAL)
+            c.rect(x, 6, 2, 3, r[1])
+            c.rect(x - 1, 13, 3, 2, GUN[1])
+    elif kind == "hex_ant":
+        c.srect(4, 3, 8, 3, r)
+        c.px(4, 4, AMB[2])
+        for x0, x1 in [(4, 1), (6, 3), (7, 6), (9, 9), (10, 12), (12, 14)]:
+            c.line(x0, 6, x1, 13, r[2], 1)
+            c.px(x1, 13, GUN[2])
+    elif kind == "hex":
+        c.srect(3, 3, 10, 4, r)
+        for x0, x1 in [(3, 1), (5, 3), (7, 6), (8, 9), (10, 12), (12, 14)]:
+            c.line(x0, 7, x1, 13, r[1] if x0 in (5, 10) else r[2], 1)
+            c.rect(x1, 13, 2, 1, GUN[1])
+    elif kind == "hex_beetle":
+        c.srect(2, 3, 11, 4, r)
+        c.line(2, 4, 0, 3, AMB[2], 1); c.line(2, 5, 0, 6, GUN[2], 1)
+        for x0, x1 in [(3, 1), (5, 3), (7, 6), (9, 9), (11, 12), (13, 14)]:
+            c.line(x0, 7, x1, 13, r[2], 2 if x0 in (3, 13) else 1)
+            c.rect(x1, 13, 2, 1, GUN[1])
+    elif kind == "hex_colossus":
+        c.srect(2, 2, 12, 5, r)
+        c.rect(11, 0, 2, 3, GUN[2]); c.rect(3, 4, 8, 1, AMB[2])
+        for x in (1, 3, 6, 9, 11, 13):
+            c.rect(x, 7, 2, 6, r[1] if x in (3, 11) else METAL[1])
+            c.rect(x, 13, 2, 2, GUN[1])
 
 
-for _id, _k, _t in [("legs_biped", "biped", (140, 140, 128)), ("legs_tread", "tread", (89, 97, 77)), ("legs_quad", "quad", (128, 107, 153)),
-                    ("legs_hover", "hover", (217, 217, 230)), ("legs_reverse", "reverse", (140, 120, 90)), ("legs_titan", "titan", (92, 97, 87)),
-                    ("legs_wraith", "wraith", (120, 128, 120)), ("legs_spring", "spring", (150, 140, 110)), ("legs_wheel", "wheel", (110, 110, 100))]:
+for _id, _k, _t in [
+    ("legs_tread_light", "tread_light", (112, 108, 86)),
+    ("legs_tread", "tread", (89, 97, 77)),
+    ("legs_tread_heavy", "tread_heavy", (78, 90, 82)),
+    ("legs_tread_siege", "tread_siege", (116, 104, 84)),
+    ("legs_biped_scout", "biped_scout", (128, 122, 104)),
+    ("legs_biped", "biped", (140, 140, 128)),
+    ("legs_biped_assault", "biped_assault", (92, 102, 116)),
+    ("legs_titan", "titan", (92, 97, 87)),
+    ("legs_quad_hound", "quad_hound", (122, 106, 86)),
+    ("legs_quad", "quad", (102, 108, 116)),
+    ("legs_quad_crab", "quad_crab", (112, 94, 76)),
+    ("legs_quad_mammoth", "quad_mammoth", (110, 110, 92)),
+    ("legs_hex_ant", "hex_ant", (98, 108, 90)),
+    ("legs_hex", "hex", (94, 104, 112)),
+    ("legs_hex_beetle", "hex_beetle", (98, 95, 78)),
+    ("legs_hex_colossus", "hex_colossus", (84, 89, 92)),
+]:
     ICONS[_id] = ((lambda k: (lambda c, t: _legs(c, t, k)))(_k), _t)
 
 

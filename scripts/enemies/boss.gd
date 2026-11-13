@@ -59,6 +59,8 @@ func _physics_tick(delta: float) -> void:
 	if not awake:
 		_idle_wait(delta)
 		return
+	if (target == null or not is_instance_valid(target) or target.dead) and raid and is_instance_valid(raid.mech):
+		target = raid.mech
 	super._physics_tick(delta)
 	if core_open > 0.0:
 		core_open = maxf(0.0, core_open - delta)
@@ -67,19 +69,38 @@ func _physics_tick(delta: float) -> void:
 	_check_phase()
 
 
-## 苏醒前的伏击姿态：只有呼吸般起伏，不追不打
+func take_damage(dmg: float, from := Vector3.ZERO, ap := 0.0) -> void:
+	# 流浪者小队的流弹/交火不会伤害或惊醒战区首领；未苏醒时也不受远处不明爆炸波及
+	if is_instance_valid(aggressor) and aggressor.is_in_group("rovers"):
+		aggressor = null
+		return
+	if not awake and raid != null and is_instance_valid(raid.mech):
+		var max_wake_d: float = maxf(raid.lose_range() * 1.35, 56.0) if raid.has_method("lose_range") else 56.0
+		if global_position.distance_to(raid.mech.global_position) > max_wake_d:
+			return
+	super.take_damage(dmg, from, ap)
+	if not awake and not dying and hp > 0.0:
+		_awaken()
+
+
+## 苏醒前的伏击姿态：只有呼吸般起伏，不追不打（进入玩家视距内或受击时才苏醒，不会在画面外先手轰炸）
 func _idle_wait(delta: float) -> void:
 	anim_t += delta * 0.5
 	_animate(delta, 0.0)
 	if raid == null or not is_instance_valid(raid.mech):
 		return
-	if global_position.distance_to(raid.mech.global_position) < activation:
+	var wake_d: float = minf(activation, raid.vision_toward_player(global_position)) if raid.has_method("vision_toward_player") else activation
+	if global_position.distance_to(raid.mech.global_position) < wake_d:
 		_awaken()
 
 
 func _awaken() -> void:
+	if awake:
+		return
 	awake = true
 	state = "chase"
+	if (target == null or not is_instance_valid(target) or target.dead) and raid and is_instance_valid(raid.mech):
+		target = raid.mech
 	guard_t = 2.2
 	spawn_t = 1.3
 	atk_cd = 1.4
@@ -324,13 +345,15 @@ func summon(kind: String, n: int, radius := 6.0) -> int:
 			break
 		var a := randf() * TAU
 		var p: Vector3 = global_position + Vector3(cos(a), 0, sin(a)) * radius
-		var b = raid.spawn_bug(kind, Vector3(p.x, 0.5, p.z))
+		var b = raid.spawn_bug(kind, Vector3(p.x, 0.5, p.z), int(raid.MAX_BUGS) + 16)
 		if b == null:
 			break
 		summoned += 1
 		made += 1
 		b.state = "chase"
 		b.spawn_t = 0.7
+		if raid.mech != null:
+			b.target = raid.mech
 		if raid.fx:
 			ART.burst(raid.fx, b.global_position + Vector3(0, 0.4, 0), {"amount": 10, "life": 0.6, "size": 0.5, "tex": ART.smoke_tex(), "additive": false,
 				"spread": 80.0, "vmin": 1.5, "vmax": 4.0, "gravity": Vector3(0, 1.2, 0), "damp": 3.0, "c0": Color(0.6, 0.5, 0.45, 0.6),

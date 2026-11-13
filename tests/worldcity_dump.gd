@@ -39,15 +39,26 @@ static func dump(host: Node) -> void:
 	for mid: String in GameData.map_ids():
 		var t: Vector2i = WC.tile_of(mid)
 		var surface := wr.grow(-1.0).has_point(Vector2(t.x * WC.TILE, t.y * WC.TILE))
-		zones[mid] = {"tile": [t.x, t.y], "surface": surface}
-		if not (t in tiles):
-			tiles.append(t)
+		zones[mid] = {"tile": [t.x, t.y], "surface": surface, "poly_world": _pts(WC.zone_poly_world(mid))}
+		if surface:
+			if not (t in tiles):
+				tiles.append(t)
+		else:
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var ut := Vector2i(t.x + dx, t.y + dz)
+					if not (ut in tiles):
+						tiles.append(ut)
 	var rivers: Array = []
 	for r: Dictionary in f.rivers:
 		rivers.append({"name": r.name, "pts": _pts(r.pts), "w": r.w, "dry": r.dry})
 	var lakes: Array = []
+	var lake_polys: Array = []
+	var lake_mud_polys: Array = []
 	for l: Vector3 in f.lakes:
 		lakes.append([l.x, l.y, l.z])
+		lake_polys.append(_pts(WC.lake_poly(l, 64, 0.0)))
+		lake_mud_polys.append(_pts(WC.lake_poly(l, 64, 2.5)))
 	var rails: Array = []
 	for r in f.rails:
 		rails.append(_pts(r))
@@ -55,7 +66,7 @@ static func dump(host: Node) -> void:
 	for t: Vector2i in tiles:
 		tl.append([t.x, t.y])
 	_write(dir.path_join("world.json"), {"rect": [wr.position.x, wr.position.y, wr.size.x, wr.size.y], "tile": WC.TILE, "half": WC.HALF,
-		"rast": WC.RAST, "rivers": rivers, "lakes": lakes, "rails": rails, "zones": zones, "tiles": tl})
+		"rast": WC.RAST, "rivers": rivers, "lakes": lakes, "lake_polys": lake_polys, "lake_mud_polys": lake_mud_polys, "rails": rails, "zones": zones, "tiles": tl})
 	for t: Vector2i in tiles:
 		_dump_tile(dir, t)
 		await host.get_tree().process_frame
@@ -94,8 +105,12 @@ static func _dump_tile(dir: String, t: Vector2i) -> void:
 	for p: Vector2 in L.parks:
 		parks.append([_r(p.x), _r(p.y)])
 	var lakes: Array = []
+	var lake_polys: Array = []
+	var lake_mud_polys: Array = []
 	for l: Vector3 in L.lakes:
 		lakes.append([l.x, l.y, l.z])
+		lake_polys.append(_pts(WC.lake_poly(l, 64, 0.0)))
+		lake_mud_polys.append(_pts(WC.lake_poly(l, 64, 2.5)))
 	_write(dir.path_join("tile_%d_%d.json" % [t.x, t.y]), {"nbs": nbs, "tile": [t.x, t.y], "id": L.id, "origin": [rect.position.x, rect.position.y],
 		"rast_n": n, "rast_b64": Marshalls.raw_to_base64(rast), "roads": roads, "bldgs": bldgs, "blocks": blocks, "fields": fields,
-		"parks": parks, "lakes": lakes})
+		"parks": parks, "lakes": lakes, "lake_polys": lake_polys, "lake_mud_polys": lake_mud_polys})

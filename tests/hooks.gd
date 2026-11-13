@@ -14,7 +14,7 @@ func run() -> void:
 	arm["weapon"] = "zz_gun"
 	GameData.MODULES["zz_gun_arm"] = arm
 	GameData._module_item("zz_gun_arm")
-	GameData.SKILLS["core_scout"]["script"] = FIX
+	GameData.SKILLS["biped"]["script"] = FIX
 	GameData.ITEMS["zz_item"] = {"name": "zz_item", "cat": "use", "w": 0.1, "v": 1, "rar": 0, "desc": "", "script": FIX}
 	var lo: Dictionary = GameData.STARTER.duplicate()
 	lo["arm_l"] = "zz_gun_arm"
@@ -32,13 +32,13 @@ func run() -> void:
 	if not check(m.get_meta("zz_fired", "") == "arm_l", "AMMO.script 的 fire 没有被调用"):
 		return
 	m.energy = m.max_energy
-	m.try_skill_e()
-	if not check(m.get_meta("zz_skill_used", "") == "e", "SKILLS.script 的 use 没有被调用"):
+	m.try_dash(Vector3.FORWARD)
+	if not check(m.get_meta("zz_skill_used", "") == "space", "SKILLS.script 的 use 没有被调用"):
 		return
 	if not check(m.cargo.has("zz_item"), "测试消耗品没有带进货舱：%s" % [m.cargo]):
 		return
 	m.use_item("zz_item")
 	if not check(m.get_meta("zz_item_used", "") == "zz_item" and not m.cargo.has("zz_item"), "ITEMS.script 的 use 没有被调用或没有扣除物品"):
 		return
-	GameData.SKILLS["core_scout"].erase("script")
+	GameData.SKILLS["biped"].erase("script")
 	GameData.RAID_SCRIPTS.erase(FIX)

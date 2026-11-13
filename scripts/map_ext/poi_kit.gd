@@ -20,6 +20,9 @@ static func wall(raid, p: Vector3, size: Vector3, rot := 0.0, col := CONCRETE) -
 	var sb: StaticBody3D = raid._static_box(size, p + Vector3(0, size.y * 0.5, 0), col)
 	sb.set_meta("poi_built", true)
 	sb.rotation_degrees.y = rot
+	if size.y >= 1.4 and maxf(size.x, size.z) >= 2.2:
+		A.add(sb, A.bevel_box(Vector3(size.x + 0.08, 0.22, size.z + 0.08), 0.03), A.concrete(col.darkened(0.24), false), Vector3(0, -size.y * 0.5 + 0.11, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(sb, A.bevel_box(Vector3(size.x + 0.06, 0.09, size.z + 0.06), 0.02), A.concrete(col.darkened(0.16), false), Vector3(0, size.y * 0.5 + 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
 	var fp := size
 	if absf(fmod(absf(rot), 180.0) - 90.0) < 45.0:
 		fp = Vector3(size.z, size.y, size.x)
@@ -47,19 +50,26 @@ static func wall_line(raid, c: Vector3, length: float, hgt: float, rot: float, g
 		var p: Vector3 = c + dir * t
 		var sb := wall(raid, p, Vector3(step - 0.06, h, 0.55), rot, col)
 		var chunks = 2 if raid.rng.randf() < 0.6 else 1
+		var M_REB := A.metal(Color(0.24, 0.18, 0.14))
 		for k in chunks:
+			var rx: float = raid.rng.randf_range(-0.8, 0.8)
 			var ch = Vector3(raid.rng.randf_range(0.7, 1.8), raid.rng.randf_range(0.25, 0.8), 0.6)
-			A.add(sb, A.bevel_box(ch, 0.07), A.concrete(col.darkened(0.16)), Vector3(raid.rng.randf_range(-0.8, 0.8), h * 0.5 + ch.y * 0.4, raid.rng.randf_range(-0.05, 0.05)))
+			A.add(sb, A.bevel_box(ch, 0.07), A.concrete(col.darkened(0.16)), Vector3(rx, h * 0.5 + ch.y * 0.4, raid.rng.randf_range(-0.05, 0.05)))
+			if raid.rng.randf() < 0.65:
+				A.add(sb, A.cyl(0.018, raid.rng.randf_range(0.35, 0.65), 0.018, 6), M_REB,
+					Vector3(rx + raid.rng.randf_range(-0.25, 0.25), h * 0.5 + ch.y * 0.65, 0.0),
+					Vector3(raid.rng.randf_range(-16, 16), 0, raid.rng.randf_range(-18, 18)), Vector3.ONE, false)
 
 
 static func pillar(raid, p: Vector3, rad: float, hgt: float, col := CONCRETE) -> void:
 	var sb: StaticBody3D = raid._static_box(Vector3(rad * 2.0, hgt, rad * 2.0), p + Vector3(0, hgt * 0.5, 0), col)
 	sb.set_meta("poi_built", true)
-	A.add(sb, A.cyl(rad * 1.12, 0.22, rad * 1.12, 12), A.concrete(col.darkened(0.2), false), Vector3(0, -hgt * 0.5 + 0.12, 0))
+	A.add(sb, A.cyl(rad * 1.18, 0.24, rad * 1.24, 28), A.concrete(col.darkened(0.2), false), Vector3(0, -hgt * 0.5 + 0.12, 0))
+	A.add(sb, A.cyl(rad * 1.16, 0.2, rad * 1.12, 28), A.concrete(col.darkened(0.15), false), Vector3(0, hgt * 0.5 - 0.1, 0))
 	raid.blocks.append(raid._rect_for(p, Vector3(rad * 2.0, 1, rad * 2.0)))
 
 
-## 圆柱塔（冷却塔、烟囱、筒仓）：碰撞用圆柱体，射击时按整根塔身遮挡
+## 圆柱塔（冷却塔、烟囱、筒仓）：碰撞用圆柱体，高面数塔身 + 阶梯环基 + 竖向扶壁肋条 + 环形加劲肋 + 顶冠护栏与外爬梯
 static func tower(raid, p: Vector3, rad: float, hgt: float, rad_top := -1.0, col := CONCRETE) -> void:
 	var sb := StaticBody3D.new()
 	sb.collision_layer = 1
@@ -75,9 +85,30 @@ static func tower(raid, p: Vector3, rad: float, hgt: float, rad_top := -1.0, col
 	sb.position = p
 	sb.set_meta("poi_built", true)
 	var rt := rad if rad_top < 0.0 else rad_top
-	A.add(sb, A.cyl(rad, hgt, rt, 26), A.concrete(col, false), Vector3(0, hgt * 0.5, 0))
-	for k in 3:
-		A.add(sb, A.cyl(lerpf(rad, rt, float(k) / 3.0) + 0.06, 0.14, lerpf(rad, rt, float(k + 1) / 3.0) + 0.06, 26), A.concrete(col.darkened(0.3), false), Vector3(0, hgt * (0.25 + k * 0.25), 0), Vector3.ZERO, Vector3.ONE, false)
+	var M_MAIN := A.concrete(col, false)
+	var M_DARK := A.concrete(col.darkened(0.28), false)
+	var M_MET := A.metal(Color(0.26, 0.26, 0.25))
+	# 底部加厚混凝土环形基座
+	A.add(sb, A.cyl(rad + 0.28, 0.42, rad + 0.42, 42), M_DARK, Vector3(0, 0.21, 0))
+	# 42 段高细分主塔筒
+	A.add(sb, A.cyl(rt, hgt, rad, 42), M_MAIN, Vector3(0, hgt * 0.5, 0))
+	# 4 道水平加劲环箍 + 顶部压檐环冠
+	for k in 4:
+		var u := (0.2 + k * 0.22)
+		var rk := lerpf(rad, rt, u)
+		A.add(sb, A.torus(rk - 0.02, rk + 0.11, 42), M_DARK, Vector3(0, hgt * u, 0), Vector3.ZERO, Vector3(1, 0.55, 1), false)
+	A.add(sb, A.cyl(rt + 0.16, 0.26, rt + 0.08, 42), M_DARK, Vector3(0, hgt - 0.12, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 8 根沿塔壁均匀分布的竖向加劲肋柱
+	var tilt_deg := rad_to_deg(atan2(rad - rt, hgt))
+	for k in 8:
+		var a := TAU * k / 8.0
+		var rm := (rad + rt) * 0.5 + 0.04
+		A.add(sb, A.bevel_box(Vector3(0.14, hgt * 0.94, 0.16), 0.02), M_DARK,
+			Vector3(sin(a) * rm, hgt * 0.48, cos(a) * rm), Vector3(-tilt_deg, rad_to_deg(a), 0), Vector3.ONE, false)
+	# 顶部安全护栏与外侧检修爬梯
+	A.add(sb, A.torus(rt - 0.04, rt + 0.04, 40), M_MET, Vector3(0, hgt + 0.55, 0), Vector3.ZERO, Vector3(1, 0.45, 1), false)
+	A.add(sb, A.bevel_box(Vector3(0.44, hgt * 0.92, 0.12), 0.01), M_MET,
+		Vector3(0, hgt * 0.48, (rad + rt) * 0.5 + 0.12), Vector3(-tilt_deg, 0, 0), Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(rad * 2.0, 1, rad * 2.0)))
 
 
@@ -102,7 +133,7 @@ static func lattice(raid, p: Vector3, hgt: float, base: float) -> void:
 		for sz in [-1.0, 1.0]:
 			var a := p + Vector3(sx * base * 0.5, 0, sz * base * 0.5)
 			var b := p + Vector3(sx * top * 0.5, hgt, sz * top * 0.5)
-			A.add(raid.world, A.tube([a, b], 0.1, 6, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([a, b], 0.1, 8, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	for k in 3:
 		var t := float(k) / 3.0
 		var t2 := float(k + 1) / 3.0
@@ -115,9 +146,9 @@ static func lattice(raid, p: Vector3, hgt: float, base: float) -> void:
 			var bx := Vector3(r1, y1, -r1).rotated(Vector3.UP, PI * 0.5 * sd)
 			var cx := Vector3(-r2, y2, -r2).rotated(Vector3.UP, PI * 0.5 * sd)
 			var dx := Vector3(r2, y2, -r2).rotated(Vector3.UP, PI * 0.5 * sd)
-			A.add(raid.world, A.tube([p + ax, p + bx], 0.055, 4, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(raid.world, A.tube([p + ax, p + dx], 0.05, 4, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(raid.world, A.tube([p + bx, p + cx], 0.05, 4, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + ax, p + bx], 0.055, 6, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + ax, p + dx], 0.05, 6, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + bx, p + cx], 0.05, 6, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(base * 0.9, 0.16, 0.16), 0.02), M, p + Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(0.16, 0.16, base * 0.9), 0.02), M, p + Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(base, 1, base)))
@@ -165,46 +196,60 @@ static func rubble(raid, p: Vector3, s: float, col := CONCRETE_DARK) -> void:
 		var a = raid.rng.randf() * TAU
 		var d = raid.rng.randf_range(0.2, 1.0) * s
 		var q = raid.rng.randf_range(0.3, 1.0) * s
-		A.add(raid.world, A.bevel_box(Vector3(q, q * 0.5, q * 0.8), 0.06), M,
-			p + Vector3(cos(a) * d, q * 0.22, sin(a) * d), Vector3(raid.rng.randf() * 30, raid.rng.randf() * 360, raid.rng.randf() * 30))
+		A.add(raid.world, A.rock_mesh(raid.rng.randi() % 12), M,
+			p + Vector3(cos(a) * d, q * 0.10, sin(a) * d),
+			Vector3(raid.rng.randf() * 30, raid.rng.randf() * 360, raid.rng.randf() * 30),
+			Vector3(q * 0.55, q * 0.28, q * 0.45))
 
 
-static func car(raid, p: Vector3, rot := 0.0) -> void:
-	raid._wreck_car(p)
-	raid.blocks.append(raid._rect_for(p, Vector3(3.0, 1, 3.0)))
-	if rot != 0.0:
-		pass
+static func car(raid, p: Vector3, rot := INF) -> void:
+	var wc: int = raid.world.get_child_count()
+	raid._wreck_car(p, rot)
+	if raid.world.get_child_count() > wc:
+		var sb = raid.world.get_child(wc)
+		if sb is StaticBody3D:
+			sb.set_meta("poi_built", true)
 
 
 ## 两点之间下垂的线缆（吊桥主索、电塔导线、龙门吊钢索）
 static func cable(raid, a: Vector3, b: Vector3, sag: float, r := 0.05, col := STEEL) -> MeshInstance3D:
 	var mid := (a + b) * 0.5 + Vector3(0, -sag, 0)
 	var pts := [a, a.lerp(mid, 0.6) + Vector3(0, -sag * 0.25, 0), mid, b.lerp(mid, 0.6) + Vector3(0, -sag * 0.25, 0), b]
-	var mi := A.add(raid.world, A.tube(pts, r, 5, 5), A.metal(col), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var mi := A.add(raid.world, A.tube(pts, r, 6, 5), A.metal(col), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	return mi
 
 
 static func pipe(raid, a: Vector3, b: Vector3, r := 0.22, col := RUST) -> MeshInstance3D:
-	var mi := A.add(raid.world, A.tube([a, b], r, 8, 3), A.paint(col, 0.55, 0.6, {"wear": 0.5, "rust": 0.8, "panel_scale": 0.0}), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var mi := A.add(raid.world, A.tube([a, b], r, 14, 3), A.paint(col, 0.55, 0.6, {"wear": 0.5, "rust": 0.8, "panel_scale": 0.0}), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	return mi
 
 
-## 桌面 + 抽屉：办公室、控制台、售票处的底子
+## 桌面 + 抽屉柜 + 台面铁夹/终端壳：办公室、控制台、售票处的底子
 static func desk(raid, p: Vector3, rot: float, w := 2.4, col := RUST) -> void:
-	var M := A.paint(col, 0.2, 0.7, {"wear": 0.6, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0})
+	var M := A.paint(col, 0.25, 0.68, {"wear": 0.6, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0})
+	var M_ST := A.metal(STEEL)
+	var M_DK := A.paint(col.darkened(0.28), 0.35, 0.72, {"wear": 0.5, "rust": 0.5})
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	A.add(n, A.bevel_box(Vector3(w, 0.1, 1.0), 0.02), M, Vector3(0, 0.86, 0))
-	for sx in [-1.0, 1.0]:
-		A.add(n, A.bevel_box(Vector3(0.12, 0.84, 0.9), 0.02), A.metal(STEEL), Vector3(sx * (w * 0.5 - 0.12), 0.42, 0))
-	A.add(n, A.bevel_box(Vector3(w * 0.6, 0.5, 0.06), 0.01), A.paint(col.darkened(0.2), 0.3, 0.8), Vector3(0, 0.5, -0.45))
+	A.add(n, A.bevel_box(Vector3(w, 0.08, 1.02), 0.02), M, Vector3(0, 0.86, 0))
+	A.add(n, A.bevel_box(Vector3(w + 0.03, 0.04, 1.05), 0.01), M_ST, Vector3(0, 0.84, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(0.09, 0.82, 0.90), 0.015), M_ST, Vector3(-(w * 0.5 - 0.10), 0.41, 0))
+	var ped_x: float = w * 0.5 - 0.30
+	A.add(n, A.bevel_box(Vector3(0.52, 0.78, 0.88), 0.025), M_DK, Vector3(ped_x, 0.40, 0))
+	for dr in 3:
+		A.add(n, A.bevel_box(Vector3(0.44, 0.20, 0.03), 0.008), M, Vector3(ped_x, 0.18 + dr * 0.23, 0.45), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.16, 0.03, 0.04), 0.005), M_ST, Vector3(ped_x, 0.20 + dr * 0.23, 0.47), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(w * 0.65, 0.52, 0.05), 0.01), M_DK, Vector3(-0.12, 0.52, -0.44))
+	A.add(n, A.bevel_box(Vector3(0.36, 0.06, 0.44), 0.01), A.paint(Color(0.22, 0.25, 0.26), 0.2, 0.75), Vector3(-w * 0.22, 0.93, 0.08), Vector3(0, 14, 0), Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(w, 1, 1.2)))
 
 
 static func shelf(raid, p: Vector3, rot: float, hgt := 2.2, w := 2.0) -> void:
-	var M := A.paint(STEEL, 0.6, 0.6, {"wear": 0.5, "rust": 0.7, "panel_scale": 0.0})
+	var M := A.paint(STEEL, 0.6, 0.58, {"wear": 0.5, "rust": 0.7, "panel_scale": 0.0})
+	var M_BIN := A.paint(Color(0.26, 0.32, 0.35), 0.35, 0.65, {"wear": 0.55, "rust": 0.45})
+	var M_BOX := A.paint(Color(0.44, 0.36, 0.24), 0.15, 0.82, {"wear": 0.6, "dust": 0.5})
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
@@ -212,8 +257,13 @@ static func shelf(raid, p: Vector3, rot: float, hgt := 2.2, w := 2.0) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			A.add(n, A.bevel_box(Vector3(0.07, hgt, 0.07), 0.01), M, Vector3(sx * w * 0.5, hgt * 0.5, sz * 0.28))
-	for k in 3:
-		A.add(n, A.bevel_box(Vector3(w, 0.05, 0.62), 0.01), M, Vector3(0, 0.45 + k * 0.68, 0))
+	A.add(n, A.tube([Vector3(-w * 0.48, 0.25, -0.28), Vector3(w * 0.48, hgt - 0.18, -0.28)], 0.022, 5, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.tube([Vector3(w * 0.48, 0.25, -0.28), Vector3(-w * 0.48, hgt - 0.18, -0.28)], 0.022, 5, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	for k in 4:
+		var sy: float = 0.22 + k * (hgt - 0.34) / 3.0
+		A.add(n, A.bevel_box(Vector3(w + 0.04, 0.05, 0.62), 0.01), M, Vector3(0, sy, 0))
+	A.add(n, A.bevel_box(Vector3(w * 0.34, 0.26, 0.44), 0.02), M_BIN, Vector3(-w * 0.24, 0.38, 0.02), Vector3(0, 4, 0), Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(w * 0.28, 0.28, 0.42), 0.02), M_BOX, Vector3(w * 0.22, 0.22 + (hgt - 0.34) / 3.0 + 0.16, -0.02), Vector3(0, -6, 0), Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(w, 1, 0.9)))
 
 
@@ -236,7 +286,7 @@ static func sign(raid, p: Vector3, rot: float, text: String, w := 3.0, hgt := 1.
 	n.rotation_degrees.y = rot
 	A.add(n, A.bevel_box(Vector3(w, hgt, 0.1), 0.02), A.paint(Color(0.12, 0.13, 0.12), 0.2, 0.7, {"wear": 0.5, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0}), Vector3(0, 0, 0))
 	for sx in [-1.0, 1.0]:
-		A.add(n, A.cyl(0.06, 2.4, 0.06, 6), A.metal(STEEL), Vector3(sx * w * 0.36, -1.25, 0))
+		A.add(n, A.cyl(0.06, 2.4, 0.06, 12), A.metal(STEEL), Vector3(sx * w * 0.36, -1.25, 0))
 	A.stencil(n, text, Vector3(0, 0.02, -0.07), Vector3(0, 180, 0), 0.008, Color(0.88, 0.86, 0.78, 0.75), 48)
 
 
@@ -246,7 +296,7 @@ static func railing(raid, c: Vector3, length: float, rot: float, hgt := 1.1) -> 
 	var n := maxi(2, int(length / 2.0))
 	for i in n + 1:
 		var t := -length * 0.5 + length * float(i) / n
-		A.add(raid.world, A.cyl(0.05, hgt, 0.05, 6), M, c + dir * t + Vector3(0, hgt * 0.5, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.cyl(0.05, hgt, 0.05, 10), M, c + dir * t + Vector3(0, hgt * 0.5, 0), Vector3.ZERO, Vector3.ONE, false)
 	var bar := Node3D.new()
 	raid.world.add_child(bar)
 	bar.position = c + Vector3(0, hgt, 0)
@@ -259,41 +309,77 @@ static func railing(raid, c: Vector3, length: float, rot: float, hgt := 1.1) -> 
 ## 俯视角下屋顶占画面最大，纯平板会让建筑失去体量，这里补的件都不带碰撞。
 static func roof_kit(raid, c: Vector3, size: Vector2, top: float, col := CONCRETE) -> void:
 	var M := A.concrete(col.darkened(0.18), false)
+	var M_CAP := A.concrete(col.darkened(0.30), false)
+	var M_DUCT := A.paint(Color(0.50, 0.52, 0.50), 0.58, 0.46, {"wear": 0.45, "rust": 0.35, "panel_scale": 0.7})
+	var M_DARK := A.metal(Color(0.14, 0.145, 0.15))
 	var r = raid.rng
 	for seg in [[Vector3(0, top + 0.32, -size.y * 0.5), Vector3(size.x, 0.64, 0.36)], [Vector3(0, top + 0.32, size.y * 0.5), Vector3(size.x, 0.64, 0.36)],
 			[Vector3(-size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, size.y)], [Vector3(size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, size.y)]]:
 		A.add(raid.world, A.bevel_box(seg[1], 0.03), M, c + seg[0])
-	# 空调机组：外壳 + 顶上的风扇盘
+		var cap_sz: Vector3 = seg[1]
+		A.add(raid.world, A.bevel_box(Vector3(cap_sz.x + 0.08, 0.10, cap_sz.z + 0.08), 0.02), M_CAP, c + seg[0] + Vector3(0, 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 工业空调冷却机组：冲压机壳 + 侧面百叶暗格 + 顶部深黑风扇井与钢护圈
 	for i in 3:
 		var p := c + Vector3(r.randf_range(-size.x * 0.28, size.x * 0.28), top + 0.55, r.randf_range(-size.y * 0.26, size.y * 0.26))
-		A.add(raid.world, A.bevel_box(Vector3(1.5, 1.0, 1.1), 0.06), A.paint(Color(0.48, 0.49, 0.46), 0.45, 0.6, {"wear": 0.5, "rust": 0.6, "dust": 0.4, "panel_scale": 0.8}), p)
-		A.add(raid.world, A.cyl(0.42, 0.06, 0.42, 14), A.metal(Color(0.22, 0.22, 0.21)), p + Vector3(0, 0.54, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 通风管与检修口
-	A.add(raid.world, A.cyl(0.3, 1.2, 0.3, 10), A.metal(Color(0.32, 0.31, 0.29)), c + Vector3(size.x * 0.3, top + 0.7, size.y * 0.28))
-	A.add(raid.world, A.bevel_box(Vector3(1.1, 0.16, 1.1), 0.02), A.paint(Color(0.36, 0.36, 0.34), 0.5, 0.6, {"rust": 0.7}), c + Vector3(-size.x * 0.32, top + 0.12, size.y * 0.3))
-	A.add(raid.world, A.cyl(0.05, 2.4, 0.03, 5), A.metal(Color(0.4, 0.4, 0.38)), c + Vector3(size.x * 0.38, top + 1.2, -size.y * 0.34))
+		A.add(raid.world, A.bevel_box(Vector3(1.55, 1.0, 1.15), 0.05), A.paint(Color(0.46, 0.48, 0.45), 0.45, 0.6, {"wear": 0.5, "rust": 0.6, "dust": 0.4, "panel_scale": 0.8}), p)
+		A.add(raid.world, A.bevel_box(Vector3(1.25, 0.55, 1.19), 0.01), M_DARK, p + Vector3(0, -0.05, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.cyl(0.43, 0.10, 0.45, 20), M_DUCT, p + Vector3(0, 0.53, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.cyl(0.37, 0.12, 0.37, 18), M_DARK, p + Vector3(0, 0.535, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 镀锌铁皮排风管道 + 屋顶检修楼梯间舱口 + 通信避雷桅杆
+	if size.x > 6.0 and size.y > 6.0:
+		var dl: float = size.x * 0.46
+		var dp := c + Vector3(-size.x * 0.06, top + 0.42, -size.y * 0.24)
+		A.add(raid.world, A.bevel_box(Vector3(dl, 0.42, 0.46), 0.025), M_DUCT, dp, Vector3.ZERO, Vector3.ONE, false)
+		for di in 3:
+			var dx_off: float = (-0.38 + di * 0.38) * dl
+			A.add(raid.world, A.bevel_box(Vector3(0.08, 0.48, 0.52), 0.01), M_DARK, dp + Vector3(dx_off, -0.04, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.cyl(0.32, 1.25, 0.32, 18), A.metal(Color(0.30, 0.30, 0.28)), c + Vector3(size.x * 0.3, top + 0.62, size.y * 0.28))
+	A.add(raid.world, A.cyl(0.42, 0.14, 0.24, 16), M_DUCT, c + Vector3(size.x * 0.3, top + 1.30, size.y * 0.28), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(1.3, 0.26, 1.5), 0.03), A.paint(Color(0.34, 0.35, 0.33), 0.5, 0.6, {"rust": 0.7}), c + Vector3(-size.x * 0.30, top + 0.14, size.y * 0.28))
+	A.add(raid.world, A.cyl(0.05, 2.6, 0.03, 10), A.metal(Color(0.38, 0.38, 0.36)), c + Vector3(size.x * 0.38, top + 1.3, -size.y * 0.34))
 
 
-## 台阶：沿局部 +Z 上行，p 为最下一级前缘中心
+## 台阶：沿局部 +Z 上行，p 为最下一级前缘中心（带踏步防滑钢护角与两侧斜梁护帮）
 static func steps(raid, p: Vector3, n: int, rise: float, run: float, width: float, rot: float) -> void:
 	var n3 := Node3D.new()
 	raid.world.add_child(n3)
 	n3.position = p
 	n3.rotation_degrees.y = rot
+	var M_ST := A.metal(STEEL)
+	var M_CON := A.concrete(CONCRETE, false)
 	for i in n:
-		A.add(n3, A.bevel_box(Vector3(width, rise, run), 0.02), A.concrete(CONCRETE, false), Vector3(0, rise * (i + 0.5), run * (i + 0.5)))
+		A.add(n3, A.bevel_box(Vector3(width, rise, run + 0.04), 0.02), M_CON, Vector3(0, rise * (i + 0.5), run * (i + 0.5)))
+		A.add(n3, A.bevel_box(Vector3(width - 0.04, 0.035, 0.05), 0.006), M_ST, Vector3(0, rise * (i + 1.0) - 0.01, run * i + 0.02), Vector3.ZERO, Vector3.ONE, false)
+	if n >= 2:
+		var tot_y := rise * float(n)
+		var tot_z := run * float(n)
+		for sx in [-1.0, 1.0]:
+			var x_s: float = sx * (width * 0.5 + 0.05)
+			A.add(n3, A.tube([Vector3(x_s, rise * 0.35, 0.0), Vector3(x_s, tot_y + 0.05, tot_z)], 0.055, 6, 2), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 
 
-## 遮阳棚 / 碎顶：四根立柱 + 一块薄板，不挡子弹（板在 3 米以上，没有碰撞体）
+## 遮阳棚 / 工业雨棚：四根带底盘立柱 + 工字钢横檩框 + 压型波纹顶板（板在 3 米以上，没有碰撞体）
 static func canopy(raid, p: Vector3, size: Vector2, hgt := 3.2, rot := 0.0, col := CONCRETE_DARK) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	A.add(n, A.bevel_box(Vector3(size.x, 0.22, size.y), 0.04), A.concrete(col, false), Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
+	var M_ST := A.metal(STEEL)
+	var M_DARK := A.metal(Color(0.18, 0.19, 0.20))
+	A.add(n, A.bevel_box(Vector3(size.x, 0.18, size.y), 0.03), A.concrete(col, false), Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(size.x + 0.10, 0.24, 0.10), 0.015), M_DARK, Vector3(0, hgt + 0.01, size.y * 0.5), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(size.x + 0.10, 0.24, 0.10), 0.015), M_DARK, Vector3(0, hgt + 0.01, -size.y * 0.5), Vector3.ZERO, Vector3.ONE, false)
+	var n_rib := maxi(3, int(size.x / 1.4))
+	for ri in n_rib:
+		var rx := -size.x * 0.46 + (float(ri) + 0.5) * (size.x * 0.92) / float(n_rib)
+		A.add(n, A.bevel_box(Vector3(0.08, 0.05, size.y - 0.12), 0.01), M_ST, Vector3(rx, hgt + 0.11, 0), Vector3.ZERO, Vector3.ONE, false)
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			A.add(n, A.cyl(0.09, hgt, 0.09, 8), A.metal(STEEL), Vector3(sx * size.x * 0.42, hgt * 0.5, sz * size.y * 0.42))
+			var cx_p: float = sx * size.x * 0.42
+			var cz_p: float = sz * size.y * 0.42
+			A.add(n, A.cyl(0.095, hgt, 0.105, 14), M_ST, Vector3(cx_p, hgt * 0.5, cz_p))
+			A.add(n, A.bevel_box(Vector3(0.36, 0.10, 0.36), 0.02), M_DARK, Vector3(cx_p, 0.05, cz_p), Vector3.ZERO, Vector3.ONE, false)
+			A.add(n, A.bevel_box(Vector3(0.32, 0.16, 0.32), 0.02), M_DARK, Vector3(cx_p, hgt - 0.14, cz_p), Vector3.ZERO, Vector3.ONE, false)
 
 ## 把本次遗迹摆下的容器登记归属（meta "poi"），供行动结束、掉落与可达性检查区分哪些容器属于这处遗迹。
 static func tag_boxes(raid, c: Vector3, pid: String, rad := 15.0) -> void:

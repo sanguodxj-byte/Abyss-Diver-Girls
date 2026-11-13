@@ -35,8 +35,8 @@ func run() -> void:
 	add_child(g)
 	var looks := [
 		{"core": "core_fortress", "legs": "legs_titan", "arm_l": "arm_ac30", "arm_r": "arm_cannon", "back": "back_vls", "gen": "gen_turbine"},
-		{"core": "core_assault", "legs": "legs_quad", "arm_l": "arm_gatling", "arm_r": "arm_rail", "back": "back_rocket", "gen": "gen_hfc"},
-		{"core": "core_command", "legs": "legs_hover", "arm_l": "arm_hmg", "arm_r": "arm_slug", "back": "back_rack", "gen": "gen_diesel"},
+		{"core": "core_assault", "legs": "legs_quad_crab", "arm_l": "arm_gatling", "arm_r": "arm_rail", "back": "back_rocket", "gen": "gen_hfc"},
+		{"core": "core_command", "legs": "legs_hex_colossus", "arm_l": "arm_hmg", "arm_r": "arm_slug", "back": "back_rack", "gen": "gen_diesel"},
 	]
 	for i in looks.size():
 		var m: Node3D = MV.build(looks[i], true)

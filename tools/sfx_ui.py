@@ -1,235 +1,301 @@
-"""
-界面、机库、商店与委托的音效配方：界面音短促干净、音量克制，机库音带机库空间的混响。
-"""
+# -*- coding: utf-8 -*-
+"""战术终端 UI、机库整备装配、货舱装卸与商店交易音效（冷峻工业机械终端重制版）。"""
 import numpy as np
-from sfx_dsp import (sfx, SR, ns, tt, white, pink, brown, lp, hp, bp, peak, sweep, sine, harm, saw_amps, expdec, ad,
-                     env, ahr, sat, space, Mix)
-from sfx_lib import (place, norm, att, thump, crack, burst, modal, clank, tick, rattle, scrape, servo, hiss, whoosh,
-                     tone, chime, buzz, PLATE, BAR, HEAVY, BELL)
+from sfx_dsp import (
+    SR, sfx, env_exp, env_adsr, biquad, reson, sweep,
+    white, pink, brown, velvet, sat, place, mix, reverb_tail,
+)
+from sfx_lib import (
+    thump, crack, tick, clank, modal, METAL_HEAVY, METAL_HOLLOW, METAL_LIGHT,
+    METAL_BELL, GLASS_MODES, servo, hiss, whoosh, roar, rumble, zap, turbine,
+)
 
 
-def noise_tick(rng, lo=3500.0, hi=12000.0, tau=0.0015, dur=0.02):
-    n = ns(dur)
-    return att(norm(bp(white(n, rng), lo, hi)) * expdec(n, tau), 0.0003)
+# ─────────────────────────────────────────────────────────────
+# 战术终端基础交互（微动机械开关 / 电磁继电器 / 阻尼拨盘，零电子蜂鸣）
+# ─────────────────────────────────────────────────────────────
+@sfx("ui_click", n=2, target=-21.0, dur=0.08, fout=0.012)
+def _ui_click(v, rng):
+    p = 1.0 + (v - 0.5) * 0.06
+    # 战术面板微动开关：清脆银触点瞬态 + 紧凑铝合金键帽壳体共鸣 + 微动回弹
+    sw_down = tick(0.013, 1950 * p, rng) * 0.92
+    body = modal(0.034, 620 * p, METAL_LIGHT, 55.0, rng, 0.38) * 0.48
+    sw_release = tick(0.010, 1520 * p, rng) * 0.42
+    return sat(mix(
+        place(sw_down, 0.0),
+        place(body, 0.001),
+        place(sw_release, 0.024),
+    ), 1.25)
 
 
-def airy(rng, dur, f0, f1, peak_t=0.7):
-    """界面开合的气流声：很轻的扫频带通噪声。"""
-    return whoosh(rng, dur, f0, f1, peak_t, 2.0, -1.5)
+@sfx("ui_hover", n=1, target=-25.5, dur=0.045, fout=0.008)
+def _ui_hover(v, rng):
+    # 极轻快的磁吸刻度拨盘微触感（剔除低频闷响，纯清脆微动刻度）
+    detent = tick(0.009, 2250, rng) * 0.85
+    cap = modal(0.020, 860, METAL_LIGHT, 75.0, rng, 0.25) * 0.30
+    return sat(mix(place(detent, 0.0), place(cap, 0.001)), 1.15)
 
 
-# ---------------------------------------------------------------- 通用界面
-@sfx("ui_click", n=2, target=-29.0, dur=0.12, fout=0.015)
-def ui_click(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(noise_tick(rng, 3500.0, 12000.0, 0.0012), 0.0, 0.5)
-    m.add(tone([2400.0, 2150.0][v], 0.03, "sine", 0.009), 0.0, 0.6)
-    m.add(tone([1200.0, 1080.0][v], 0.035, "sine", 0.01), 0.0, 0.3)
-    return space(m.render(c.stereo), "ui", 0.15, c.stereo, v)
+@sfx("ui_confirm", n=1, target=-18.5, dur=0.24, fout=0.03)
+def _ui_confirm(v, rng):
+    # 确认指令：干脆利落的双段式战术扳机锁合（微动预压 -> 精密电磁栓清脆咬合）
+    pre_sw = tick(0.013, 1850, rng) * 0.82
+    pre_cl = modal(0.042, 560, METAL_LIGHT, 45.0, rng, 0.45) * 0.52
+    lock_tick = tick(0.015, 2380, rng) * 0.88
+    main_lock = clank(0.095, 460, METAL_BELL, 28.0, rng, 0.58) * 0.68
+    main_thump = thump(0.065, 150, 64, 34.0, rng, 1.3) * 0.26
+    return sat(mix(
+        place(pre_sw, 0.0),
+        place(pre_cl, 0.002),
+        place(lock_tick, 0.042),
+        place(main_lock, 0.043),
+        place(main_thump, 0.045),
+    ), 1.32)
 
 
-@sfx("ui_hover", n=1, target=-28.0, dur=0.08, fout=0.012)
-def ui_hover(c):
-    m = Mix()
-    m.add(tone(3200.0, 0.025, "sine", 0.007), 0.0, 0.7)
-    m.add(tone(4800.0, 0.02, "sine", 0.005), 0.0, 0.2)
-    return space(m.render(c.stereo), "ui", 0.12, c.stereo, 0)
+@sfx("ui_cancel", n=1, target=-19.5, dur=0.20, fout=0.025)
+def _ui_cancel(v, rng):
+    # 取消/退回：清脆弹簧卡扣脱钩 + 阻尼复位（由高到低双段机械瞬态）
+    unlatch_t = tick(0.012, 1920, rng) * 0.80
+    unlatch = clank(0.055, 520, METAL_LIGHT, 38.0, rng, 0.52) * 0.58
+    drop_t = tick(0.011, 1360, rng) * 0.65
+    drop_clank = clank(0.075, 350, METAL_HOLLOW, 32.0, rng, 0.48) * 0.55
+    drop_thump = thump(0.055, 132, 56, 36.0, rng, 1.25) * 0.24
+    return sat(mix(
+        place(unlatch_t, 0.0),
+        place(unlatch, 0.001),
+        place(drop_t, 0.038),
+        place(drop_clank, 0.040),
+        place(drop_thump, 0.042),
+    ), 1.28)
 
 
-@sfx("ui_confirm", n=1, target=-21.0, dur=0.45, fout=0.05)
-def ui_confirm(c):
-    rng = c.rng
-    m = Mix()
-    m.add(noise_tick(rng, 3000.0, 11000.0, 0.0015), 0.0, 0.4)
-    m.add(tone(880.0, 0.07, "tri", 0.03, bright=8000.0), 0.0, 0.55)
-    m.add(tone(1318.5, 0.16, "tri", 0.07, bright=8000.0), 0.075, 0.55)
-    m.add(tone(2637.0, 0.12, "sine", 0.05), 0.08, 0.12)
-    return space(m.render(c.stereo), "ui", 0.2, c.stereo, 0)
+@sfx("ui_tab", n=1, target=-21.0, dur=0.11, fout=0.015)
+def _ui_tab(v, rng):
+    # 切换分页：清脆旋转波段开关咔哒啮合
+    det1 = tick(0.012, 1820, rng) * 0.85
+    rot = clank(0.055, 510, METAL_LIGHT, 42.0, rng, 0.50) * 0.58
+    det2 = tick(0.010, 2180, rng) * 0.52
+    return sat(mix(place(det1, 0.0), place(rot, 0.002), place(det2, 0.018)), 1.25)
 
 
-@sfx("ui_cancel", n=1, target=-22.0, dur=0.35, fout=0.04)
-def ui_cancel(c):
-    rng = c.rng
-    m = Mix()
-    m.add(noise_tick(rng, 2500.0, 9000.0, 0.0015), 0.0, 0.35)
-    m.add(tone(987.8, 0.06, "tri", 0.025, bright=7000.0), 0.0, 0.55)
-    m.add(tone(659.3, 0.12, "tri", 0.05, bright=7000.0), 0.065, 0.55)
-    return space(m.render(c.stereo), "ui", 0.18, c.stereo, 0)
+@sfx("ui_open", n=1, target=-19.5, dur=0.28, fout=0.035)
+def _ui_open(v, rng):
+    # 打开战术面板：锁扣清脆弹开 + 精密导轨轻快滑出 + 到位卡榫啮合
+    latch_t = tick(0.012, 1780, rng) * 0.78
+    latch = clank(0.065, 440, METAL_LIGHT, 34.0, rng, 0.55) * 0.62
+    slide = whoosh(0.14, 420, 1250, rng, 1.5) * 0.38
+    stop_t = tick(0.012, 2150, rng) * 0.72
+    stop_lock = clank(0.075, 480, METAL_HOLLOW, 32.0, rng, 0.52) * 0.58
+    return sat(mix(
+        place(latch_t, 0.0),
+        place(latch, 0.002),
+        place(slide, 0.018),
+        place(stop_t, 0.125),
+        place(stop_lock, 0.127),
+    ), 1.3)
 
 
-@sfx("ui_tab", n=1, target=-29.0, dur=0.12, fout=0.015)
-def ui_tab(c):
-    rng = c.rng
-    n = ns(0.05)
-    m = Mix()
-    sl = sweep(white(n, rng), "bp", np.geomspace(2500.0, 6000.0, n), 1.5) * ahr(n, 0.005, 0.02, 0.025)
-    m.add(norm(sl), 0.0, 0.35)
-    m.add(noise_tick(rng, 3000.0, 10000.0, 0.0012), 0.035, 0.5)
-    m.add(tone(1760.0, 0.03, "sine", 0.008), 0.035, 0.45)
-    return space(m.render(c.stereo), "ui", 0.15, c.stereo, 0)
+@sfx("ui_close", n=1, target=-20.0, dur=0.24, fout=0.03)
+def _ui_close(v, rng):
+    # 关闭战术面板：脱扣瞬态 + 导轨收拢 + 清脆卡扣合拢
+    unlatch = tick(0.012, 1850, rng) * 0.75
+    rel_clank = clank(0.055, 460, METAL_LIGHT, 36.0, rng, 0.50) * 0.52
+    slide = whoosh(0.11, 1100, 360, rng, 1.5) * 0.35
+    shut_t = tick(0.012, 1480, rng) * 0.72
+    shut_clank = clank(0.075, 360, METAL_HOLLOW, 30.0, rng, 0.55) * 0.60
+    shut_thump = thump(0.055, 130, 56, 36.0, rng, 1.3) * 0.24
+    return sat(mix(
+        place(unlatch, 0.0),
+        place(rel_clank, 0.002),
+        place(slide, 0.012),
+        place(shut_t, 0.078),
+        place(shut_clank, 0.080),
+        place(shut_thump, 0.082),
+    ), 1.3)
 
 
-@sfx("ui_open", n=1, target=-22.0, dur=0.4, fout=0.05)
-def ui_open(c):
-    """面板是瞬间出现的，所以咔嗒与第一个音在 0 秒，随后上行的第二个音与轻气流表现「展开」。"""
-    rng = c.rng
-    m = Mix()
-    m.add(noise_tick(rng, 3000.0, 11000.0, 0.0015), 0.0, 0.4)
-    m.add(tone(1174.7, 0.07, "sine", 0.03), 0.0, 0.4)
-    m.add(tone(1568.0, 0.12, "sine", 0.05), 0.055, 0.4)
-    m.add(tone(2349.3, 0.1, "sine", 0.04), 0.07, 0.15)
-    m.add(airy(rng, 0.16, 900.0, 4500.0, 0.3), 0.0, 0.3)
-    return space(m.render(c.stereo), "ui", 0.2, c.stereo, 0)
+@sfx("ui_denied", n=1, target=-18.5, dur=0.24, fout=0.025)
+def _ui_denied(v, rng):
+    # 权限拒绝/操作无效：干脆的双连机械止动卡死声（咔-咔！）
+    t_hit1 = tick(0.013, 1750, rng) * 0.85
+    c1 = clank(0.065, 430, METAL_HEAVY, 36.0, rng, 0.65) * 0.72
+    th1 = thump(0.045, 145, 62, 38.0, rng, 1.35) * 0.25
+    t_hit2 = tick(0.013, 1420, rng) * 0.88
+    c2 = clank(0.080, 340, METAL_HEAVY, 30.0, rng, 0.70) * 0.76
+    th2 = thump(0.055, 128, 54, 34.0, rng, 1.4) * 0.28
+    return sat(mix(
+        place(t_hit1, 0.0),
+        place(c1, 0.001),
+        place(th1, 0.003),
+        place(t_hit2, 0.072),
+        place(c2, 0.073),
+        place(th2, 0.075),
+    ), 1.35)
 
 
-@sfx("ui_close", n=1, target=-22.5, dur=0.35, fout=0.04)
-def ui_close(c):
-    """面板是瞬间关闭的，咔嗒在 0 秒，随后下行的音与轻气流表现「收起」。"""
-    rng = c.rng
-    m = Mix()
-    m.add(noise_tick(rng, 2500.0, 9000.0, 0.0015), 0.0, 0.4)
-    m.add(tone(1396.9, 0.06, "sine", 0.025), 0.0, 0.35)
-    m.add(tone(1046.5, 0.09, "sine", 0.035), 0.05, 0.4)
-    m.add(airy(rng, 0.14, 4000.0, 800.0, 0.25), 0.0, 0.3)
-    return space(m.render(c.stereo), "ui", 0.18, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 机库整备：部件拆装 / 爆炸图展开 / 出击整备启动
+# ─────────────────────────────────────────────────────────────
+@sfx("hub_detach", n=1, target=-16.5, dur=0.95, fout=0.08)
+def _hub_detach(v, rng):
+    # 拆卸机甲部件：气动套筒松脱螺栓 -> 液压吊臂抽离 -> 高压气管断开嘶鸣
+    bolt_loos = clank(0.22, 340, METAL_HEAVY, 16.0, rng, 0.78)
+    air_puff = hiss(0.28, 1900, 1200, 10.0, rng) * 0.55
+    srv_pull = servo(0.42, 240, 130, rng, 0.48)
+    heavy_unseat = thump(0.28, 105, 34, 14.0, rng, 2.0) * 0.72
+    cl_free = clank(0.25, 220, METAL_HOLLOW, 14.0, rng, 0.68) * 0.65
+    return sat(mix(
+        place(bolt_loos, 0.0),
+        place(air_puff, 0.04),
+        place(srv_pull, 0.14),
+        place(heavy_unseat, 0.22),
+        place(cl_free, 0.23),
+    ), 1.55)
 
 
-@sfx("ui_denied", n=1, target=-22.0, dur=0.3, fout=0.03)
-def ui_denied(c):
-    rng = c.rng
-    m = Mix()
-    m.add(noise_tick(rng, 1500.0, 6000.0, 0.002), 0.0, 0.3)
-    m.add(buzz(185.0, 0.22, (2, 0.55), 1300.0), 0.0, 0.8)
-    m.add(tone(370.0, 0.2, "tri", 0.08, bright=2500.0), 0.0, 0.2)
-    return space(m.render(c.stereo), "ui", 0.15, c.stereo, 0)
+@sfx("hub_dock", n=2, target=-15.5, dur=0.95, fout=0.08)
+def _hub_dock(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 安装机甲部件：液压推进对准 -> 重型钢制卡榫轰然落锁 -> 气动锁紧扳手加固
+    srv_in = servo(0.22, 140 * p, 260 * p, rng, 0.45)
+    dock_thump = thump(0.36, 118 * p, 28 * p, 10.0, rng, 2.5)
+    dock_clank = clank(0.35, 225 * p, METAL_HEAVY, 11.0, rng, 0.88)
+    wrench_lock = clank(0.22, 390 * p, METAL_LIGHT, 18.0, rng, 0.72) * 0.7
+    seal_hiss = hiss(0.25, 1750 * p, 1100, 12.0, rng) * 0.42
+    return reverb_tail(sat(mix(
+        place(srv_in, 0.0),
+        place(dock_thump, 0.18),
+        place(dock_clank, 0.185),
+        place(wrench_lock, 0.42),
+        place(seal_hiss, 0.46),
+    ), 1.65), 0.16, 0.16)
 
 
-# ---------------------------------------------------------------- 机库（换装：分离后约 0.45 秒新模块到位并播放对接声）
-@sfx("hub_detach", n=1, target=-18.5, dur=0.9, fout=0.12)
-def hub_detach(c):
-    rng = c.rng
-    m = Mix()
-    m.add(clank(rng, 760.0, 0.05, PLATE, 0.3, 0.8, 0.5), 0.0, 0.8, -0.2)
-    m.add(tick(rng, 3400.0, 0.004, 0.03), 0.03, 0.35, 0.2)
-    m.add(hiss(rng, 0.35, 1500.0, 9000.0, 0.004, 0.05, 0.25, (3000.0, 5600.0), 4.0, 0.5), 0.04, 0.4, 0.3)
-    m.add(servo(rng, 0.4, 620.0, 300.0, 0.35, 0.03, 5.0, 0.2), 0.08, 0.3, -0.3)
-    return space(m.render(c.stereo), "hangar", 0.2, c.stereo, 0)
+@sfx("hub_explode", n=1, target=-17.5, dur=1.1, fout=0.1)
+def _hub_explode(v, rng):
+    # 机库检视“装甲分解展开”：多组导轨依次解锁滑开
+    out = np.zeros(int(1.1 * SR))
+    for i in range(4):
+        t0 = i * 0.11
+        pf = 1.0 + i * 0.08
+        unlatch = clank(0.16, 280 * pf, METAL_HEAVY, 18.0, rng, 0.7) * 0.65
+        srv = servo(0.26, 160 * pf, 290 * pf, rng, 0.4) * 0.48
+        slide = whoosh(0.24, 300 * pf, 850 * pf, rng, 1.8) * 0.45
+        out = mix(out, place(unlatch, t0, 1.1), place(srv, t0 + 0.02, 1.1), place(slide, t0 + 0.03, 1.1))
+    return sat(out, 1.45)
 
 
-@sfx("hub_dock", n=2, target=-17.5, dur=1.0, fout=0.12)
-def hub_dock(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(clank(rng, [520.0, 580.0][v], 0.07, HEAVY, 0.4, 0.8, 0.8), 0.0, 0.9)
-    m.add(thump(rng, [130.0, 140.0][v], 60.0, 0.25, 0.05, 0.02, 1.6, 0.3), 0.0, 0.6)
-    m.add(clank(rng, [1150.0, 1250.0][v], 0.03, PLATE, 0.15, 0.8, 0.3), 0.055, 0.5, 0.2)
-    m.add(hiss(rng, 0.3, 2000.0, 9000.0, 0.01, 0.04, 0.2, (3500.0, 6000.0), 4.0, 0.4), 0.1, 0.25, -0.3)
-    m.add(servo(rng, 0.3, 420.0, 300.0, 0.25, 0.04, 5.0, 0.15), 0.12, 0.15, 0.3)
-    return space(m.render(c.stereo), "hangar", 0.22, c.stereo, v)
+@sfx("hub_assemble", n=1, target=-16.5, dur=1.2, fout=0.1)
+def _hub_assemble(v, rng):
+    # 机库检视“装甲合拢复位”：导轨滑回 + 连环重型装甲锁扣合拢
+    slide = whoosh(0.45, 820, 240, rng, 2.0) * 0.55
+    srv = servo(0.42, 280, 150, rng, 0.45) * 0.5
+    out = mix(place(slide, 0.0, 1.2), place(srv, 0.02, 1.2))
+    for i in range(3):
+        t0 = 0.25 + i * 0.14
+        pf = 1.1 - i * 0.08
+        cl = clank(0.24, 250 * pf, METAL_HEAVY, 14.0, rng, 0.8) * 0.72
+        th = thump(0.22, 108 * pf, 32 * pf, 14.0, rng, 2.1) * 0.68
+        out = mix(out, place(cl, t0, 1.2), place(th, t0 + 0.004, 1.2))
+    return sat(out, 1.55)
 
 
-@sfx("hub_explode", n=1, target=-18.0, dur=1.5, fout=0.2)
-def hub_explode(c):
-    rng = c.rng
-    m = Mix(1.5)
-    for k, pn in enumerate([-0.6, 0.6, -0.2, 0.3, 0.0]):
-        t0 = 0.05 * k + c.r(0.0, 0.015)
-        m.add(clank(rng, c.r(700.0, 1100.0), 0.035, PLATE, 0.2, 0.8, 0.4), t0, 0.5, pn)
-        m.add(servo(rng, 0.5, c.r(380.0, 450.0), c.r(800.0, 950.0), 0.15, 0.2, 5.0, 0.2), t0 + 0.04, 0.12, pn)
-    m.add(hiss(rng, 0.6, 1500.0, 9000.0, 0.01, 0.1, 0.4, (3000.0, 5600.0), 4.0, 0.5), 0.05, 0.3)
-    m.add(airy(rng, 0.7, 400.0, 2500.0, 0.4), 0.1, 0.25)
-    return space(m.render(c.stereo), "hangar", 0.22, c.stereo, 0)
+@sfx("hub_starter", n=1, target=-15.0, dur=2.2, fout=0.25)
+def _hub_starter(v, rng):
+    # 出击整备主电源合闸：机库重型闸刀闭合 -> 燃气轮机点火 -> 弹射架气压蓄满
+    breaker = clank(0.35, 210, METAL_HEAVY, 11.0, rng, 0.88)
+    sub_boom = thump(0.45, 115, 26, 8.0, rng, 2.5)
+    spool = turbine(1.55, 75, 245, rng, 6, 0.1) * 0.72
+    furnace = roar(1.25, 210, 3.0, rng, 1.9) * 0.65
+    catapult_lock = clank(0.32, 290, METAL_HEAVY, 12.0, rng, 0.82) * 0.75
+    steam = hiss(0.75, 1850, 1200, 4.5, rng) * 0.48
+    return reverb_tail(sat(mix(
+        place(breaker, 0.0),
+        place(sub_boom, 0.02),
+        place(spool, 0.12),
+        place(furnace, 0.18),
+        place(catapult_lock, 1.25),
+        place(steam, 1.30),
+    ), 1.7), 0.25, 0.22)
 
 
-@sfx("hub_assemble", n=1, target=-17.5, dur=1.5, fout=0.2)
-def hub_assemble(c):
-    rng = c.rng
-    m = Mix(1.5)
-    m.add(airy(rng, 0.6, 2500.0, 400.0, 0.6), 0.0, 0.25)
-    for k, pn in enumerate([0.6, -0.6, 0.2, -0.3, 0.0]):
-        m.add(servo(rng, 0.45, c.r(800.0, 950.0), c.r(380.0, 450.0), 0.3, 0.05, 5.0, 0.2), 0.05 * k, 0.12, pn)
-        m.add(clank(rng, c.r(600.0, 900.0), 0.04, HEAVY, 0.25, 0.8, 0.5), 0.42 + 0.055 * k, 0.55, pn)
-    m.add(thump(rng, 120.0, 55.0, 0.3, 0.07, 0.02, 1.6, 0.2), 0.68, 0.6)
-    m.add(hiss(rng, 0.4, 2000.0, 9000.0, 0.01, 0.05, 0.3, (3500.0, 6000.0), 4.0, 0.4), 0.72, 0.25)
-    return space(m.render(c.stereo), "hangar", 0.22, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 货舱装卸 / 军需商店交易 / 委托完成
+# ─────────────────────────────────────────────────────────────
+@sfx("cargo_load", n=1, target=-18.5, dur=0.55, fout=0.05)
+def _cargo_load(v, rng):
+    # 物资装入货舱：金属箱滑入导轨 + 弹簧卡扣锁紧
+    slide = whoosh(0.16, 280, 680, rng, 1.8) * 0.48
+    th = thump(0.20, 105, 36, 16.0, rng, 2.0) * 0.72
+    latch = clank(0.22, 290, METAL_HEAVY, 16.0, rng, 0.75)
+    return sat(mix(place(slide, 0.0), place(th, 0.11), place(latch, 0.115)), 1.45)
 
 
-@sfx("hub_starter", n=1, target=-16.5, dur=2.4, fout=0.3)
-def hub_starter(c):
-    rng = c.rng
-    m = Mix(2.4)
-    m.add(rattle(rng, 1.0, 50.0, 900.0, 3000.0, 2.0, 0.01), 0.0, 0.4, -0.3)
-    m.add(servo(rng, 1.0, 140.0, 260.0, 0.3, 0.3, 4.0, 0.25, 2500.0), 0.0, 0.35, 0.2)
-    m.add(hiss(rng, 0.8, 1200.0, 7000.0, 0.2, 0.3, 0.3, (2400.0, 4400.0), 4.0), 0.3, 0.15)
-    m.add(clank(rng, 260.0, 0.12, HEAVY, 0.8, 0.6, 0.9), 1.05, 0.9)
-    m.add(thump(rng, 95.0, 38.0, 0.5, 0.13, 0.03, 2.2, 0.4), 1.05, 0.8)
-    m.add(rattle(rng, 0.4, 70.0, 1200.0, 4000.0, 0.12), 1.08, 0.3, 0.3)
-    m.add(clank(rng, 1250.0, 0.025, PLATE, 0.12, 0.8, 0.3), 1.5, 0.4, -0.2)
-    m.add(hiss(rng, 0.5, 1500.0, 9000.0, 0.005, 0.08, 0.35, (3000.0, 5600.0), 4.0, 0.5), 1.52, 0.4, 0.2)
-    return space(m.render(c.stereo), "hangar", 0.25, c.stereo, 0)
+@sfx("cargo_unload", n=1, target=-18.5, dur=0.55, fout=0.05)
+def _cargo_unload(v, rng):
+    # 物资卸下货舱：卡扣弹开 + 货箱抽出落位
+    unlatch = clank(0.16, 360, METAL_LIGHT, 20.0, rng, 0.68)
+    slide = whoosh(0.18, 650, 260, rng, 1.8) * 0.45
+    drop = thump(0.20, 95, 34, 16.0, rng, 1.9) * 0.7
+    cl = clank(0.18, 230, METAL_HOLLOW, 18.0, rng, 0.65) * 0.65
+    return sat(mix(
+        place(unlatch, 0.0),
+        place(slide, 0.05),
+        place(drop, 0.18),
+        place(cl, 0.185),
+    ), 1.45)
 
 
-@sfx("cargo_load", n=1, target=-19.5, dur=0.6, fout=0.06)
-def cargo_load(c):
-    rng = c.rng
-    m = Mix()
-    m.add(scrape(rng, 0.18, 300.0, 2500.0, 40.0, None), 0.0, 0.35, -0.3)
-    m.add(thump(rng, 170.0, 90.0, 0.2, 0.04, 0.015, 1.4, 0.3), 0.15, 0.45, 0.2)
-    m.add(clank(rng, 620.0, 0.03, PLATE, 0.15, 0.6, 0.6), 0.15, 0.6, 0.2)
-    return space(m.render(c.stereo), "hangar", 0.15, c.stereo, 0)
+@sfx("shop_buy", n=1, target=-17.5, dur=0.8, fout=0.08)
+def _shop_buy(v, rng):
+    # 军需采购：印章式气动钢印砸下 + 弹药箱滑出补给槽
+    stamp_thump = thump(0.24, 115, 34, 14.0, rng, 2.2)
+    stamp_clank = clank(0.22, 275, METAL_HEAVY, 15.0, rng, 0.8)
+    chute = whoosh(0.28, 320, 780, rng, 1.8) * 0.5
+    crate_land = clank(0.26, 340, METAL_LIGHT, 16.0, rng, 0.72) * 0.72
+    air_puff = hiss(0.20, 1750, 1100, 14.0, rng) * 0.35
+    return sat(mix(
+        place(stamp_thump, 0.0),
+        place(stamp_clank, 0.005),
+        place(air_puff, 0.04),
+        place(chute, 0.18),
+        place(crate_land, 0.36),
+    ), 1.5)
 
 
-@sfx("cargo_unload", n=1, target=-19.5, dur=0.6, fout=0.06)
-def cargo_unload(c):
-    rng = c.rng
-    m = Mix()
-    m.add(thump(rng, 200.0, 120.0, 0.12, 0.025, 0.01, 1.0, 0.3), 0.0, 0.4, 0.2)
-    m.add(scrape(rng, 0.18, 300.0, 2500.0, 40.0, None), 0.04, 0.35, 0.3)
-    m.add(thump(rng, 150.0, 85.0, 0.2, 0.045, 0.015, 1.4, 0.3), 0.21, 0.4, -0.2)
-    m.add(clank(rng, 560.0, 0.03, PLATE, 0.15, 0.6, 0.6), 0.21, 0.55, -0.2)
-    return space(m.render(c.stereo), "hangar", 0.15, c.stereo, 0)
+@sfx("shop_sell", n=2, target=-18.0, dur=0.75, fout=0.08)
+def _shop_sell(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 物资回收变卖：回收舱门闭合 + 机械计数器连跳三下 + 液压压实闷响
+    chute_in = clank(0.18, 260 * p, METAL_HOLLOW, 18.0, rng, 0.7)
+    t1 = tick(0.015, 1600 * p, rng) * 0.65
+    t2 = tick(0.015, 1750 * p, rng) * 0.65
+    t3 = tick(0.015, 1900 * p, rng) * 0.7
+    seal_thump = thump(0.24, 102 * p, 34 * p, 14.0, rng, 2.0) * 0.75
+    seal_clank = clank(0.22, 310 * p, METAL_HEAVY, 16.0, rng, 0.75) * 0.7
+    return sat(mix(
+        place(chute_in, 0.0),
+        place(t1, 0.14),
+        place(t2, 0.21),
+        place(t3, 0.28),
+        place(seal_thump, 0.36),
+        place(seal_clank, 0.365),
+    ), 1.45)
 
 
-# ---------------------------------------------------------------- 商店与委托
-@sfx("shop_buy", n=1, target=-19.0, dur=0.8, fout=0.1)
-def shop_buy(c):
-    rng = c.rng
-    m = Mix()
-    m.add(tick(rng, 4200.0, 0.003, 0.02), 0.0, 0.3)
-    m.add(tone(1760.0, 0.05, "sine", 0.02), 0.0, 0.35)
-    m.add(chime(1568.0, 0.5, 0.18, ((1.0, 1.0), (2.0, 0.3), (2.76, 0.12))), 0.06, 0.45, -0.2)
-    m.add(chime(2093.0, 0.55, 0.2, ((1.0, 1.0), (2.0, 0.3), (2.76, 0.12))), 0.13, 0.45, 0.2)
-    m.add(modal(rng, 3600.0, BAR, 0.05, 0.2, 0.01, 0.8, 0.6), 0.13, 0.12)
-    return space(m.render(c.stereo), "hangar", 0.12, c.stereo, 0)
-
-
-@sfx("shop_sell", n=2, target=-19.0, dur=0.9, fout=0.1)
-def shop_sell(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    count = [3, 5][v]
-    for k in range(count):
-        t0 = 0.05 * k + c.r(0.0, 0.02)
-        m.add(modal(rng, c.r(3000.0, 4200.0), BAR, 0.06, 0.25, 0.02, 0.8, 0.6), t0, 0.4 * (0.85 ** k), c.r(-0.4, 0.4))
-        m.add(tick(rng, c.r(5000.0, 7000.0), 0.002, 0.015), t0, 0.15)
-    m.add(chime([1318.5, 1174.7][v], 0.45, 0.18), 0.05 * count + 0.04, 0.4)
-    m.add(chime([1975.5, 1760.0][v], 0.5, 0.2), 0.05 * count + 0.1, 0.35)
-    return space(m.render(c.stereo), "hangar", 0.12, c.stereo, v)
-
-
-@sfx("request_complete", n=1, target=-18.0, dur=1.6, fout=0.25)
-def request_complete(c):
-    rng = c.rng
-    m = Mix(1.6)
-    for k, f in enumerate([523.3, 659.3, 784.0, 1046.5]):
-        m.add(chime(f, 1.0, 0.4, ((1.0, 1.0), (2.0, 0.35), (3.0, 0.12), (4.2, 0.05))), 0.07 * k, 0.4, -0.3 + 0.2 * k)
-    m.add(thump(rng, 160.0, 80.0, 0.2, 0.04, 0.015, 1.4, 0.4), 0.4, 0.6)
-    m.add(burst(rng, 0.06, 0.012, 1200.0, 6000.0, -3.0, 0.002), 0.4, 0.3)
-    n = ns(1.2)
-    pad = sum(np.sin(2 * np.pi * f * tt(n)) for f in (261.6, 262.4, 392.0))
-    m.add(norm(pad) * env([(0, 0), (0.3, 1.0), (1.2, 0.0)], n), 0.1, 0.15)
-    return space(m.render(c.stereo), "hangar", 0.18, c.stereo, 0)
+@sfx("request_complete", n=1, target=-16.0, dur=1.4, fout=0.15)
+def _request_complete(v, rng):
+    # 作战委托达成：重型钢印落锁 + 双层厚重金属钟板共鸣（非电子音阶） + 气压泄放
+    slam = thump(0.36, 120, 30, 10.0, rng, 2.4)
+    bolt = clank(0.32, 245, METAL_HEAVY, 12.0, rng, 0.85)
+    plate1 = modal(0.65, 320, METAL_BELL, 6.5, rng, 0.6) * 0.55
+    plate2 = modal(0.75, 425, METAL_BELL, 5.5, rng, 0.65) * 0.6
+    air = hiss(0.45, 1700, 1100, 7.0, rng) * 0.38
+    return reverb_tail(sat(mix(
+        place(slam, 0.0),
+        place(bolt, 0.006),
+        place(plate1, 0.02),
+        place(air, 0.12),
+        place(plate2, 0.24),
+    ), 1.6), 0.22, 0.2)

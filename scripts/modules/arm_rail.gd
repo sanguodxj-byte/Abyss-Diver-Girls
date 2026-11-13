@@ -35,26 +35,33 @@ static func build(ctx: Dictionary) -> Node3D:
 			K.cy(g, 0.055, 0.56, M_CAP, Vector3(sx, yy, -0.12), Vector3(90, 0, 0), -1.0, 14)
 			K.cy(g, 0.04, 0.03, A.chrome(), Vector3(sx, yy, -0.415), Vector3(90, 0, 0), -1.0, 10)
 	K.bb(g, Vector3(0.3, 0.04, 0.6), M_STEEL, Vector3(0, -0.215, -0.12), Vector3.ZERO, 0.008)
-	# 双导轨（上 / 下）+ 铜质导电面 + 弧光
-	var COPPER := A.paint(Color(0.7, 0.4, 0.22), 0.85, 0.35, {"wear": 0.1, "panel_scale": 0.0})
+	# 上下双电磁加速导轨 + 紫铜母排导电面 + 镂空深邃加速膛（彻底移除整条发光霓虹板，仅保留炮尾深处电枢待机微光）
+	var COPPER := K.copper()
 	for sy in [-1.0, 1.0]:
-		K.bb(g, Vector3(0.12, 0.07, 1.75), M_STEEL, Vector3(0, sy * 0.1, -1.2), Vector3.ZERO, 0.015)
-		K.bb(g, Vector3(0.07, 0.014, 1.75), COPPER, Vector3(0, sy * 0.06, -1.2), Vector3.ZERO, 0.003)
-	K.bb(g, Vector3(0.02, 0.09, 1.65), A.emit(glow, 1.4), Vector3(0, 0, -1.2), Vector3.ZERO, 0.005)
-	# 绝缘夹箍（C 形，两侧）
-	var M_INS := A.paint(Color(0.22, 0.21, 0.18), 0.0, 0.8, {"wear": 0.3, "panel_scale": 0.0})
-	for i in 5:
-		var z := -0.5 - i * 0.36
+		K.bb(g, Vector3(0.15, 0.085, 1.78), M_STEEL, Vector3(0, sy * 0.11, -1.20), Vector3.ZERO, 0.016)
+		K.bb(g, Vector3(0.18, 0.035, 1.68), M_ARM, Vector3(0, sy * 0.155, -1.16), Vector3.ZERO, 0.010)
+		K.bb(g, Vector3(0.085, 0.018, 1.76), COPPER, Vector3(0, sy * 0.062, -1.20), Vector3.ZERO, 0.003)
+	K.bb(g, Vector3(0.07, 0.10, 0.22), K.bore_mat(), Vector3(0, 0, -0.44), Vector3.ZERO, 0.005)
+	if ctx.get("lights", true):
+		K.bb(g, Vector3(0.018, 0.055, 0.16), A.emit(glow, 1.2), Vector3(0, 0, -0.48), Vector3.ZERO, 0.003)
+	# 6道抗洛伦兹斥力高强钢预紧夹箍（带陶瓷绝缘衬垫与对拉高强螺栓）
+	var M_INS := A.paint(Color(0.26, 0.24, 0.20), 0.0, 0.82, {"wear": 0.28, "panel_scale": 0.0})
+	for i in 6:
+		var z := -0.48 - i * 0.30
 		for sx in [-1.0, 1.0]:
-			K.bb(g, Vector3(0.05, 0.3, 0.08), M_INS, Vector3(sx * 0.085, 0, z), Vector3.ZERO, 0.01)
-		K.bb(g, Vector3(0.22, 0.04, 0.08), M_INS, Vector3(0, 0.16, z), Vector3.ZERO, 0.008)
-		K.bb(g, Vector3(0.22, 0.04, 0.08), M_INS, Vector3(0, -0.16, z), Vector3.ZERO, 0.008)
-	# 动力电缆：电容 → 导轨根部
+			K.bb(g, Vector3(0.055, 0.34, 0.09), K.gunmetal(), Vector3(sx * 0.10, 0, z), Vector3.ZERO, 0.01)
+			K.bb(g, Vector3(0.035, 0.22, 0.07), M_INS, Vector3(sx * 0.068, 0, z), Vector3.ZERO, 0.006)
+			for by in [-0.13, 0.13]:
+				K.cy(g, 0.016, 0.26, A.chrome(), Vector3(0, by, z), Vector3(0, 0, 90), -1.0, 6)
+		K.bb(g, Vector3(0.25, 0.045, 0.09), M_DARK, Vector3(0, 0.18, z), Vector3.ZERO, 0.008)
+		K.bb(g, Vector3(0.25, 0.045, 0.09), M_DARK, Vector3(0, -0.18, z), Vector3.ZERO, 0.008)
+	# 粗重高压馈电母排软缆：电容组 → 炮尾铜端子
 	for sx in [-1.0, 1.0]:
-		A.hose(g, Vector3(sx * 0.13, -0.3, -0.38), Vector3(sx * 0.1, -0.15, -0.55), Vector3(sx * 0.05, -0.05, 0), 0.025, A.paint(Color(0.55, 0.3, 0.08), 0.0, 0.7, {"panel_scale": 0.0}))
-	# 炮口：轨道端头 + 防弧罩
-	K.bb(g, Vector3(0.26, 0.34, 0.1), M_DARK, Vector3(0, 0, -2.1), Vector3.ZERO, 0.02)
-	K.bb(g, Vector3(0.05, 0.1, 0.11), A.metal(Color(0.02, 0.02, 0.02)), Vector3(0, 0, -2.1), Vector3.ZERO, 0.004)
+		K.cy(g, 0.028, 0.06, COPPER, Vector3(sx * 0.11, -0.14, -0.54), Vector3(0, 0, 90), -1.0, 8)
+		A.hose(g, Vector3(sx * 0.13, -0.30, -0.36), Vector3(sx * 0.11, -0.14, -0.54), Vector3(sx * 0.06, -0.05, 0), 0.026, A.rubber())
+	# 炮口：分流消弧制退框 + 真实矩形深黑轨道膛口
+	K.bb(g, Vector3(0.28, 0.36, 0.14), M_DARK, Vector3(0, 0, -2.10), Vector3.ZERO, 0.02)
+	K.bb(g, Vector3(0.09, 0.11, 0.15), K.bore_mat(), Vector3(0, 0, -2.105), Vector3.ZERO, 0.004)
 	var muzzle := Marker3D.new()
 	muzzle.name = "Muzzle"
 	g.add_child(muzzle)

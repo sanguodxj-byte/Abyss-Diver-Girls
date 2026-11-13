@@ -15,6 +15,8 @@ var _tick := 0.0
 
 func setup(r, rad: float, dur: float) -> void:
 	raid = r
+	add_to_group("coop_devices")
+	set_meta("coop_device", "web")
 	radius = rad
 	life = dur
 

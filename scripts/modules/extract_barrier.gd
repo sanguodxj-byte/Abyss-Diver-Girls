@@ -18,6 +18,8 @@ var _posts: Array = []
 
 func setup(r, rad: float, dur: float) -> void:
 	raid = r
+	add_to_group("coop_devices")
+	set_meta("coop_device", "barrier")
 	radius = rad
 	life = dur
 

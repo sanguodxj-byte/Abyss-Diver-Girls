@@ -8,52 +8,52 @@ const A = preload("res://scripts/art.gd")
 ## 每个预设写全所有会被改动的量，避免共享材质沿用其他战区的颜色
 const PRESETS := {
 	"clear": {
-		"sky_top": Color(0.45, 0.45, 0.42), "sky_horizon": Color(0.68, 0.64, 0.56), "sky_ground": Color(0.42, 0.4, 0.34), "sky_bottom": Color(0.1, 0.08, 0.09),
-		"ambient": 1.0, "sun_color": Color(1.0, 0.9, 0.76), "sun_energy": 1.9, "sun_rot": Vector3(-42, 35, 0),
-		"fill_color": Color(0.6, 0.62, 0.66), "fill_energy": 0.45,
-		"fog_color": Color(0.52, 0.5, 0.44), "fog_density": 0.004, "fog_vol": 0.008, "exposure": 1.0, "saturation": 0.8,
+		"sky_top": Color(0.45, 0.45, 0.42), "sky_horizon": Color(0.68, 0.64, 0.56), "sky_ground": Color(0.42, 0.4, 0.34), "sky_bottom": Color(0.1, 0.08, 0.09), "cloud_tint": Color(0.95, 0.92, 0.86, 0.56),
+		"ambient": 0.42, "sun_color": Color(1.0, 0.91, 0.78), "sun_energy": 2.55, "sun_rot": Vector3(-37, 52, 0),
+		"fill_color": Color(0.50, 0.62, 0.78), "fill_energy": 0.15,
+		"fog_color": Color(0.52, 0.5, 0.44), "fog_density": 0.0009, "fog_vol": 0.0, "exposure": 1.0, "saturation": 0.90,
 		"dirt_a": Color(0.47, 0.42, 0.33), "dirt_b": Color(0.33, 0.28, 0.21), "mud": Color(0.27, 0.23, 0.18), "grass": Color(0.31, 0.33, 0.19), "grass2": Color(0.42, 0.4, 0.25),
 	},
 	"rain": {
-		"sky_top": Color(0.3, 0.34, 0.38), "sky_horizon": Color(0.52, 0.55, 0.55), "sky_ground": Color(0.36, 0.38, 0.38), "sky_bottom": Color(0.07, 0.08, 0.09),
-		"ambient": 0.95, "sun_color": Color(0.82, 0.87, 0.94), "sun_energy": 1.35, "sun_rot": Vector3(-58, 20, 0),
-		"fill_color": Color(0.6, 0.68, 0.76), "fill_energy": 0.5,
-		"fog_color": Color(0.55, 0.6, 0.65), "fog_density": 0.0065, "fog_vol": 0.01, "exposure": 1.03, "saturation": 0.68,
+		"sky_top": Color(0.3, 0.34, 0.38), "sky_horizon": Color(0.52, 0.55, 0.55), "sky_ground": Color(0.36, 0.38, 0.38), "sky_bottom": Color(0.07, 0.08, 0.09), "cloud_tint": Color(0.68, 0.72, 0.76, 0.74),
+		"ambient": 0.44, "sun_color": Color(0.86, 0.9, 0.96), "sun_energy": 2.15, "sun_rot": Vector3(-36, 58, 0),
+		"fill_color": Color(0.50, 0.62, 0.78), "fill_energy": 0.18,
+		"fog_color": Color(0.52, 0.57, 0.62), "fog_density": 0.0013, "fog_vol": 0.0, "exposure": 1.02, "saturation": 0.84,
 		"dirt_a": Color(0.4, 0.39, 0.37), "dirt_b": Color(0.28, 0.28, 0.27), "mud": Color(0.21, 0.21, 0.21), "grass": Color(0.25, 0.29, 0.19), "grass2": Color(0.33, 0.35, 0.25),
 	},
 	"dusk_gloom": {
-		"sky_top": Color(0.34, 0.28, 0.3), "sky_horizon": Color(0.78, 0.55, 0.36), "sky_ground": Color(0.36, 0.3, 0.26), "sky_bottom": Color(0.08, 0.06, 0.07),
-		"ambient": 0.9, "sun_color": Color(1.0, 0.72, 0.48), "sun_energy": 1.9, "sun_rot": Vector3(-24, 78, 0),
-		"fill_color": Color(0.4, 0.5, 0.66), "fill_energy": 0.55,
-		"fog_color": Color(0.52, 0.44, 0.38), "fog_density": 0.006, "fog_vol": 0.01, "exposure": 1.03, "saturation": 0.78,
+		"sky_top": Color(0.34, 0.28, 0.3), "sky_horizon": Color(0.78, 0.55, 0.36), "sky_ground": Color(0.36, 0.3, 0.26), "sky_bottom": Color(0.08, 0.06, 0.07), "cloud_tint": Color(0.96, 0.72, 0.52, 0.62),
+		"ambient": 0.40, "sun_color": Color(1.0, 0.74, 0.5), "sun_energy": 2.50, "sun_rot": Vector3(-31, 66, 0),
+		"fill_color": Color(0.38, 0.50, 0.70), "fill_energy": 0.16,
+		"fog_color": Color(0.52, 0.44, 0.38), "fog_density": 0.0012, "fog_vol": 0.0, "exposure": 1.02, "saturation": 0.88,
 		"dirt_a": Color(0.44, 0.38, 0.3), "dirt_b": Color(0.3, 0.26, 0.21), "mud": Color(0.24, 0.2, 0.17), "grass": Color(0.29, 0.28, 0.18), "grass2": Color(0.4, 0.35, 0.22),
 	},
 	"sandstorm": {
-		"sky_top": Color(0.48, 0.42, 0.32), "sky_horizon": Color(0.72, 0.62, 0.46), "sky_ground": Color(0.5, 0.43, 0.32), "sky_bottom": Color(0.14, 0.11, 0.09),
-		"ambient": 1.05, "sun_color": Color(1.0, 0.86, 0.62), "sun_energy": 2.1, "sun_rot": Vector3(-52, 120, 0),
-		"fill_color": Color(0.62, 0.55, 0.44), "fill_energy": 0.4,
-		"fog_color": Color(0.66, 0.56, 0.4), "fog_density": 0.006, "fog_vol": 0.012, "exposure": 1.02, "saturation": 0.7,
+		"sky_top": Color(0.48, 0.42, 0.32), "sky_horizon": Color(0.72, 0.62, 0.46), "sky_ground": Color(0.5, 0.43, 0.32), "sky_bottom": Color(0.14, 0.11, 0.09), "cloud_tint": Color(0.88, 0.76, 0.56, 0.64),
+		"ambient": 0.46, "sun_color": Color(1.0, 0.86, 0.62), "sun_energy": 2.55, "sun_rot": Vector3(-37, 62, 0),
+		"fill_color": Color(0.56, 0.54, 0.48), "fill_energy": 0.16,
+		"fog_color": Color(0.66, 0.56, 0.4), "fog_density": 0.0016, "fog_vol": 0.0, "exposure": 1.0, "saturation": 0.84,
 		"dirt_a": Color(0.52, 0.45, 0.32), "dirt_b": Color(0.4, 0.34, 0.24), "mud": Color(0.32, 0.27, 0.2), "grass": Color(0.34, 0.33, 0.18), "grass2": Color(0.46, 0.41, 0.24),
 	},
 	"lake_mist": {
-		"sky_top": Color(0.3, 0.26, 0.36), "sky_horizon": Color(0.62, 0.42, 0.42), "sky_ground": Color(0.34, 0.26, 0.3), "sky_bottom": Color(0.08, 0.05, 0.08),
-		"ambient": 0.88, "sun_color": Color(0.95, 0.68, 0.6), "sun_energy": 1.7, "sun_rot": Vector3(-18, -40, 0),
-		"fill_color": Color(0.45, 0.55, 0.72), "fill_energy": 0.6,
-		"fog_color": Color(0.55, 0.47, 0.5), "fog_density": 0.007, "fog_vol": 0.012, "exposure": 1.02, "saturation": 0.76,
+		"sky_top": Color(0.3, 0.26, 0.36), "sky_horizon": Color(0.62, 0.42, 0.42), "sky_ground": Color(0.34, 0.26, 0.3), "sky_bottom": Color(0.08, 0.05, 0.08), "cloud_tint": Color(0.84, 0.68, 0.70, 0.66),
+		"ambient": 0.43, "sun_color": Color(0.95, 0.72, 0.62), "sun_energy": 2.30, "sun_rot": Vector3(-32, -55, 0),
+		"fill_color": Color(0.42, 0.55, 0.76), "fill_energy": 0.18,
+		"fog_color": Color(0.55, 0.47, 0.5), "fog_density": 0.0015, "fog_vol": 0.0, "exposure": 1.01, "saturation": 0.86,
 		"dirt_a": Color(0.36, 0.31, 0.27), "dirt_b": Color(0.24, 0.2, 0.19), "mud": Color(0.2, 0.16, 0.17), "grass": Color(0.22, 0.26, 0.17), "grass2": Color(0.3, 0.31, 0.22),
 	},
 	"canyon_noon": {
-		"sky_top": Color(0.36, 0.44, 0.52), "sky_horizon": Color(0.74, 0.68, 0.56), "sky_ground": Color(0.46, 0.4, 0.32), "sky_bottom": Color(0.1, 0.09, 0.08),
-		"ambient": 0.92, "sun_color": Color(1.0, 0.94, 0.8), "sun_energy": 2.4, "sun_rot": Vector3(-70, -20, 0),
-		"fill_color": Color(0.55, 0.62, 0.72), "fill_energy": 0.35,
-		"fog_color": Color(0.6, 0.55, 0.46), "fog_density": 0.003, "fog_vol": 0.006, "exposure": 0.98, "saturation": 0.74,
+		"sky_top": Color(0.36, 0.44, 0.52), "sky_horizon": Color(0.74, 0.68, 0.56), "sky_ground": Color(0.46, 0.4, 0.32), "sky_bottom": Color(0.1, 0.09, 0.08), "cloud_tint": Color(0.96, 0.94, 0.88, 0.50),
+		"ambient": 0.40, "sun_color": Color(1.0, 0.94, 0.8), "sun_energy": 2.75, "sun_rot": Vector3(-40, -52, 0),
+		"fill_color": Color(0.48, 0.60, 0.76), "fill_energy": 0.14,
+		"fog_color": Color(0.6, 0.55, 0.46), "fog_density": 0.0009, "fog_vol": 0.0, "exposure": 0.98, "saturation": 0.88,
 		"dirt_a": Color(0.5, 0.42, 0.32), "dirt_b": Color(0.34, 0.29, 0.22), "mud": Color(0.28, 0.23, 0.18), "grass": Color(0.32, 0.3, 0.17), "grass2": Color(0.44, 0.38, 0.22),
 	},
 	"spore_abyss": {
-		"sky_top": Color(0.06, 0.04, 0.1), "sky_horizon": Color(0.16, 0.1, 0.22), "sky_ground": Color(0.08, 0.05, 0.12), "sky_bottom": Color(0.02, 0.015, 0.03),
-		"ambient": 0.62, "sun_color": Color(0.6, 0.5, 0.9), "sun_energy": 0.55, "sun_rot": Vector3(-62, 10, 0),
-		"fill_color": Color(0.45, 0.38, 0.8), "fill_energy": 0.55,
-		"fog_color": Color(0.16, 0.1, 0.24), "fog_density": 0.012, "fog_vol": 0.02, "exposure": 1.15, "saturation": 0.95,
+		"sky_top": Color(0.11, 0.08, 0.18), "sky_horizon": Color(0.24, 0.16, 0.34), "sky_ground": Color(0.12, 0.08, 0.18), "sky_bottom": Color(0.03, 0.02, 0.05), "cloud_tint": Color(0.32, 0.24, 0.45, 0.48),
+		"ambient": 0.48, "sun_color": Color(0.74, 0.62, 0.96), "sun_energy": 1.45, "sun_rot": Vector3(-38, 52, 0),
+		"fill_color": Color(0.46, 0.44, 0.86), "fill_energy": 0.22,
+		"fog_color": Color(0.20, 0.14, 0.30), "fog_density": 0.0032, "fog_vol": 0.0, "exposure": 1.14, "saturation": 0.96,
 		"dirt_a": Color(0.26, 0.21, 0.32), "dirt_b": Color(0.16, 0.12, 0.2), "mud": Color(0.13, 0.09, 0.18), "grass": Color(0.18, 0.1, 0.24), "grass2": Color(0.26, 0.15, 0.32),
 	},
 }
@@ -111,15 +111,15 @@ func _apply() -> void:
 		env.volumetric_fog_albedo = _base.fog_color.lightened(0.25)
 		env.tonemap_exposure = float(_base.exposure)
 		env.adjustment_saturation = float(_base.saturation)
-		if preset == "spore_abyss":
-			env.background_mode = Environment.BG_COLOR
-			env.background_color = Color(0.015, 0.01, 0.025)
-			env.fog_sky_affect = 0.0
+		env.background_mode = Environment.BG_SKY
+		env.fog_sky_affect = 0.65 if preset == "spore_abyss" else 0.38
 	if sky_mat:
 		sky_mat.sky_top_color = _base.sky_top
 		sky_mat.sky_horizon_color = _base.sky_horizon
 		sky_mat.ground_horizon_color = _base.sky_ground
 		sky_mat.ground_bottom_color = _base.sky_bottom
+		var ct: Color = _base.get("cloud_tint", Color(0.92, 0.90, 0.86, 0.58))
+		sky_mat.sky_cover_modulate = ct
 	if sun:
 		sun.light_color = _base.sun_color
 		sun.light_energy = float(_base.sun_energy)
@@ -152,8 +152,9 @@ func _build_particles() -> void:
 		add_child(_spore_light)
 	# 雨天在地面上留一层水洼
 	if preset == "rain":
-		for i in 70:
-			var q = Vector3(raid.rng.randf_range(-170, 170), 0.025, raid.rng.randf_range(-170, 170))
+		var wh: float = raid.EXT_HALF if "EXT_HALF" in raid else 230.0
+		for i in 110:
+			var q = Vector3(raid.rng.randf_range(-wh, wh), 0.025, raid.rng.randf_range(-wh, wh))
 			A.ground_decal(raid.world, A.cloud_tex(), Color(0.06, 0.08, 0.1, raid.rng.randf_range(0.2, 0.42)), raid.rng.randf_range(1.6, 4.6), q)
 
 
@@ -185,9 +186,9 @@ func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
 
 
 func _rain() -> void:
-	_emit("rain", {"amount": 2400, "life": 1.3, "size": Vector2(0.03, 0.9), "dir": Vector3(0.28, -1.0, 0.12), "spread": 4.0,
-		"vmin": 30.0, "vmax": 38.0, "gravity": Vector3(0.6, -6.0, 0.3), "box": Vector3(34, 16, 30), "additive": false,
-		"c0": Color(0.72, 0.8, 0.88, 0.42), "c1": Color(0.6, 0.72, 0.85, 0.06)})
+	_emit("rain", {"amount": 1100, "life": 1.2, "size": Vector2(0.018, 0.72), "dir": Vector3(0.24, -1.0, 0.1), "spread": 3.0,
+		"vmin": 32.0, "vmax": 40.0, "gravity": Vector3(0.6, -6.0, 0.3), "box": Vector3(34, 16, 30), "additive": false,
+		"c0": Color(0.76, 0.84, 0.92, 0.22), "c1": Color(0.65, 0.76, 0.88, 0.04)})
 
 
 func _sand() -> void:
@@ -227,9 +228,9 @@ func _process(delta: float) -> void:
 		_spore_light.global_position = mp + Vector3(0, 7.0, 0)
 	if preset == "sandstorm":
 		_cycle += delta
-		var want := 0.006
+		var want := 0.0022
 		if _storm:
-			want = 0.032
+			want = 0.016
 			if _cycle > 24.0:
 				_storm = false
 				_cycle = 0.0
@@ -243,7 +244,7 @@ func _process(delta: float) -> void:
 	_fog_now = lerpf(_fog_now, _fog_want, clampf(delta * 0.8, 0.0, 1.0))
 	if env:
 		env.fog_density = _fog_now
-		env.volumetric_fog_density = _fog_now * 1.6
+		env.volumetric_fog_enabled = false
 
 ## 地表材质是全局共享的：行动结束把色调还原成默认值，机库与主菜单的地面不会带着上一局的颜色。
 func _exit_tree() -> void:

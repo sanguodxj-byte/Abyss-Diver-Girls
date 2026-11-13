@@ -37,6 +37,9 @@ var music_slot := ""
 var _voice: AudioStreamPlayer
 var voice_id := ""
 var _save_t: Timer
+var _last_ui_frame := -1
+var _last_ui_player: Node = null
+var _last_ui_auto := false
 
 
 func _ready() -> void:
@@ -108,7 +111,15 @@ func play_sfx(id, pos = null, opts := {}) -> Node:
 
 
 func play_ui(id: String) -> Node:
-	return play_sfx(id, null, {"bus": "UI"})
+	var f := Engine.get_process_frames()
+	if _last_ui_frame == f and _last_ui_auto and is_instance_valid(_last_ui_player):
+		_last_ui_player.stop()
+	var p := play_sfx(id, null, {"bus": "UI"})
+	if p != null:
+		_last_ui_frame = f
+		_last_ui_player = p
+		_last_ui_auto = false
+	return p
 
 
 ## 这个 id 现在能不能播（有没有文件）
@@ -526,9 +537,16 @@ func _ui_hover(b: BaseButton) -> void:
 func _ui_meta(n: Node, key: String, def: String) -> void:
 	if not is_instance_valid(n):
 		return
+	var f := Engine.get_process_frames()
+	if key == "sfx" and _last_ui_frame == f and not _last_ui_auto:
+		return
 	var id := str(n.get_meta(key, def))
 	if id != "":
-		play_ui(id)
+		var p := play_sfx(id, null, {"bus": "UI"})
+		if p != null and key == "sfx":
+			_last_ui_frame = f
+			_last_ui_player = p
+			_last_ui_auto = true
 
 
 # ====================================================================== 随游戏事件切换音乐

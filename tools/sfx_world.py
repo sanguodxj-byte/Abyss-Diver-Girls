@@ -1,348 +1,401 @@
-"""
-搜刮、货舱、空投、撤离与运输机的音效配方。
-"""
+# -*- coding: utf-8 -*-
+"""搜刮容器、战利品检视、空投舱降落、撤离信标与运输机音效（重工业物理重制版）。"""
 import numpy as np
-from sfx_dsp import (sfx, SR, ns, tt, white, pink, brown, smooth_noise, lp, hp, bp, peak, reson, sweep, sine, harm,
-                     fm, saw_amps, expdec, ad, env, ahr, sat, space, Mix)
-from sfx_lib import (place, norm, att, thump, crack, burst, modal, clank, tick, rattle, scrape, servo, hiss, whoosh,
-                     debris, tone, chime, roar, turbine, arc, buzz, slime, crunch, bubbles, voice, PLATE, BAR, TUBE,
-                     HEAVY, BELL)
+from sfx_dsp import (
+    SR, sfx, env_exp, env_adsr, biquad, reson, sweep,
+    white, pink, brown, velvet, sat, place, mix, reverb_tail,
+)
+from sfx_lib import (
+    thump, crack, tick, clank, modal, METAL_HEAVY, METAL_HOLLOW, METAL_LIGHT,
+    METAL_BELL, GLASS_MODES, CHITIN_MODES, servo, hiss, whoosh, roar, rumble,
+    zap, buzz, turbine, squelch,
+)
 
 
-def rustle(rng, dur=0.4, rate=120.0, lo=2000.0, hi=10000.0):
-    """塑料布与包装的窸窣声：密集的高频噪声颗粒。"""
-    n = ns(dur)
-    out = np.zeros(n)
-    t = 0.0
-    while True:
-        t += rng.exponential(1.0 / rate)
-        if t >= dur - 0.02:
-            break
-        place(out, burst(rng, 0.012, rng.uniform(0.001, 0.004), lo, hi, 0.0, 0.0005), t, rng.uniform(0.2, 1.0))
-    return norm(out) * ahr(n, 0.03, dur * 0.5, dur * 0.45)
+# ─────────────────────────────────────────────────────────────
+# 战地容器开启（补给箱 / 工具箱 / 军用武器箱 / 保险箱 / 虫茧 / 虫巢囊）
+# ─────────────────────────────────────────────────────────────
+@sfx("loot_open", n=2, target=-17.0, dur=0.75, fout=0.08)
+def _loot_open(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 通用金属箱：搭扣弹开 + 铰链摩擦 + 箱盖掀开撞击限位器
+    latch = clank(0.16, 360 * p, METAL_LIGHT, 20.0, rng, 0.72)
+    hinge = servo(0.24, 190 * p, 310 * p, rng, 0.38) * 0.48
+    lid_thump = thump(0.24, 105 * p, 34 * p, 14.0, rng, 2.0) * 0.72
+    lid_clank = clank(0.26, 235 * p, METAL_HOLLOW, 14.0, rng, 0.75)
+    return sat(mix(
+        place(latch, 0.0),
+        place(hinge, 0.06),
+        place(lid_thump, 0.26),
+        place(lid_clank, 0.265),
+    ), 1.45)
 
 
-def creak(rng, dur=0.35, f0=500.0, f1=700.0, grit=35.0):
-    """铰链吱呀：基频缓慢滑动的锯齿声，按粘滑颗粒断续发声。"""
-    n = ns(dur)
-    f = np.geomspace(f0, f1, n)
-    x = harm(f, saw_amps(16, 1.2))
-    g = np.clip(np.abs(smooth_noise(n, rng, grit)) * 2.5, 0, 1) ** 1.5
-    return norm(lp(x * g, 4000.0)) * ahr(n, 0.02, dur * 0.6, dur * 0.35)
+@sfx("loot_open_supply", n=1, target=-16.5, dur=0.95, fout=0.1)
+def _loot_open_supply(v, rng):
+    # 气密补给箱：双侧气压锁扣弹开 + 负压密封圈泄气嘶鸣 + 厚重箱盖液压撑杆升起
+    l1 = clank(0.16, 340, METAL_HEAVY, 18.0, rng, 0.75)
+    l2 = clank(0.16, 370, METAL_HEAVY, 18.0, rng, 0.75)
+    seal_hiss = hiss(0.45, 1950, 1200, 6.5, rng) * 0.62
+    strut = servo(0.38, 150, 275, rng, 0.42) * 0.52
+    stop_thump = thump(0.24, 108, 34, 14.0, rng, 2.1) * 0.7
+    return sat(mix(
+        place(l1, 0.0),
+        place(l2, 0.09),
+        place(seal_hiss, 0.14),
+        place(strut, 0.18),
+        place(stop_thump, 0.52),
+    ), 1.5)
 
 
-# ---------------------------------------------------------------- 打开容器
-@sfx("loot_open", n=2, target=-19.0, dur=0.9, fout=0.08)
-def loot_open(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(tick(rng, [2600.0, 2300.0][v], 0.006, 0.04), 0.0, 0.5, -0.2)
-    m.add(creak(rng, 0.35, [480.0, 420.0][v], [640.0, 520.0][v]), 0.06, 0.25, 0.2)
-    m.add(clank(rng, [520.0, 600.0][v], 0.05, PLATE, 0.3, 0.6, 0.6), 0.36, 0.5)
-    m.add(debris(rng, 0.3, 30.0, 0.1, 1500.0, 4000.0, 0.2), 0.38, 0.12)
-    return space(m.render(c.stereo), "yard", 0.12, c.stereo, v)
+@sfx("loot_open_tool", n=1, target=-17.0, dur=0.8, fout=0.08)
+def _loot_open_tool(v, rng):
+    # 机械工具箱：铁皮卡扣清脆弹开 + 折叠托盘连环展开碰撞声
+    snap = clank(0.15, 420, METAL_LIGHT, 22.0, rng, 0.75)
+    tray1 = clank(0.18, 310, METAL_HOLLOW, 18.0, rng, 0.68) * 0.72
+    tray2 = clank(0.20, 260, METAL_HOLLOW, 16.0, rng, 0.7) * 0.75
+    tools_rat = clank(0.14, 520, METAL_LIGHT, 24.0, rng, 0.55) * 0.5
+    return sat(mix(
+        place(snap, 0.0),
+        place(tray1, 0.12),
+        place(tools_rat, 0.18),
+        place(tray2, 0.28),
+    ), 1.45)
 
 
-@sfx("loot_open_supply", n=1, target=-19.0, dur=0.9, fout=0.08)
-def loot_open_supply(c):
-    rng = c.rng
-    m = Mix()
-    m.add(tick(rng, 1800.0, 0.008, 0.05, 0.7), 0.0, 0.5, -0.3)
-    m.add(tick(rng, 1700.0, 0.008, 0.05, 0.7), 0.07, 0.5, 0.3)
-    m.add(burst(rng, 0.12, 0.03, 1500.0, 9000.0, 0.0, 0.003), 0.12, 0.2)
-    m.add(thump(rng, 220.0, 140.0, 0.12, 0.03, 0.01, 1.0, 0.3), 0.2, 0.35)
-    m.add(rustle(rng, 0.45, 110.0), 0.25, 0.4, 0.2)
-    return space(m.render(c.stereo), "yard", 0.1, c.stereo, 0)
+@sfx("loot_open_military", n=1, target=-16.0, dur=1.1, fout=0.1)
+def _loot_open_military(v, rng):
+    # 重型军械箱：旋转泄压阀 -> 四角重型卡榫同步脱锁 -> 装甲箱盖沉重掀起
+    valve = servo(0.20, 210, 130, rng, 0.42)
+    unbolt = clank(0.28, 250, METAL_HEAVY, 13.0, rng, 0.85)
+    sub_pop = thump(0.30, 115, 30, 11.0, rng, 2.3)
+    gas_strut = hiss(0.48, 1750, 1100, 5.5, rng) * 0.55
+    heavy_open = clank(0.32, 195, METAL_HEAVY, 11.0, rng, 0.82) * 0.78
+    return sat(mix(
+        place(valve, 0.0),
+        place(unbolt, 0.18),
+        place(sub_pop, 0.185),
+        place(gas_strut, 0.24),
+        place(heavy_open, 0.58),
+    ), 1.6)
 
 
-@sfx("loot_open_tool", n=1, target=-18.5, dur=1.0, fout=0.1)
-def loot_open_tool(c):
-    rng = c.rng
-    m = Mix()
-    m.add(clank(rng, 1500.0, 0.02, PLATE, 0.1, 0.8, 0.3), 0.0, 0.5, -0.3)
-    m.add(clank(rng, 1400.0, 0.02, PLATE, 0.1, 0.8, 0.3), 0.06, 0.5, 0.3)
-    m.add(creak(rng, 0.25, 700.0, 900.0, 45.0), 0.12, 0.18)
-    m.add(clank(rng, 700.0, 0.06, PLATE, 0.3, 0.5, 0.5), 0.34, 0.5)
-    m.add(rattle(rng, 0.5, 70.0, 1500.0, 6000.0, 0.15, 0.006), 0.36, 0.55, 0.15)
-    return space(m.render(c.stereo), "yard", 0.12, c.stereo, 0)
+@sfx("loot_open_safe", n=1, target=-16.0, dur=1.2, fout=0.12)
+def _loot_open_safe(v, rng):
+    # 装甲保险箱：密码棘轮飞速拨动 -> 主锁舌沉重退槽 -> 厚钢门缓慢旋开
+    dials = np.zeros(int(1.2 * SR))
+    for i in range(5):
+        t0 = i * 0.045
+        tk = tick(0.012, 1450 + i * 70, rng) * 0.7
+        dials = mix(dials, place(tk, t0, 1.2))
+    bolt_slide = clank(0.28, 230, METAL_HEAVY, 13.0, rng, 0.85)
+    bolt_thump = thump(0.28, 108, 30, 12.0, rng, 2.3)
+    hinge_creak = modal(0.45, 185, METAL_HEAVY, 7.5, rng, 0.55) * 0.52
+    door_stop = thump(0.26, 92, 28, 13.0, rng, 2.1) * 0.72
+    return sat(mix(
+        dials,
+        place(bolt_slide, 0.26),
+        place(bolt_thump, 0.265),
+        place(hinge_creak, 0.42),
+        place(door_stop, 0.78),
+    ), 1.55)
 
 
-@sfx("loot_open_military", n=1, target=-18.0, dur=1.3, fout=0.12)
-def loot_open_military(c):
-    rng = c.rng
-    m = Mix(1.3)
-    m.add(clank(rng, 540.0, 0.05, HEAVY, 0.3, 0.8, 0.7), 0.0, 0.8, -0.2)
-    m.add(clank(rng, 600.0, 0.05, HEAVY, 0.3, 0.8, 0.7), 0.1, 0.7, 0.2)
-    m.add(hiss(rng, 0.4, 1500.0, 9000.0, 0.004, 0.06, 0.28, (3000.0, 5600.0), 4.0, 0.5), 0.17, 0.45)
-    m.add(servo(rng, 0.5, 220.0, 420.0, 0.15, 0.15, 5.0, 0.2), 0.25, 0.3)
-    m.add(creak(rng, 0.4, 300.0, 380.0, 25.0), 0.3, 0.2)
-    m.add(clank(rng, 380.0, 0.08, HEAVY, 0.5, 0.6, 0.8), 0.78, 0.7)
-    m.add(thump(rng, 140.0, 70.0, 0.25, 0.05, 0.02, 1.4, 0.3), 0.78, 0.5)
-    return space(m.render(c.stereo), "yard", 0.14, c.stereo, 0)
+@sfx("loot_open_bug", n=1, target=-16.5, dur=0.95, fout=0.1)
+def _loot_open_bug(v, rng):
+    # 破开虫族甲壳囊：几丁质硬壳脆裂 + 粘稠组织撕开 + 内部气压湿滑喷溅
+    chitin_snap = crack(0.09, 1750, rng, 2.0) * 0.82
+    shell_res = modal(0.24, 380, CHITIN_MODES, 15.0, rng, 0.65)
+    wet_rip = squelch(0.48, 320, 1250, rng, 2.0) * 0.85
+    sac_pop = thump(0.24, 105, 34, 14.0, rng, 2.0) * 0.7
+    ooze = squelch(0.32, 240, 780, rng, 1.6) * 0.55
+    return sat(mix(
+        place(chitin_snap, 0.0),
+        place(shell_res, 0.005),
+        place(sac_pop, 0.06),
+        place(wet_rip, 0.07),
+        place(ooze, 0.38),
+    ), 1.55)
 
 
-@sfx("loot_open_safe", n=1, target=-18.0, dur=1.5, fout=0.12)
-def loot_open_safe(c):
-    rng = c.rng
-    m = Mix(1.5)
-    m.add(scrape(rng, 0.5, 600.0, 4000.0, 30.0, [1100.0, 1700.0, 2600.0], 30.0,
-                 [(0, 0), (0.05, 0.6), (0.45, 1.0), (0.5, 0.0)]), 0.0, 0.5, -0.2)
-    m.add(creak(rng, 0.45, 260.0, 340.0, 20.0), 0.05, 0.3)
-    m.add(crack(rng, 0.06, 0.008, 1500.0), 0.5, 0.6)
-    m.add(clank(rng, 620.0, 0.08, HEAVY, 0.4, 0.9, 0.7), 0.5, 0.9)
-    m.add(thump(rng, 160.0, 70.0, 0.2, 0.05, 0.015, 1.4, 0.3), 0.5, 0.5)
-    m.add(creak(rng, 0.4, 220.0, 260.0, 30.0), 0.62, 0.25, 0.3)
-    for k in range(4):
-        m.add(modal(rng, c.r(2800.0, 3600.0), BAR, 0.08, 0.3, 0.02, 0.8, 0.6), 0.75 + 0.07 * k + c.r(0, 0.03),
-              0.18, c.r(-0.4, 0.4))
-    return space(m.render(c.stereo), "yard", 0.14, c.stereo, 0)
+@sfx("loot_open_nest", n=1, target=-15.5, dur=1.15, fout=0.12)
+def _loot_open_nest(v, rng):
+    # 掘开深渊母巢核心囊：厚甲碎裂闷响 + 深层生物腔体蠕动 + 大量粘液爆浆
+    crush_thump = thump(0.38, 115, 28, 9.5, rng, 2.4)
+    chitin_break = modal(0.32, 290, CHITIN_MODES, 11.0, rng, 0.78)
+    snap = crack(0.12, 1550, rng, 2.2) * 0.85
+    burst_wet = squelch(0.65, 260, 1450, rng, 2.2) * 0.9
+    cavity_roar = roar(0.55, 180, 5.5, rng, 1.7) * 0.55
+    drip = squelch(0.35, 210, 680, rng, 1.5) * 0.5
+    return reverb_tail(sat(mix(
+        place(crush_thump, 0.0),
+        place(chitin_break, 0.006),
+        place(snap, 0.01),
+        place(burst_wet, 0.12),
+        place(cavity_roar, 0.15),
+        place(drip, 0.52),
+    ), 1.65), 0.18, 0.18)
 
 
-@sfx("loot_open_bug", n=1, target=-18.5, dur=1.0, fout=0.1)
-def loot_open_bug(c):
-    rng = c.rng
-    m = Mix()
-    m.add(slime(rng, 0.25, 2200.0, 300.0, 1.8, 0.07, 0.5), 0.0, 0.8, -0.2)
-    m.add(crunch(rng, 0.12, 30, 0.04, 1200.0, 8000.0, 0.4, 380.0), 0.06, 0.6)
-    m.add(slime(rng, 0.3, 1600.0, 400.0, 2.5, 0.1, 0.3), 0.25, 0.6, 0.3)
-    m.add(bubbles(rng, 0.4, 25.0, 400.0, 1400.0, 0.2), 0.35, 0.2)
-    m.add(tick(rng, 1300.0, 0.012, 0.06, 0.2), 0.7, 0.2)
-    return space(m.render(c.stereo), "yard", 0.1, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 战利品检视 / 拾取 / 放置 / 货舱满载
+# ─────────────────────────────────────────────────────────────
+@sfx("loot_reveal", n=3, target=-19.0, dur=0.38, fout=0.04)
+def _loot_reveal(v, rng):
+    p = 1.0 + (v - 1.0) * 0.06
+    # 扫描检视出常规物资：战术扫描仪快门咔哒 + 金属部件落位轻响
+    shutter = tick(0.014, 1550 * p, rng) * 0.75
+    cl = clank(0.16, 360 * p, METAL_LIGHT, 22.0, rng, 0.62)
+    th = thump(0.14, 98 * p, 38 * p, 22.0, rng, 1.6) * 0.58
+    return sat(mix(place(shutter, 0.0), place(cl, 0.025), place(th, 0.028)), 1.35)
 
 
-@sfx("loot_open_nest", n=1, target=-18.5, dur=1.2, fout=0.12)
-def loot_open_nest(c):
-    rng = c.rng
-    m = Mix(1.2)
-    m.add(slime(rng, 0.35, 1800.0, 200.0, 1.5, 0.1, 0.7), 0.0, 0.8)
-    m.add(crunch(rng, 0.2, 40, 0.06, 900.0, 7000.0, 0.5, 300.0), 0.05, 0.6, -0.2)
-    m.add(debris(rng, 0.4, 30.0, 0.15, 700.0, 3500.0, 0.4), 0.1, 0.3, 0.3)
-    m.add(voice(rng, 0.25, [(0, 1300.0), (1.0, 700.0)], 0.04, (0.05, 25.0), 0.6, 60.0, ((2600.0, 6.0), (4800.0, 7.0)),
-                0.3, "pulse", 0.2, 1.5, 0.0, [(0, 0), (0.02, 1.0), (0.25, 0.0)]), 0.45, 0.15, 0.4)
-    m.add(bubbles(rng, 0.6, 20.0, 200.0, 800.0, 0.15), 0.3, 0.2)
-    return space(m.render(c.stereo), "nest", 0.14, c.stereo, 0)
+@sfx("loot_reveal_rare", n=1, target=-16.5, dur=1.0, fout=0.12)
+def _loot_reveal_rare(v, rng):
+    # 检视出高价值稀有遗物：重型气压锁弹开 + 高密度合金/晶体双模态清冽共鸣（非电子音阶）
+    lock = clank(0.22, 290, METAL_HEAVY, 16.0, rng, 0.78)
+    sub = thump(0.28, 112, 32, 12.0, rng, 2.2)
+    bell_low = modal(0.58, 360, METAL_BELL, 6.5, rng, 0.58) * 0.55
+    crystal_hi = modal(0.68, 540, GLASS_MODES, 5.5, rng, 0.62) * 0.58
+    air_shimmer = hiss(0.38, 2200, 1400, 8.0, rng) * 0.32
+    return reverb_tail(sat(mix(
+        place(lock, 0.0),
+        place(sub, 0.005),
+        place(bell_low, 0.04),
+        place(air_shimmer, 0.08),
+        place(crystal_hi, 0.16),
+    ), 1.55), 0.22, 0.2)
 
 
-# ---------------------------------------------------------------- 物品显现与转移（每件间隔 0.55 秒）
-@sfx("loot_reveal", n=3, target=-23.0, dur=0.4, fout=0.05)
-def loot_reveal(c):
-    rng = c.rng
-    v = c.v
-    f = [1174.7, 1318.5, 1396.9][v]
-    m = Mix()
-    m.add(burst(rng, 0.03, 0.006, 3000.0, 10000.0, 0.0, 0.001), 0.0, 0.2)
-    m.add(tone(f, 0.08, "tri", 0.035, bright=7000.0), 0.0, 0.6)
-    m.add(tone(f * 1.5, 0.12, "sine", 0.05), 0.04, 0.35)
-    return space(m.render(c.stereo), "ui", 0.2, c.stereo, v)
+@sfx("loot_take", n=2, target=-18.0, dur=0.45, fout=0.05)
+def _loot_take(v, rng):
+    p = 1.0 + (v - 0.5) * 0.06
+    # 抓取物资收入囊中：机械爪收拢 + 物资扣入挂架锁死
+    grab = servo(0.12, 180 * p, 310 * p, rng, 0.4) * 0.5
+    latch = clank(0.18, 320 * p, METAL_HEAVY, 18.0, rng, 0.72)
+    th = thump(0.16, 105 * p, 36 * p, 18.0, rng, 1.9) * 0.68
+    return sat(mix(place(grab, 0.0), place(latch, 0.085), place(th, 0.088)), 1.45)
 
 
-@sfx("loot_reveal_rare", n=1, target=-17.5, dur=1.3, fout=0.2)
-def loot_reveal_rare(c):
-    rng = c.rng
-    m = Mix(1.3)
-    m.add(whoosh(rng, 0.3, 1500.0, 9000.0, 0.85, 1.5, 0.0), 0.0, 0.3)
-    for k, f in enumerate([1046.5, 1318.5, 1568.0, 2093.0]):
-        m.add(chime(f, 0.8, 0.3, ((1.0, 1.0), (2.0, 0.3), (3.0, 0.12), (4.07, 0.06))), 0.22 + 0.06 * k, 0.4, -0.45 + 0.3 * k)
-    n = ns(1.0)
-    sh = sum(np.sin(2 * np.pi * f * tt(n)) for f in (3136.0, 3140.5, 4186.0))
-    m.add(norm(sh) * ad(n, 0.05, 0.3) * (0.7 + 0.3 * np.sin(2 * np.pi * 9.0 * tt(n))), 0.3, 0.12)
-    m.add(thump(rng, 140.0, 80.0, 0.3, 0.08, 0.02, 1.0, 0.0), 0.22, 0.3)
-    return space(m.render(c.stereo), "hangar", 0.18, c.stereo, 0)
+@sfx("loot_put", n=1, target=-18.5, dur=0.42, fout=0.05)
+def _loot_put(v, rng):
+    # 放下物资：松开卡扣 + 沉稳落槽闷响
+    rel = tick(0.014, 1350, rng) * 0.65
+    drop_th = thump(0.18, 95, 34, 18.0, rng, 1.9) * 0.72
+    drop_cl = clank(0.18, 250, METAL_HOLLOW, 18.0, rng, 0.68)
+    return sat(mix(place(rel, 0.0), place(drop_th, 0.045), place(drop_cl, 0.048)), 1.4)
 
 
-@sfx("loot_take", n=2, target=-21.5, dur=0.4, fout=0.04)
-def loot_take(c):
-    rng = c.rng
-    v = c.v
-    m = Mix()
-    m.add(whoosh(rng, 0.14, [900.0, 1100.0][v], 3800.0, 0.6, 1.5, -3.0), 0.0, 0.4, -0.3)
-    m.add(thump(rng, [200.0, 230.0][v], 120.0, 0.12, 0.025, 0.01, 1.0, 0.3), 0.12, 0.6, 0.2)
-    m.add(tick(rng, [2200.0, 2500.0][v], 0.008, 0.05, 0.5), 0.125, 0.35, 0.2)
-    return space(m.render(c.stereo), "ui", 0.2, c.stereo, v)
+@sfx("loot_close", n=1, target=-18.0, dur=0.5, fout=0.05)
+def _loot_close(v, rng):
+    # 关闭容器：箱盖合拢砸下 + 锁扣咬合
+    swing = whoosh(0.16, 620, 240, rng, 1.8) * 0.45
+    shut_th = thump(0.22, 102, 32, 15.0, rng, 2.1) * 0.75
+    shut_cl = clank(0.22, 240, METAL_HEAVY, 15.0, rng, 0.78)
+    latch = clank(0.12, 380, METAL_LIGHT, 24.0, rng, 0.65) * 0.6
+    return sat(mix(
+        place(swing, 0.0),
+        place(shut_th, 0.10),
+        place(shut_cl, 0.104),
+        place(latch, 0.18),
+    ), 1.45)
 
 
-@sfx("loot_put", n=1, target=-22.0, dur=0.4, fout=0.04)
-def loot_put(c):
-    rng = c.rng
-    m = Mix()
-    m.add(whoosh(rng, 0.14, 3000.0, 900.0, 0.4, 1.5, -3.0), 0.0, 0.4, 0.3)
-    m.add(thump(rng, 180.0, 110.0, 0.12, 0.03, 0.01, 1.0, 0.3), 0.11, 0.55, -0.2)
-    m.add(tick(rng, 1900.0, 0.01, 0.05, 0.5), 0.115, 0.3, -0.2)
-    return space(m.render(c.stereo), "ui", 0.2, c.stereo, 0)
+@sfx("cargo_full", n=1, target=-16.5, dur=0.75, fout=0.08)
+def _cargo_full(v, rng):
+    # 货舱满载：液压悬挂承重下沉闷响 + 限位器双连死锁撞击
+    susp_groan = modal(0.38, 145, METAL_HEAVY, 8.0, rng, 0.65) * 0.65
+    c1 = clank(0.18, 280, METAL_HEAVY, 18.0, rng, 0.8)
+    t1 = thump(0.18, 105, 34, 16.0, rng, 2.1) * 0.75
+    c2 = clank(0.22, 230, METAL_HEAVY, 15.0, rng, 0.85)
+    t2 = thump(0.22, 88, 30, 14.0, rng, 2.2) * 0.8
+    return sat(mix(
+        place(susp_groan, 0.0),
+        place(c1, 0.05),
+        place(t1, 0.054),
+        place(c2, 0.22),
+        place(t2, 0.224),
+    ), 1.55)
 
 
-@sfx("loot_close", n=1, target=-20.0, dur=0.5, fout=0.05)
-def loot_close(c):
-    rng = c.rng
-    m = Mix()
-    m.add(whoosh(rng, 0.16, 2500.0, 600.0, 0.5, 1.2, -3.0), 0.0, 0.3)
-    m.add(clank(rng, 480.0, 0.04, PLATE, 0.25, 0.6, 0.7), 0.13, 0.6)
-    m.add(thump(rng, 160.0, 90.0, 0.15, 0.04, 0.012, 1.2, 0.3), 0.13, 0.45)
-    m.add(tick(rng, 2300.0, 0.006, 0.04), 0.2, 0.3)
-    return space(m.render(c.stereo), "yard", 0.1, c.stereo, 0)
+@sfx("cargo_overload", n=1, target=-15.0, dur=1.2, fout=0.15)
+def _cargo_overload(v, rng):
+    # 货舱严重超载：机甲底盘钢梁受压金属呻吟 + 液压过压阀喷气 + 沉重警告撞针
+    strain = modal(0.65, 130, METAL_HEAVY, 5.5, rng, 0.78) * 0.72
+    th_heavy = thump(0.42, 110, 26, 8.5, rng, 2.5)
+    valve_pop = clank(0.26, 260, METAL_HEAVY, 13.0, rng, 0.85)
+    steam = hiss(0.55, 1850, 1200, 5.0, rng) * 0.58
+    kn = clank(0.24, 340, METAL_HEAVY, 14.0, rng, 0.8) * 0.75
+    return reverb_tail(sat(mix(
+        place(strain, 0.0),
+        place(th_heavy, 0.04),
+        place(valve_pop, 0.18),
+        place(steam, 0.22),
+        place(kn, 0.48),
+    ), 1.65), 0.18, 0.18)
 
 
-@sfx("cargo_full", n=1, target=-19.5, dur=0.45, fout=0.04)
-def cargo_full(c):
-    rng = c.rng
-    m = Mix()
-    m.add(thump(rng, 170.0, 100.0, 0.15, 0.035, 0.01, 1.4, 0.4), 0.0, 0.7)
-    m.add(clank(rng, 330.0, 0.03, HEAVY, 0.15, 0.6, 0.6), 0.0, 0.4)
-    m.add(buzz(196.0, 0.22, (2, 0.6), 1400.0), 0.05, 0.4)
-    return space(m.render(c.stereo), "cockpit", 0.15, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 轨道空投舱（Hellpod式音爆穿云 / 反推火箭点火 / 砸穿地表）
+# ─────────────────────────────────────────────────────────────
+@sfx("drop_fall", n=1, target=-15.0, dur=2.2, fout=0.2)
+def _drop_fall(v, rng):
+    # 空投舱超音速再入大气层：高空音爆 + 剧烈气动加热呼啸 + 舱体隔热瓦震颤
+    sonic_boom = thump(0.45, 125, 28, 8.0, rng, 2.6)
+    reentry_whoosh = whoosh(1.95, 220, 1550, rng, 2.8) * 0.88
+    plasma_roar = roar(1.85, 240, 2.2, rng, 2.0) * 0.78
+    hull_vib = turbine(1.80, 95, 185, rng, 5, 0.1) * 0.52
+    return reverb_tail(sat(mix(
+        place(sonic_boom, 0.0),
+        place(reentry_whoosh, 0.04),
+        place(plasma_roar, 0.08),
+        place(hull_vib, 0.12),
+    ), 1.7), 0.22, 0.2)
 
 
-@sfx("cargo_overload", n=1, target=-17.5, dur=1.4, fout=0.15)
-def cargo_overload(c):
-    rng = c.rng
-    m = Mix(1.4)
-    n = ns(0.9)
-    t = tt(n)
-    groan = harm(np.geomspace(150.0, 95.0, n) * (1.0 + 0.02 * smooth_noise(n, rng, 6.0)), saw_amps(30, 1.1))
-    groan *= np.clip(np.abs(smooth_noise(n, rng, 14.0)) * 2.5, 0.2, 1.0)
-    m.add(norm(lp(groan, 1500.0)) * ahr(n, 0.08, 0.5, 0.3), 0.0, 0.5)
-    m.add(creak(rng, 0.6, 210.0, 170.0, 18.0), 0.1, 0.4, 0.3)
-    m.add(hiss(rng, 0.5, 1500.0, 7000.0, 0.03, 0.1, 0.35, (2600.0, 4800.0), 4.0, 0.4), 0.2, 0.25, -0.3)
-    m.add(clank(rng, 260.0, 0.1, HEAVY, 0.5, 0.6, 0.8), 0.55, 0.45)
-    m.add(tone(740.0, 0.14, "square", None, 0.005, bright=3000.0), 0.85, 0.3)
-    m.add(tone(740.0, 0.14, "square", None, 0.005, bright=3000.0), 1.05, 0.3)
-    return space(m.render(c.stereo), "cockpit", 0.22, c.stereo, 0)
+@sfx("drop_retro", n=1, target=-14.0, dur=1.4, fout=0.15)
+def _drop_retro(v, rng):
+    # 近地反推火箭齐射制动：爆炸螺栓抛出防热盾 + 固体反推火箭狂暴喷射
+    shield_jettison = clank(0.26, 280, METAL_HEAVY, 14.0, rng, 0.85)
+    ignite_boom = thump(0.45, 135, 28, 8.0, rng, 2.7)
+    retro_roar = roar(1.05, 290, 3.2, rng, 2.3) * 0.9
+    jet_shear = whoosh(0.95, 1600, 380, rng, 2.6) * 0.82
+    nozzle_hiss = hiss(0.85, 2200, 1400, 4.0, rng) * 0.55
+    return reverb_tail(sat(mix(
+        place(shield_jettison, 0.0),
+        place(ignite_boom, 0.06),
+        place(retro_roar, 0.07),
+        place(jet_shear, 0.08),
+        place(nozzle_hiss, 0.12),
+    ), 1.75), 0.2, 0.2)
 
 
-# ---------------------------------------------------------------- 空投（坠落 0.8 秒后反推点火，再 0.6 秒着陆）
-@sfx("drop_fall", n=1, target=-15.0, dur=1.5, fout=0.12)
-def drop_fall(c):
-    rng = c.rng
-    n = ns(1.5)
-    t = tt(n)
-    m = Mix(1.5)
-    wind = sweep(pink(n, rng), "bp", 400.0 + 2600.0 * np.clip(t / 0.8, 0, 1) ** 1.5, 0.8)
-    wind *= (1.0 + 0.3 * smooth_noise(n, rng, 9.0)) * env([(0, 0.15), (0.8, 1.0), (1.2, 0.55), (1.5, 0.0)], n)
-    m.add(norm(wind), 0.0, 0.9)
-    m.add(norm(lp(brown(n, rng), 140.0)) * env([(0, 0.2), (0.8, 1.0), (1.5, 0.0)], n), 0.0, 0.5)
-    m.add(rattle(rng, 1.3, 70.0, 1200.0, 4500.0, 1.5, 0.005) * env([(0, 0.3), (0.8, 1.0), (1.3, 0.2)], ns(1.3)), 0.05, 0.25)
-    m.add(tone(np.geomspace(700.0, 1500.0, ns(1.2)), 1.2, "sine", None, 0.2) * 0.5, 0.0, 0.08)
-    return space(m.render(c.stereo), "valley", 0.15, c.stereo, 0)
+@sfx("drop_impact", n=1, target=-12.5, dur=2.2, fout=0.35)
+def _drop_impact(v, rng):
+    # 空投舱砸穿地表并弹开舱门：毁天灭地撞击低频 + 装甲楔入岩层 + 爆炸螺栓炸开舱门
+    earth_shatter = thump(0.95, 140, 20, 4.2, rng, 3.1)
+    impact_roar = roar(1.25, 195, 2.8, rng, 2.5) * 0.92
+    hull_slam = clank(0.75, 165, METAL_HEAVY, 6.0, rng, 0.95) * 0.88
+    rock_crack = crack(0.32, 1450, rng, 2.2) * 0.72
+    # 0.75s 后爆炸螺栓炸开舱门，液压踏板砸地
+    bolt_pop = thump(0.35, 125, 32, 11.0, rng, 2.4) * 0.8
+    door_clang = clank(0.42, 240, METAL_HEAVY, 9.5, rng, 0.88) * 0.82
+    steam_vent = hiss(0.85, 1950, 1300, 3.5, rng) * 0.55
+    return reverb_tail(sat(mix(
+        place(earth_shatter, 0.0),
+        place(impact_roar, 0.01),
+        place(hull_slam, 0.015),
+        place(rock_crack, 0.025),
+        place(bolt_pop, 0.72),
+        place(door_clang, 0.73),
+        place(steam_vent, 0.76),
+    ), 1.9), 0.3, 0.28)
 
 
-@sfx("drop_retro", n=1, target=-13.0, dur=1.0, fout=0.25)
-def drop_retro(c):
-    rng = c.rng
-    m = Mix(1.0)
-    m.add(crack(rng, 0.08, 0.01, 1200.0), 0.0, 0.6)
-    m.add(thump(rng, 110.0, 50.0, 0.3, 0.07, 0.02, 2.0, 0.4), 0.0, 0.7)
-    n = ns(0.85)
-    body = roar(rng, n, 70.0, 4500.0, 18.0, 0.45, -2.5) * env([(0, 0), (0.01, 1.0), (0.6, 0.95), (0.85, 0.0)], n)
-    m.add(sat(norm(body), 1.8), 0.0, 1.0)
-    m.add(norm(lp(brown(n, rng), 120.0)) * env([(0, 0), (0.05, 1.0), (0.6, 1.0), (0.85, 0.0)], n), 0.0, 0.5)
-    m.add(hiss(rng, 0.7, 4000.0, 14000.0, 0.01, 0.4, 0.25, (6000.0, 9000.0), 3.0), 0.0, 0.2)
-    return space(m.render(c.stereo), "valley", 0.2, c.stereo, 0)
+# ─────────────────────────────────────────────────────────────
+# 撤离信标与重型运输机（Pelican式重型倾转旋翼/喷气运输机）
+# ─────────────────────────────────────────────────────────────
+@sfx("extract_start", n=1, target=-15.5, dur=1.6, fout=0.2)
+def _extract_start(v, rng):
+    # 启动撤离终端：拉下重型机械闸刀 -> 天线塔液压升起 -> 向轨道发射大功率电磁脉冲
+    lever = clank(0.28, 235, METAL_HEAVY, 13.0, rng, 0.85)
+    lever_th = thump(0.26, 110, 32, 13.0, rng, 2.2)
+    mast_srv = servo(0.55, 140, 290, rng, 0.48)
+    mast_lock = clank(0.24, 330, METAL_LIGHT, 16.0, rng, 0.72)
+    pulse_boom = thump(0.45, 125, 28, 8.0, rng, 2.4)
+    pulse_zap = zap(0.42, 2200, rng, 40) * 0.58
+    return reverb_tail(sat(mix(
+        place(lever, 0.0),
+        place(lever_th, 0.005),
+        place(mast_srv, 0.18),
+        place(mast_lock, 0.72),
+        place(pulse_boom, 0.78),
+        place(pulse_zap, 0.79),
+    ), 1.6), 0.22, 0.2)
 
 
-@sfx("drop_impact", n=1, target=-12.5, dur=3.0, fout=0.4)
-def drop_impact(c):
-    rng = c.rng
-    m = Mix(3.0)
-    m.add(thump(rng, 75.0, 25.0, 1.6, 0.4, 0.06, 2.6, 0.5), 0.0, 0.6)
-    m.add(crack(rng, 0.12, 0.014, 1000.0), 0.0, 0.7)
-    m.add(crunch(rng, 0.5, 110, 0.2, 300.0, 6000.0, 0.8, 180.0), 0.0, 0.9)
-    m.add(clank(rng, 280.0, 0.15, HEAVY, 0.9, 0.6, 0.9), 0.008, 0.6, -0.3)
-    m.add(clank(rng, 410.0, 0.1, HEAVY, 0.6, 0.6, 0.7), 0.05, 0.4, 0.4)
-    m.add(rattle(rng, 0.6, 60.0, 1500.0, 5000.0, 0.15), 0.03, 0.3)
-    m.add(whoosh(rng, 1.4, 150.0, 900.0, 0.12, 0.7, -4.0), 0.02, 0.6, -0.5)
-    m.add(whoosh(rng, 1.4, 160.0, 950.0, 0.12, 0.7, -4.0), 0.02, 0.6, 0.5)
-    m.add(debris(rng, 2.4, 40.0, 0.8, 400.0, 4000.0, 0.5), 0.15, 0.4, -0.3)
-    m.add(debris(rng, 2.4, 40.0, 0.8, 400.0, 4000.0, 0.5), 0.2, 0.4, 0.3)
-    x = sat(m.render(c.stereo), 1.6)
-    return space(x, "valley", 0.3, c.stereo, 0)
+@sfx("extract_cancel", n=1, target=-16.5, dur=1.2, fout=0.15)
+def _extract_cancel(v, rng):
+    # 撤离中断：断路器跳闸 + 天线塔泄压收回 + 涡轮停转
+    trip = clank(0.26, 220, METAL_HEAVY, 13.0, rng, 0.82)
+    th = thump(0.28, 105, 30, 11.0, rng, 2.2)
+    spool_down = turbine(0.75, 240, 75, rng, 5, 0.09) * 0.58
+    vent = hiss(0.55, 1650, 1100, 5.5, rng) * 0.48
+    return sat(mix(
+        place(trip, 0.0),
+        place(th, 0.006),
+        place(spool_down, 0.08),
+        place(vent, 0.12),
+    ), 1.5)
 
 
-# ---------------------------------------------------------------- 撤离
-@sfx("extract_start", n=1, target=-17.0, dur=0.9, fout=0.15)
-def extract_start(c):
-    rng = c.rng
-    m = Mix(0.9)
-    m.add(tick(rng, 2600.0, 0.006, 0.04), 0.0, 0.4)
-    m.add(tone(880.0, 0.12, "tri", 0.06, bright=7000.0), 0.02, 0.5)
-    m.add(tone(1318.5, 0.25, "tri", 0.12, bright=7000.0), 0.14, 0.5)
-    n = ns(0.7)
-    pad = sum(np.sin(2 * np.pi * f * tt(n)) for f in (659.3, 661.0, 987.8))
-    m.add(norm(pad) * env([(0, 0), (0.25, 1.0), (0.7, 0.0)], n), 0.1, 0.18)
-    return space(m.render(c.stereo), "cockpit", 0.2, c.stereo, 0)
+@sfx("extract_success", n=1, target=-14.5, dur=2.6, fout=0.4)
+def _extract_success(v, rng):
+    # 登机撤离成功：尾舱跳板液压升起闭合 -> 气密锁死 -> 主引擎全功率加力轰鸣升空
+    ramp_srv = servo(0.65, 135, 260, rng, 0.5)
+    ramp_slam = thump(0.45, 120, 26, 8.5, rng, 2.6)
+    ramp_lock = clank(0.42, 210, METAL_HEAVY, 10.0, rng, 0.88)
+    seal_hiss = hiss(0.45, 1900, 1200, 6.0, rng) * 0.52
+    afterburner = roar(1.45, 230, 2.2, rng, 2.2) * 0.88
+    turb_up = turbine(1.40, 110, 320, rng, 6, 0.11) * 0.72
+    return reverb_tail(sat(mix(
+        place(ramp_srv, 0.0),
+        place(ramp_slam, 0.62),
+        place(ramp_lock, 0.63),
+        place(seal_hiss, 0.68),
+        place(afterburner, 0.85),
+        place(turb_up, 0.88),
+    ), 1.75), 0.28, 0.25)
 
 
-@sfx("extract_cancel", n=1, target=-18.0, dur=0.6, fout=0.08)
-def extract_cancel(c):
-    rng = c.rng
-    m = Mix()
-    m.add(tone(1318.5, 0.1, "tri", 0.05, bright=6000.0), 0.0, 0.5)
-    m.add(tone(784.0, 0.22, "tri", 0.1, bright=6000.0), 0.11, 0.5)
-    n = ns(0.12)
-    m.add(norm(bp(white(n, rng), 1500.0, 6000.0)) * ahr(n, 0.003, 0.08, 0.03), 0.3, 0.2, 0.3)
-    m.add(tick(rng, 1800.0, 0.005, 0.03), 0.42, 0.2)
-    return space(m.render(c.stereo), "cockpit", 0.2, c.stereo, 0)
+@sfx("transport_arrive", n=1, target=-14.0, dur=3.0, fout=0.35)
+def _transport_arrive(v, rng):
+    # 运输机进场着陆：高空涡扇呼啸逼近 -> 反推喷口咆哮 -> 起落架重砸地面与尾舱门弹开
+    approach = whoosh(1.6, 180, 950, rng, 2.4) * 0.78
+    turb = turbine(2.2, 260, 135, rng, 6, 0.1) * 0.72
+    jet_roar = roar(1.8, 220, 2.4, rng, 2.1) * 0.82
+    touchdown_sub = thump(0.55, 120, 24, 7.0, rng, 2.7)
+    gear_clank = clank(0.45, 195, METAL_HEAVY, 9.5, rng, 0.88)
+    brake_hiss = hiss(0.75, 1850, 1200, 4.0, rng) * 0.58
+    ramp_drop = clank(0.35, 250, METAL_HEAVY, 11.0, rng, 0.8) * 0.75
+    return reverb_tail(sat(mix(
+        place(approach, 0.0),
+        place(turb, 0.05),
+        place(jet_roar, 0.25),
+        place(touchdown_sub, 1.55),
+        place(gear_clank, 1.56),
+        place(brake_hiss, 1.62),
+        place(ramp_drop, 2.15),
+    ), 1.75), 0.28, 0.25)
 
 
-@sfx("extract_success", n=1, target=-15.5, dur=2.2, fout=0.35)
-def extract_success(c):
-    rng = c.rng
-    m = Mix(2.2)
-    for k, f in enumerate([784.0, 987.8, 1174.7, 1568.0]):
-        m.add(chime(f, 1.2, 0.45, ((1.0, 1.0), (2.0, 0.3), (3.0, 0.1))), 0.08 * k, 0.4, -0.3 + 0.2 * k)
-    n = ns(1.8)
-    pad = sum(np.sin(2 * np.pi * f * tt(n)) for f in (392.0, 393.2, 493.9, 587.3))
-    m.add(norm(pad) * env([(0, 0), (0.4, 1.0), (1.0, 0.7), (1.8, 0.0)], n), 0.05, 0.25)
-    m.add(clank(rng, 420.0, 0.08, HEAVY, 0.5, 0.6, 0.8), 0.55, 0.45)
-    m.add(hiss(rng, 0.6, 1500.0, 8000.0, 0.01, 0.1, 0.4, (2800.0, 5200.0), 4.0, 0.5), 0.6, 0.25, 0.3)
-    n2 = ns(0.15)
-    m.add(norm(bp(white(n2, rng), 1500.0, 5000.0)) * ahr(n2, 0.003, 0.1, 0.04), 1.3, 0.12, -0.3)
-    m.add(tone(1760.0, 0.1, "sine", 0.05), 1.42, 0.2, -0.3)
-    return space(m.render(c.stereo), "valley", 0.2, c.stereo, 0)
+@sfx("transport_idle_loop", n=1, target=-18.5, loop=4.0, reps=4)
+def _transport_idle(v, rng):
+    dur = 4.0
+    # 运输机地面怠速循环：双发重型涡扇发动机低频轰鸣 + 尾喷口热浪湍流 + 机身蒙皮偶发微震
+    low_rumble = rumble(dur, 65, 5.5, rng, 1.7) * 0.68
+    turb = turbine(dur, 128, 128, rng, 6, 0.07) * 0.62
+    exhaust = sweep(pink(dur, rng), "bp", 420, 480, 1.6) * 0.45
+    rattles = np.zeros(int(dur * SR))
+    for i in range(4):
+        t0 = i * 1.0 + 0.25
+        cl = clank(0.14, 240, METAL_HOLLOW, 22.0, rng, 0.45) * 0.28
+        rattles = mix(rattles, place(cl, t0, dur))
+    return sat(mix(low_rumble, turb, exhaust, rattles), 1.35)
 
 
-# ---------------------------------------------------------------- 运输机（3D 单声道）
-@sfx("transport_arrive", n=1, target=-14.0, dur=3.2, fout=0.4)
-def transport_arrive(c):
-    rng = c.rng
-    n = ns(3.2)
-    t = tt(n)
-    m = Mix(3.2)
-    fr = 62.0 * (1.0 - 0.18 * np.clip(t / 2.5, 0, 1)) * (1.0 + 0.04 * np.exp(-t / 0.6))
-    tb = turbine(rng, n, fr, 13, 0.45, 0.8)
-    chop = 1.0 + 0.35 * np.sin(2 * np.pi * np.cumsum(fr * 0.25) / SR)
-    m.add(tb * chop * env([(0, 0.0), (0.6, 0.9), (2.4, 1.0), (3.2, 0.55)], n), 0.0, 1.0)
-    m.add(norm(lp(brown(n, rng), 150.0)) * env([(0, 0), (1.0, 1.0), (3.2, 0.6)], n), 0.0, 0.5)
-    m.add(clank(rng, 380.0, 0.08, HEAVY, 0.5, 0.6, 0.8), 2.5, 0.45)
-    m.add(thump(rng, 110.0, 50.0, 0.3, 0.07, 0.02, 1.8, 0.3), 2.5, 0.4)
-    m.add(hiss(rng, 0.5, 1500.0, 8000.0, 0.01, 0.1, 0.35, (2800.0, 5200.0), 4.0, 0.5), 2.55, 0.25)
-    return space(m.render(), "valley", 0.2, False, 0)
-
-
-@sfx("transport_idle_loop", n=1, target=-19.0, loop=4.0, reps=4)
-def transport_idle_loop(c):
-    rng = c.rng
-    p = c.period
-    n = c.total
-    fr = c.qf(50.0)
-    tb = turbine(rng, n, fr, 13, 0.35, 0.6, 60.0, 6000.0, p)
-    chop = 1.0 + 0.25 * np.sin(2 * np.pi * c.qf(fr * 0.25) * np.arange(n) / SR)
-    rum = lp(np.tile(brown(p, rng), c.reps), 140.0) * (1.0 + 0.2 * c.plfo(1.0))
-    x = 0.9 * norm(tb * chop) + 0.4 * norm(rum)
-    return space(x, "yard", 0.15, False, 0)
-
-
-@sfx("transport_depart", n=1, target=-14.0, dur=3.4, fout=0.6)
-def transport_depart(c):
-    rng = c.rng
-    n = ns(3.4)
-    t = tt(n)
-    m = Mix(3.4)
-    fr = 50.0 * (1.0 + 0.7 * np.clip(t / 1.4, 0, 1) ** 1.3) * (1.0 + 0.05 * np.clip((t - 1.4) / 2.0, 0, 1))
-    tb = turbine(rng, n, fr, 13, 0.5, 0.9)
-    chop = 1.0 + 0.3 * np.sin(2 * np.pi * np.cumsum(fr * 0.25) / SR)
-    m.add(tb * chop * env([(0, 0.5), (1.2, 1.0), (2.0, 0.85), (3.4, 0.0)], n, True), 0.0, 1.0)
-    m.add(norm(lp(brown(n, rng), 160.0)) * env([(0, 0.4), (1.2, 1.0), (3.4, 0.0)], n), 0.0, 0.5)
-    m.add(hiss(rng, 0.5, 1500.0, 8000.0, 0.01, 0.1, 0.35, (2800.0, 5200.0), 4.0, 0.5), 0.05, 0.2)
-    m.add(clank(rng, 420.0, 0.06, HEAVY, 0.4, 0.6, 0.7), 1.3, 0.3)
-    return space(m.render(), "valley", 0.22, False, 0)
+@sfx("transport_depart", n=1, target=-14.0, dur=2.8, fout=0.4)
+def _transport_depart(v, rng):
+    # 运输机满载爬升撤离：矢量喷口加力爆燃 -> 狂暴下洗气流席卷地面 -> 呼啸远去
+    ignite = thump(0.55, 130, 26, 6.5, rng, 2.7)
+    roar_main = roar(2.2, 240, 1.8, rng, 2.3) * 0.9
+    turb_climb = turbine(2.3, 125, 340, rng, 6, 0.11) * 0.75
+    flyby = whoosh(2.2, 320, 1650, rng, 2.6) * 0.85
+    gear_retract = clank(0.32, 280, METAL_HEAVY, 12.0, rng, 0.78) * 0.68
+    return reverb_tail(sat(mix(
+        place(ignite, 0.0),
+        place(roar_main, 0.04),
+        place(turb_climb, 0.06),
+        place(flyby, 0.12),
+        place(gear_retract, 0.95),
+    ), 1.8), 0.32, 0.28)

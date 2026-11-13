@@ -95,41 +95,43 @@ func _build() -> void:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(1080, 650)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel.add_theme_stylebox_override("panel", UI.box(Color(0.045, 0.05, 0.065, 0.98), UI.ACCENT_DIM, 1, 4, UI.ACCENT, 3, 18))
+	panel.add_theme_stylebox_override("panel", UI.px9("panel9", 16, 16, 16, 14))
 	center.add_child(panel)
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	panel.add_child(root)
 
+	var head_plate := PanelContainer.new()
+	head_plate.add_theme_stylebox_override("panel", UI.px9("plate9", 14, 14, 14, 8))
+	root.add_child(head_plate)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 12)
-	root.add_child(head)
+	head_plate.add_child(head)
 	var mark := ColorRect.new()
 	mark.color = UI.ACCENT
-	mark.custom_minimum_size = Vector2(4, 0)
+	mark.custom_minimum_size = Vector2(4, 18)
+	mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(mark)
-	var title := UI.label("信天翁号 · 整备与航程", 26, Color(0.74, 0.67, 0.52))
+	var title := UI.label(Loc.t("信天翁号 · 整备与航程", "Albatross · Refit & Voyage"), 24, Color(0.96, 0.92, 0.82))
 	head.add_child(title)
-	var sub := UI.label("ABYSS DIVER GIRLS", 11, UI.MUTED)
+	var sub := UI.label("ABYSS DIVER GIRLS", 12, UI.MUTED)
+	sub.visible = Loc.is_en()
 	sub.size_flags_vertical = Control.SIZE_SHRINK_END
 	head.add_child(sub)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
-	_money_lbl = UI.label("", 18, Color(0.74, 0.61, 0.28))
+	_money_lbl = UI.label("", 12, Color(0.95, 0.78, 0.36))
 	head.add_child(_money_lbl)
-	var close_btn := _button("关闭", close)
-	close_btn.custom_minimum_size = Vector2(84, 36)
+	var close_btn := _button(Loc.t("关闭", "Close"), close)
+	close_btn.custom_minimum_size = Vector2(84, 32)
 	close_btn.set_meta("sfx", "")
 	head.add_child(close_btn)
 
-	var sep := ColorRect.new()
-	sep.color = Color(1, 1, 1, 0.08)
-	sep.custom_minimum_size = Vector2(0, 1)
-	root.add_child(sep)
+	root.add_child(UI.hazard_strip(8))
 
 	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 14)
+	body.add_theme_constant_override("separation", 12)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(body)
 
@@ -140,16 +142,17 @@ func _build() -> void:
 	var group := ButtonGroup.new()
 	for t in TABS:
 		var b := Button.new()
-		b.text = str(t[1])
+		b.text = Loc.t(str(t[1]))
 		b.toggle_mode = true
 		b.button_group = group
-		b.custom_minimum_size = Vector2(0, 44)
-		b.add_theme_font_size_override("font_size", 17)
+		b.custom_minimum_size = Vector2(0, 42)
+		b.add_theme_font_size_override("font_size", 12)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.add_theme_stylebox_override("normal", UI.box(Color(1, 1, 1, 0.04), Color(1, 1, 1, 0.12), 1, 0, UI.ACCENT, 0, 10))
-		b.add_theme_stylebox_override("hover", UI.box(Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.28), 1, 0, UI.ACCENT, 0, 10))
-		b.add_theme_stylebox_override("pressed", UI.box(Color(0.62, 0.37, 0.09, 0.2), Color(0.74, 0.53, 0.25), 1, 0, UI.ACCENT, 3, 10))
-		b.add_theme_color_override("font_pressed_color", Color(0.75, 0.63, 0.41))
+		b.add_theme_stylebox_override("normal", UI.px9("nav9_n", 12, 12, 12, 6))
+		b.add_theme_stylebox_override("hover", UI.px9("nav9_h", 12, 12, 12, 6))
+		b.add_theme_stylebox_override("pressed", UI.px9("nav9_on", 12, 12, 12, 6))
+		b.add_theme_stylebox_override("hover_pressed", UI.px9("nav9_on", 12, 12, 12, 6))
+		b.add_theme_color_override("font_pressed_color", UI.GOLD)
 		b.pressed.connect(_switch_tab.bind(str(t[0])))
 		nav.add_child(b)
 		_tab_buttons[str(t[0])] = b
@@ -157,40 +160,50 @@ func _build() -> void:
 	nav_sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	nav.add_child(nav_sp)
 	var nav_line := ColorRect.new()
-	nav_line.color = Color(UI.ACCENT.r, UI.ACCENT.g, UI.ACCENT.b, 0.25)
+	nav_line.color = Color(UI.ACCENT.r, UI.ACCENT.g, UI.ACCENT.b, 0.35)
 	nav_line.custom_minimum_size = Vector2(0, 2)
 	nav.add_child(nav_line)
 
+	var right_well := PanelContainer.new()
+	right_well.add_theme_stylebox_override("panel", UI.px9("inset9", 8, 8, 12, 10))
+	right_well.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_well.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(right_well)
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 8)
-	body.add_child(right)
+	right_well.add_child(right)
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(_scroll)
 	_body = VBoxContainer.new()
-	_body.custom_minimum_size = Vector2(856, 0)
+	_body.custom_minimum_size = Vector2(836, 0)
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_body.add_theme_constant_override("separation", 8)
 	_scroll.add_child(_body)
 
+	var foot_plate := PanelContainer.new()
+	foot_plate.add_theme_stylebox_override("panel", UI.px9("plate9", 12, 12, 12, 6))
+	root.add_child(foot_plate)
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 10)
-	root.add_child(foot)
+	foot_plate.add_child(foot)
 	var fbar := ColorRect.new()
 	fbar.color = UI.ACCENT
-	fbar.custom_minimum_size = Vector2(3, 0)
+	fbar.custom_minimum_size = Vector2(3, 14)
+	fbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	foot.add_child(fbar)
-	_material_lbl = UI.label("", 13, UI.MUTED)
+	_material_lbl = UI.label("", 12, UI.MUTED)
 	foot.add_child(_material_lbl)
 	var fsp := Control.new()
 	fsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(fsp)
-	var fuse := UI.label("当前章节：", 13, UI.MUTED)
+	var fuse := UI.label(Loc.t("当前章节：", "Active Chapter: "), 12, UI.MUTED)
 	foot.add_child(fuse)
-	var fl := UI.label("", 13, UI.INFO)
+	var fl := UI.label("", 12, UI.INFO)
 	fl.name = "ChapterLabel"
 	foot.add_child(fl)
 
@@ -210,7 +223,7 @@ func refresh() -> void:
 		var n := GameData.stash.count(id)
 		if n > 0:
 			mats.append("%s %d" % [GameData.item_name(id), n])
-	_material_lbl.text = "仓库材料：" + (" · ".join(mats) if not mats.is_empty() else "—")
+	_material_lbl.text = Loc.t("仓库材料：", "Materials: ") + (" · ".join(mats) if not mats.is_empty() else "—")
 	var fl := find_child("ChapterLabel", true, false)
 	if fl != null:
 		var cid := Growth.current_chapter()
@@ -258,7 +271,8 @@ func _label(text: String, size := 14, c := UI.TEXT) -> Label:
 func _card(border := Color(1, 1, 1, 0.12)) -> VBoxContainer:
 	var p := PanelContainer.new()
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
-	p.add_theme_stylebox_override("panel", UI.box(Color(0.06, 0.07, 0.09, 0.94), border, 1, 0, UI.ACCENT, 2, 12))
+	var highlight := border.a > 0.25 and ((border.r > 0.5 and border.g > 0.4 and border.b < 0.35) or (border.g > 0.7 and border.r < 0.6))
+	p.add_theme_stylebox_override("panel", UI.px9("card9_on" if highlight else "card9", 8, 8, 12, 10))
 	_body.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 5)
@@ -286,7 +300,7 @@ func _stat_line(add: Dictionary, mult := 1.0) -> String:
 	var out: Array = []
 	for k in add:
 		var v := float(add[k]) * mult
-		var nm := str(STAT_NAMES.get(k, k))
+		var nm := Loc.t(str(STAT_NAMES.get(k, k)))
 		match str(k):
 			"armor":
 				out.append("%s %s%%" % [nm, _num(v * 100.0)])
@@ -334,29 +348,29 @@ func _build_meal() -> void:
 	var cost: Dictionary = Growth.meal_cost()
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
-	h.add_child(_label("出击食堂", 19, Color(0.74, 0.67, 0.52)))
-	h.add_child(_label("厨房 Lv.%d" % lv if lv > 0 else "厨房未建造", 13, UI.MUTED))
+	h.add_child(_label(Loc.t("出击食堂", "Mess Hall"), 19, Color(0.74, 0.67, 0.52)))
+	h.add_child(_label(Loc.t("厨房 %s", "Kitchen %s") % Loc.lv(lv) if lv > 0 else Loc.t("厨房未建造", "Kitchen Not Built"), 13, UI.MUTED))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
-	var btn := _button("烹制餐点", _serve_meal)
+	var btn := _button(Loc.t("烹制餐点", "Cook Meal"), _serve_meal)
 	btn.custom_minimum_size = Vector2(132, 34)
 	btn.disabled = lv <= 0 or ready > 0 or _missing_items(cost)
 	h.add_child(btn)
 	var state := ""
 	if lv <= 0:
-		state = "厨房未建造"
+		state = Loc.t("厨房未建造", "Kitchen Not Built")
 	elif ready > 0:
 		state = Growth.meal_text()
 	elif _missing_items(cost):
-		state = "材料不足"
+		state = Loc.t("材料不足", "Insufficient Materials")
 	else:
-		state = "未备餐"
+		state = Loc.t("未备餐", "No Meal Prepared")
 	if ready > 0:
 		v.add_child(_label(state, 14, UI.GOOD))
 	elif state != "":
-		v.add_child(_label(state, 14, UI.BAD if state == "材料不足" else UI.MUTED))
-	v.add_child(_label("消耗：" + _items_text(cost), 12, UI.MUTED))
+		v.add_child(_label(state, 14, UI.BAD if _missing_items(cost) else UI.MUTED))
+	v.add_child(_label(Loc.t("消耗：", "Cost: ") + _items_text(cost), 12, UI.MUTED))
 
 
 func _build_facility(id: String) -> void:
@@ -366,7 +380,7 @@ func _build_facility(id: String) -> void:
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
 	h.add_child(_label(Growth.facility_name(id), 19, Color(0.74, 0.67, 0.52)))
-	h.add_child(_label("Lv.%d / %d" % [lv, mx], 13, UI.MUTED))
+	h.add_child(_label("%s / %d" % [Loc.lv(lv), mx], 13, UI.MUTED))
 	h.add_child(_pips(lv, mx))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -376,17 +390,17 @@ func _build_facility(id: String) -> void:
 		var cost_lb := _label(Growth.cost_text(cost), 12, UI.MUTED if reason in ["", "已满级"] else UI.BAD)
 		cost_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		h.add_child(cost_lb)
-	var btn := _button("已满级" if reason == "已满级" else "升级", _upgrade_facility.bind(id))
+	var btn := _button(Loc.t("已满级", "Maxed") if reason == "已满级" else Loc.t("升级", "Upgrade"), _upgrade_facility.bind(id))
 	btn.custom_minimum_size = Vector2(86, 34)
 	btn.disabled = reason != ""
 	h.add_child(btn)
 	if lv > 0:
-		v.add_child(_label("当前：" + Growth.facility_effect(id), 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("当前：", "Current: ") + Growth.facility_effect(id), 13, Color(0.8, 0.88, 0.8)))
 	var effects: Array = Growth.facility_effects(id)
 	if not cost.is_empty() and lv < effects.size():
-		v.add_child(_label("下一级：" + str(effects[lv]), 13, UI.ACCENT))
+		v.add_child(_label(Loc.t("下一级：", "Next: ") + str(effects[lv]), 13, UI.ACCENT))
 	if reason != "" and reason != "已满级":
-		v.add_child(_label(reason, 12, UI.BAD))
+		v.add_child(_label(Loc.reason(reason), 12, UI.BAD))
 
 
 func _upgrade_facility(id: String) -> void:
@@ -405,7 +419,7 @@ func _serve_meal() -> void:
 
 # ============================================================ 研究
 func _build_research() -> void:
-	var head := UI.header("研究", "研究室 Lv.%d" % Growth.facility_level("lab"), 18)
+	var head := UI.header(Loc.t("研究", "Research"), Loc.t("研究室 %s", "Lab %s") % Loc.lv(Growth.facility_level("lab")), 18)
 	_body.add_child(head)
 	for id in Growth.research_ids():
 		var rid := str(id)
@@ -416,12 +430,12 @@ func _build_research() -> void:
 		var h := _row(v)
 		h.add_child(_label(str(d.get("name", rid)), 18, Color(0.74, 0.67, 0.52)))
 		var status_color := UI.GOOD if done else (UI.ACCENT if reason == "" else (UI.BAD if reason in ["材料不足", "信用点不足"] else UI.MUTED))
-		var status_text := "已完成" if done else ("可研究" if reason == "" else reason)
+		var status_text := Loc.t("已完成", "Completed") if done else (Loc.t("可研究", "Available") if reason == "" else Loc.reason(reason))
 		h.add_child(_label(status_text, 13, status_color))
 		var sp := Control.new()
 		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(sp)
-		var btn := _button("已完成" if done else "开始研究", _do_research.bind(rid))
+		var btn := _button(Loc.t("已完成", "Completed") if done else Loc.t("开始研究", "Start Research"), _do_research.bind(rid))
 		btn.custom_minimum_size = Vector2(120, 34)
 		btn.disabled = done or reason != ""
 		h.add_child(btn)
@@ -430,12 +444,12 @@ func _build_research() -> void:
 			continue
 		var lab := int(d.get("lab", 1))
 		var needs: Array = d.get("needs", [])
-		var req: Array = ["研究室 Lv%d" % lab]
+		var req: Array = [Loc.t("研究室 %s", "Lab %s") % Loc.lv(lab)]
 		for n in needs:
 			var nd: Dictionary = Growth.research_data(str(n))
-			req.append("前置：" + str(nd.get("name", n)))
+			req.append(Loc.t("前置：", "Req: ") + str(nd.get("name", n)))
 		v.add_child(_label(" · ".join(req), 12, UI.MUTED))
-		v.add_child(_label("费用：" + Growth.cost_text(d.get("cost", {})), 12,
+		v.add_child(_label(Loc.t("费用：", "Cost: ") + Growth.cost_text(d.get("cost", {})), 12,
 			UI.BAD if reason in ["材料不足", "信用点不足"] else UI.MUTED))
 
 
@@ -448,7 +462,20 @@ func _do_research(id: String) -> void:
 
 # ============================================================ 驾驶员
 func _build_pilots() -> void:
-	_body.add_child(UI.header("驾驶员", "经验与天赋", 18))
+	_body.add_child(UI.header(Loc.t("实战熟练度", "Field Proficiency"), Loc.t("使用自动升级 · 零资源消耗", "Levels automatically via use · zero cost"), 18))
+	var sc := _card(Color(1, 1, 1, 0.12))
+	for aid in Growth.ability_ids():
+		var ad: Dictionary = Growth.ability_data(str(aid))
+		var alv: int = Growth.ability_level(str(aid))
+		var amx: int = Growth.ability_max(str(aid))
+		var need: float = Growth.ability_xp_next(str(aid))
+		var r := _row(sc, 8)
+		r.add_child(_label("%s %s/%d" % [str(ad.get("name", aid)), Loc.lv(alv), amx], 14, UI.ACCENT if alv >= amx else UI.TEXT))
+		var eff := _label(Loc.t("%s（%s）", "%s (%s)") % [str(ad.get("effect", "")), str(ad.get("how", ""))], 12, Color(0.78, 0.84, 0.78))
+		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		r.add_child(eff)
+		r.add_child(_label(Loc.t("满级", "Max") if need <= 0.0 else "%.1f/%d" % [Growth.ability_xp(str(aid)), int(need)], 12, UI.MUTED))
+	_body.add_child(UI.header(Loc.t("驾驶员", "Pilots"), Loc.t("经验与天赋", "XP & Talents"), 18))
 	for id in Growth.pilot_ids():
 		_build_pilot(str(id))
 
@@ -462,31 +489,31 @@ func _build_pilot(id: String) -> void:
 	var v := _card(UI.ACCENT_DIM if is_active else Color(1, 1, 1, 0.12))
 	var h := _row(v)
 	h.add_child(_label(str(d.get("name", id)), 21, Color(0.74, 0.67, 0.52)))
-	h.add_child(_label("Lv.%d" % lv, 14, UI.MUTED))
+	h.add_child(_label(Loc.lv(lv), 14, UI.MUTED))
 	if is_active:
-		h.add_child(_label("出击中", 13, UI.GOOD))
+		h.add_child(_label(Loc.t("出击中", "Active"), 13, UI.GOOD))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
-	h.add_child(_label("天赋点 %d" % Growth.pilot_points(id), 13, UI.INFO))
-	var setb := _button("出击中" if is_active else "设为出击机体", _set_pilot.bind(id))
+	h.add_child(_label(Loc.t("天赋点 %d", "Talent Pts %d") % Growth.pilot_points(id), 13, UI.INFO))
+	var setb := _button(Loc.t("出击中", "Active") if is_active else Loc.t("设为出击机体", "Set Active Pilot"), _set_pilot.bind(id))
 	setb.custom_minimum_size = Vector2(136, 34)
 	setb.disabled = is_active
 	h.add_child(setb)
 
 	var xh := _row(v, 8)
-	xh.add_child(_label("经验", 12, UI.MUTED))
+	xh.add_child(_label(Loc.t("经验", "EXP"), 12, UI.MUTED))
 	var next: int = Growth.pilot_xp_next(lv)
 	var bar := _pips(Growth.pilot_xp(id), maxi(1, next), UI.ACCENT, 20)
 	bar.custom_minimum_size = Vector2(230, 8)
 	xh.add_child(bar)
-	var xp_text := "已满级" if next <= 0 else "%d / %d" % [Growth.pilot_xp(id), next]
+	var xp_text := Loc.t("已满级", "Maxed") if next <= 0 else "%d / %d" % [Growth.pilot_xp(id), next]
 	xh.add_child(_label(xp_text, 12, UI.MUTED))
 	var per := _stat_line(d.get("level_stat", {}))
 	if per != "":
-		v.add_child(_label("每级：" + per, 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("每级：", "Per Level: ") + per, 13, Color(0.8, 0.88, 0.8)))
 	var th := _row(v, 8)
-	th.add_child(_label("天赋", 14, UI.MUTED))
+	th.add_child(_label(Loc.t("天赋", "Talents"), 14, UI.MUTED))
 	var tl := ColorRect.new()
 	tl.color = Color(1, 1, 1, 0.08)
 	tl.custom_minimum_size = Vector2(0, 1)
@@ -497,12 +524,12 @@ func _build_pilot(id: String) -> void:
 		var learned := reason == "已习得"
 		var tr := _row(v, 8)
 		tr.add_child(_label(str(t.get("name", tid)), 15, UI.ACCENT if learned else UI.TEXT))
-		tr.add_child(_label("Lv.%d" % int(t.get("level", 1)), 12, UI.MUTED))
+		tr.add_child(_label(Loc.lv(int(t.get("level", 1))), 12, UI.MUTED))
 		var eff := _label(str(t.get("effect", "")), 12, Color(0.8, 0.88, 0.8))
 		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tr.add_child(eff)
-		tr.add_child(_label("天赋点 %d" % int(t.get("points", 1)), 12, UI.MUTED))
-		var tb := _button("已习得" if learned else "习得", _learn_talent.bind(id, tid))
+		tr.add_child(_label(Loc.t("天赋点 %d", "Pts %d") % int(t.get("points", 1)), 12, UI.MUTED))
+		var tb := _button(Loc.t("已习得", "Learned") if learned else Loc.t("习得", "Learn"), _learn_talent.bind(id, tid))
 		tb.custom_minimum_size = Vector2(80, 30)
 		tb.disabled = reason != ""
 		tr.add_child(tb)
@@ -523,7 +550,7 @@ func _learn_talent(pid: String, tid: String) -> void:
 
 # ============================================================ 船员
 func _build_crew() -> void:
-	_body.add_child(UI.header("船员", "后勤委托与赠礼", 18))
+	_body.add_child(UI.header(Loc.t("船员", "Crew"), Loc.t("后勤委托与赠礼", "Logistics Requests & Gifts"), 18))
 	for id in Growth.crew_ids():
 		_build_crew_card(str(id))
 
@@ -536,30 +563,30 @@ func _build_crew_card(id: String) -> void:
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.12))
 	var h := _row(v)
 	h.add_child(_label(str(d.get("name", id)), 20, Color(0.74, 0.67, 0.52)))
-	h.add_child(_label("好感 Lv.%d" % lv, 13, UI.MUTED))
+	h.add_child(_label(Loc.t("好感 %s", "Trust %s") % Loc.lv(lv), 13, UI.MUTED))
 	h.add_child(_pips(lv, 5))
-	h.add_child(_label("已满" if need <= 0 else "%d / %d" % [points, need], 12, UI.MUTED))
+	h.add_child(_label(Loc.t("已满", "Max") if need <= 0 else "%d / %d" % [points, need], 12, UI.MUTED))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
 	var levels: Array = d.get("levels", [])
 	if lv > 0 and lv <= levels.size():
-		v.add_child(_label("支援：" + str(levels[lv - 1]), 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("支援：", "Support: ") + str(levels[lv - 1]), 13, Color(0.8, 0.88, 0.8)))
 	else:
-		v.add_child(_label("支援 —", 13, UI.MUTED))
+		v.add_child(_label(Loc.t("支援 —", "Support —"), 13, UI.MUTED))
 	if lv < 5 and lv < levels.size():
-		v.add_child(_label("下一级：" + str(levels[lv]), 12, UI.ACCENT))
+		v.add_child(_label(Loc.t("下一级：", "Next: ") + str(levels[lv]), 12, UI.ACCENT))
 	var gifts: Dictionary = Growth.gift_items(id)
 	var gh := HFlowContainer.new()
 	gh.add_theme_constant_override("h_separation", 6)
 	gh.add_theme_constant_override("v_separation", 4)
 	v.add_child(gh)
 	if gifts.is_empty():
-		gh.add_child(_label("赠礼 —", 12, UI.MUTED))
+		gh.add_child(_label(Loc.t("赠礼 —", "Gifts —"), 12, UI.MUTED))
 	else:
 		for iid in gifts:
 			var nm := GameData.item_name(str(iid))
-			var b := _button("赠礼 %s ×%d" % [nm, int(gifts[iid])], _gift.bind(id, str(iid)))
+			var b := _button(Loc.t("赠礼 %s ×%d", "Gift %s ×%d") % [nm, int(gifts[iid])], _gift.bind(id, str(iid)))
 			b.custom_minimum_size = Vector2(150, 30)
 			gh.add_child(b)
 
@@ -578,22 +605,25 @@ func _build_voyage() -> void:
 	for ch in Growth.chapters():
 		if Growth.chapter_done(str(ch.id)):
 			done += 1
-	_body.add_child(UI.header("航程", "%d / %d" % [done, total], 18))
+	_body.add_child(UI.header(Loc.t("航程", "Voyage"), "%d / %d" % [done, total], 18))
 	var top := _card(UI.ACCENT_DIM)
 	var cur: Dictionary = _chapter(Growth.current_chapter())
 	var th := _row(top)
-	th.add_child(_label("当前章节", 13, UI.MUTED))
+	th.add_child(_label(Loc.t("当前章节", "Current Chapter"), 13, UI.MUTED))
 	th.add_child(_label(str(cur.get("title", "—")), 18, Color(0.74, 0.67, 0.52)))
 	var ph := _row(top, 8)
-	ph.add_child(_label("进度", 12, UI.MUTED))
+	ph.add_child(_label(Loc.t("进度", "Progress"), 12, UI.MUTED))
 	var bar := _pips(done, maxi(1, total), UI.ACCENT, maxi(1, total))
 	bar.custom_minimum_size = Vector2(260, 8)
 	ph.add_child(bar)
 	var maps: Array = []
 	for mid in GameData.map_ids():
+		var md: Dictionary = GameData.map_data(str(mid))
+		if bool(md.get("hidden", false)):
+			continue
 		if GameData.map_available(str(mid)):
-			maps.append(str(GameData.map_data(str(mid)).get("name", mid)))
-	top.add_child(_label("已开放战区：" + (" · ".join(maps) if not maps.is_empty() else "—"), 12, UI.MUTED))
+			maps.append(str(md.get("name", mid)))
+	top.add_child(_label(Loc.t("已开放战区：", "Unlocked Sectors: ") + (" · ".join(maps) if not maps.is_empty() else "—"), 12, UI.MUTED))
 
 	for ch in Growth.chapters():
 		var cid := str(ch.id)
@@ -609,4 +639,4 @@ func _build_voyage() -> void:
 		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(sp)
 		h.add_child(_label(str(GameData.map_data(str(ch.map)).get("name", ch.map)), 12, UI.MUTED))
-		h.add_child(_label(status, 13, col))
+		h.add_child(_label(Loc.t(status), 13, col))

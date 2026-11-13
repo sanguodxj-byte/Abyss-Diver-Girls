@@ -13,5 +13,5 @@ static func use(mech, _id) -> bool:
 	b.setup(raid, 6.0, 14.0)
 	b.position = mech.global_position
 	raid.fx.add_child(b)
-	mech.message.emit("撤离屏障展开")
+	mech.message.emit(Loc.t("撤离屏障展开", "Extraction barrier deployed"))
 	return true

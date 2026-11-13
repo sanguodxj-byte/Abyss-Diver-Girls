@@ -48,8 +48,19 @@ func run() -> void:
 	log_line("player moved %.1f m, ally moved %.1f m, ally distance %.1f m" % [moved, a_moved, follow])
 	if not check(moved > 6.0 and a_moved > 8.0 and follow < 16.0, "队友没有跟随玩家：玩家移动 %.1f 米，队友移动 %.1f 米，距离 %.1f 米" % [moved, a_moved, follow]):
 		return
-	# 流浪者小队：在机甲东北 30 米外放一支，路线从东往西横穿
+	# 流浪者小队：在机甲东北 30 米外放一支，路线从东往西横穿（先找一处到小队起点、虫群位置视线都通畅的站位，免得被楼挡住）
 	var p0: Vector3 = m.global_position
+	for k in 24:
+		var c: Vector3 = p0 if k == 0 else fac._free_near(p0 + Vector3(cos(k * 0.9), 0, sin(k * 0.9)) * (12.0 + k * 3.0))
+		if raid.has_los(c, c + Vector3(30, 0, -8)) and raid.has_los(c, c + Vector3(20, 0, -14)) and raid.has_los(c + Vector3(30, 0, -8), c + Vector3(20, 0, -14)):
+			if k > 0:
+				m.global_position = c
+				m.velocity = Vector3.ZERO
+				for a in fac.allies:
+					a.global_position = fac._free_near(c + Vector3(-4, 0, 4))
+				await frames(2)
+			p0 = m.global_position
+			break
 	var route: Array = [p0 + Vector3(30, 0.3, -8), p0 + Vector3(-60, 0.3, -8)]
 	var sq: Dictionary = fac.spawn_squad(3, route)
 	if not check(sq.size() > 0 and sq.members.size() == 3, "流浪者小队生成失败"):
@@ -95,7 +106,11 @@ func run() -> void:
 				rover_on_player = true
 		if rover_hit_bug and bug_on_rover and ally_on_rover and rover_on_player:
 			break
-	log_line("rover_hit_bug=%s bug_on_rover=%s ally_on_rover=%s player_hurt=%s (%.1fs)" % [rover_hit_bug, bug_on_rover, ally_on_rover, rover_on_player, t])
+	log_line("rover_hit_bug=%s bug_on_rover=%s ally_on_rover=%s player_hurt=%s (%.1fs) p0=%s" % [rover_hit_bug, bug_on_rover, ally_on_rover, rover_on_player, t, p0])
+	if not rover_on_player:
+		for r in sq.members:
+			if is_instance_valid(r):
+				log_line("  rover slot=%d pos=%s dead=%s tgt=%s los=%s" % [r.slot_i, r.global_position, r.dead, r.ai_target, r._los])
 	if not check(rover_hit_bug, "流浪者没有攻击虫子"):
 		return
 	if not check(bug_on_rover, "虫子没有反击流浪者"):
@@ -154,7 +169,7 @@ func run() -> void:
 	if not check(rt.size() >= 2, "自动路线太短"):
 		return
 	var s0: Vector3 = rt[0]
-	if not check(absf(s0.x) > raid.HALF - 20.0 or absf(s0.z) > raid.HALF - 20.0, "流浪者没有从地图边缘进场：%s" % s0):
+	if not check(raid.border_dist(Vector2(s0.x, s0.z)) < 28.0 and raid.in_bounds(s0, 0.0), "流浪者没有从不规则战区边缘进场：%s (bd=%.1f)" % [s0, raid.border_dist(Vector2(s0.x, s0.z))]):
 		return
 	# 接入成长系统：部署仓里买了零（T2，随行）和胡桃（T1，未勾选随行）时，Factions 读到的就是 Growth.ally_squad()
 	Factions.test_ally_squad = null

@@ -38,9 +38,10 @@ OUT_UI = os.path.join(ROOT, "assets/ui/worldmap")
 OUT_REV = os.path.join(ROOT, "tools/worldmap/out")
 FONT = os.path.join(ROOT, "assets/fonts/fusion-pixel-12px-zh_hans.ttf")
 
-T = 360          # 战区边长（米 = 1m 底图像素）
+T = 360          # 战区网格间距基准（米 = 1m 底图像素）
 HALF = 180
-UNDER_GAP = 64   # 地下插图与地表图之间的间隔
+UNDER_GAP = 84   # 地下插图与地表图之间的间隔
+U_PAD = 60       # 地下竖井不规则岩洞向 360 基准框外延伸余量（总画布 480×480）
 
 P = set(px_lib.PALETTE)
 
@@ -219,9 +220,23 @@ def draw_ground(cv, tiles, seed):
     n1 = noise(cv.h, cv.w, 3, seed)
     n2 = noise(cv.h, cv.w, 7, seed + 1)
     nz = n1 * 0.55 + n2 * 0.45
+    # 区块交界过渡带：用细粒度噪声将相邻区块像素做有机交错融合（保留海岸线硬朗边界），消除生硬多边形分界
+    zt_draw = zt.copy()
+    dither_n = noise(cv.h, cv.w, 2, seed + 17)
+    for step_r, prob in [(4, 0.32), (2, 0.45), (1, 0.52)]:
+        for dy, dx in [(-step_r, 0), (step_r, 0), (0, -step_r), (0, step_r)]:
+            nb_z = shifted(zt_draw, dy, dx)
+            swap = (nb_z != "") & (nb_z != zt_draw) & (zt_draw != "A") & (nb_z != "A") & (dither_n < prob)
+            zt_draw[swap] = nb_z[swap]
+            dither_n = 1.0 - dither_n
     for z, (a, b) in ZG.items():
-        m = zt == z
+        m = zt_draw == z
         if not m.any():
+            continue
+        if z == "F":
+            # 田块以外的农耕区先铺休耕土色，实际条田内再铺金黄耕地与垄线，避免出现多边形黄框
+            cv.a[m] = C(130, 103, 90)
+            cv.a[m & (nz > 0.62)] = C(110, 70, 14)
             continue
         cv.a[m] = a
         thr = {"T": 0.45, "P": 0.62, "S": 0.5, "K": 0.55, "F": 0.7, "L": 0.62, "A": 0.93, "B": 0.75}.get(z, 0.66)
@@ -265,7 +280,9 @@ def draw_fields(cv, tiles, zt):
                 d += 4.4
     rows = np.asarray(im) > 0
     pm = cv.poly_mask([fd["poly"] for t in tiles.values() for fd in t["fields"]])
-    cv.a[rows & pm & (zt == "F")] = FARM_ROW
+    f_plot = pm & (zt == "F")
+    cv.a[f_plot] = ZG["F"][0]
+    cv.a[rows & f_plot] = FARM_ROW
 
 
 def draw_trees(cv, zt, seed):
@@ -299,20 +316,33 @@ def draw_water(cv, world, tiles, seed):
     rivers = world["rivers"]
     wet = [(r["pts"], r["w"]) for r in rivers if not r["dry"]]
     dry = [(r["pts"], r["w"]) for r in rivers if r["dry"]]
-    m = cv.line_mask(dry, lambda w: w + 5)
+    m = cv.line_mask(dry, lambda w: w + 5) & ~cv.water
     cv.a[m] = DRY_BANK
-    m = cv.line_mask(dry, lambda w: w)
+    m = cv.line_mask(dry, lambda w: w) & ~cv.water
     cv.a[m] = DRY_BED
     m = cv.line_mask(wet, lambda w: w + 6)
     cv.a[m] = MUD
     lakes = list(world["lakes"])
+    lake_polys = list(world.get("lake_polys", []))
+    lake_mud_polys = list(world.get("lake_mud_polys", []))
+    seen_lk = {(round(l[0], 1), round(l[1], 1)) for l in lakes}
     for t in tiles.values():
-        for l in t["lakes"]:
-            if l not in lakes:
+        tlk = t["lakes"]
+        tlp = t.get("lake_polys", [])
+        tlmp = t.get("lake_mud_polys", [])
+        for idx, l in enumerate(tlk):
+            key = (round(l[0], 1), round(l[1], 1))
+            if key not in seen_lk:
+                seen_lk.add(key)
                 lakes.append(l)
-    m = cv.disc_mask([(l[0], l[1], l[2] + 2) for l in lakes])
+                if idx < len(tlp):
+                    lake_polys.append(tlp[idx])
+                if idx < len(tlmp):
+                    lake_mud_polys.append(tlmp[idx])
+    m = cv.poly_mask(lake_mud_polys) if lake_mud_polys else cv.disc_mask([(l[0], l[1], l[2] + 2) for l in lakes])
     cv.a[m] = MUD
-    wm = cv.line_mask(wet, lambda w: w) | cv.disc_mask([(l[0], l[1], l[2]) for l in lakes])
+    lake_wm = cv.poly_mask(lake_polys) if lake_polys else cv.disc_mask([(l[0], l[1], l[2]) for l in lakes])
+    wm = cv.line_mask(wet, lambda w: w) | lake_wm
     cv.a[wm] = WATER
     cv.water |= wm
     wn = noise(cv.h, cv.w, 2, seed + 7)
@@ -394,7 +424,7 @@ def draw_buildings(cv, tiles):
             if key in seen:
                 continue
             seen.add(key)
-            k = "APT" if b["kind"] == "apt" else b["ch"]
+            k = "APT" if b["kind"] in ("apt", "tenement") else b["ch"]
             by.setdefault(k, []).append(obb(b["c"], b["ang"], b["sx"], b["sz"]))
     allm = cv.poly_mask([p for v in by.values() for p in v])
     sh = shifted(allm, 2, 2) | shifted(allm, 1, 1)
@@ -446,12 +476,27 @@ def main():
             d = json.load(open(os.path.join(DATA, f), encoding="utf-8"))
             zones[d["id"]] = d
     surf = {k: v for k, v in world["zones"].items() if v["surface"] and k in zones}
-    under = {k: v for k, v in world["zones"].items() if not v["surface"] and k in zones}
+    under = {}
     W = int(rw)
     Hs = int(rh)
-    H = Hs + ((UNDER_GAP + T + 48) if under else 0)
+    H = Hs + ((UNDER_GAP + T + U_PAD + 24) if under else 0)
     full = np.zeros((H, W, 3), dtype=np.uint8)
     full[:] = OUT
+    if H > Hs:
+        uh = H - Hs
+        sub = np.empty((uh, W, 3), dtype=np.uint8)
+        sub[:] = C(19, 20, 18)
+        n_coarse = noise(uh, W, 14, 3101)
+        n_med = noise(uh, W, 5, 3102)
+        yy, xx = np.mgrid[0:uh, 0:W]
+        strata = np.sin(yy * 0.085 + xx * 0.018 + n_coarse * 3.6) * 0.5 + 0.5
+        sub[(strata > 0.56) & (n_med > 0.30)] = C(35, 33, 35)
+        sub[(strata > 0.76) & (n_med > 0.54)] = C(46, 41, 40)
+        sub[(n_coarse < 0.14) & (n_med < 0.25)] = C(8, 8, 10)
+        sub[0:3, :] = C(8, 8, 10)
+        sub[3:5, :] = C(73, 69, 70)
+        sub[5:7, :] = C(35, 33, 35)
+        full[Hs:] = sub
 
     # 1) 地表：整片城市群
     cv = Canvas(W, Hs, rx, rz)
@@ -471,35 +516,59 @@ def main():
         tx, tz = z["tile"]
         tile_origin[mid] = (int(tx * T - HALF - rx), int(tz * T - HALF - rz))
 
-    # 2) 地下竖井：画在地表图下方，横向对齐它上方的战区（SHAFT_PARENT）
+    # 2) 地下竖井：画在地表图下方不规则塌陷洞窟剖面，横向对齐它上方的战区（SHAFT_PARENT）
     shaft_meta = None
     for mid, z in under.items():
         parent = zones[mid].get("shaft_parent", "canyon")
         px0 = tile_origin.get(parent, (W // 2 - HALF, 0))[0]
         ay = Hs + UNDER_GAP
         tx, tz = z["tile"]
-        uc = Canvas(T + 48, T + 48, tx * T - HALF - 24, tz * T - HALF - 24)
-        ut = {k: v for k, v in tiles.items() if k == (tx, tz)}
+        uw_sz = T + U_PAD * 2
+        uc = Canvas(uw_sz, uw_sz, tx * T - HALF - U_PAD, tz * T - HALF - U_PAD)
+        ut = {k: v for k, v in tiles.items() if abs(k[0] - tx) <= 1 and abs(k[1] - tz) <= 1}
         uz = draw_ground(uc, ut, 2001)
         uw = {"rivers": [], "lakes": [], "rails": []}
         draw_water(uc, uw, ut, 2002)
         draw_roads(uc, ut)
         draw_trees(uc, uz, 2003)
         draw_buildings(uc, ut)
-        # 外圈暗化：地下剖面
-        ring = np.ones((T + 48, T + 48), dtype=bool)
-        ring[24:24 + T, 24:24 + T] = False
-        uc.a[ring] = C(19, 20, 18)
-        x0 = px0 - 24
-        full[ay - 24:ay - 24 + T + 48, x0:x0 + T + 48] = uc.a[:min(T + 48, H - (ay - 24))]
+        # 按不规则竖井多边形裁剪洞窟轮廓，外围生成参差黑曜岩断壁与地下剖面底色（消除方形外框）
+        u_poly = [(tx * T + p[0], tz * T + p[1]) for p in zones[mid].get("poly", [])]
+        x0 = max(0, px0 - U_PAD)
+        y_dst = ay - U_PAD
+        h_copy = min(uw_sz, H - y_dst)
+        w_copy = min(uw_sz, W - x0)
+        if len(u_poly) >= 3:
+            inside_m = uc.poly_mask([u_poly])
+            im_rim, dr_rim = uc.mask()
+            xy_rim = [uc.px(p) for p in u_poly] + [uc.px(u_poly[0])]
+            dr_rim.polygon([uc.px(p) for p in u_poly], fill=255)
+            dr_rim.line(xy_rim, fill=255, width=20, joint="curve")
+            rim_m = (np.asarray(im_rim) > 0) & ~inside_m
+            rn = noise(uw_sz, uw_sz, 3, 2019)
+            uc.a[~inside_m] = C(19, 20, 18)
+            uc.a[rim_m & (rn > 0.34)] = C(35, 33, 35)
+            uc.a[rim_m & (rn > 0.72)] = C(46, 41, 40)
+            paste_m = (inside_m | rim_m)[:h_copy, :w_copy]
+            dst = full[y_dst:y_dst + h_copy, x0:x0 + w_copy]
+            dst[paste_m] = uc.a[:h_copy, :w_copy][paste_m]
+        else:
+            ring = np.ones((uw_sz, uw_sz), dtype=bool)
+            ring[U_PAD:U_PAD + T, U_PAD:U_PAD + T] = False
+            uc.a[ring] = C(19, 20, 18)
+            full[y_dst:y_dst + h_copy, x0:x0 + w_copy] = uc.a[:h_copy, :w_copy]
         tile_origin[mid] = (px0, ay)
         if parent in tile_origin:
             sx = tile_origin[parent][0] + HALF
-            y_top = tile_origin[parent][1] + T + 4
-            for y in range(y_top, ay - 24):
+            p_poly = zones[parent].get("poly", [])
+            p_max_z = max((pt[1] for pt in p_poly), default=HALF)
+            u_min_z = min((pt[1] for pt in zones[mid].get("poly", [])), default=-HALF)
+            y_top = int(round(tile_origin[parent][1] + HALF + p_max_z + 6))
+            y_bot = int(round(ay + HALF + u_min_z - 8))
+            for y in range(max(0, y_top), min(H, y_bot)):
                 if (y // 4) % 2 == 0:
                     full[y, sx - 1:sx + 2] = C(255, 176, 33)
-            shaft_meta = {"map": mid, "parent": parent, "x": sx, "y0": tile_origin[parent][1] + T, "y1": ay - 24}
+            shaft_meta = {"map": mid, "parent": parent, "x": sx, "y0": y_top - 4, "y1": y_bot}
 
     flat = full.reshape(-1, 3)
     u = np.unique(flat, axis=0)
@@ -517,7 +586,11 @@ def main():
     for mid in tile_origin:
         for g in zones[mid]["gates"]:
             al = max(set(g["along"]), key=g["along"].count)
+            gp = g.get("pos", [0.0, 0.0])
+            gt = g.get("tangent", [1.0, 0.0])
+            gi = g.get("inward", [0.0, 1.0])
             gates_meta.append({"map": mid, "edge": g["edge"], "to": g["to"], "along": al, "lo": min(g["along"]), "hi": max(g["along"]),
+                               "x": gp[0], "z": gp[1], "tx": gt[0], "tz": gt[1], "ix": gi[0], "iz": gi[1],
                                "freq": round(g["along"].count(al) / len(g["along"]), 2)})
     fill = [[nm, x - rx, z - rz] for nm, x, z in FILL_LABELS]
     meta = {"w": W, "h": H, "tile": T, "half": HALF, "gutter": 0, "levels": [1, 2, 4], "world_rect": world["rect"], "maps": {},
@@ -525,6 +598,7 @@ def main():
     for mid, (x0, y0) in tile_origin.items():
         d = zones[mid]
         meta["maps"][mid] = {"x": x0, "y": y0, "name": d["name"], "grid": world["zones"][mid]["tile"],
+                             "poly": [[round(p[0], 1), round(p[1], 1)] for p in d.get("poly", [])],
                              "extracts": d["extracts"], "pois": [{"x": round(p["x"], 1), "z": round(p["z"], 1), "id": p["id"], "name": p["name"]} for p in d["pois"]],
                              "landmarks": landmarks_meta(d), "underground": mid in under}
     json.dump(meta, open(os.path.join(OUT_UI, "worldmap.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -534,7 +608,7 @@ def main():
 
 ## 城市群外围的地名（世界坐标）
 FILL_LABELS = [
-    ["东湾", 800, -300], ["河口湿地", 560, 60], ["东北港区", 360, -360], ["北郊水库", -400, -800], ["北岭林带", -60, -720],
+    ["东湾", 800, -300], ["河口湿地", 560, 60], ["北湾岬角", 580, -640], ["北郊水库", -400, -800], ["北岭林带", -60, -720],
     ["西部丘陵", -420, -200], ["西郊农场", -260, 150], ["南部荒漠", -200, 760], ["东南玄武岩台地", 600, 560], ["外环高速", -300, 520],
 ]
 
@@ -574,8 +648,8 @@ def down(a, k):
 
 
 def annotate(img, meta, zones):
-    """审图用：叠战区边框、名牌、撤离点、遗迹、转场口、地名（界面里这些是实时绘制的）"""
-    im = img.copy()
+    """审图用：逆时针旋转 90° 横置并叠战区边框、名牌、撤离点、遗迹、转场口、地名（界面里这些是实时绘制的）"""
+    im = img.transpose(Image.Transpose.ROTATE_90)
     dr = ImageDraw.Draw(im)
     dr.fontmode = "1"
     font = ImageFont.truetype(FONT, 12)
@@ -583,36 +657,52 @@ def annotate(img, meta, zones):
     green = (115, 217, 102)
     cyan = (77, 217, 242)
     cream = (219, 214, 191)
+    W0 = meta["w"]
+
+    def b2m(u, v):
+        return (v, W0 - u)
 
     def label(x, y, t, col=cream, bg=(8, 8, 10)):
+        x, y = int(round(x)), int(round(y))
         tw = int(dr.textlength(t, font=font))
         dr.rectangle([x - tw // 2 - 3, y - 8, x + tw // 2 + 2, y + 7], fill=bg)
         dr.text((x - tw // 2, y - 7), t, font=font, fill=col)
 
     for mid, m in meta["maps"].items():
         x0, y0 = m["x"], m["y"]
-        dr.rectangle([x0, y0, x0 + T - 1, y0 + T - 1], outline=amber if not m["underground"] else (110, 50, 140), width=2)
+        poly = m.get("poly", [])
+        outline_col = amber if not m["underground"] else (160, 95, 205)
+        if len(poly) >= 3:
+            xy = [b2m(x0 + HALF + p[0], y0 + HALF + p[1]) for p in poly]
+            xy_closed = xy + [xy[0]]
+            dr.line(xy_closed, fill=(8, 8, 10), width=5, joint="curve")
+            dr.line(xy_closed, fill=outline_col, width=2, joint="curve")
+        else:
+            corners = [b2m(x0, y0), b2m(x0 + T - 1, y0), b2m(x0 + T - 1, y0 + T - 1), b2m(x0, y0 + T - 1)]
+            dr.polygon(corners, outline=outline_col, width=2)
+            xy = corners
         for e in m["extracts"]:
-            x, y = x0 + HALF + e["x"], y0 + HALF + e["z"]
+            x, y = b2m(x0 + HALF + e["x"], y0 + HALF + e["z"])
             dr.rectangle([x - 4, y - 4, x + 3, y + 3], fill=(8, 8, 10))
             dr.rectangle([x - 2, y - 2, x + 1, y + 1], fill=green)
         for p in m["pois"]:
-            x, y = x0 + HALF + p["x"], y0 + HALF + p["z"]
+            x, y = b2m(x0 + HALF + p["x"], y0 + HALF + p["z"])
             dr.polygon([(x, y - 5), (x + 5, y), (x, y + 5), (x - 5, y)], fill=(8, 8, 10))
             dr.polygon([(x, y - 3), (x + 3, y), (x, y + 3), (x - 3, y)], fill=amber)
-        label(x0 + HALF, y0 + 14, m["name"] + ("（地下竖井）" if m["underground"] else ""), amber)
+        cx = sum(pt[0] for pt in xy) / len(xy)
+        cy = sum(pt[1] for pt in xy) / len(xy)
+        top_y = min(pt[1] for pt in xy)
+        label(cx, top_y + (cy - top_y) * 0.38, m["name"] + ("（地下竖井）" if m["underground"] else ""), amber)
     for g in meta["gates"]:
         m = meta["maps"][g["map"]]
         x0, y0 = m["x"], m["y"]
-        e, al = g["edge"], g["along"]
-        if e in "EW":
-            x = x0 + (T - 3 if e == "E" else 0)
-            dr.rectangle([x, y0 + HALF + al - 16, x + 2, y0 + HALF + al + 16], fill=cyan)
-        else:
-            y = y0 + (T - 3 if e == "S" else 0)
-            dr.rectangle([x0 + HALF + al - 16, y, x0 + HALF + al + 16, y + 2], fill=cyan)
+        gx, gz = b2m(x0 + HALF + g.get("x", 0.0), y0 + HALF + g.get("z", 0.0))
+        rtx, rtz = g.get("tz", 0.0), -g.get("tx", 1.0)
+        dr.line([(gx - rtx * 16, gz - rtz * 16), (gx + rtx * 16, gz + rtz * 16)], fill=(8, 8, 10), width=6)
+        dr.line([(gx - rtx * 15, gz - rtz * 15), (gx + rtx * 15, gz + rtz * 15)], fill=cyan, width=3)
     for nm, x, y in meta["fill_labels"]:
-        label(int(x), int(y), nm, (160, 160, 145))
+        mx, my = b2m(x, y)
+        label(mx, my, nm, (160, 160, 145))
     return im
 
 

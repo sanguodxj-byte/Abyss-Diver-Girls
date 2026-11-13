@@ -310,7 +310,7 @@ func _pick_sites(n: int) -> Array:
 		for sgn in [1.0, -1.0]:
 			var s := Vector3(mid.x - ax.x * 8.0 * sgn, 0, mid.y - ax.y * 8.0 * sgn)
 			var t := Vector3(mid.x + ax.x * 8.0 * sgn, 0, mid.y + ax.y * 8.0 * sgn)
-			if absf(s.x) > raid.HALF - 6 or absf(s.z) > raid.HALF - 6:
+			if not raid.in_bounds(s, 6.0):
 				continue
 			if U._free(m, s, U._cap) and not raid.in_wet(Vector2(s.x, s.z), 1.5):
 				picked.append({"start": s, "target": t})
@@ -338,7 +338,7 @@ func _pick_embeds(n: int) -> Array:
 		var c: Vector2 = CO._centroid(poly)
 		var outd := (mid - c).normalized()
 		var p := mid + outd * 0.5
-		if absf(p.x) > raid.HALF - 8 or absf(p.y) > raid.HALF - 8 or raid.in_wet(p, 2.0):
+		if not raid.in_bounds_xz(p, 8.0) or raid.in_wet(p, 2.0):
 			continue
 		# 外面 3m 要是空地（否则本来就是夹缝，不算单纯嵌入）
 		if not U._free(m, Vector3(p.x + outd.x * 2.5, 0, p.y + outd.y * 2.5), U._cap):
@@ -380,7 +380,7 @@ func _make_probes(sites: Array) -> void:
 		if centers.size() >= 80:
 			break
 		var c: Vector2 = CO._centroid(o.poly)
-		if absf(c.x) < raid.HALF - 10 and absf(c.y) < raid.HALF - 10:
+		if raid.in_bounds_xz(c, 10.0):
 			centers.append(Vector3(c.x, 0, c.y))
 	for c: Vector3 in centers:
 		var b := CharacterBody3D.new()

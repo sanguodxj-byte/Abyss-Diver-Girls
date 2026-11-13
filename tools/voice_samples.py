@@ -21,15 +21,14 @@ REVIEW_DIR = os.path.join(ROOT, "review")
 GAP_SEC = 0.35
 
 PICKS = {
-    "nao": ["comm_seen_generic_02", "side_captain_lv2_001", "main_ch4_encounter_003"],
-    "rei": ["main_ch3_encounter_002", "comm_poi_relay_01", "side_rei_lv4_001"],
-    "kurumi": ["comm_ext_start_trans_02", "side_kurumi_lv4_005", "main_ch4_boss_in_002"],
-    "lina": ["comm_deploy_lina_01", "comm_emerg_in_lina_01", "side_lina_lv2_004"],
-    "laojiao": ["comm_pick_crystal_01", "side_kurumi_lv5_003", "main_ch5_intro_003"],
-    "ajin": ["side_ajin_lv3_001", "comm_emerg_in_ajin_01", "comm_pick_food_01"],
-    "xiaoman": ["comm_ext_done_xiaoman_01", "side_xiaoman_lv5_003", "main_ch7_boss_out_003"],
-    "captain": ["comm_pick_coffee_01", "side_captain_lv4_003", "main_ch3_outro_003"],
-    "shiori": ["side_shiori_lv1_003", "comm_poi_well_01", "main_ch6_poi_001"],
+    "nao": ["radio_combat_out", "radio_kill_nao", "radio_dmg_nao"],
+    "rei": ["radio_combat_in", "radio_kill_rei", "radio_energy_rei"],
+    "kurumi": ["radio_kill_kurumi", "radio_over_in", "radio_boss_def_king"],
+    "lina": ["radio_combat_in", "radio_dmg_lina", "radio_boss_king"],
+    "mia": ["radio_land_ironbelt", "radio_part_arm", "radio_use_repair"],
+    "ajin": ["radio_pick_coffee", "radio_pick_food"],
+    "xiaoman": ["radio_box_mil", "radio_pick_gold"],
+    "shiori": ["radio_boss_phase_queen", "radio_poi_institute"],
 }
 
 

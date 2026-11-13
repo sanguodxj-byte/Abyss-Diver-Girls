@@ -59,6 +59,9 @@ func run() -> void:
 	_check_layout()
 	WorldLink.force_open = true
 	for mid: String in GameData.map_ids():
+		if bool(GameData.map_data(mid).get("hidden", false)) or not WC.is_surface(mid):
+			check(not meta.maps.has(mid), "隐藏战区 %s 不应显示在战区大地图上" % mid)
+			continue
 		if not check(meta.maps.has(mid), "大地图上没有战区 %s" % mid):
 			continue
 		await _check_map(mid)
@@ -80,14 +83,42 @@ func _check_layout() -> void:
 			var d := Vector2(float(meta.maps[b].x) - float(meta.maps[a].x), float(meta.maps[b].y) - float(meta.maps[a].y))
 			if not d.is_equal_approx(DIRV[e] * step):
 				p("拼接错误：%s 的 %s 边应接 %s，方块偏移 %s" % [a, e, b, d])
-	# 方块互不重叠
+	# 不规则战区轮廓校验：顶点数 >= 12，面积显著小于外接矩形（真正不规则截取），且互不重叠
 	var ids: Array = meta.maps.keys()
+	var polys := {}
+	for id: String in ids:
+		var raw: Array = meta.maps[id].get("poly", [])
+		if raw.size() < 12:
+			p("%s 缺少不规则轮廓 poly（顶点数 %d）" % [id, raw.size()])
+			continue
+		var pw := PackedVector2Array()
+		var anc := Vector2(float(meta.maps[id].x) + 180.0, float(meta.maps[id].y) + 180.0)
+		var x0 := 1e9; var y0 := 1e9; var x1 := -1e9; var y1 := -1e9
+		for pt in raw:
+			var q := anc + Vector2(float(pt[0]), float(pt[1]))
+			pw.append(q)
+			x0 = minf(x0, q.x); x1 = maxf(x1, q.x)
+			y0 = minf(y0, q.y); y1 = maxf(y1, q.y)
+		var area2 := 0.0
+		for i in pw.size():
+			var a := pw[i]
+			var b := pw[(i + 1) % pw.size()]
+			area2 += a.x * b.y - b.x * a.y
+		var area := absf(area2) * 0.5
+		var bbox_area := maxf(1.0, (x1 - x0) * (y1 - y0))
+		if area / bbox_area > 0.82:
+			p("%s 轮廓过于接近矩形（填充率 %.2f）" % [id, area / bbox_area])
+		polys[id] = pw
 	for i in ids.size():
 		for j in range(i + 1, ids.size()):
-			var ra := Rect2(float(meta.maps[ids[i]].x), float(meta.maps[ids[i]].y), meta.tile, meta.tile)
-			var rb := Rect2(float(meta.maps[ids[j]].x), float(meta.maps[ids[j]].y), meta.tile, meta.tile)
-			if ra.intersects(rb):
-				p("方块重叠：%s / %s" % [ids[i], ids[j]])
+			if not polys.has(ids[i]) or not polys.has(ids[j]):
+				continue
+			for inter: PackedVector2Array in Geometry2D.intersect_polygons(polys[ids[i]], polys[ids[j]]):
+				var a2 := 0.0
+				for k in inter.size():
+					a2 += inter[k].x * inter[(k + 1) % inter.size()].y - inter[(k + 1) % inter.size()].x * inter[k].y
+				if absf(a2) * 0.5 > 2.0:
+					p("不规则战区重叠：%s / %s（面积 %.1f）" % [ids[i], ids[j], absf(a2) * 0.5])
 	# 地表战区：方块位置就是城市群世界坐标
 	var wr: Array = meta.get("world_rect", [])
 	if wr.size() == 4:
@@ -161,33 +192,38 @@ func _check_map(mid: String) -> void:
 			p("%s %s 边转场口去向不一致" % [tag, g.edge])
 		elif float(g.along) < float(mg.lo) - 0.1 or float(g.along) > float(mg.hi) + 0.1:
 			p("%s %s 边转场口 %.0f 不在大地图范围 %.0f~%.0f" % [tag, g.edge, g.along, mg.lo, mg.hi])
-	# 建筑占地栅格（这一局）
+	# 建筑占地栅格（这一局，覆盖 ±240 米不规则战区全范围）
+	var G := 480
+	var GH := 240.0
 	var occ := PackedByteArray()
-	occ.resize(360 * 360)
+	occ.resize(G * G)
 	var big := PackedByteArray()
-	big.resize(360 * 360)
+	big.resize(G * G)
 	for r: Rect2 in raid.blocks:
-		var x0 := clampi(int(floor(r.position.x + 180.0)) - 1, 0, 359)
-		var x1 := clampi(int(ceil(r.end.x + 180.0)) + 1, 0, 359)
-		var z0 := clampi(int(floor(r.position.y + 180.0)) - 1, 0, 359)
-		var z1 := clampi(int(ceil(r.end.y + 180.0)) + 1, 0, 359)
+		var x0 := clampi(int(floor(r.position.x + GH)) - 1, 0, G - 1)
+		var x1 := clampi(int(ceil(r.end.x + GH)) + 1, 0, G - 1)
+		var z0 := clampi(int(floor(r.position.y + GH)) - 1, 0, G - 1)
+		var z1 := clampi(int(ceil(r.end.y + GH)) + 1, 0, G - 1)
 		for z in range(z0, z1 + 1):
 			for x in range(x0, x1 + 1):
-				occ[z * 360 + x] = 1
+				occ[z * G + x] = 1
 				if r.get_area() > 10.0:
-					big[z * 360 + x] = 1
+					big[z * G + x] = 1
 	var n_w := 0
 	var ok_w := 0
 	var n_r := 0
 	var ok_r := 0
 	var n_d := 0
 	var ok_d := 0
-	var z := -178.0
-	while z < 178.0:
-		var x := -178.0
-		while x < 178.0:
+	var z := -224.0
+	while z < 224.0:
+		var x := -224.0
+		while x < 224.0:
 			var q := Vector2(x, z)
-			var gi := int(z + 180.0) * 360 + int(x + 180.0)
+			if not raid.in_bounds_xz(q, 5.0):
+				x += 4.0
+				continue
+			var gi := int(z + GH) * G + int(x + GH)
 			if occ[gi] == 0:
 				var c := _px(m, x, z)
 				var road: bool = raid.on_road(q, 2.0)
@@ -238,7 +274,7 @@ func _check_map(mid: String) -> void:
 				var col := _px(m, q.x, q.y)
 				if _in(col, ROOF):
 					drawn += 1
-				var gi := clampi(int(q.y + 180.0), 0, 359) * 360 + clampi(int(q.x + 180.0), 0, 359)
+				var gi := clampi(int(q.y + GH), 0, G - 1) * G + clampi(int(q.x + GH), 0, G - 1)
 				if big[gi] == 1:
 					hit += 1
 				c += 2.0
@@ -267,7 +303,7 @@ func _check_ui() -> void:
 	var start: String = GameData.map_id
 	var avail: Array = []
 	var locked: Array = []
-	for id: String in GameData.map_ids():
+	for id: String in wm.map_ids():
 		(avail if GameData.map_available(id) else locked).append(id)
 	await shot("hubwm_0_overview.png")
 	for id: String in avail:
@@ -279,6 +315,14 @@ func _check_ui() -> void:
 		await frames(1)
 		check(GameData.map_id == id, "单击 %s 没有选中（当前 %s）" % [id, GameData.map_id])
 		check(hub.map_title_lbl.text == str(GameData.map_data(id).name), "简报标题没跟着变：%s" % hub.map_title_lbl.text)
+		# 外接矩形四角若被不规则轮廓切掉，命中应不等于自身（证明并非方形选区）
+		var zp: PackedVector2Array = wm.map_poly(id)
+		var cut_corner_checked := false
+		for cp in [r.position + Vector2(2, 2), Vector2(r.end.x - 2, r.position.y + 2), r.end - Vector2(2, 2), Vector2(r.position.x + 2, r.end.y - 2)]:
+			if not Geometry2D.is_point_in_polygon(cp, zp):
+				check(wm.map_at(cp) != id, "%s 外接矩形被裁切角 %s 仍命中了自身" % [id, cp])
+				cut_corner_checked = true
+		check(cut_corner_checked, "%s 外接矩形四角都在轮廓内（疑似方形）" % id)
 	for id: String in locked:
 		var before: String = GameData.map_id
 		wm.center_on(id)
@@ -314,7 +358,7 @@ func _check_ui() -> void:
 	if nb != "":
 		# 截图演示用：暂时按「全部解锁」显示，看悬停高亮（截完按真实解锁状态恢复）
 		var all := {}
-		for id: String in GameData.map_ids():
+		for id: String in wm.map_ids():
 			all[id] = true
 		wm.set_state(all, wm.quests, GameData.map_id)
 		wm.set_hover(nb)

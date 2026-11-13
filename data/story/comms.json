@@ -1,3 +1,1304 @@
 {
-	"comms": []
+  "comms": [
+    {
+      "id": "radio_deploy_greyport",
+      "event": "deployed",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "灰港市上空。云层很薄，注意楼顶的拦截火力。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "greyport"
+      },
+      "ja": "[serious] 灰港市上空……雲が薄い。屋上からの迎撃に注意して！",
+      "voice": "radio_deploy_greyport",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_deploy_greyport_b",
+      "event": "deployed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "进入灰港市外廓。断桥和旧总站周边视野开阔，小心高速游荡虫群。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "greyport"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_deploy_ironbelt",
+      "event": "deployed",
+      "speaker": "rei",
+      "expr": "neutral",
+      "zh": "铁锈工业带。管道密集，别被拖进窄巷。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "ironbelt"
+      },
+      "ja": "[calm] 鉄錆工業帯。配管が密集している……狭い路地に引き込まれるな。",
+      "voice": "radio_deploy_ironbelt",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_deploy_ironbelt_b",
+      "event": "deployed",
+      "speaker": "mia",
+      "expr": "serious",
+      "zh": "进入铁锈工业带了。一号高炉和转炉区热信号很杂，注意钢架夹缝里的伏兵。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "ironbelt"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_deploy_dustfield",
+      "event": "deployed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "尘土平原风沙大，视野会被压低。跟紧我。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "dustfield"
+      },
+      "ja": "[confident] 塵土平原、砂嵐が強いぞ！視界が落ちる、私から離れるな！",
+      "voice": "radio_deploy_dustfield",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_deploy_dustfield_b",
+      "event": "deployed",
+      "speaker": "lina",
+      "expr": "neutral",
+      "zh": "进入尘土平原。输电塔与沙地发射井一带遮蔽少，跑图时留意沙下震动。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "dustfield"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_deploy_redlake",
+      "event": "deployed",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "赤湖新区。菌毯信号很强，落地先找掩体。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "redlake"
+      },
+      "ja": "[urgent] 赤湖新区……菌毯の反応が強い！着地したらまず掩体を探せ！",
+      "voice": "radio_deploy_redlake",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_deploy_redlake_b",
+      "event": "deployed",
+      "speaker": "shiori",
+      "expr": "serious",
+      "zh": "进入赤湖新区。观测所与栈桥附近孢子雾气很浓，注意岸边浅滩的活性甲壳。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "redlake"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_deploy_canyon",
+      "event": "deployed",
+      "speaker": "shiori",
+      "expr": "shy",
+      "zh": "裂谷矿区的样本浓度不对……你们小心。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "canyon"
+      },
+      "ja": "[mysterious][whispering] 裂谷鉱区のサンプル濃度がおかしい……気をつけて……",
+      "voice": "radio_deploy_canyon",
+      "tag": "低语"
+    },
+    {
+      "id": "radio_deploy_canyon_b",
+      "event": "deployed",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "切入裂谷矿区。两侧岩壁索道和矿场筒仓落差很大，留意高处伏击。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "canyon"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_deploy_bayport",
+      "event": "deployed",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "东湾船坞港上空。海雾混着防波堤横风，注意干船坞龙门吊的射界死角。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "bayport"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_deploy_bayport_b",
+      "event": "deployed",
+      "speaker": "rei",
+      "expr": "neutral",
+      "zh": "已进入东湾船坞港。潜艇船台和泊位区回波强烈，先找稳固掩体再推进。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "bayport"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_deploy_abyss_maw",
+      "event": "deployed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "井口到了。下面没有风，只有回声。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "abyss_maw"
+      },
+      "ja": "[calm] 坑口に着いた。……下は風もなく、響きだけがある。",
+      "voice": "radio_deploy_abyss_maw",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_deploy_abyss_maw_b",
+      "event": "deployed",
+      "speaker": "shiori",
+      "expr": "serious",
+      "zh": "已潜入零号深渊井下层。地热约束腔与晶脉共鸣很强烈，传感器可能会漂移。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "abyss_maw"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "低语"
+    },
+    {
+      "id": "radio_land_greyport",
+      "event": "drop_landed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "着陆完成。雨还没停，设备注意防潮。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "greyport"
+      },
+      "ja": "[calm] 着陸完了。雨はまだ止まない……装備の湿気に注意しろ。",
+      "voice": "radio_land_greyport",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_land_ironbelt",
+      "event": "drop_landed",
+      "speaker": "mia",
+      "expr": "angry",
+      "zh": "落地稳住。这里的钢梁会回震，别硬顶。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "ironbelt"
+      },
+      "ja": "[urgent] 着地は安定！ここの鋼梁は揺れ返すぞ、無理に押すな！",
+      "voice": "radio_land_ironbelt",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_land_dustfield",
+      "event": "drop_landed",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "风沙起来了，热源信号很杂。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "dustfield"
+      },
+      "ja": "[tense] 砂嵐が来た……熱源反応が乱れている！",
+      "voice": "radio_land_dustfield",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_land_redlake",
+      "event": "drop_landed",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "红湖地表有活动反应，不是我们的人。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "redlake"
+      },
+      "ja": "[serious] 赤湖の地表に反応がある……我々の人間じゃない。",
+      "voice": "radio_land_redlake",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_land_canyon",
+      "event": "drop_landed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "落脚点安全。峡谷两侧都有动静。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "canyon"
+      },
+      "ja": "[confident] 着地点は安全！峡谷の両側に動きがあるぞ！",
+      "voice": "radio_land_canyon",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_land_bayport",
+      "event": "drop_landed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "船坞码头接地稳当！海风味儿挺冲，集装箱堆场那边应该有不少好货。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "bayport"
+      },
+      "ja": "",
+      "voice": "",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_land_abyss_maw",
+      "event": "drop_landed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "升降缓冲到位。竖井底部的孢子浓度很高，注意过滤读数。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "map": "abyss_maw"
+      },
+      "ja": "[calm] 坑口に着いた。……下は風もなく、響きだけがある。",
+      "voice": "radio_land_abyss_maw",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_combat_in",
+      "event": "combat_changed",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "接触！前方多个热源，准备交战。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 90,
+      "when": {
+        "in_combat": true
+      },
+      "ja": "[in a hurry tone][urgent] 接触！前方に複数の熱源、戦闘準備！",
+      "voice": "radio_combat_in",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_combat_out",
+      "event": "combat_changed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "脱离接触。检查弹药和装甲，继续推进。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 90,
+      "when": {
+        "in_combat": false
+      },
+      "ja": "[calm] 接触を離脱。弾薬と装甲を確認して、進むぞ。",
+      "voice": "radio_combat_out",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_kill_nao",
+      "event": "enemy_killed",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "目标清除。",
+      "priority": 1,
+      "chance": 0.22,
+      "cooldown": 45,
+      "ja": "[calm] 目標を排除。",
+      "voice": "radio_kill_nao",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_kill_kurumi",
+      "event": "enemy_killed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "打掉了。下一个在哪？",
+      "priority": 1,
+      "chance": 0.18,
+      "cooldown": 45,
+      "ja": "[excited][confident] 仕留めた！次はどこだ？！",
+      "voice": "radio_kill_kurumi",
+      "tag": "振奋"
+    },
+    {
+      "id": "radio_kill_rei",
+      "event": "enemy_killed",
+      "speaker": "rei",
+      "expr": "neutral",
+      "zh": "确认击杀。",
+      "priority": 1,
+      "chance": 0.18,
+      "cooldown": 45,
+      "ja": "[calm] 撃破を確認。",
+      "voice": "radio_kill_rei",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_dmg_nao",
+      "event": "player_damaged",
+      "speaker": "nao",
+      "expr": "serious",
+      "zh": "装甲受损，别让他们靠太近。",
+      "priority": 4,
+      "chance": 0.5,
+      "cooldown": 45,
+      "ja": "[tense] 装甲が損傷……近づかせるな！",
+      "voice": "radio_dmg_nao",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_dmg_lina",
+      "event": "player_damaged",
+      "speaker": "lina",
+      "expr": "sad",
+      "zh": "结构报警。撑住，我给你们争取时间。",
+      "priority": 4,
+      "chance": 0.35,
+      "cooldown": 45,
+      "ja": "[worried][urgent] 構造警報！耐えてくれ、時間を稼ぐ！",
+      "voice": "radio_dmg_lina",
+      "tag": "忧虑"
+    },
+    {
+      "id": "radio_part_arm",
+      "event": "part_destroyed",
+      "speaker": "mia",
+      "expr": "surprised",
+      "zh": "手臂结构断了！后撤一点！",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "slot": [
+          "arm_l",
+          "arm_r"
+        ]
+      },
+      "ja": "[alarmed][urgent] 腕部構造が断裂！少し下がれ！！",
+      "voice": "radio_part_arm",
+      "tag": "惊骇"
+    },
+    {
+      "id": "radio_part_legs",
+      "event": "part_destroyed",
+      "speaker": "mia",
+      "expr": "angry",
+      "zh": "底盘受损，机动会掉。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "slot": "legs"
+      },
+      "ja": "[urgent] 脚部が損傷！機動が落ちるぞ！",
+      "voice": "radio_part_legs",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_part_gen",
+      "event": "part_destroyed",
+      "speaker": "lina",
+      "expr": "sad",
+      "zh": "动力舱报警，能源输出掉了。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "slot": "gen"
+      },
+      "ja": "[worried][alarmed] 動力室警報！エネルギー出力が落ちた！",
+      "voice": "radio_part_gen",
+      "tag": "忧虑"
+    },
+    {
+      "id": "radio_part_back",
+      "event": "part_destroyed",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "背部挂载中弹，注意后方。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "slot": "back"
+      },
+      "ja": "[urgent] 背部装備に被弾！後方に注意しろ！",
+      "voice": "radio_part_back",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_energy_lina",
+      "event": "energy_low",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "能源见底了，别再拖。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 60,
+      "ja": "[urgent][serious] エネルギーが底を突いた……！もう長引かせるな！",
+      "voice": "radio_energy_lina",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_energy_rei",
+      "event": "energy_low",
+      "speaker": "rei",
+      "expr": "sad",
+      "zh": "备用能源不多了。",
+      "priority": 4,
+      "chance": 0.5,
+      "cooldown": 60,
+      "ja": "[worried] 予備エネルギーが少ない……",
+      "voice": "radio_energy_rei",
+      "tag": "忧虑"
+    },
+    {
+      "id": "radio_emerg_in",
+      "event": "emergency_entered",
+      "speaker": "nao",
+      "expr": "serious",
+      "zh": "能源耗尽，切应急模式。",
+      "priority": 6,
+      "chance": 1.0,
+      "cooldown": 60,
+      "ja": "[serious] エネルギー枯渇。緊急モードに切り替える。",
+      "voice": "radio_emerg_in",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_emerg_out",
+      "event": "emergency_exited",
+      "speaker": "mia",
+      "expr": "smile",
+      "zh": "应急解除，能源回来了。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[delighted] 緊急解除！エネルギーが戻ったぞ！",
+      "voice": "radio_emerg_out",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_over_in",
+      "event": "overload_changed",
+      "speaker": "kurumi",
+      "expr": "angry",
+      "zh": "负重超了，速度在掉。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 45,
+      "when": {
+        "overloaded": true
+      },
+      "ja": "[frustrated] 積載超過だ……速度が落ちている！",
+      "voice": "radio_over_in",
+      "tag": "恼火"
+    },
+    {
+      "id": "radio_over_out",
+      "event": "overload_changed",
+      "speaker": "lina",
+      "expr": "smile",
+      "zh": "负重恢复，可以跑了。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 45,
+      "when": {
+        "overloaded": false
+      },
+      "ja": "[confident] 積載が戻った。走れるぞ！",
+      "voice": "radio_over_out",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_cargo_full",
+      "event": "cargo_full",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "货舱满了，装不下了。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[calm] 貨物室が満杯だ。もう入らない。",
+      "voice": "radio_cargo_full",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_box_mil",
+      "event": "box_opened",
+      "speaker": "rei",
+      "expr": "shy",
+      "zh": "军用箱。看看里面有什么。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "kind": "military"
+      },
+      "ja": "[curious] 軍用箱だ。……中を見てみよう。",
+      "voice": "radio_box_mil",
+      "tag": "好奇"
+    },
+    {
+      "id": "radio_nest",
+      "event": "nest_destroyed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "虫巢清掉了，这里的增援会慢下来。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 60,
+      "ja": "[proud][excited] 虫巣を片付けた！ここへの増援は遅れるぞ！",
+      "voice": "radio_nest",
+      "tag": "振奋"
+    },
+    {
+      "id": "radio_pick_food",
+      "event": "item_picked",
+      "speaker": "ajin",
+      "expr": "smile",
+      "zh": "吃的？留着，回船上再说。",
+      "priority": 2,
+      "chance": 0.5,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": [
+          "can_food",
+          "water_tab",
+          "biscuit"
+        ]
+      },
+      "ja": "[happy] 食料かしら。回収して船で考えましょう。",
+      "voice": "radio_pick_food",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_pick_coffee",
+      "event": "item_picked",
+      "speaker": "nao",
+      "expr": "smile",
+      "zh": "咖啡豆……今天算有收获。",
+      "priority": 2,
+      "chance": 0.8,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "coffee"
+      },
+      "ja": "[satisfied] コーヒー豆か……今日は収穫ありだな。",
+      "voice": "radio_pick_coffee",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_pick_crystal",
+      "event": "item_picked",
+      "speaker": "mia",
+      "expr": "smile",
+      "zh": "虫晶，成色不错。",
+      "priority": 2,
+      "chance": 0.8,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "bug_crystal"
+      },
+      "ja": "[delighted] 虫晶だ！質は悪くないね。",
+      "voice": "radio_pick_crystal",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_pick_gold",
+      "event": "item_picked",
+      "speaker": "nao",
+      "expr": "smile",
+      "zh": "金条。这趟没白来。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "gold"
+      },
+      "ja": "[satisfied] 金塊か……悪くない稼ぎだ。",
+      "voice": "radio_pick_gold",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_pick_toy",
+      "event": "item_picked",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "发条玩具……给孩子们带一个。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "toy"
+      },
+      "ja": "[happy] ゼンマイ玩具だ！子供たちに一つ持って帰ろう！",
+      "voice": "radio_pick_toy",
+      "tag": "欣喜"
+    },
+    {
+      "id": "radio_reveal_rar3",
+      "event": "item_revealed",
+      "speaker": "kurumi",
+      "expr": "surprised",
+      "zh": "等等……这东西不一般。",
+      "priority": 3,
+      "chance": 0.4,
+      "cooldown": 45,
+      "when": {
+        "rarity": 3
+      },
+      "ja": "[surprised] 待て……！こいつは只者じゃないぞ！",
+      "voice": "radio_reveal_rar3",
+      "tag": "警觉"
+    },
+    {
+      "id": "radio_ext_start",
+      "event": "extract_started",
+      "speaker": "nao",
+      "expr": "serious",
+      "zh": "撤离点已确认，守住倒计时。",
+      "priority": 6,
+      "chance": 1.0,
+      "cooldown": 60,
+      "ja": "[serious] 離脱地点を確認。カウントダウンを守れ。",
+      "voice": "radio_ext_start",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_ext_start_trans",
+      "event": "extract_started",
+      "speaker": "xiaoman",
+      "expr": "smile",
+      "zh": "运输机航线已清空，等着。",
+      "priority": 6,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "is_transport": true
+      },
+      "ja": "[confident] 輸送機の航路は空けたぞ。しっかり待ってな！",
+      "voice": "radio_ext_start_trans",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_ext_cancel",
+      "event": "extract_cancelled",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "撤离中断。你们得重新找路了。",
+      "priority": 6,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[frustrated][worried] 離脱中断……！別の道を探すしかない！",
+      "voice": "radio_ext_cancel",
+      "tag": "恼火"
+    },
+    {
+      "id": "radio_ext_done",
+      "event": "extract_completed",
+      "speaker": "lina",
+      "expr": "tired",
+      "zh": "回收完成，全部上机。",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[relieved][confident] 回収完了！全員搭乗した、離脱する！",
+      "voice": "radio_ext_done",
+      "tag": "释然"
+    },
+    {
+      "id": "radio_trans_call",
+      "event": "transport_called",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "呼叫运输机，标记已发。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[calm] 輸送機を呼ぶ。マーカーは送った。",
+      "voice": "radio_trans_call",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_trans_land",
+      "event": "transport_landed",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "运输机落地，舱门开了。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[excited] 輸送機が着陸した！ハッチが開いたぞ！",
+      "voice": "radio_trans_land",
+      "tag": "振奋"
+    },
+    {
+      "id": "radio_trans_gone",
+      "event": "transport_departed",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "运输机等不到人，已经起飞。",
+      "priority": 5,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "ja": "[urgent] 輸送機は待ちきれず発進した！",
+      "voice": "radio_trans_gone",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_boss_king",
+      "event": "boss_appeared",
+      "speaker": "lina",
+      "expr": "surprised",
+      "zh": "大型热源接近——是铁甲王虫！",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "boss_id": [
+          "king_beetle",
+          "iron_warden",
+          "slag_colossus",
+          "gorge_tyrant"
+        ]
+      },
+      "ja": "[shocked][urgent] 大型熱源接近——！鉄甲王虫だ！",
+      "voice": "radio_boss_king",
+      "tag": "惊骇"
+    },
+    {
+      "id": "radio_boss_queen",
+      "event": "boss_appeared",
+      "speaker": "nao",
+      "expr": "serious",
+      "zh": "母皇出来了。所有人散开！",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "boss_id": [
+          "abyss_queen",
+          "abyss_harbinger"
+        ]
+      },
+      "ja": "[tense][in a hurry tone] 母皇が出た！全員散開しろ！",
+      "voice": "radio_boss_queen",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_boss_brood",
+      "event": "boss_appeared",
+      "speaker": "lina",
+      "expr": "surprised",
+      "zh": "巢母正在起身，避开卵囊喷口！",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "boss_id": [
+          "broodmother",
+          "grey_brood",
+          "dust_matriarch",
+          "harbor_reaper",
+          "dune_devourer",
+          "prism_archon"
+        ]
+      },
+      "ja": "[alarmed][screaming] 巣母が起き上がる！卵嚢の噴口を避けろ！！",
+      "voice": "radio_boss_brood",
+      "tag": "惊骇"
+    },
+    {
+      "id": "radio_boss_phase_king",
+      "event": "boss_phase_changed",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "它破甲了，背部核心暴露！",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "boss_id": [
+          "king_beetle",
+          "iron_warden",
+          "slag_colossus",
+          "gorge_tyrant"
+        ]
+      },
+      "ja": "[tense] 装甲を破った……背部核が露出！",
+      "voice": "radio_boss_phase_king",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_boss_phase_queen",
+      "event": "boss_phase_changed",
+      "speaker": "shiori",
+      "expr": "angry",
+      "zh": "核心在转移……别停火！",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "boss_id": [
+          "abyss_queen",
+          "abyss_harbinger"
+        ]
+      },
+      "ja": "[hysterical][urgent] 核が移動している……！撃ち続けろ！！",
+      "voice": "radio_boss_phase_queen",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_boss_def_king",
+      "event": "boss_defeated",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "王虫倒了。撤出这片区域。",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "boss_id": [
+          "king_beetle",
+          "iron_warden",
+          "slag_colossus",
+          "gorge_tyrant"
+        ]
+      },
+      "ja": "[proud][excited] 王虫が倒れたぞ！この区域から離脱する！",
+      "voice": "radio_boss_def_king",
+      "tag": "振奋"
+    },
+    {
+      "id": "radio_boss_def_queen",
+      "event": "boss_defeated",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "母皇停止活动了。任务完成。",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "boss_id": [
+          "abyss_queen",
+          "abyss_harbinger"
+        ]
+      },
+      "ja": "[calm][satisfied] 母皇の活動が停止した。……任務完了だ。",
+      "voice": "radio_boss_def_queen",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_boss_def_brood",
+      "event": "boss_defeated",
+      "speaker": "lina",
+      "expr": "tired",
+      "zh": "大型个体已清除。",
+      "priority": 7,
+      "chance": 1.0,
+      "cooldown": 60,
+      "when": {
+        "boss_id": [
+          "broodmother",
+          "grey_brood",
+          "dust_matriarch",
+          "harbor_reaper",
+          "dune_devourer",
+          "prism_archon"
+        ]
+      },
+      "ja": "[relieved] 大型個体を排除した。状況クリア。",
+      "voice": "radio_boss_def_brood",
+      "tag": "释然"
+    },
+    {
+      "id": "radio_seen_ling",
+      "event": "enemy_seen",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "前方有跳虫群，数量不少。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "ling"
+      },
+      "ja": "[tense] 前方に跳虫の群れ！数が多い、油断するな！",
+      "voice": "radio_seen_ling",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_seen_beetle",
+      "event": "enemy_seen",
+      "speaker": "mia",
+      "expr": "angry",
+      "zh": "甲虫。正面硬，打腿。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "beetle"
+      },
+      "ja": "[urgent] 甲虫だ！正面は硬い、脚を狙え！",
+      "voice": "radio_seen_beetle",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_seen_spitter",
+      "event": "enemy_seen",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "酸液虫，别站直线。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "spitter"
+      },
+      "ja": "[serious] 酸液虫だ。直線上に立つな。",
+      "voice": "radio_seen_spitter",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_seen_bomber",
+      "event": "enemy_seen",
+      "speaker": "lina",
+      "expr": "angry",
+      "zh": "轰炸虫！散开！",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "bomber"
+      },
+      "ja": "[screaming][urgent] 爆撃虫だ！！散開しろ！！",
+      "voice": "radio_seen_bomber",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_seen_mantis",
+      "event": "enemy_seen",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "镰爪虫贴近了，注意侧翼。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "mantis"
+      },
+      "ja": "[tense] 鎌爪虫が近い！側面に注意しろ。",
+      "voice": "radio_seen_mantis",
+      "tag": "警戒"
+    },
+    {
+      "id": "radio_seen_burrower",
+      "event": "enemy_seen",
+      "speaker": "kurumi",
+      "expr": "surprised",
+      "zh": "地下有动静，是掘地虫。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "burrower"
+      },
+      "ja": "[surprised] 地下に動きがある……掘削虫だ！",
+      "voice": "radio_seen_burrower",
+      "tag": "警觉"
+    },
+    {
+      "id": "radio_seen_crystal_bug",
+      "event": "enemy_seen",
+      "speaker": "mia",
+      "expr": "angry",
+      "zh": "晶背虫，正面会折射线。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "crystal_bug"
+      },
+      "ja": "[urgent] 晶背虫だ！正面は光を反射するぞ！",
+      "voice": "radio_seen_crystal_bug",
+      "tag": "急促"
+    },
+    {
+      "id": "radio_seen_mech_beetle",
+      "event": "enemy_seen",
+      "speaker": "shiori",
+      "expr": "shy",
+      "zh": "改装虫……它们身上有我们的零件。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 120,
+      "when": {
+        "kind": "mech_beetle"
+      },
+      "ja": "[mysterious] 改造虫……奴ら、私たちの部品を付けている……",
+      "voice": "radio_seen_mech_beetle",
+      "tag": "低语"
+    },
+    {
+      "id": "radio_seen_generic",
+      "event": "enemy_seen",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "未知热源，保持警戒。",
+      "priority": 1,
+      "chance": 1.0,
+      "cooldown": 120,
+      "ja": "[serious] 未知の熱源……警戒を維持しろ。",
+      "voice": "radio_seen_generic",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_poi_institute",
+      "event": "poi_discovered",
+      "speaker": "lina",
+      "expr": "serious",
+      "zh": "旧世界研究所就在前面。别碰封存门。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "institute"
+      },
+      "ja": "[serious] 旧世界研究所が前方だ。封印扉には触れるなよ。",
+      "voice": "radio_poi_institute",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_poi_depot7",
+      "event": "poi_discovered",
+      "speaker": "ajin",
+      "expr": "smile",
+      "zh": "第七补给站。能拿的都拿，别恋战。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "depot7"
+      },
+      "ja": "[confident] 第七補給所よ。持てるだけ持って、長居は禁物ね。",
+      "voice": "radio_poi_depot7",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_poi_egret_wreck",
+      "event": "poi_discovered",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "白鹭号残骸。舰桥可能还有记录。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "egret_wreck"
+      },
+      "ja": "[calm] 白鷺号の残骸か。艦橋に記録が残っているかもしれない。",
+      "voice": "radio_poi_egret_wreck",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_poi_hydro_lab",
+      "event": "poi_discovered",
+      "speaker": "shiori",
+      "expr": "shy",
+      "zh": "水质观测所。样本应该还在下面。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "hydro_lab"
+      },
+      "ja": "[whispering][curious] 水質観測所……サンプルはまだ下にあるはずよ……",
+      "voice": "radio_poi_hydro_lab",
+      "tag": "低语"
+    },
+    {
+      "id": "radio_poi_mining_terminal",
+      "event": "poi_discovered",
+      "speaker": "kurumi",
+      "expr": "smile",
+      "zh": "选矿终端还能通电，试试。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "mining_terminal"
+      },
+      "ja": "[excited] 選鉱端末にまだ電気が通るぞ！試してみよう！",
+      "voice": "radio_poi_mining_terminal",
+      "tag": "振奋"
+    },
+    {
+      "id": "radio_poi_relay_tower",
+      "event": "poi_discovered",
+      "speaker": "rei",
+      "expr": "serious",
+      "zh": "中继塔。信号能放大，也会招来东西。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "relay_tower"
+      },
+      "ja": "[serious] 中継塔……信号を増幅できるが、何かを呼び寄せるかもしれない。",
+      "voice": "radio_poi_relay_tower",
+      "tag": "凝重"
+    },
+    {
+      "id": "radio_poi_well_core",
+      "event": "poi_discovered",
+      "speaker": "shiori",
+      "expr": "sad",
+      "zh": "零号井。别靠近核心台。",
+      "priority": 4,
+      "chance": 1.0,
+      "cooldown": 180,
+      "when": {
+        "poi_id": "well_core"
+      },
+      "ja": "[scared][whispering] 零号井……あの核心台には、絶対に近づくな……",
+      "voice": "radio_poi_well_core",
+      "tag": "忧虑"
+    },
+    {
+      "id": "radio_poi_generic",
+      "event": "poi_discovered",
+      "speaker": "xiaoman",
+      "expr": "smile",
+      "zh": "这地方有货。搜仔细点。",
+      "priority": 2,
+      "chance": 1.0,
+      "cooldown": 180,
+      "ja": "[confident] この場所には物資があるぞ！丹念に探せ！",
+      "voice": "radio_poi_generic",
+      "tag": "自信"
+    },
+    {
+      "id": "radio_use_decoy",
+      "event": "item_used",
+      "speaker": "rei",
+      "expr": "neutral",
+      "zh": "诱饵已布，趁现在。",
+      "priority": 3,
+      "chance": 1.0,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "sonic_decoy"
+      },
+      "ja": "[calm] デコイを設置した。今のうちだ。",
+      "voice": "radio_use_decoy",
+      "tag": "沉着"
+    },
+    {
+      "id": "radio_use_repair",
+      "event": "item_used",
+      "speaker": "mia",
+      "expr": "tired",
+      "zh": "维修包用上，结构回了一点。",
+      "priority": 2,
+      "chance": 0.6,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "repair_kit"
+      },
+      "ja": "[relieved] 修理キットを使用したよ！構造が少し戻った。",
+      "voice": "radio_use_repair",
+      "tag": "释然"
+    },
+    {
+      "id": "radio_use_fuel",
+      "event": "item_used",
+      "speaker": "nao",
+      "expr": "neutral",
+      "zh": "燃料补进去了。",
+      "priority": 2,
+      "chance": 0.5,
+      "cooldown": 45.0,
+      "when": {
+        "item_id": "fuel_cell"
+      },
+      "ja": "[calm] 燃料を補給した。次へ行くぞ。",
+      "voice": "radio_use_fuel",
+      "tag": "沉着"
+    }
+  ]
 }

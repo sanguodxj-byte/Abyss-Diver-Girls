@@ -20,5 +20,5 @@ static func use(mech, _id) -> bool:
 	d.setup(raid)
 	d.position = p
 	raid.fx.add_child(d)
-	mech.message.emit("声波诱饵信标已投放")
+	mech.message.emit(Loc.t("声波诱饵信标已投放", "Sonic decoy beacon deployed"))
 	return true

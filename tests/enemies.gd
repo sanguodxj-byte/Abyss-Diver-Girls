@@ -8,7 +8,15 @@ const ARENA := Vector3(760, 0, 760)
 ## 曲炮虫放在 16 米：敌人视野封顶为玩家视野的 0.9 倍，机甲正下方（屏幕下边最近）只有约 17.6 米
 const SPAWN_D := {"mortar": 16.0, "wasp": 10.0, "shielder": 11.0}
 const REGULARS := ["mantis", "bomber", "crystal_bug", "burrower", "mech_beetle", "wasp", "shielder", "mortar", "ironjaw"]
-const BOSSES := ["broodmother", "king_beetle", "abyss_queen"]
+const BOSSES := [
+	"grey_brood", "harbor_reaper", "terminus_warden",
+	"iron_warden", "slag_colossus", "foundry_dreadnought",
+	"dust_matriarch", "dune_devourer", "silo_warhead",
+	"broodmother", "prism_archon", "spillway_leviathan",
+	"king_beetle", "gorge_tyrant", "excavator_titan",
+	"abyss_queen", "abyss_harbinger", "core_overlord",
+	"drydock_behemoth",
+]
 const ARENA_AI := {"mantis": "lancer", "bomber": "bomber", "crystal_bug": "shell", "burrower": "burrower",
 	"mech_beetle": "jammer", "wasp": "flyer", "shielder": "support", "mortar": "artillery", "ironjaw": "juggernaut"}
 
@@ -35,10 +43,13 @@ func run() -> void:
 	if not check(missing.is_empty(), "以下战区没有虫群分布表：%s" % [missing]):
 		return
 	var no_script: Array = []
-	for mid: String in ["redlake", "canyon", "abyss_maw"]:
+	for mid: String in GameData.MAPS:
 		if GameData.SPAWNS.has(mid) and str(GameData.SPAWNS[mid].get("script", "")) == "":
 			no_script.append(mid)
 	if not check(no_script.is_empty(), "以下战区没有布置区域 Boss 的脚本：%s" % [no_script]):
+		return
+	var deployed_bosses := get_tree().get_nodes_in_group("boss")
+	if not check(deployed_bosses.size() >= 2 and deployed_bosses[0].target == mech and deployed_bosses[1].target == mech, "出击战区没有生成双区域 Boss 或 Boss 没有绑定机甲目标"):
 		return
 	# 分布表只能引用登记过的虫种，掉落表必须存在；否则生成时会静默退化成默认虫群或空箱
 	var bad_kind: Array = []

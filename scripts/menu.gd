@@ -29,7 +29,7 @@ func _ready() -> void:
 	add_child(svc)
 	var sv: SubViewport = svc.sv
 	sv.msaa_3d = Viewport.MSAA_4X
-	sv.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+	sv.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 	_build_scene(sv)
 	_build_ui()
 
@@ -126,7 +126,18 @@ void fragment(){
 """
 
 
-func _build_ui() -> void:
+func _build_ui(reopen_settings := false, settings_tab := "video") -> void:
+	if ui_root != null and is_instance_valid(ui_root):
+		remove_child(ui_root)
+		ui_root.queue_free()
+	buttons.clear()
+	readout_lbls.clear()
+	sel = -1
+	ui_root = Control.new()
+	ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(ui_root)
+
 	var post := ColorRect.new()
 	post.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	post.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -135,7 +146,7 @@ func _build_ui() -> void:
 	post_mat = ShaderMaterial.new()
 	post_mat.shader = sh
 	post.material = post_mat
-	add_child(post)
+	ui_root.add_child(post)
 
 	# 左侧压暗：只压文字区，窗外场景大部分保留
 	var grad := TextureRect.new()
@@ -151,45 +162,48 @@ func _build_ui() -> void:
 	grad.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 	grad.offset_right = 780
 	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(grad)
+	ui_root.add_child(grad)
 
 	# 取景框角标 + 菜单游标（自绘）
 	hud = Control.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.draw.connect(_draw_hud)
-	add_child(hud)
+	ui_root.add_child(hud)
 
 	# 标题：生成的金属艺术字（中文 / 英文两版），带投影
 	title_rect = TextureRect.new()
 	title_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	title_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	title_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 项目全局为 Nearest（像素 UI），标题是高清图需线性+mipmap
+	title_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # 标题按最近邻取样，配合 shader 的像素块量化
 	var tsh := Shader.new()
 	tsh.code = TITLE_FX
 	title_mat = ShaderMaterial.new()
 	title_mat.shader = tsh
 	title_rect.material = title_mat
-	add_child(title_rect)
+	ui_root.add_child(title_rect)
+	title_lang = Loc.lang
 	_apply_title_lang()
 
 	# 菜单
 	menu_box = VBoxContainer.new()
 	menu_box.position = Vector2(96, 330)
 	menu_box.add_theme_constant_override("separation", 0)
-	add_child(menu_box)
+	ui_root.add_child(menu_box)
 	var has_save := FileAccess.file_exists(GameData.save_path)
+	var en := Loc.is_en()
 	var items := [
-		["新的游戏", "NEW GAME", func(): _open_start(), "ui_confirm", false],
-		["载入游戏", "CONTINUE" if has_save else "无存档", func(): _load_game(), "ui_confirm", not has_save],
-		["游戏设置", "SETTINGS", func(): _toggle_settings(), "", false],
-		["退出游戏", "QUIT", func(): get_tree().quit(), "ui_cancel", false]
+		["New Game" if en else "新的游戏", "", func(): _open_start(), "", false],
+		["Continue" if en else "载入游戏", ("" if has_save else ("NO SAVE" if en else "无存档")), func(): _load_game(), "", not has_save],
+		["Settings" if en else "游戏设置", "", func(): _toggle_settings(), "", false],
+		["Quit" if en else "退出游戏", "", func(): get_tree().quit(), "ui_cancel", false]
 	]
 	for i in items.size():
 		var it: Array = items[i]
 		var mb := _menu_button(i, it[0], it[1], it[2], it[4])
 		mb.set_meta("sfx", it[3])
+		mb.set_meta("sfx_hover", "")
 		menu_box.add_child(mb)
 
 	# 左下：舱内仪表读数
@@ -199,15 +213,26 @@ func _build_ui() -> void:
 	readout.offset_top = -92
 	readout.offset_bottom = -64
 	readout.add_theme_constant_override("separation", 28)
-	add_child(readout)
+	ui_root.add_child(readout)
 	status_dot = UI.label("●", 12, UI.GOOD)
 	var live := HBoxContainer.new()
 	live.add_theme_constant_override("separation", 6)
 	live.add_child(status_dot)
-	live.add_child(_spaced(UI.label("链路在线", 12, Color(1, 1, 1, 0.7)), 1))
+	live.add_child(_spaced(UI.label(Loc.t("链路在线", "LINK ONLINE"), 12, Color(1, 1, 1, 0.7)), 1))
 	readout.add_child(live)
-	for kv in [["高度", "260 m"], ["航速", "6.5 m/s"], ["航向", "074°"], ["云层", "-165 ~ -15 m"]]:
-		readout.add_child(_readout(kv[0], kv[1]))
+	var min_w := [52.0, 66.0, 44.0, 96.0]
+	var readout_def := [
+		[Loc.t("高度", "ALT"), "260 m"],
+		[Loc.t("航速", "SPD"), "6.5 m/s"],
+		[Loc.t("航向", "HDG"), "074°"],
+		[Loc.t("云层", "CLOUD"), "-165 ~ -15 m"],
+	]
+	for i in readout_def.size():
+		var cell := _readout(readout_def[i][0], readout_def[i][1])
+		readout.add_child(cell)
+		var val: Label = cell.get_child(1)
+		val.custom_minimum_size.x = min_w[i]
+		readout_lbls.append(val)
 
 	# 弹窗遮罩
 	shade = ColorRect.new()
@@ -217,10 +242,13 @@ func _build_ui() -> void:
 	shade.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed:
 			_close_dialogs())
-	add_child(shade)
+	ui_root.add_child(shade)
 
-	_build_settings()
+	_build_settings(settings_tab)
 	_build_start_panel()
+	if reopen_settings:
+		settings_panel.visible = true
+		shade.visible = true
 	_select(0, false)
 
 
@@ -235,19 +263,8 @@ func _spaced(l: Label, px: int) -> Label:
 
 func _tag_label(text: String, c: Color) -> Control:
 	var pc := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(c, 0.0)
-	sb.border_color = c
-	sb.border_width_left = 1
-	sb.border_width_right = 1
-	sb.border_width_top = 1
-	sb.border_width_bottom = 1
-	sb.content_margin_left = 8
-	sb.content_margin_right = 6
-	sb.content_margin_top = 1
-	sb.content_margin_bottom = 1
-	pc.add_theme_stylebox_override("panel", sb)
-	pc.add_child(_spaced(UI.label(text, 13, c), 2))
+	pc.add_theme_stylebox_override("panel", UI.px9("card9", 8, 8, 8, 2, Color(c.r, c.g, c.b, 0.9)))
+	pc.add_child(_spaced(UI.label(text, 12, c), 1))
 	return pc
 
 
@@ -259,21 +276,29 @@ func _readout(k: String, v: String) -> Control:
 	return b
 
 
+## 仪表读数低频漂移：每个数值在基准附近小幅随机，模拟舱内实时遥测
+func _tick_readout() -> void:
+	if readout_lbls.size() < 4:
+		return
+	var alt := 260.0 + randf_range(-3.0, 3.0)
+	var spd := 6.5 + randf_range(-0.35, 0.35)
+	var hdg := fposmod(74.0 + randf_range(-2.0, 2.0), 360.0)
+	var c0 := -165.0 + randf_range(-6.0, 6.0)
+	var c1 := -15.0 + randf_range(-6.0, 6.0)
+	readout_lbls[0].text = "%d m" % roundi(alt)
+	readout_lbls[1].text = "%.1f m/s" % spd
+	readout_lbls[2].text = "%03d°" % int(round(hdg))
+	readout_lbls[3].text = "%d ~ %d m" % [roundi(c0), roundi(c1)]
+
+
 func _keycap(key: String, what: String) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
 	var pc := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(1, 1, 1, 0.08)
-	sb.border_color = Color(1, 1, 1, 0.3)
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(2)
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	pc.add_theme_stylebox_override("panel", sb)
-	pc.add_child(UI.label(key, 11, Color(1, 1, 1, 0.85)))
+	pc.add_theme_stylebox_override("panel", UI.px9("card9", 6, 6, 10, 3))
+	pc.add_child(UI.label(key, 12, UI.GOLD))
 	h.add_child(pc)
-	h.add_child(UI.label(what, 12, Color(1, 1, 1, 0.55)))
+	h.add_child(UI.label(what, 12, Color(0.86, 0.84, 0.78, 0.78)))
 	return h
 
 
@@ -339,6 +364,7 @@ func _select(i: int, sfx: bool) -> void:
 		Audio.play_ui("ui_hover")
 
 
+var ui_root: Control
 var hud: Control
 var title_rect: TextureRect
 var title_mat: ShaderMaterial
@@ -346,9 +372,12 @@ var title_lang := ""
 const MENU_CFG := "user://menu.cfg"
 const TITLE_FX := """
 shader_type canvas_item;
-// 标题：金属原图 + 下方柔和投影，画面静止不叠加任何扫光
+// 标题：金属原图按 6×6 像素块取样（像素化），带下方柔和投影
+uniform float block = 6.0;
 void fragment() {
-	vec4 c = texture(TEXTURE, UV);
+	vec2 g = TEXTURE_PIXEL_SIZE * block;
+	vec2 quv = floor(UV / g) * g + g * 0.5;
+	vec4 c = texture(TEXTURE, quv);
 	vec2 px = TEXTURE_PIXEL_SIZE * vec2(6.0, 9.0);
 	float sh = texture(TEXTURE, UV - px).a;
 	vec4 shadow = vec4(0.0, 0.0, 0.0, sh * 0.45);
@@ -359,11 +388,8 @@ void fragment() {
 
 func _apply_title_lang() -> void:
 	if title_lang == "":
-		var cf := ConfigFile.new()
-		if cf.load(MENU_CFG) == OK:
-			title_lang = str(cf.get_value("menu", "title_lang", ""))
-		if title_lang == "":
-			title_lang = "zh" if OS.get_locale_language() == "zh" else "en"
+		var loc := get_node_or_null("/root/Loc")
+		title_lang = str(loc.get("lang")) if loc != null else ("zh" if OS.get_locale_language() == "zh" else "en")
 	var zh := title_lang == "zh"
 	title_rect.texture = load("res://assets/title_%s.png" % ("zh" if zh else "en"))
 	var w := 560.0 if zh else 500.0
@@ -373,6 +399,8 @@ func _apply_title_lang() -> void:
 var menu_box: VBoxContainer
 var status_dot: Label
 var shade: ColorRect
+var readout_lbls: Array[Label] = []
+var readout_t := 0.0
 var sel := -1
 var cur_y := 0.0:
 	set(v):
@@ -416,108 +444,77 @@ func _draw_hud() -> void:
 ## ---------- 弹窗 ----------
 func _dialog(title: String, code: String) -> Array:
 	var pc := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.055, 0.06, 0.068, 0.96)
-	sb.border_color = Color(1, 1, 1, 0.1)
-	sb.set_border_width_all(1)
-	sb.content_margin_left = 30
-	sb.content_margin_right = 30
-	sb.content_margin_top = 24
-	sb.content_margin_bottom = 26
-	sb.shadow_color = Color(0, 0, 0, 0.5)
-	sb.shadow_size = 24
-	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_theme_stylebox_override("panel", UI.px9("panel9", 16, 16, 18, 16))
 	pc.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	pc.custom_minimum_size = Vector2(480, 0)
+	pc.custom_minimum_size = Vector2(490, 0)
 	pc.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	pc.grow_vertical = Control.GROW_DIRECTION_BOTH
 	pc.visible = false
 	add_child(pc)
-	pc.draw.connect(func():
-		pc.draw_rect(Rect2(0, 0, 120, 3), UI.ACCENT)
-		pc.draw_rect(Rect2(pc.size.x - 10, pc.size.y - 10, 6, 6), Color(1, 1, 1, 0.25)))
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 14)
+	v.add_theme_constant_override("separation", 12)
 	pc.add_child(v)
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 12)
-	v.add_child(hb)
-	var cl := _spaced(UI.label(code, 11, UI.ACCENT), 2)
-	cl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	cl.size_flags_vertical = Control.SIZE_FILL
-	hb.add_child(cl)
-	hb.add_child(UI.label(title, 24, Color(0.97, 0.95, 0.9)))
-	var div := ColorRect.new()
-	div.color = Color(1, 1, 1, 0.08)
-	div.custom_minimum_size = Vector2(0, 1)
-	v.add_child(div)
+	v.add_child(UI.plate_header(title, code))
+	v.add_child(UI.hazard_strip(8))
 	return [pc, v]
 
 
+func _dialog_to_ui(title: String, code: String) -> Array:
+	var res := _dialog(title, code)
+	var pc: PanelContainer = res[0]
+	if ui_root != null and is_instance_valid(ui_root):
+		remove_child(pc)
+		ui_root.add_child(pc)
+	return res
+
+
 func _field_label(t: String) -> Label:
-	return _spaced(UI.label(t, 12, Color(1, 1, 1, 0.5)), 2)
+	return _spaced(UI.label(t, 12, UI.MUTED), 1)
 
 
 func _btn(text: String, primary: bool, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(140, 42)
+	b.custom_minimum_size = Vector2(140, 38)
 	b.focus_mode = Control.FOCUS_NONE
-	var n := StyleBoxFlat.new()
-	var h := StyleBoxFlat.new()
 	if primary:
-		n.bg_color = UI.ACCENT
-		h.bg_color = UI.ACCENT.lightened(0.18)
-		b.add_theme_color_override("font_color", Color(0.08, 0.07, 0.05))
-		b.add_theme_color_override("font_hover_color", Color(0.08, 0.07, 0.05))
-		b.add_theme_color_override("font_pressed_color", Color(0.08, 0.07, 0.05))
+		b.add_theme_stylebox_override("normal", UI.px9("btn9_main_n", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("hover", UI.px9("btn9_main_h", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("pressed", UI.px9("btn9_main_p", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("disabled", UI.px9("btn9_main_d", 10, 10, 16, 6))
+		b.add_theme_color_override("font_color", Color(0.08, 0.06, 0.04))
+		b.add_theme_color_override("font_hover_color", Color(0.08, 0.06, 0.04))
+		b.add_theme_color_override("font_pressed_color", Color(0.08, 0.06, 0.04))
 	else:
-		n.bg_color = Color(1, 1, 1, 0.0)
-		n.border_color = Color(1, 1, 1, 0.3)
-		n.set_border_width_all(1)
-		h.bg_color = Color(1, 1, 1, 0.08)
-		h.border_color = Color(1, 1, 1, 0.55)
-		h.set_border_width_all(1)
-	for s2 in [n, h]:
-		s2.content_margin_left = 18
-		s2.content_margin_right = 18
-	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("focus", n)
-	b.add_theme_font_size_override("font_size", 16)
+		b.add_theme_stylebox_override("normal", UI.px9("btn9_n", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("hover", UI.px9("btn9_h", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("pressed", UI.px9("btn9_p", 10, 10, 16, 6))
+		b.add_theme_stylebox_override("disabled", UI.px9("btn9_d", 10, 10, 16, 6))
+	b.add_theme_font_size_override("font_size", 12)
 	b.pressed.connect(cb)
 	return b
 
 
 func _line_edit() -> LineEdit:
 	var e := LineEdit.new()
-	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0, 0, 0, 0.35)
-	n.border_color = Color(1, 1, 1, 0.18)
-	n.border_width_bottom = 2
-	n.content_margin_left = 12
-	n.content_margin_right = 12
-	n.content_margin_top = 8
-	n.content_margin_bottom = 8
-	var f := n.duplicate()
-	f.border_color = UI.ACCENT
-	e.add_theme_stylebox_override("normal", n)
-	e.add_theme_stylebox_override("focus", f)
-	e.add_theme_font_size_override("font_size", 20)
+	e.custom_minimum_size = Vector2(0, 40)
+	e.add_theme_stylebox_override("normal", UI.px9("inset9", 6, 6, 12, 8))
+	e.add_theme_stylebox_override("focus", UI.px9("card9_on", 8, 8, 12, 8))
+	e.add_theme_font_size_override("font_size", 12)
 	e.add_theme_color_override("caret_color", UI.ACCENT)
 	return e
 
 
 ## 新的游戏：驾驶员登记
 func _build_start_panel() -> void:
-	var d := _dialog("驾驶员登记", "// 01")
+	var en := Loc.is_en()
+	var d := _dialog_to_ui(Loc.t("驾驶员登记", "Pilot Registration"), "// 01")
 	start_panel = d[0]
 	var v: VBoxContainer = d[1]
-	v.add_child(_field_label("姓名"))
+	v.add_child(_field_label(Loc.t("姓名", "Callsign")))
 	_dlg_name = _line_edit()
-	_dlg_name.max_length = 8
-	_dlg_name.placeholder_text = "最多 8 个字"
+	_dlg_name.max_length = 12 if en else 8
+	_dlg_name.placeholder_text = Loc.t("最多 8 个字", "Up to 12 chars")
 	_dlg_name.text_submitted.connect(func(_t): _confirm_start())
 	v.add_child(_dlg_name)
 	var sp := Control.new()
@@ -527,8 +524,8 @@ func _build_start_panel() -> void:
 	line.add_theme_constant_override("separation", 12)
 	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)
-	line.add_child(_btn("返回", false, _close_start))
-	line.add_child(_btn("启程", true, _confirm_start))
+	line.add_child(_btn(Loc.t("返回", "Back"), false, _close_start))
+	line.add_child(_btn(Loc.t("启程", "Launch"), true, _confirm_start))
 
 
 func _open_start() -> void:
@@ -573,8 +570,8 @@ func _load_game() -> void:
 		Audio.play_ui("ui_denied")
 
 
-func _build_settings() -> void:
-	var d := _dialog("游戏设置", "// 03")
+func _build_settings(initial_tab := "video") -> void:
+	var d := _dialog_to_ui(Loc.t("游戏设置", "Settings"), "// 03")
 	settings_panel = d[0]
 	var v: VBoxContainer = d[1]
 	settings_panel.custom_minimum_size = Vector2(640, 430)
@@ -590,13 +587,20 @@ func _build_settings() -> void:
 	nav.custom_minimum_size = Vector2(108, 0)
 	row.add_child(nav)
 
-	# 右：页面内容
+	# 右：页面内容（inset9 凹槽底板）
 	var body := PanelContainer.new()
+	body.add_theme_stylebox_override("panel", UI.px9("inset9", 8, 8, 16, 14))
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_child(body)
 	var pages := {}
-	for key in ["画面", "声音", "其他"]:
+	var tab_defs := [
+		["video", Loc.t("画面", "Video")],
+		["audio", Loc.t("声音", "Audio")],
+		["other", Loc.t("其他", "Other")],
+	]
+	for td in tab_defs:
+		var key: String = td[0]
 		var pg := VBoxContainer.new()
 		pg.add_theme_constant_override("separation", 8)
 		pg.visible = false
@@ -608,31 +612,37 @@ func _build_settings() -> void:
 		for k in pages:
 			pages[k].visible = k == key
 		for k in nav_btns:
-			nav_btns[k].add_theme_color_override("font_color", UI.ACCENT if k == key else UI.TEXT)
-	for key in ["画面", "声音", "其他"]:
+			var b: Button = nav_btns[k]
+			var on: bool = (k == key)
+			b.add_theme_stylebox_override("normal", UI.px9("nav9_on" if on else "nav9_n", 10, 10, 12, 6))
+			b.add_theme_stylebox_override("hover", UI.px9("nav9_on" if on else "nav9_h", 10, 10, 12, 6))
+			b.add_theme_color_override("font_color", UI.GOLD if on else UI.TEXT)
+	for td in tab_defs:
+		var key: String = td[0]
 		var b := Button.new()
-		b.text = key
+		b.text = td[1]
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(108, 32)
+		b.custom_minimum_size = Vector2(108, 34)
 		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 12)
 		b.pressed.connect(func(): show_page.call(key))
 		nav.add_child(b)
 		nav_btns[key] = b
-	show_page.call("画面")
+	show_page.call(initial_tab if pages.has(initial_tab) else "video")
 
 	# ---- 画面 ----
-	var pg: VBoxContainer = pages["画面"]
+	var pg: VBoxContainer = pages["video"]
 	var fs := CheckButton.new()
-	fs.text = "全屏"
+	fs.text = Loc.t("全屏", "Fullscreen")
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 	fs.toggled.connect(func(on): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED))
 	pg.add_child(fs)
 	var vs := CheckButton.new()
-	vs.text = "垂直同步"
+	vs.text = Loc.t("垂直同步", "VSync")
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	pg.add_child(vs)
-	pg.add_child(_field_label("画质"))
+	pg.add_child(_field_label(Loc.t("画质", "Quality")))
 	var q := OptionButton.new()
 	for i in GameData.QUALITY_NAMES.size():
 		q.add_item(GameData.QUALITY_NAMES[i], i)
@@ -642,10 +652,10 @@ func _build_settings() -> void:
 		GameData.apply_quality(get_viewport())
 		GameData.save_game())
 	pg.add_child(q)
-	pg.add_child(_field_label("画面风格"))
+	pg.add_child(_field_label(Loc.t("画面风格", "Render Style")))
 	var st := OptionButton.new()
-	st.add_item("写实光影", 0)
-	st.add_item("三渲二（卡通描边）", 1)
+	st.add_item(Loc.t("写实光影", "Realistic Lighting"), 0)
+	st.add_item(Loc.t("三渲二（卡通描边）", "Cel-Shaded (Toony Outline)"), 1)
 	st.selected = GameData.render_style
 	st.item_selected.connect(func(i):
 		GameData.render_style = i
@@ -655,8 +665,8 @@ func _build_settings() -> void:
 	pg.add_child(st)
 
 	# ---- 声音 ----
-	pg = pages["声音"]
-	for bus in [["Master", "主音量"], ["Music", "音乐"], ["SFX", "音效"], ["Voice", "语音"]]:
+	pg = pages["audio"]
+	for bus in [["Master", Loc.t("主音量", "Master")], ["Music", Loc.t("音乐", "Music")], ["SFX", Loc.t("音效", "SFX")], ["Voice", Loc.t("语音", "Voice")]]:
 		pg.add_child(_field_label(bus[1]))
 		var vol := HSlider.new()
 		vol.min_value = 0
@@ -668,25 +678,23 @@ func _build_settings() -> void:
 		pg.add_child(vol)
 
 	# ---- 其他 ----
-	pg = pages["其他"]
-	pg.add_child(_field_label("标题语言"))
+	pg = pages["other"]
+	pg.add_child(_field_label(Loc.t("界面语言", "Language")))
 	var tl := OptionButton.new()
-	tl.add_item("中文", 0)
+	tl.add_item("简体中文", 0)
 	tl.add_item("English", 1)
-	tl.selected = 0 if title_lang == "zh" else 1
+	tl.selected = 1 if Loc.is_en() else 0
 	tl.item_selected.connect(func(i):
-		title_lang = "zh" if i == 0 else "en"
-		var cf := ConfigFile.new()
-		cf.load(MENU_CFG)
-		cf.set_value("menu", "title_lang", title_lang)
-		cf.save(MENU_CFG)
-		_apply_title_lang())
+		var new_lang := "zh" if i == 0 else "en"
+		title_lang = new_lang
+		Loc.set_lang(new_lang)
+		call_deferred("_build_ui", true, "other"))
 	pg.add_child(tl)
 
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)
-	var close := _btn("返回", false, _toggle_settings)
+	var close := _btn(Loc.t("返回", "Back"), false, _toggle_settings)
 	close.set_meta("sfx", "")
 	line.add_child(close)
 
@@ -701,6 +709,10 @@ func _process(delta: float) -> void:
 	if status_dot:
 		status_dot.modulate.a = 0.45 + 0.55 * absf(sin(t * 1.6))
 	t += delta
+	readout_t -= delta
+	if readout_t <= 0.0:
+		readout_t = randf_range(1.0, 2.2)
+		_tick_readout()
 	if post_mat:
 		post_mat.set_shader_parameter("t", fmod(t, 10.0))
 	var sway := sin(t * 0.35) * 0.6 + sin(t * 0.13) * 0.4

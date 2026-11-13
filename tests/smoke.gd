@@ -35,9 +35,20 @@ func run() -> void:
 	# 搜容器：在机甲旁边放一只补给箱
 	var mp: Vector3 = raid.mech.global_position
 	var box = raid._place_box("supply", Vector3(mp.x + 2.5, 0, mp.z))
+	box.items = ["arm_shotgun", "circuit", "can_food", "sonic_decoy"]
+	box.revealed = 1
 	await wait(0.3)
 	raid.open_container(box)
-	await wait(2.5)
+	await wait(1.2)
+	var snap_dir := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--snap="):
+			snap_dir = a.substr(7)
+	if snap_dir != "":
+		raid.hud.loot_panel. _on_box_selected(0)
+		await wait(0.15)
+		get_viewport().get_texture().get_image().save_png(snap_dir.path_join("raid_inv_loot.png"))
+	await wait(1.5)
 	log_line("box %s revealed %d/%d" % [box.title, box.revealed, box.items.size()])
 	if not check(box.revealed > 0, "容器里的物品没有逐个显现"):
 		return
@@ -47,6 +58,26 @@ func run() -> void:
 		if box.items.size() == before:
 			break
 	raid.close_box()
+	# 验证局内整备终端（Tab 打开、整理货舱、战地换装模块、部位损管显示）
+	raid.mech.parts["arm_l"] = 0.42
+	raid.mech.parts["legs"] = 0.72
+	raid.hud.toggle_inventory()
+	if not check(raid.hud.inv_open(), "局内战术整备终端未能打开"):
+		return
+	raid.sort_cargo()
+	var sg_idx: int = raid.mech.cargo.find("arm_shotgun")
+	if sg_idx >= 0:
+		raid.equip_from_cargo(sg_idx, "arm_r")
+		if not check(str(raid.mech.loadout.get("arm_r", "")) == "arm_shotgun", "局内战地换装模块失败"):
+			return
+	if snap_dir != "":
+		raid.hud.loot_panel.select_slot("arm_l")
+		await wait(0.15)
+		get_viewport().get_texture().get_image().save_png(snap_dir.path_join("raid_inv_tab.png"))
+		return
+	raid.hud.toggle_inventory()
+	if not check(not raid.hud.inv_open(), "局内战术整备终端未能关闭"):
+		return
 	log_line("cargo=%s" % [raid.mech.cargo])
 	raid.mech.shield_time = 999.0
 	raid.call_transport()
@@ -67,9 +98,11 @@ func run() -> void:
 		return
 	main.show_hub()
 	await wait(0.5)
+	main.RaidScript.force_async_load = true
 	main.hub.deploy_requested.emit()
-	await wait(2.0)
-	if not check(main.raid != null and main.raid.mech != null, "第二次出击没有生成行动场景"):
+	var async_ok := await until(func(): return main.raid != null and main.raid.mech != null and not main._deploying, 20.0)
+	main.RaidScript.force_async_load = false
+	if not check(async_ok and main.raid != null and main.raid.mech != null, "第二次出击（异步加载流程）没有生成行动场景"):
 		return
 	main.raid.mech.take_damage(99999)
 	await wait(2.0)

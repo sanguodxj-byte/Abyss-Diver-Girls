@@ -21,7 +21,7 @@ func run() -> void:
 		var barea := {}
 		for blk: Dictionary in Z.blocks:
 			var c := WC.centroid(blk.poly)
-			if absf(c.x) > 180.0 or absf(c.y) > 180.0:
+			if not WC.in_zone_poly(mid, c, 2.0):
 				continue
 			var ch := str(blk.ch)
 			barea[ch] = float(barea.get(ch, 0.0)) + WC.poly_area(blk.poly)

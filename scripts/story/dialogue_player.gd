@@ -46,6 +46,7 @@ var _stage: Control
 var _box: PanelContainer
 var _plate: PanelContainer
 var _name_lbl: Label
+var _tag_lbl: Label
 var _text_lbl: Label
 var _counter: Label
 var _title_lbl: Label
@@ -69,7 +70,7 @@ func open(st: Node, sc: Dictionary, sid: String, start_line := 0) -> void:
 	_prev_mouse = Input.mouse_mode
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 92
-	get_tree().paused = true
+	get_tree().paused = not Net.active()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build()
 	if lines.is_empty():
@@ -184,7 +185,7 @@ func _build_portraits() -> void:
 		p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		p.modulate.a = 0.0
 		_stage.add_child(p)
-		_slots[side] = {"char": "", "node": p, "seq": 0}
+		_slots[side] = {"char": "", "expr": "", "tag": "", "node": p, "seq": 0, "talking": false}
 
 
 func _build_box() -> void:
@@ -194,7 +195,7 @@ func _build_box() -> void:
 	_box.offset_right = -110
 	_box.offset_top = -34 - BOX_H
 	_box.offset_bottom = -34
-	_box.add_theme_stylebox_override("panel", UI.tex9("panel9", 14, 26))
+	_box.add_theme_stylebox_override("panel", UI.px9("panel9", 16, 16, 26, 18))
 	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(_box)
 	var v := VBoxContainer.new()
@@ -202,10 +203,10 @@ func _build_box() -> void:
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_box.add_child(v)
 
-	_text_lbl = UI.label("", 20, Color(0.95, 0.93, 0.89), true)
+	_text_lbl = UI.label("", 24, Color(0.96, 0.94, 0.89), true)
 	_text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_text_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_text_lbl.add_theme_constant_override("line_spacing", 9)
+	_text_lbl.add_theme_constant_override("line_spacing", 8)
 	_text_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(_text_lbl)
 
@@ -219,34 +220,38 @@ func _build_box() -> void:
 	_gauge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_gauge)
-	_btn_auto = _small_button("自动", func(): _toggle_auto())
+	_btn_auto = _small_button(Loc.t("自动"), func(): _toggle_auto())
 	_btn_auto.toggle_mode = true
-	_btn_ff = _small_button("快进", func(): _toggle_ff())
+	_btn_ff = _small_button(Loc.t("快进"), func(): _toggle_ff())
 	_btn_ff.toggle_mode = true
 	row.add_child(_btn_auto)
 	row.add_child(_btn_ff)
-	row.add_child(_small_button("记录", func(): _toggle_backlog()))
-	row.add_child(_small_button("跳过", func(): _finish("skip")))
-	row.add_child(_small_button("退出", func(): _finish("escape")))
+	row.add_child(_small_button(Loc.t("记录"), func(): _toggle_backlog()))
+	row.add_child(_small_button(Loc.t("跳过"), func(): _finish("skip")))
+	row.add_child(_small_button(Loc.t("退出"), func(): _finish("escape")))
 
-	# 名牌：压在对话框上沿的贴片，左边说话人，右边台词进度
+	# 名牌：铆钉工业铭牌贴片压在对话框上沿
 	_plate = PanelContainer.new()
 	_plate.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_plate.offset_left = 140
 	_plate.offset_right = -140
-	_plate.offset_top = -34 - BOX_H - 14
+	_plate.offset_top = -34 - BOX_H - 16
 	_plate.offset_bottom = -34 - BOX_H + 22
 	_plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_plate.add_theme_stylebox_override("panel", UI.tex9("strip9", 8, 14))
+	_plate.add_theme_stylebox_override("panel", UI.px9("nameplate9", 14, 10, 14, 6))
 	_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(_plate)
 	var ph := HBoxContainer.new()
 	ph.add_theme_constant_override("separation", 10)
 	ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_plate.add_child(ph)
-	_name_lbl = UI.label("", 17, Color(1, 0.93, 0.8), true)
+	_name_lbl = UI.label("", 12, Color(1, 0.93, 0.8), true)
 	_name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ph.add_child(_name_lbl)
+	_tag_lbl = UI.label("", 12, UI.ACCENT, true)
+	_tag_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_tag_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ph.add_child(_tag_lbl)
 	_voice_bars = VoiceBars.new()
 	_voice_bars.custom_minimum_size = Vector2(22, 16)
 	_voice_bars.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -265,8 +270,11 @@ func _small_button(text: String, act: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(54, 26)
-	b.add_theme_font_size_override("font_size", 13)
+	b.custom_minimum_size = Vector2(56, 26)
+	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_stylebox_override("normal", UI.px9("btn9_n", 8, 8, 8, 4))
+	b.add_theme_stylebox_override("hover", UI.px9("btn9_h", 8, 8, 8, 4))
+	b.add_theme_stylebox_override("pressed", UI.px9("btn9_main_n", 8, 8, 8, 4))
 	b.set_meta("sfx", "ui_click")
 	b.pressed.connect(act)
 	return b
@@ -275,11 +283,12 @@ func _small_button(text: String, act: Callable) -> Button:
 func _build_backlog() -> void:
 	_backlog_dim = ColorRect.new()
 	_backlog_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_backlog_dim.color = Color(0.015, 0.015, 0.02, 0.62)
+	_backlog_dim.color = Color(0.015, 0.015, 0.02, 0.68)
 	_backlog_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_backlog_dim.visible = false
 	_stage.add_child(_backlog_dim)
-	_backlog = UI.panel(18)
+	_backlog = PanelContainer.new()
+	_backlog.add_theme_stylebox_override("panel", UI.px9("panel9", 16, 16, 16, 14))
 	_backlog.set_anchors_preset(Control.PRESET_CENTER)
 	_backlog.custom_minimum_size = Vector2(820, 470)
 	_backlog.offset_left = -410
@@ -290,19 +299,20 @@ func _build_backlog() -> void:
 	_backlog.visible = false
 	_backlog.mouse_filter = Control.MOUSE_FILTER_STOP
 	_stage.add_child(_backlog)
-	var back := ColorRect.new()
-	back.color = Color(0.055, 0.058, 0.07, 0.97)
-	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_backlog.add_child(back)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	_backlog.add_child(v)
-	v.add_child(UI.header("记录", "", 18))
+	v.add_child(UI.plate_header(Loc.t("对话记录"), "LOG" if Loc.is_en() else ""))
+	v.add_child(UI.hazard_strip(8))
+	var well := PanelContainer.new()
+	well.add_theme_stylebox_override("panel", UI.px9("inset9", 8, 8, 12, 10))
+	well.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(well)
 	_backlog_scroll = ScrollContainer.new()
 	_backlog_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_backlog_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_backlog_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	v.add_child(_backlog_scroll)
+	well.add_child(_backlog_scroll)
 	_backlog_box = VBoxContainer.new()
 	_backlog_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_backlog_box.add_theme_constant_override("separation", 10)
@@ -314,7 +324,7 @@ func _build_backlog() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(sp)
-	foot.add_child(_small_button("关闭", func(): _toggle_backlog()))
+	foot.add_child(_small_button(Loc.t("关闭"), func(): _toggle_backlog()))
 
 
 # ============================================================ 台词
@@ -327,8 +337,11 @@ func _lines_line(i: int) -> Dictionary:
 
 func _remember(ln: Dictionary, prefill := false) -> void:
 	var sp := str(ln.get("speaker", ""))
-	var c: Dictionary = story.character(sp) if story != null and sp != "" else {}
-	_hist.append({"name": str(c.get("name_zh", "")), "text": Growth.subst(str(ln.get("zh", ""))), "narrator": sp == ""})
+	var em := AP.resolve_emotion(ln)
+	var cname: String = str(story.char_name(sp, "")) if story != null and sp != "" else ""
+	var line_txt: String = str(story.line_text(ln)) if story != null else Growth.subst(str(ln.get("zh", "")))
+	_hist.append({"name": cname, "tag": str(em.get("label", "")) if sp != "" else "",
+		"tag_col": em.get("color", UI.ACCENT), "text": line_txt, "narrator": sp == ""})
 	if not prefill:
 		_fill_backlog()
 
@@ -341,24 +354,29 @@ func _fill_backlog() -> void:
 	# 最新的台词排在最上面，打开记录时不用滚动就能看到刚播过的一句
 	for k in range(_hist.size() - 1, -1, -1):
 		var h: Dictionary = _hist[k]
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", UI.px9("card9", 8, 8, 10, 8))
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(row)
 		var bar := ColorRect.new()
-		bar.color = Color(UI.ACCENT.r, UI.ACCENT.g, UI.ACCENT.b, 0.7 if not h.narrator else 0.28)
+		bar.color = Color(UI.ACCENT.r, UI.ACCENT.g, UI.ACCENT.b, 0.85 if not h.narrator else 0.35)
 		bar.custom_minimum_size = Vector2(3, 0)
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(bar)
-		var name_l := UI.label(str(h.name) if not h.narrator else "——", 13, UI.ACCENT if not h.narrator else UI.MUTED)
-		name_l.custom_minimum_size = Vector2(96, 0)
+		var tag_str := (" [%s]" % str(h.get("tag", ""))) if str(h.get("tag", "")) != "" else ""
+		var name_l := UI.label((str(h.name) + tag_str) if not h.narrator else "——", 12, UI.ACCENT if not h.narrator else UI.MUTED)
+		name_l.custom_minimum_size = Vector2(104, 0)
 		name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(name_l)
-		var t := UI.label(str(h.text), 15, UI.TEXT)
+		var t := UI.label(str(h.text), 12, UI.TEXT)
 		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(t)
-		_backlog_box.add_child(row)
+		_backlog_box.add_child(card)
 
 
 func _show_line(i: int) -> void:
@@ -367,11 +385,19 @@ func _show_line(i: int) -> void:
 		_finish("end")
 		return
 	var sp := str(ln.get("speaker", ""))
-	var c: Dictionary = story.character(sp) if story != null and sp != "" else {}
-	_name_lbl.text = str(c.get("name_zh", ""))
+	var em := AP.resolve_emotion(ln)
+	var tag_label := AP.emotion_text(str(em.get("label", "沉着")))
+	var tag_col: Color = em.get("color", UI.ACCENT)
+	_name_lbl.text = story.char_name(sp, "") if story != null and sp != "" else ""
+	if _tag_lbl != null:
+		_tag_lbl.text = "[%s]" % tag_label if sp != "" and tag_label != "" else ""
+		_tag_lbl.add_theme_color_override("font_color", tag_col)
+		_tag_lbl.visible = sp != "" and tag_label != ""
+	if _voice_bars != null:
+		_voice_bars.accent = tag_col
 	_plate.visible = sp != ""
-	_focus(sp, str(ln.get("expr", "")))
-	var zh := Growth.subst(str(ln.get("zh", "")))
+	_focus(sp, str(ln.get("expr", "")), tag_label, str(em.get("motion", "calm")), tag_col)
+	var zh: String = str(story.line_text(ln)) if story != null else Growth.subst(str(ln.get("zh", "")))
 	_text_lbl.text = zh
 	_text_lbl.visible_characters = 0
 	_shown = 0.0
@@ -391,10 +417,11 @@ func _show_line(i: int) -> void:
 
 
 ## 立绘站位：同一时刻左右两席；新上场角色占用空席，两席都满时替换最久没说话的那个
-func _focus(sp: String, expr: String) -> void:
+func _focus(sp: String, expr: String, tag := "", motion := "calm", col := Color(0.72, 0.5, 0.09)) -> void:
 	_focus_seq += 1
 	if sp == "":
 		for side in _slots:
+			_set_slot_talking(side, false)
 			_set_dim(side, 0.0)
 		return
 	var slot := ""
@@ -409,20 +436,43 @@ func _focus(sp: String, expr: String) -> void:
 		else:
 			slot = "left" if int(_slots.left.seq) <= int(_slots.right.seq) else "right"
 		var n: PortraitPlace = _slots[slot].node
-		_set_portrait(n, sp, expr)
 		_slots[slot].char = sp
+		_slots[slot].expr = expr
+		_slots[slot].tag = tag
+		_slots[slot].talking = true
+		_set_portrait(n, sp, expr, true, tag, motion, col)
 		_appear(slot)
 	else:
 		var n: PortraitPlace = _slots[slot].node
-		_set_portrait(n, sp, expr)
+		_slots[slot].expr = expr
+		_slots[slot].tag = tag
+		_slots[slot].talking = true
+		_set_portrait(n, sp, expr, true, tag, motion, col)
 	_slots[slot].seq = _focus_seq
 	for side in _slots:
+		if side != slot:
+			_set_slot_talking(side, false)
 		_set_dim(side, 1.0 if side == slot else 0.52)
 
 
-## 有立绘动画就播动画，没有就退回静态立绘
-func _set_portrait(n: PortraitPlace, sp: String, expr: String) -> void:
-	var clip := AP.portrait_clip(sp, expr)
+func _set_slot_talking(side: String, talking: bool) -> void:
+	if not _slots.has(side):
+		return
+	var s: Dictionary = _slots[side]
+	var sp := str(s.get("char", ""))
+	if sp == "" or bool(s.get("talking", false)) == talking:
+		return
+	s["talking"] = talking
+	var n: PortraitPlace = s.node
+	var expr := str(s.get("expr", ""))
+	var tag := str(s.get("tag", ""))
+	_set_portrait(n, sp, expr, talking, tag, "calm", n.accent)
+
+
+## 有立绘动画就播动画，没有就退回静态立绘；根据 talking 与情绪标签触发对应谈话动画或待机动画
+func _set_portrait(n: PortraitPlace, sp: String, expr: String, talking := true, tag := "", motion := "calm", col := Color(0.72, 0.5, 0.09)) -> void:
+	n.set_emotion(motion, talking, col)
+	var clip := AP.portrait_clip(sp, expr, talking, tag)
 	if clip != "":
 		n.set_clip(clip)
 	else:
@@ -468,6 +518,12 @@ func _process(delta: float) -> void:
 			_hold -= delta
 		if _hold <= 0.0:
 			_advance()
+			return
+	var still_speaking := _typing or (_voice_len > 0.0 and Audio.is_voice_playing())
+	if not still_speaking:
+		for side in _slots:
+			if bool(_slots[side].get("talking", false)):
+				_set_slot_talking(side, false)
 
 
 func _advance() -> void:
@@ -481,6 +537,10 @@ func _advance() -> void:
 		_typing = false
 		_text_lbl.visible_characters = -1
 		_hold = FF_HOLD if ff else AUTO_HOLD
+		if not (_voice_len > 0.0 and Audio.is_voice_playing()):
+			for side in _slots:
+				if bool(_slots[side].get("talking", false)):
+					_set_slot_talking(side, false)
 		return
 	_next()
 
@@ -654,6 +714,11 @@ class PortraitPlace extends Control:
 	var vid: VideoStreamPlayer
 	var rect: TextureRect
 	var accent := Color(0.72, 0.5, 0.09)
+	var _clip_path := ""
+	var _motion := "calm"
+	var _talking := false
+	var _emo_t := 0.0
+	var _anim_off := Vector2.ZERO
 
 	func _ready() -> void:
 		view = SubViewport.new()
@@ -679,6 +744,23 @@ class PortraitPlace extends Control:
 		resized.connect(_fit_clip)
 		_fit_clip()
 
+	func set_emotion(motion: String, talking: bool, col := Color(0.72, 0.5, 0.09)) -> void:
+		if _motion != motion or (_talking != talking and talking):
+			_emo_t = 0.0
+		_motion = motion
+		_talking = talking
+		accent = col
+
+	func _process(_delta: float) -> void:
+		if _talking and _clip_path != "" and vid != null and vid.stream != null:
+			if not vid.is_playing():
+				vid.play()
+		if rect != null and rect.visible:
+			var side := minf(size.x, size.y)
+			rect.position = Vector2((size.x - side) * 0.5, size.y - side)
+		elif tex != null:
+			queue_redraw()
+
 	## 片段为正方形，按立绘位高度取正方形并贴底居中
 	func _fit_clip() -> void:
 		if rect == null:
@@ -690,6 +772,7 @@ class PortraitPlace extends Control:
 	## 播立绘动画；传空串时停止并交回静态立绘
 	func set_clip(path: String) -> void:
 		if path == "":
+			_clip_path = ""
 			if vid != null:
 				vid.stop()
 			if view != null:
@@ -697,9 +780,12 @@ class PortraitPlace extends Control:
 			if rect != null:
 				rect.visible = false
 			return
+		if path == _clip_path and vid != null and vid.is_playing() and rect != null and rect.visible:
+			return
 		var st: VideoStream = load(path)
 		if st == null:
 			return
+		_clip_path = path
 		tex = null
 		queue_redraw()
 		vid.stream = st
@@ -710,6 +796,7 @@ class PortraitPlace extends Control:
 		_fit_clip()
 
 	func set_tex(t: Texture2D) -> void:
+		_clip_path = ""
 		if rect != null and rect.visible:
 			vid.stop()
 			view.render_target_update_mode = SubViewport.UPDATE_DISABLED

@@ -5,23 +5,25 @@ extends Node3D
 ##     · add_inst：重复的小件（窗、碎石、草……）按 网格 + 材质 收成 MultiMesh
 ## - 写实涂装（mech_paint）只差底色的材质合成同一个「去色」共享材质：底色写进 MultiMesh 实例自定义数据
 ##   （tint_mode 1）或合并网格的顶点色 gba（tint_mode 2；r 通道仍是倒角边缘遮罩），全图不再每色一份材质
-## - 分块外观懒构建：焦点（相机视线落地点）到分块矩形 ≤ stream_r 才建、才显示，离开 stream_r + HYST 隐藏；
-##   每个几何体另设 visibility_range_end 兜底（按相机到可见地面最远角的距离 + 分块半对角线算出，见 VIS_END）
+## - 合并网格在烘焙前将每个部件的对象局部米制坐标 (lpos) 与局部法线 (lnrm) 写入 UV / UV2 / CUSTOM0，
+##   保证旋转建筑、斜撑钢梁与地标部件合批后三平面砖缝、波纹钢板与窗棂严格对齐，绝不扭曲
 
 const CHUNK := 48.0
-const STREAM_R := 70.0   ## 俯视相机最远档（ZOOM_MAX）16:9 时可见地面约 ±43.5 米（横）/ ±27.5 米（纵），超宽屏 ±59 米，留余量取 70
+const STREAM_R := 70.0
 const HYST := 8.0
-## 相机到可见地面最远角约 90 米（16:9）/ 99 米（21:9），加分块半对角线（含楼高）约 40 米
 const VIS_END := 140.0
-const CAM_DIST_REF := 62.8   ## ZOOM_MAX 时相机到焦点的距离；拉远的相机（截图等）按比例放大 stream_r
+const CAM_DIST_REF := 44.0
 const PAINT_PATH := "res://shaders/mech_paint.gdshader"
+const GLASS_PATH := "res://shaders/ind_glass.gdshader"
+const FOLIAGE_PATH := "res://shaders/foliage.gdshader"
 const BUILDS_PER_FRAME := 2
-const MM_MIN := 32   ## 同块同网格不超过这么多个实例时并进合并网格，不单开 MultiMesh
+const MM_MIN := 8
 
 static var _tint_mats := {}   ## 去色共享材质：参数（除底色外）+ tint_mode → 材质
+static var _tinted := {}      ## 网格 RID|表面|底色 → 带底色顶点色的单表面网格（合并用，按局次缓存）
+static var _raw_surfs := {}   ## 网格 RID|表面 → 原始顶点/法线/顶点色/索引数组缓存
 
-var _chunks := {}   ## Vector2i → {"merge": {key: 组}, "inst": {key: 组}, "node": Node3D, "on": bool}
-var _tinted := {}   ## 网格 RID|表面|底色 → 带底色顶点色的单表面网格（合并用，按局次缓存）
+var _chunks := {}
 var _pending := false
 var stats := {"mesh_parts": 0, "inst": 0, "built": 0}
 
@@ -30,7 +32,12 @@ static func chunk_of(p: Vector3) -> Vector2i:
 	return Vector2i(floori(p.x / CHUNK), floori(p.z / CHUNK))
 
 
-## 写实涂装材质拆成「去色共享材质 + 底色」；其他材质原样返回、底色为白
+static func _sp_f(sm: ShaderMaterial, pname: String, def_v: float) -> float:
+	var v = sm.get_shader_parameter(pname)
+	return float(v) if v != null else def_v
+
+
+## 写实涂装材质拆成「去色共享材质 + 底色」，完整保留法线贴图、反照率贴图、面板密度与锈蚀做旧参数
 static func split_tint(m: Material, mode: int) -> Array:
 	if m is StandardMaterial3D:
 		return _split_std(m, mode)
@@ -41,32 +48,40 @@ static func split_tint(m: Material, mode: int) -> Array:
 	var mk := "_tint%d" % mode
 	if sm.has_meta(mk):
 		return [sm.get_meta(mk), col]
-	var parts := PackedStringArray([str(mode)])
-	var bare = sm.get_shader_parameter("bare_metal")
-	if bare is Color:
-		# 裸金属色（只在掉漆棱边露出）多随底色变：量化成 0.1 一档的同亮度灰，否则每色一份材质、合不了批
-		var l := snappedf(bare.get_luminance(), 0.1)
-		bare = Color(l, l, l, 1.0)
-	for u in sm.shader.get_shader_uniform_list():
-		if u.name == "bare_metal":
-			parts.append(str(bare))
-		elif u.name != "base_color" and u.name != "tint_mode":
-			parts.append(str(sm.get_shader_parameter(u.name)))
-	var key := "|".join(parts)
+	var use_tex := 1.0 if _sp_f(sm, "use_albedo_tex", 0.0) > 0.5 else 0.0
+	var atex = sm.get_shader_parameter("albedo_tex") if use_tex > 0.5 else null
+	var ntex = sm.get_shader_parameter("normal_tex")
+	var ascale := snappedf(_sp_f(sm, "albedo_tex_scale", 0.24), 0.04) if use_tex > 0.5 else 0.0
+	var astr := snappedf(_sp_f(sm, "albedo_tex_strength", 0.78), 0.08) if use_tex > 0.5 else 0.0
+	var nstr := snappedf(_sp_f(sm, "normal_strength", 0.55), 0.10)
+	var mb := snappedf(_sp_f(sm, "metal_base", 0.15), 0.12)
+	var rb := snappedf(clampf(_sp_f(sm, "rough_base", 0.60), 0.12, 0.98), 0.08)
+	var ps := snappedf(_sp_f(sm, "panel_scale", 0.0), 0.20)
+	var wr := snappedf(_sp_f(sm, "wear", 0.45), 0.15)
+	var ru := snappedf(_sp_f(sm, "rust", 0.25), 0.15)
+	var gr := snappedf(_sp_f(sm, "grime", 0.50), 0.20)
+	var du := snappedf(_sp_f(sm, "dust", 0.25), 0.15)
+	var ds := snappedf(_sp_f(sm, "detail_scale", 1.0), 0.15)
+	var ruv := 1.0 if _sp_f(sm, "roof_uv", 0.0) > 0.5 else 0.0
+	var stp := 1.0 if _sp_f(sm, "stripes", 0.0) > 0.5 else 0.0
+	var tdmg := 1.0 if _sp_f(sm, "takes_damage", 0.0) > 0.5 else 0.0
+	var mw := 1.0 if _sp_f(sm, "metal_wear", 1.0) > 0.5 else 0.0
+	var key := "%d|%.0f|%d|%d|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.0f|%.0f|%.0f|%.0f" % [
+		mode, use_tex,
+		atex.get_instance_id() if atex else 0,
+		ntex.get_instance_id() if ntex else 0,
+		ascale, astr, nstr, mb, rb, ps, wr, ru, gr, du, ds, ruv, stp, tdmg, mw
+	]
 	var out: ShaderMaterial = _tint_mats.get(key)
 	if out == null:
 		out = sm.duplicate()
 		out.set_shader_parameter("base_color", Color.WHITE)
 		out.set_shader_parameter("tint_mode", mode)
-		if bare is Color:
-			out.set_shader_parameter("bare_metal", bare)
 		_tint_mats[key] = out
 	sm.set_meta(mk, out)
 	return [out, col]
 
 
-## 标准材质（贴花、灯片……常按实例改透明度/颜色复制出很多份）：去掉反照率色，改用顶点色 / MultiMesh 实例色
-## （vertex_color_use_as_albedo）。本来就用顶点色的不动。
 static func _split_std(m: StandardMaterial3D, mode: int) -> Array:
 	if m.vertex_color_use_as_albedo or m.next_pass != null:
 		return [m, Color.WHITE]
@@ -83,9 +98,27 @@ static func _split_std(m: StandardMaterial3D, mode: int) -> Array:
 		out = m.duplicate()
 		out.albedo_color = Color.WHITE
 		out.vertex_color_use_as_albedo = true
+		out.vertex_color_is_srgb = true
 		_tint_mats[key] = out
 	m.set_meta(mk, out)
 	return [out, m.albedo_color]
+
+
+static func _uses_local_triplanar(m: Material) -> bool:
+	if not (m is ShaderMaterial):
+		return false
+	var sm: ShaderMaterial = m
+	if sm.shader == null:
+		return false
+	var rp: String = sm.shader.resource_path
+	return rp == PAINT_PATH or rp == GLASS_PATH
+
+
+static func _is_foliage(m: Material) -> bool:
+	if not (m is ShaderMaterial):
+		return false
+	var sm: ShaderMaterial = m
+	return sm.shader != null and sm.shader.resource_path == FOLIAGE_PATH
 
 
 func _chunk(c: Vector2i) -> Dictionary:
@@ -96,7 +129,6 @@ func _chunk(c: Vector2i) -> Dictionary:
 	return ch
 
 
-## 能否并进合并网格：三角形、无骨骼/混合形状
 static func mergeable(mesh: Mesh) -> bool:
 	if mesh == null:
 		return false
@@ -110,9 +142,9 @@ static func mergeable(mesh: Mesh) -> bool:
 	return true
 
 
-## 单个静态网格（xf 为世界变换）；mat 为空时用网格自带的表面材质
 func add_mesh(mesh: Mesh, mat: Material, xf: Transform3D, shadow: int) -> void:
-	_add_part(_chunk(chunk_of(xf.origin)), mesh, mat, xf, shadow)
+	var p: Vector3 = (xf * mesh.get_aabb()).get_center() if mesh else xf.origin
+	_add_part(_chunk(chunk_of(p)), mesh, mat, xf, shadow)
 
 
 func _add_part(ch: Dictionary, mesh: Mesh, mat: Material, xf: Transform3D, shadow: int) -> void:
@@ -128,7 +160,6 @@ func _add_part(ch: Dictionary, mesh: Mesh, mat: Material, xf: Transform3D, shado
 		stats.mesh_parts += 1
 
 
-## 重复小件：一组变换（世界坐标）同网格同材质
 func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
 	var st := split_tint(mat, 1)
 	var tinted: bool = st[0] != mat
@@ -137,16 +168,155 @@ func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
 		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if shadow else 0]
 		var g = ch.inst.get(key)
 		if g == null:
-			g = {"mesh": mesh, "src": mat, "mat": st[0], "shadow": shadow, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
+			g = {"mesh": mesh, "src": [], "mat": st[0], "shadow": shadow, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
 			ch.inst[key] = g
+		g.src.append(mat)
 		g.xf.append(t)
 		g.col.append(st[1])
 		stats.inst += 1
 
 
-## 带底色的单表面副本：补齐 法线/切线/UV/顶点色/索引，保证同组格式一致。
-## tint 1（涂装）：顶点色 r 保留边缘遮罩，gba 写底色；tint 2（标准材质）：顶点色整个写反照率色（含透明度）
-func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> ArrayMesh:
+static func _get_raw_surf(mesh: Mesh, si: int) -> Array:
+	var key := "%d|%d" % [mesh.get_rid().get_id(), si]
+	var cached = _raw_surfs.get(key)
+	if cached != null:
+		return cached
+	var a: Array = mesh.surface_get_arrays(si)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var n := v.size()
+	var nrm: PackedVector3Array
+	if a[Mesh.ARRAY_NORMAL] != null and a[Mesh.ARRAY_NORMAL].size() == n:
+		nrm = a[Mesh.ARRAY_NORMAL]
+	else:
+		nrm = PackedVector3Array()
+		nrm.resize(n)
+		nrm.fill(Vector3.UP)
+	var col: PackedColorArray
+	if a[Mesh.ARRAY_COLOR] != null and a[Mesh.ARRAY_COLOR].size() == n:
+		col = a[Mesh.ARRAY_COLOR]
+	else:
+		col = PackedColorArray()
+		col.resize(n)
+		col.fill(Color.WHITE)
+	var idx: PackedInt32Array
+	if a[Mesh.ARRAY_INDEX] != null and a[Mesh.ARRAY_INDEX].size() > 0:
+		idx = a[Mesh.ARRAY_INDEX]
+	else:
+		idx = PackedInt32Array()
+		idx.resize(n)
+		for i in n:
+			idx[i] = i
+	cached = [v, nrm, col, idx]
+	_raw_surfs[key] = cached
+	return cached
+
+
+## 为三平面涂装与窗格着色器合批网格，并在 UV / UV2 / CUSTOM0 中保留每个部件独立的对象局部米制坐标与法线
+static func _merge_local_triplanar(parts: Array, tint: int) -> ArrayMesh:
+	var total_v := 0
+	var total_i := 0
+	for p: Array in parts:
+		var raw := _get_raw_surf(p[0], p[1])
+		total_v += (raw[0] as PackedVector3Array).size()
+		total_i += (raw[3] as PackedInt32Array).size()
+	if total_v == 0 or total_i == 0:
+		return null
+	var out_v := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var out_uv := PackedVector2Array()
+	var out_uv2 := PackedVector2Array()
+	var out_c0 := PackedFloat32Array()
+	var out_c1 := PackedFloat32Array()
+	var out_col := PackedColorArray()
+	var out_idx := PackedInt32Array()
+	out_v.resize(total_v)
+	out_n.resize(total_v)
+	out_uv.resize(total_v)
+	out_uv2.resize(total_v)
+	out_c0.resize(total_v * 4)
+	out_c1.resize(total_v * 4)
+	out_col.resize(total_v)
+	out_idx.resize(total_i)
+
+	var vo := 0
+	var io := 0
+	for p: Array in parts:
+		var raw := _get_raw_surf(p[0], p[1])
+		var sv: PackedVector3Array = raw[0]
+		var sn: PackedVector3Array = raw[1]
+		var sc: PackedColorArray = raw[2]
+		var si_arr: PackedInt32Array = raw[3]
+		var xf: Transform3D = p[2]
+		var col: Color = p[3]
+		var bx := xf.basis.x
+		var by := xf.basis.y
+		var bz := xf.basis.z
+		var sx := maxf(bx.length(), 1e-4)
+		var sy := maxf(by.length(), 1e-4)
+		var sz := maxf(bz.length(), 1e-4)
+		var inv_t := xf.basis.inverse().transposed()
+		var flip := xf.basis.determinant() < 0.0
+		var flip_s := -1.0 if flip else 1.0
+		var q := Basis((bx / sx).normalized(), (by / sy).normalized(), ((bz / sz) * flip_s).normalized()).orthonormalized().get_rotation_quaternion()
+		var c0_w := 2.0 if flip else 1.0
+		var box_ext := maxf(sx, sz) * 0.5
+		var nv := sv.size()
+		for i in nv:
+			var vi := vo + i
+			var v := sv[i]
+			var n := sn[i]
+			out_v[vi] = xf * v
+			out_n[vi] = (inv_t * n).normalized()
+			var lpos := Vector3(v.x * sx, v.y * sy, v.z * sz)
+			var lnrm := Vector3(n.x / sx, n.y / sy, n.z / sz).normalized()
+			out_uv[vi] = Vector2(lpos.x, lpos.y)
+			out_uv2[vi] = Vector2(lpos.z, box_ext)
+			var c4 := vi * 4
+			out_c0[c4] = lnrm.x
+			out_c0[c4 + 1] = lnrm.y
+			out_c0[c4 + 2] = lnrm.z
+			out_c0[c4 + 3] = c0_w
+			out_c1[c4] = q.x
+			out_c1[c4 + 1] = q.y
+			out_c1[c4 + 2] = q.z
+			out_c1[c4 + 3] = q.w
+			if tint == 1:
+				out_col[vi] = Color(sc[i].r, col.r, col.g, col.b)
+			elif tint == 2:
+				out_col[vi] = col
+			else:
+				out_col[vi] = sc[i]
+		var ni := si_arr.size()
+		if flip:
+			var k := 0
+			while k + 2 < ni:
+				out_idx[io + k] = vo + si_arr[k]
+				out_idx[io + k + 1] = vo + si_arr[k + 2]
+				out_idx[io + k + 2] = vo + si_arr[k + 1]
+				k += 3
+		else:
+			for k in ni:
+				out_idx[io + k] = vo + si_arr[k]
+		vo += nv
+		io += ni
+
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = out_v
+	arr[Mesh.ARRAY_NORMAL] = out_n
+	arr[Mesh.ARRAY_TEX_UV] = out_uv
+	arr[Mesh.ARRAY_TEX_UV2] = out_uv2
+	arr[Mesh.ARRAY_CUSTOM0] = out_c0
+	arr[Mesh.ARRAY_CUSTOM1] = out_c1
+	arr[Mesh.ARRAY_COLOR] = out_col
+	arr[Mesh.ARRAY_INDEX] = out_idx
+	var am := ArrayMesh.new()
+	var fmt := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, fmt)
+	return am
+
+
+static func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> ArrayMesh:
 	var key := "%d|%d|%d|%s" % [mesh.get_rid().get_id(), si, tint, col.to_html() if tint else "-"]
 	var out: ArrayMesh = _tinted.get(key)
 	if out:
@@ -168,8 +338,10 @@ func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> ArrayMesh:
 		arr[Mesh.ARRAY_TANGENT] = a[Mesh.ARRAY_TANGENT]
 	else:
 		var tg := PackedFloat32Array()
+		tg.resize(n * 4)
 		for i in n:
-			tg.append_array([1.0, 0.0, 0.0, 1.0])
+			tg[i * 4] = 1.0
+			tg[i * 4 + 3] = 1.0
 		arr[Mesh.ARRAY_TANGENT] = tg
 	if a[Mesh.ARRAY_TEX_UV] != null and a[Mesh.ARRAY_TEX_UV].size() == n:
 		arr[Mesh.ARRAY_TEX_UV] = a[Mesh.ARRAY_TEX_UV]
@@ -182,8 +354,11 @@ func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> ArrayMesh:
 	var cc := PackedColorArray()
 	if tint == 1:
 		cc.resize(n)
-		for i in n:
-			cc[i] = Color(src_c[i].r if has_c else 1.0, col.r, col.g, col.b)
+		if has_c:
+			for i in n:
+				cc[i] = Color(src_c[i].r, col.r, col.g, col.b)
+		else:
+			cc.fill(Color(1.0, col.r, col.g, col.b))
 	elif tint == 2:
 		cc.resize(n)
 		cc.fill(col)
@@ -213,21 +388,25 @@ func _build_chunk(c: Vector2i) -> void:
 	root.name = "Chunk_%d_%d" % [c.x, c.y]
 	add_child(root)
 	ch.node = root
-	# 实例太少的小件组不值得单独一次 MultiMesh 绘制：并进同材质的合并网格
+	# 实例很少的组直接并进同材质的合并网格（植物材质保留在 MultiMesh 以维持统一摆风尺度与独立世界原点）
 	for key in ch.inst.keys():
 		var g: Dictionary = ch.inst[key]
-		if g.xf.size() <= MM_MIN and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
+		if g.xf.size() <= MM_MIN and not _is_foliage(g.mat) and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
 			var sh := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			for t: Transform3D in g.xf:
-				_add_part(ch, g.mesh, g.src, t, sh)
+			for i in g.xf.size():
+				_add_part(ch, g.mesh, g.src[i], g.xf[i], sh)
 			ch.inst.erase(key)
 	for key in ch.merge:
 		var g: Dictionary = ch.merge[key]
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for p: Array in g.parts:
-			st.append_from(_tinted_surface(p[0], p[1], p[3], g.tint), 0, p[2])
-		var am := st.commit()
+		var am: ArrayMesh = null
+		if _uses_local_triplanar(g.mat):
+			am = _merge_local_triplanar(g.parts, g.tint)
+		else:
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			for p: Array in g.parts:
+				st.append_from(_tinted_surface(p[0], p[1], p[3], g.tint), 0, p[2])
+			am = st.commit()
 		if am == null or am.get_surface_count() == 0:
 			continue
 		var mi := MeshInstance3D.new()
@@ -257,7 +436,7 @@ func _build_chunk(c: Vector2i) -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = g.mat
-		mmi.custom_aabb = ab   # 预先给出包围盒，渲染服务器不必逐实例重算（无界面统计也靠它）
+		mmi.custom_aabb = ab
 		mmi.visibility_range_end = VIS_END
 		if not g.shadow:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -267,7 +446,18 @@ func _build_chunk(c: Vector2i) -> void:
 	stats.built += 1
 
 
-## 焦点到分块矩形的水平距离
+func build_all(f: Vector3, r: float) -> void:
+	for c: Vector2i in _chunks:
+		var ch: Dictionary = _chunks[c]
+		if ch.node == null:
+			_build_chunk(c)
+		var vis := _rect_dist(c, f) <= r
+		ch.node.visible = vis
+		ch.on = vis
+	_tinted.clear()
+	_raw_surfs.clear()
+
+
 static func _rect_dist(c: Vector2i, f: Vector3) -> float:
 	var x0 := c.x * CHUNK
 	var z0 := c.y * CHUNK
@@ -276,7 +466,6 @@ static func _rect_dist(c: Vector2i, f: Vector3) -> float:
 	return sqrt(dx * dx + dz * dz)
 
 
-## 按焦点建 / 显示 / 隐藏分块；limit < 0 时不限每帧构建数（开局一次性建好视野内的块）
 func update_focus(f: Vector3, r: float, limit := BUILDS_PER_FRAME) -> void:
 	var built := 0
 	_pending = false
@@ -296,11 +485,19 @@ func update_focus(f: Vector3, r: float, limit := BUILDS_PER_FRAME) -> void:
 		elif ch.on and d > r + HYST:
 			ch.node.visible = false
 			ch.on = false
+	if built > 0:
+		_tinted.clear()
+		_raw_surfs.clear()
 
 
-## 全部建好并显示（整图截图等）
 func show_all() -> void:
 	update_focus(Vector3.ZERO, 1e9, -1)
+	for c: Vector2i in _chunks:
+		var n: Node3D = _chunks[c].node
+		if n:
+			for ch in n.get_children():
+				if ch is GeometryInstance3D:
+					ch.visibility_range_end = 0.0
 
 
 var _last_f := Vector3(INF, 0, INF)

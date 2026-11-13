@@ -1,601 +1,561 @@
-"""
-新装备、地图事件、局外成长与剧情系统的音效配方。
-装备音走武器与机构两层：轨道炮是电容升调后的一记电磁爆响，电弧是密集放电，迫击炮是出膛闷响带长尾，
-钻头是咬合加持续研磨的循环，等离子是低频呼啸，无人机点射是短促电音；
-地图事件走材料声（帆布、金属柜、纸页、风沙）；局外成长与剧情属于界面层，短促克制。
-"""
+# -*- coding: utf-8 -*-
+"""扩展重武器、战术装备、地图动态事件、沙尘暴/暴雨天气、机师养成与通讯音效（全物理谐振重制版）。"""
 import numpy as np
-
-from sfx_dsp import sfx, ns, tt, white, pink, brown, lp, hp, bp, peak, reson, sweep, sine, harm, saw_amps, square_amps, \
-    expdec, ad, env, ahr, sat, crush, space, Mix
-from sfx_lib import tick, clank, modal, thump, crack, burst, whoosh, hiss, servo, debris, scrape, rattle, \
-    roar, crackle, arc, buzz, tone, chime, bubbles, slime, crunch, turbine, PLATE, BAR, TUBE, HEAVY, BELL
-
-
-def st(c, x, kind="yard", wet=0.2):
-    """按声部是否需要 2D 决定立体声，再放进空间。"""
-    return space(x, kind, wet, c.stereo, c.v)
-
-
-# ====================================================================== 新装备：武器
-@sfx("wpn_railgun_charge", n=1, target=-17.0, dur=0.55, fout=0.02)
-def railgun_charge(c):
-    """电容蓄力：电枢升调的窄带啸声、逐渐变密的放电颗粒、低频电能嗡鸣，恰好铺满 0.55 秒的蓄力窗口。"""
-    rng = c.rng
-    n = ns(0.55)
-    t = tt(n)
-    u = t / 0.55
-    m = Mix(0.55)
-    rise = np.clip(u, 0.0, 1.0) ** 1.5
-    m.add(tick(rng, 2600.0, 0.004, 0.03), 0.0, 0.5)
-    whine = harm(180.0 + 1180.0 * rise ** 1.7, [1.0, 0.5, 0.3, 0.18, 0.1]) * rise
-    m.add(whine, 0.0, 0.55)
-    coil = sine(58.0 + 22.0 * rise) * (0.6 + 0.4 * np.sin(2 * np.pi * 7.0 * t)) * rise
-    m.add(sat(coil, 2.0), 0.0, 0.5)
-    grit = arc(rng, 0.55, 380.0, 3200.0, 0.2, 0.8, 8) * (0.08 + 0.92 * rise ** 2)
-    m.add(grit * (0.15 + 0.85 * rise), 0.0, 0.45)
-    m.add(hiss(rng, 0.55, 5000.0, 12000.0, 0.02, 0.4, 0.1, (7000.0, 9500.0), 6.0) * rise, 0.0, 0.18)
-    m.add(buzz(112.0, 0.55, None, 900.0) * rise, 0.02, 0.16)
-    x = m.render()
-    x = sat(x / (np.max(np.abs(x)) + 1e-9), 1.25)
-    return st(c, x, "cockpit", 0.12)
-
-
-@sfx("wpn_railgun_fire", n=3, target=-12.5, dur=1.3, fout=0.2)
-def railgun_fire(c):
-    """电磁爆响：极短的破空瞬态、放电的滑音脉冲、贯穿轨道的金属回震、低频推力与远处的回响。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.93, 1.06][v]
-    m = Mix()
-    m.add(crack(rng, 0.06, 0.007, 1800.0), 0.0, 0.9)
-    n1 = ns(0.34)
-    t1 = tt(n1)
-    zap = sine((260.0 + 3400.0 * np.exp(-t1 / 0.03)) * tune) * expdec(n1, 0.055)
-    m.add(sat(zap, 2.2), 0.0, 0.75)
-    m.add(burst(rng, 0.3, 0.04, 120.0, 3200.0, -2.0, 0.0004, 1.8), 0.0, 0.85)
-    m.add(thump(rng, 96.0 * tune, 34.0, 0.9, 0.22, 0.03, 2.6, 0.15), 0.0, 0.7)
-    m.add(modal(rng, 232.0 * tune, HEAVY, 0.55, 1.2, 0.04, 0.8, 0.7), 0.004, 0.5)
-    m.add(modal(rng, 640.0 * tune, PLATE, 0.3, 1.0, 0.05, 0.9, 0.8), 0.002, 0.25)
-    m.add(hiss(rng, 0.5, 3500.0, 12000.0, 0.002, 0.03, 0.4, (6000.0, 9000.0), 5.0), 0.01, 0.3)
-    m.add(hiss(rng, 0.35, 900.0, 6000.0, 0.02, 0.1, 0.4, (2400.0, 4200.0), 4.0, 0.6), 0.06, 0.35)
-    x = m.render()
-    src = lp(x, 2200.0)
-    for d, g in ((0.16, 0.22), (0.34, 0.13), (0.55, 0.07)):
-        m.add(src, c.j(d, 0.06), g)
-    return st(c, m.render(), "valley", 0.3)
-
-
-@sfx("wpn_arc_fire", n=3, target=-14.5, dur=0.7, fout=0.08)
-def arc_fire(c):
-    """电弧甩出：扳机的一声脆响、密集放电、被空气拉长的工频嗡声与嘶嘶的余电。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.85, 1.12][v]
-    m = Mix()
-    m.add(crack(rng, 0.03, 0.004, 2400.0), 0.0, 0.6)
-    m.add(tick(rng, 3200.0 * tune, 0.003, 0.02), 0.0, 0.4)
-    m.add(arc(rng, c.j(0.26, 0.1), 500.0 + 180.0 * v, 2600.0 * tune, 0.28, 0.75, 7), 0.0, 0.95)
-    m.add(arc(rng, 0.18, 260.0, 4000.0, 0.1, 0.9, 8), c.r(0.03, 0.06), 0.35)
-    hum = harm(120.0 * tune, saw_amps(18), ns(0.35)) * ad(ns(0.35), 0.004, 0.09)
-    m.add(hum, 0.0, 0.16)
-    m.add(hiss(rng, 0.4, 4500.0, 13000.0, 0.002, 0.03, 0.25, (6500.0, 9800.0), 6.0), 0.02, 0.3)
-    m.add(thump(rng, 210.0, 90.0, 0.14, 0.03, 0.01, 1.4, 0.1), 0.0, 0.3)
-    x = sat(m.render(), 1.3)
-    return st(c, x, "yard", 0.16)
-
-
-@sfx("wpn_mortar_fire", n=2, target=-13.0, dur=1.0, fout=0.14)
-def mortar_fire(c):
-    """迫击炮出膛：药包爆燃的闷响、炮管金属余震、炮口冲击气流与山谷里的回声。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.92][v]
-    m = Mix()
-    m.add(thump(rng, 118.0 * tune, 30.0, 0.85, 0.2, 0.045, 3.2, 0.25), 0.0, 0.9)
-    m.add(burst(rng, 0.5, 0.06, 45.0, 900.0, -3.0, 0.0008, 2.0), 0.0, 0.8)
-    m.add(modal(rng, 286.0 * tune, TUBE, 0.42, 0.9, 0.03, 0.7, 0.5), 0.004, 0.45)
-    m.add(clank(rng, 520.0 * tune, 0.09, HEAVY, 0.5, 0.6, 0.7, 5000.0), 0.02, 0.35)
-    m.add(whoosh(rng, 0.45, 180.0, 900.0, 0.12, 1.2, -2.0, 3.0), 0.02, 0.3)
-    m.add(hiss(rng, 0.35, 1200.0, 7000.0, 0.005, 0.05, 0.4, (2600.0, 4800.0), 4.0, 0.5), 0.04, 0.28)
-    x = sat(m.render(), 1.2)
-    src = lp(x, 1500.0)
-    for d, g in ((0.22, 0.18), (0.46, 0.1)):
-        m.add(src, d, g)
-    return st(c, m.render(), "valley", 0.28)
-
-
-@sfx("wpn_drill_ignite", n=1, target=-15.0, dur=0.6, fout=0.06)
-def drill_ignite(c):
-    """钻头咬合：电机从低速拉起到工作转速、齿轮啃住岩面的第一口、随后的碎屑抛飞。"""
-    rng = c.rng
-    m = Mix(0.6)
-    m.add(servo(rng, 0.32, 90.0, 620.0, 0.28, 0.04, 9.0, 0.35, 6000.0), 0.0, 0.55)
-    m.add(clank(rng, 760.0, 0.06, PLATE, 0.35, 0.7, 0.5, 5000.0), 0.05, 0.45)
-    m.add(crunch(rng, 0.16, 70, 0.06, 900.0, 8000.0, 0.5, 380.0), 0.06, 0.6)
-    m.add(thump(rng, 130.0, 62.0, 0.3, 0.08, 0.02, 1.8, 0.2), 0.08, 0.4)
-    m.add(burst(rng, 0.4, 0.08, 200.0, 2600.0, -3.0, 0.004, 1.2), 0.07, 0.45)
-    m.add(rattle(rng, 0.3, 90.0, 1800.0, 6000.0, 0.1, 0.004), 0.15, 0.22)
-    x = sat(m.render(), 1.4)
-    return st(c, x, "yard", 0.14)
-
-
-@sfx("wpn_drill_loop", n=1, target=-16.5, loop=1.5, reps=4)
-def drill_loop(c):
-    """钻头持续研磨：电机基频与齿轮啮合的低频轰鸣、岩屑被反复刮碎的噪声、钻杆的金属颤响，一遍 1.5 秒无缝。"""
-    rng = c.rng
-    n = c.total
-    p = c.period
-    fr = 61.0 + 2.0 * np.sin(2 * np.pi * np.arange(n) / p * 1.0)
-    motor = harm(fr, [1.0, 0.62, 0.42, 0.26, 0.15, 0.09]) * (0.8 + 0.2 * np.sin(2 * np.pi * 18.0 * tt(n)))
-    gear = harm(fr * 9.0, [1.0, 0.32, 0.14]) * (1.0 + 0.3 * np.sin(2 * np.pi * 3.0 * tt(n)))
-    grind = roar(rng, n, 180.0, 3400.0, 26.0, 0.65, -3.0, p)
-    rock = crackle(rng, n, 70.0, 1200.0, 7000.0, p) * 0.5
-    metal = rattle(rng, n / 44100.0, 55.0, 900.0, 4200.0, 0.3, 0.006) * 0.35
-    x = 0.5 * np.tanh(2.0 * motor) + 0.55 * grind + 0.3 * rock + metal
-    x = sat(np.asarray(x) / (np.max(np.abs(x)) + 1e-9), 1.2)
-    return st(c, x, "yard", 0.1)
-
-
-@sfx("wpn_plasma_fire", n=2, target=-13.5, dur=1.0, fout=0.14)
-def plasma_fire(c):
-    """等离子团出膛：低频推力的呼啸、等离子约束壳的电流颤鸣、炮口的空气爆裂与随后的余温嘶声。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.88][v]
-    m = Mix()
-    m.add(thump(rng, 105.0 * tune, 38.0, 0.7, 0.16, 0.035, 2.4, 0.2), 0.0, 0.7)
-    n1 = ns(0.5)
-    t1 = tt(n1)
-    zap = harm((170.0 + 900.0 * np.exp(-t1 / 0.09)) * tune, [1.0, 0.5, 0.3, 0.16]) * expdec(n1, 0.16)
-    m.add(sat(zap, 1.8), 0.0, 0.5)
-    m.add(roar(rng, ns(0.55), 55.0, 700.0, 9.0, 0.5, -4.0), 0.0, 0.75)
-    m.add(whoosh(rng, 0.5, 260.0, 1800.0, 0.2, 1.6, -2.0, 2.2), 0.02, 0.45)
-    m.add(burst(rng, 0.25, 0.03, 600.0, 6000.0, -1.0, 0.0005, 1.5), 0.0, 0.4)
-    m.add(hiss(rng, 0.6, 3000.0, 12000.0, 0.01, 0.12, 0.5, (5200.0, 8600.0), 4.0, 0.7), 0.05, 0.22)
-    m.add(arc(rng, 0.12, 200.0, 3000.0, 0.15, 0.6, 7), 0.03, 0.3)
-    x = sat(m.render(), 1.3)
-    return st(c, x, "valley", 0.24)
-
-
-@sfx("wpn_drone_fire", n=3, target=-17.0, dur=0.4, fout=0.05)
-def drone_fire(c):
-    """无人机点射：旋翼伺服的一下抽动、短促的下滑电音与尾部的小电流声，三发变体音高不同。"""
-    rng = c.rng
-    v = c.v
-    f = [1850.0, 1620.0, 2080.0][v]
-    m = Mix(0.4)
-    m.add(tick(rng, 3400.0, 0.003, 0.02), 0.0, 0.4)
-    m.add(tone([f, f * 0.72], 0.09, "square", 0.03, 0.001, bright=5200.0), 0.0, 0.7)
-    m.add(tone([f * 0.5], 0.06, "sine", 0.02, 0.001), 0.004, 0.35)
-    m.add(servo(rng, 0.12, 900.0, 1500.0, 0.05, 0.05, 6.0, 0.4, 6000.0), 0.0, 0.2)
-    m.add(arc(rng, 0.1, 300.0, 3800.0, 0.25, 0.6, 8), 0.01, 0.22)
-    return st(c, sat(m.render(), 1.2), "cockpit", 0.1)
-
-
-# ====================================================================== 新装备：挂件与消耗品
-@sfx("drone_deploy", n=1, target=-16.0, dur=1.2, fout=0.1)
-def drone_deploy(c):
-    """无人机弹射展开：挂架解锁的金属撞击、弹射气流的嘶声、旋翼从静止拉到巡航、电子自检的一声轻响。"""
-    rng = c.rng
-    m = Mix(1.2)
-    m.add(clank(rng, 680.0, 0.06, PLATE, 0.4, 0.7, 0.5, 6000.0), 0.0, 0.55)
-    m.add(tick(rng, 3200.0, 0.004, 0.03), 0.02, 0.4)
-    m.add(whoosh(rng, 0.35, 500.0, 2600.0, 0.15, 1.4, -3.0, 2.0), 0.03, 0.4)
-    m.add(hiss(rng, 0.3, 2500.0, 10000.0, 0.004, 0.04, 0.35, (4200.0, 7000.0), 5.0, 0.4), 0.03, 0.25)
-    n = ns(0.9)
-    rot = np.linspace(38.0, 132.0, n)
-    m.add(turbine(rng, n, rot, 9, 0.55, 0.35, 80.0, 7000.0) * env([(0, 0), (0.08, 0.15), (0.35, 1.0), (0.9, 0.8)], n), 0.18, 0.45)
-    m.add(servo(rng, 0.35, 500.0, 1100.0, 0.2, 0.1, 6.0, 0.3, 6000.0), 0.22, 0.2)
-    m.add(tone(1480.0, 0.07, "sine", 0.03, 0.002), 0.62, 0.18)
-    m.add(tone(1980.0, 0.05, "sine", 0.02, 0.002), 0.72, 0.12)
-    return st(c, sat(m.render(), 1.15), "yard", 0.18)
-
-
-@sfx("decoy_deploy", n=1, target=-16.0, dur=1.3, fout=0.1)
-def decoy_deploy(c):
-    """诱饵三脚架展开：三条支撑腿依次落地、液压杆撑起的伺服声、开机自检的两声电子音与常亮的电流底噪。"""
-    rng = c.rng
-    m = Mix(1.3)
-    for k, (t0, g) in enumerate(((0.0, 0.6), (0.17, 0.5), (0.33, 0.55))):
-        m.add(clank(rng, 540.0 + 90.0 * k, 0.05, HEAVY, 0.28, 0.6, 0.5, 5000.0), t0, g)
-        m.add(tick(rng, 2600.0 + 300.0 * k, 0.003, 0.02), t0 + 0.01, 0.25)
-    m.add(servo(rng, 0.42, 220.0, 760.0, 0.3, 0.08, 8.0, 0.3, 5000.0), 0.3, 0.35)
-    m.add(hiss(rng, 0.25, 1800.0, 8000.0, 0.01, 0.06, 0.3, (3200.0, 5600.0), 4.0, 0.5), 0.34, 0.18)
-    m.add(tone(1320.0, 0.1, "square", 0.05, 0.002, bright=4200.0), 0.66, 0.22)
-    m.add(tone(1760.0, 0.12, "square", 0.05, 0.002, bright=4200.0), 0.79, 0.2)
-    m.add(buzz(124.0, 0.45, None, 1200.0) * env([(0, 0), (0.05, 1.0), (0.45, 0.5)], ns(0.45)), 0.78, 0.12)
-    return st(c, sat(m.render(), 1.15), "yard", 0.2)
-
-
-@sfx("decoy_off", n=1, target=-19.0, dur=0.6, fout=0.06)
-def decoy_off(c):
-    """信标熄灭：电流被切断后扬声器频率一路下滑、继电器松开的一记咔哒与电容放完的余音。"""
-    rng = c.rng
-    m = Mix(0.6)
-    n = ns(0.32)
-    wh = harm(np.geomspace(1500.0, 220.0, n), [1.0, 0.45, 0.2]) * expdec(n, 0.14)
-    m.add(wh, 0.0, 0.5)
-    m.add(clank(rng, 420.0, 0.03, PLATE, 0.18, 0.5, 0.4, 5000.0), 0.02, 0.35)
-    m.add(tick(rng, 1800.0, 0.004, 0.03), 0.16, 0.25)
-    m.add(hiss(rng, 0.3, 2000.0, 9000.0, 0.002, 0.02, 0.3, (4000.0, 6600.0), 5.0, 0.8), 0.02, 0.16)
-    m.add(thump(rng, 120.0, 70.0, 0.18, 0.05, 0.015, 1.2, 0.1), 0.0, 0.18)
-    return st(c, m.render(), "yard", 0.14)
-
-
-@sfx("flare_ignite", n=1, target=-16.0, dur=1.6, fout=0.2)
-def flare_ignite(c):
-    """烟幕点燃：擦火的一下、药柱被点燃的爆燃、随后持续喷出的嘶嘶气流与火星爆裂，尾音留出烟幕铺开的余量。"""
-    rng = c.rng
-    m = Mix(1.6)
-    m.add(scrape(rng, 0.12, 1500.0, 7000.0, 90.0, [2600.0, 4200.0], 20.0), 0.0, 0.35)
-    m.add(crack(rng, 0.05, 0.006, 2200.0), 0.01, 0.5)
-    m.add(thump(rng, 160.0, 60.0, 0.35, 0.08, 0.02, 1.8, 0.3), 0.02, 0.4)
-    m.add(roar(rng, ns(0.5), 90.0, 2400.0, 12.0, 0.6, -3.0), 0.02, 0.55)
-    n = ns(1.5)
-    body = roar(rng, n, 400.0, 6000.0, 20.0, 0.5, -2.0) * env([(0, 0), (0.06, 0.9), (0.5, 0.7), (1.5, 0.0)], n)
-    m.add(body, 0.03, 0.65)
-    m.add(crackle(rng, n, 26.0, 1800.0, 9000.0) * env([(0, 0), (0.08, 1.0), (1.2, 0.3), (1.5, 0)], n), 0.03, 0.3)
-    m.add(hiss(rng, 1.3, 3000.0, 12000.0, 0.02, 0.4, 0.9, (5600.0, 8800.0), 4.0, 0.6), 0.08, 0.25)
-    return st(c, sat(m.render(), 1.2), "yard", 0.2)
-
-
-@sfx("energy_cell_plug", n=1, target=-16.0, dur=1.0, fout=0.1)
-def energy_cell_plug(c):
-    """电池棒接通：插进槽位的一记闷响与锁扣、电流涌入时升起的嗡鸣、接触点的噼啪与充能完成的一声确认。"""
-    rng = c.rng
-    m = Mix(1.0)
-    m.add(thump(rng, 150.0, 70.0, 0.25, 0.05, 0.015, 1.6, 0.3), 0.0, 0.5)
-    m.add(clank(rng, 620.0, 0.05, PLATE, 0.25, 0.7, 0.5, 6000.0), 0.0, 0.5)
-    m.add(tick(rng, 2400.0, 0.003, 0.02), 0.04, 0.3)
-    n = ns(0.7)
-    t = tt(n)
-    cur = harm(100.0 + 140.0 * np.clip(t / 0.35, 0, 1), [1.0, 0.5, 0.3, 0.18]) * (0.4 + 0.6 * np.clip(t / 0.3, 0, 1)) * expdec(n, 0.5)
-    m.add(sat(cur, 1.6), 0.06, 0.4)
-    m.add(arc(rng, 0.18, 120.0, 2600.0, 0.3, 0.6, 8), 0.08, 0.28)
-    m.add(tone(1560.0, 0.09, "sine", 0.04, 0.002), 0.5, 0.16)
-    m.add(tone(2080.0, 0.07, "sine", 0.03, 0.002), 0.6, 0.12)
-    m.add(buzz(98.0, 0.3, None, 800.0) * env([(0, 0), (0.06, 1.0), (0.3, 0)], ns(0.3)), 0.3, 0.1)
-    return st(c, m.render(), "cockpit", 0.12)
-
-
-@sfx("web_pulse", n=2, target=-17.0, dur=0.9, fout=0.1)
-def web_pulse(c):
-    """减速网的黏性脉冲：发射器放出的电流短促声、网团张开时甩出的黏稠吧唧、细小气泡与随后拉丝的尾音。"""
-    rng = c.rng
-    v = c.v
-    m = Mix(0.9)
-    m.add(arc(rng, 0.12, 260.0, 3200.0, 0.2, 0.7, 8), 0.0, 0.35)
-    m.add(tick(rng, 2600.0 + 400.0 * v, 0.003, 0.02), 0.0, 0.3)
-    m.add(slime(rng, 0.28, 3200.0 + 600.0 * v, 420.0, 1.8, 0.1, 0.5), 0.03, 0.7)
-    m.add(whoosh(rng, 0.3, 700.0, 2400.0, 0.2, 1.2, -2.0, 2.0), 0.03, 0.3)
-    m.add(bubbles(rng, 0.55, 40.0, 500.0, 1800.0, 0.12), 0.1, 0.25)
-    m.add(thump(rng, 130.0, 55.0, 0.3, 0.07, 0.02, 1.4, 0.2), 0.02, 0.3)
-    m.add(hiss(rng, 0.5, 2500.0, 9000.0, 0.005, 0.05, 0.5, (4200.0, 6800.0), 5.0, 0.7), 0.06, 0.16)
-    return st(c, sat(m.render(), 1.2), "yard", 0.14)
-
-
-# ====================================================================== 地图事件
-def flap(rng, dur, rate=9.0):
-    """帆布与布面被风掀起时的低频扑动。"""
-    n = ns(dur)
-    x = bp(white(n, rng), 180.0, 1400.0)
-    g = 0.35 + 0.65 * np.abs(np.sin(np.pi * rate * tt(n)))
-    return x * g * ahr(n, 0.06, dur * 0.3, dur * 0.55)
-
-
-@sfx("supply_drop_land", n=2, target=-13.0, dur=2.6, fout=0.2)
-def supply_drop_land(c):
-    """补给舱落地：舱体砸进地面的低频闷响、金属框的短促余震、缓冲帆布的扑动与扬起的碎石。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.94][v]
-    m = Mix(2.6)
-    m.add(thump(rng, 108.0 * tune, 32.0, 0.9, 0.22, 0.04, 2.8, 0.3), 0.0, 0.95)
-    m.add(burst(rng, 0.5, 0.06, 40.0, 700.0, -3.0, 0.0008, 1.8), 0.0, 0.7)
-    m.add(modal(rng, 196.0 * tune, HEAVY, 0.5, 1.4, 0.05, 0.8, 0.6), 0.01, 0.5)
-    m.add(clank(rng, 430.0 * tune, 0.12, PLATE, 0.6, 0.6, 0.5, 5000.0), 0.02, 0.4)
-    m.add(flap(rng, 1.0, 7.0), 0.08, 0.35)
-    m.add(flap(rng, 0.7, 11.0), 0.4, 0.2)
-    m.add(debris(rng, 1.4, 45.0, 0.45, 600.0, 5000.0, 0.35), 0.05, 0.3)
-    m.add(tick(rng, 2200.0, 0.005, 0.04), 0.22, 0.25)
-    x = sat(m.render(), 1.2)
-    return st(c, x, "valley", 0.26)
-
-
-@sfx("cargo_crash", n=1, target=-12.0, dur=3.4, fout=0.3)
-def cargo_crash(c):
-    """货柜砸地：柜体爆开的金属断裂、压缩空气的爆响、柜板与货物四散、远处墙体反射回来的长尾回声。"""
-    rng = c.rng
-    m = Mix(3.4)
-    m.add(crack(rng, 0.09, 0.012, 900.0), 0.0, 0.6)
-    m.add(thump(rng, 92.0, 28.0, 1.2, 0.3, 0.05, 3.0, 0.25), 0.0, 0.9)
-    m.add(burst(rng, 0.7, 0.09, 35.0, 1600.0, -2.0, 0.0008, 2.2), 0.0, 0.85)
-    for k in range(5):
-        m.add(modal(rng, 120.0 + 90.0 * k, HEAVY, 0.5 + 0.2 * k, 1.6, 0.06, 0.8, 0.7), 0.004 * k, 0.28)
-    m.add(debris(rng, 2.6, 55.0, 0.7, 400.0, 7000.0, 0.4), 0.04, 0.45)
-    m.add(rattle(rng, 1.2, 35.0, 800.0, 4000.0, 0.35, 0.006), 0.1, 0.3)
-    m.add(hiss(rng, 0.8, 2000.0, 10000.0, 0.003, 0.04, 0.5, (4500.0, 8000.0), 4.0, 0.6), 0.02, 0.2)
-    x = sat(m.render(), 1.3)
-    src = lp(x, 1200.0)
-    for d, g in ((0.28, 0.2), (0.62, 0.12), (1.05, 0.06)):
-        m.add(src, d, g)
-    return st(c, m.render(), "valley", 0.34)
-
-
-@sfx("distress_beacon", n=1, target=-16.0, dur=2.4, fout=0.15)
-def distress_beacon(c):
-    """求救信标：三段两升的电子哔声、每段之间的载波噪声与前级电流，尾音留着信标继续呼叫的空隙。"""
-    rng = c.rng
-    m = Mix(2.4)
-    for k, t0 in enumerate((0.0, 0.72, 1.44)):
-        f = 1180.0 if k % 2 == 0 else 980.0
-        m.add(tone(f, 0.13, "square", 0.09, 0.004, bright=3600.0), t0, 0.5)
-        m.add(tone(f * 1.5, 0.1, "square", 0.06, 0.004, bright=3600.0), t0 + 0.16, 0.3)
-        m.add(tick(rng, 3000.0, 0.002, 0.02), t0, 0.2)
-        m.add(hiss(rng, 0.18, 1500.0, 9000.0, 0.002, 0.02, 0.15, (3000.0, 6000.0), 3.0, 0.7), t0 + 0.05, 0.08)
-    m.add(buzz(100.0, 2.2, None, 700.0) * env([(0, 0), (0.1, 0.5), (2.2, 0.3)], ns(2.2)), 0.0, 0.05)
-    m.add(thump(rng, 90.0, 55.0, 0.3, 0.06, 0.02, 1.2, 0.05), 0.0, 0.1)
-    return st(c, m.render(), "valley", 0.2)
-
-
-@sfx("relay_unlock", n=1, target=-16.5, dur=1.2, fout=0.1)
-def relay_unlock(c):
-    """铅封箱开启：撬动时锁扣的一记脆响、弹簧片弹开的金属声、箱盖抬起的铰链摩擦与落定。"""
-    rng = c.rng
-    m = Mix(1.2)
-    m.add(clank(rng, 900.0, 0.05, PLATE, 0.35, 0.8, 0.5, 7000.0), 0.0, 0.6)
-    m.add(crack(rng, 0.04, 0.004, 2500.0), 0.0, 0.35)
-    m.add(tick(rng, 3400.0, 0.004, 0.03), 0.06, 0.3)
-    m.add(clank(rng, 520.0, 0.09, HEAVY, 0.5, 0.6, 0.6, 5000.0), 0.16, 0.45)
-    m.add(servo(rng, 0.4, 260.0, 520.0, 0.25, 0.1, 9.0, 0.2, 4000.0), 0.22, 0.22)
-    m.add(scrape(rng, 0.25, 900.0, 3600.0, 70.0, None, 30.0), 0.3, 0.18)
-    m.add(thump(rng, 120.0, 70.0, 0.25, 0.05, 0.02, 1.2, 0.1), 0.7, 0.2)
-    return st(c, sat(m.render(), 1.2), "hangar", 0.22)
-
-
-@sfx("archive_pickup", n=1, target=-19.0, dur=1.0, fout=0.1)
-def archive_pickup(c):
-    """拾取档案：纸页被抽起时的摩擦与翻动、随后的两音轻提示，收在一声很轻的落纸声上。"""
-    rng = c.rng
-    m = Mix(1.0)
-    n = ns(0.4)
-    paper = bp(white(n, rng), 1800.0, 7000.0)
-    flutter = 0.3 + 0.7 * np.abs(np.sin(np.pi * 17.0 * tt(n) + 0.7 * np.sin(2 * np.pi * 3.0 * tt(n))))
-    m.add(paper * flutter * env([(0, 0), (0.05, 1.0), (0.4, 0.0)], n), 0.0, 0.5)
-    m.add(tick(rng, 2400.0, 0.003, 0.02), 0.02, 0.2)
-    m.add(tone(1420.0, 0.1, "sine", 0.05, 0.003), 0.26, 0.22)
-    m.add(tone(1900.0, 0.14, "sine", 0.07, 0.003), 0.36, 0.16)
-    m.add(chime(1900.0, 0.35, 0.12, ((1.0, 1.0), (2.0, 0.25))), 0.36, 0.12)
-    m.add(burst(rng, 0.12, 0.02, 900.0, 5000.0, -2.0, 0.002), 0.66, 0.12)
-    return st(c, m.render(), "ui", 0.14)
-
-
-@sfx("sandstorm_start", n=1, target=-16.0, dur=4.0, fout=0.5)
-def sandstorm_start(c):
-    """沙暴逼近：从远处压过来的低频风墙、逐渐加密的砂粒击打、风里的呼啸层次一层层叠上来，最后稳定在持续的风压上。"""
-    rng = c.rng
-    n = ns(4.0)
-    u = tt(n) / 4.0
-    m = Mix(4.0)
-    wall = roar(rng, n, 45.0, 900.0, 5.0, 0.55, -5.0) * np.clip(u / 0.7, 0, 1) ** 1.6
-    m.add(wall, 0.0, 0.9)
-    gust = whoosh(rng, 3.6, 200.0, 1400.0, 0.65, 1.0, -3.0, 2.4)
-    m.add(gust, 0.1, 0.45)
-    grit = bp(white(n, rng), 2500.0, 11000.0) * (0.2 + 0.8 * np.clip((u - 0.15) / 0.5, 0, 1)) * (0.5 + 0.5 * np.abs(np.sin(2 * np.pi * 3.7 * tt(n))))
-    m.add(grit, 0.0, 0.3)
-    m.add(roar(rng, n, 700.0, 4000.0, 12.0, 0.5, -3.0) * np.clip(u / 0.5, 0, 1), 0.0, 0.22)
-    m.add(buzz(46.0, 4.0, None, 200.0) * np.clip(u / 0.6, 0, 1), 0.0, 0.1)
-    return st(c, sat(m.render(), 1.15), "valley", 0.3)
-
-
-@sfx("sandstorm_end", n=1, target=-18.0, dur=5.0, fout=0.8)
-def sandstorm_end(c):
-    """沙暴退去：风压从顶上一点点松开、砂粒击打变疏、最后只剩下风在远处拖着的一口气。"""
-    rng = c.rng
-    n = ns(5.0)
-    u = tt(n) / 5.0
-    m = Mix(5.0)
-    wall = roar(rng, n, 40.0, 800.0, 4.0, 0.5, -5.0) * (1.0 - u) ** 1.8
-    m.add(wall, 0.0, 0.85)
-    m.add(whoosh(rng, 4.6, 1200.0, 260.0, 0.12, 1.0, -3.0, 2.0), 0.0, 0.4)
-    grit = bp(white(n, rng), 2500.0, 11000.0) * (1.0 - u) ** 2.6 * (0.4 + 0.6 * np.abs(np.sin(2 * np.pi * 4.3 * tt(n))))
-    m.add(grit, 0.0, 0.28)
-    m.add(roar(rng, n, 500.0, 3000.0, 10.0, 0.4, -3.0) * (1.0 - u) ** 2.0, 0.0, 0.2)
-    return st(c, sat(m.render(), 1.1), "valley", 0.32)
-
-
-@sfx("weather_rain_loop", n=1, target=-21.0, loop=6.0, reps=4)
-def rain_loop(c):
-    """阴雨环境：绵密的雨幕噪声、雨点打在不同材质上的细碎声、远处水流与偶尔的风阵，一遍 6 秒无缝。"""
-    rng = c.rng
-    n = c.total
-    p = c.period
-    m = Mix()
-    bed = bp(white(n, rng), 900.0, 9000.0) * (0.7 + 0.3 * lfo_curve(rng, n, 0.6, p))
-    m.add(bed, 0.0, 0.5)
-    m.add(bp(white(n, rng), 3500.0, 12000.0), 0.0, 0.16)
-    drops = np.zeros(p)
-    t = 0.0
-    while True:
-        t += rng.exponential(1.0 / 150.0)
-        if t >= p / 44100.0:
-            break
-        place_local(drops, tick(rng, rng.uniform(1800.0, 6500.0), 0.0025, 0.02, 0.8), t, rng.uniform(0.15, 0.6))
-    m.add(np.tile(drops, -(-n // p))[:n], 0.0, 0.35)
-    water = roar(rng, n, 120.0, 700.0, 2.0, 0.35, -4.0, p)
-    m.add(water, 0.0, 0.16)
-    return st(c, sat(m.render(), 1.1), "valley", 0.25)
-
-
-def lfo_curve(rng, n, rate, period):
-    """以 period 为周期的慢速随机起伏，用于环境声的密度呼吸。"""
-    from sfx_dsp import smooth_noise
-    reps = -(-n // period)
-    return np.tile(smooth_noise(period, rng, rate), reps)[:n]
-
-
-def place_local(dst, x, at, gain=1.0):
-    o = int(round(at * 44100))
-    if o >= len(dst) or o < 0:
-        return
-    m = min(len(x), len(dst) - o)
-    dst[o:o + m] += gain * x[:m]
-
-
-# ====================================================================== 局外成长
-def ui_room(x, c, wet=0.12):
-    """界面类音效统一走小房间混响并保持立体声。"""
-    return space(x, "ui", wet, True, c.v)
-
-
-@sfx("grow_upgrade", n=1, target=-19.0, dur=1.4, fout=0.1)
-def grow_upgrade(c):
-    """设施升级完成：锁扣咬合的两记金属声、低频确认音垫底、收尾一声短促的液压泄压。"""
-    rng = c.rng
-    m = Mix(1.4)
-    m.add(clank(rng, 980.0, 0.05, PLATE, 0.3, 0.8, 0.5, 7000.0), 0.0, 0.55)
-    m.add(thump(rng, 120.0, 55.0, 0.5, 0.12, 0.03, 1.8, 0.2), 0.0, 0.45)
-    m.add(clank(rng, 760.0, 0.04, PLATE, 0.25, 0.7, 0.4, 6500.0), 0.13, 0.4)
-    m.add(tone(196.0, 0.6, "sine", 0.3, 0.006), 0.05, 0.22)
-    m.add(tone(294.0, 0.5, "sine", 0.22, 0.006), 0.18, 0.14)
-    m.add(hiss(rng, 0.25, 1200.0, 6000.0, 0.01, 0.05, 0.2, (2600.0, 4600.0), 4.0, 0.6), 0.42, 0.14)
-    return ui_room(m.render(True), c, 0.16)
-
-
-@sfx("grow_research", n=1, target=-19.0, dur=1.6, fout=0.1)
-def grow_research(c):
-    """研究完成：数据扫描的密集短音由低到高扫过、解析完成的一记清脆确认与消散的余响。"""
-    rng = c.rng
-    m = Mix(1.6)
-    for k in range(9):
-        t0 = 0.02 + 0.045 * k
-        f = 900.0 * (1.09 ** k)
-        m.add(tick(rng, f, 0.0025, 0.018), t0, 0.18 + 0.02 * k)
-    m.add(hiss(rng, 0.45, 4000.0, 12000.0, 0.01, 0.1, 0.35, (6200.0, 9000.0), 5.0, 0.5), 0.02, 0.12)
-    m.add(chime(1760.0, 0.7, 0.22, ((1.0, 1.0), (2.0, 0.3), (3.0, 0.12))), 0.46, 0.28)
-    m.add(tone(880.0, 0.35, "sine", 0.12, 0.003), 0.46, 0.14)
-    m.add(buzz(110.0, 0.9, None, 900.0) * env([(0, 0), (0.05, 0.6), (0.5, 0.3), (0.9, 0)], ns(0.9)), 0.0, 0.06)
-    return ui_room(m.render(True), c, 0.14)
-
-
-@sfx("grow_level", n=1, target=-19.0, dur=1.2, fout=0.1)
-def grow_level(c):
-    """驾驶员升级：一记干净的上扬双音，第二音带一点金属光泽，尾音短而不拖。"""
-    rng = c.rng
-    m = Mix(1.2)
-    m.add(tone(660.0, 0.16, "sine", 0.08, 0.004), 0.0, 0.35)
-    m.add(tone(990.0, 0.55, "sine", 0.24, 0.004), 0.12, 0.35)
-    m.add(chime(990.0, 0.6, 0.2, ((1.0, 1.0), (2.0, 0.22), (3.01, 0.08))), 0.12, 0.2)
-    m.add(tick(rng, 2800.0, 0.003, 0.02), 0.11, 0.18)
-    return ui_room(m.render(True), c, 0.14)
-
-
-@sfx("grow_affinity", n=1, target=-20.0, dur=1.8, fout=0.2)
-def grow_affinity(c):
-    """好感提升：柔和的三音上行，音色偏暖、起音软，尾音融在一起。"""
-    rng = c.rng
-    m = Mix(1.8)
-    for k, (f, t0) in enumerate(((523.25, 0.0), (659.25, 0.22), (783.99, 0.46))):
-        m.add(tone(f, 0.75, "sine", 0.45, 0.02), t0, 0.26 - 0.03 * k)
-        m.add(tone(f * 2.0, 0.4, "sine", 0.2, 0.02), t0, 0.06)
-    m.add(hiss(rng, 0.8, 3000.0, 9000.0, 0.06, 0.2, 0.6, (5000.0, 8000.0), 3.0, 0.4), 0.05, 0.05)
-    return ui_room(m.render(True), c, 0.22)
-
-
-@sfx("grow_gift", n=1, target=-20.0, dur=1.0, fout=0.1)
-def grow_gift(c):
-    """赠礼：纸盒被推开的窸窣、里面小金属件碰撞的两三声、盒盖合上的一记轻响。"""
-    rng = c.rng
-    n = ns(0.35)
-    paper = bp(white(n, rng), 1200.0, 6500.0) * (0.4 + 0.6 * np.abs(np.sin(np.pi * 13.0 * tt(n))))
-    m = Mix(1.0)
-    m.add(paper * env([(0, 0), (0.04, 1.0), (0.35, 0)], n), 0.0, 0.35)
-    m.add(tick(rng, 2200.0, 0.003, 0.03), 0.12, 0.2)
-    for t0, f in ((0.22, 1600.0), (0.29, 2100.0), (0.37, 1450.0)):
-        m.add(tick(rng, f, 0.006, 0.05, 0.5), t0, 0.3)
-    m.add(clank(rng, 520.0, 0.04, PLATE, 0.2, 0.5, 0.3, 5000.0), 0.5, 0.25)
-    m.add(burst(rng, 0.08, 0.015, 500.0, 3000.0, -2.0, 0.001), 0.5, 0.1)
-    return ui_room(m.render(True), c, 0.12)
-
-
-@sfx("grow_meal", n=1, target=-20.0, dur=1.5, fout=0.2)
-def grow_meal(c):
-    """烹制餐点：蒸汽阀放气的嘶声、锅具与瓷盘相碰的清脆声、汤液翻滚的细密气泡。"""
-    rng = c.rng
-    m = Mix(1.5)
-    m.add(hiss(rng, 0.9, 1800.0, 9000.0, 0.05, 0.35, 0.5, (3200.0, 5600.0), 3.0, 0.4), 0.0, 0.4)
-    m.add(clank(rng, 1450.0, 0.25, BELL, 0.7, 0.6, 0.3, 9000.0), 0.12, 0.32)
-    m.add(clank(rng, 2100.0, 0.18, BELL, 0.5, 0.7, 0.2, 9000.0), 0.22, 0.2)
-    m.add(bubbles(rng, 0.8, 22.0, 350.0, 1200.0, 0.1), 0.18, 0.22)
-    m.add(burst(rng, 0.2, 0.03, 300.0, 1800.0, -2.0, 0.002), 0.5, 0.1)
-    m.add(tick(rng, 3000.0, 0.004, 0.03), 0.7, 0.12)
-    return ui_room(m.render(True), c, 0.16)
-
-
-@sfx("grow_recover", n=1, target=-19.0, dur=1.8, fout=0.15)
-def grow_recover(c):
-    """医务室回收模块：液压夹爪合拢的两段驱动、模块落回架位的金属声、复位完成的两音提示。"""
-    rng = c.rng
-    m = Mix(1.8)
-    m.add(hiss(rng, 0.35, 600.0, 4000.0, 0.01, 0.08, 0.2, (1400.0, 2600.0), 4.0, 0.5), 0.0, 0.25)
-    m.add(servo(rng, 0.45, 260.0, 700.0, 0.3, 0.1, 9.0, 0.3, 5000.0), 0.05, 0.4)
-    m.add(clank(rng, 480.0, 0.07, HEAVY, 0.4, 0.7, 0.5, 5000.0), 0.44, 0.5)
-    m.add(thump(rng, 110.0, 50.0, 0.4, 0.1, 0.03, 1.6, 0.15), 0.44, 0.4)
-    m.add(servo(rng, 0.3, 600.0, 900.0, 0.2, 0.08, 8.0, 0.2, 5000.0), 0.56, 0.2)
-    m.add(tone(880.0, 0.12, "sine", 0.06, 0.004), 0.95, 0.22)
-    m.add(tone(1320.0, 0.2, "sine", 0.09, 0.004), 1.08, 0.18)
-    return ui_room(m.render(True), c, 0.18)
-
-
-# ====================================================================== 剧情系统
-@sfx("story_open", n=1, target=-20.0, dur=1.0, fout=0.12)
-def story_open(c):
-    """对话演出开始：低频展开的 whoosh 把人声压到后面，带一点金属余响的短尾，收在演出真正开始前的空隙。"""
-    rng = c.rng
-    m = Mix(1.0)
-    m.add(whoosh(rng, 0.7, 120.0, 900.0, 0.55, 1.0, -4.0, 2.2), 0.0, 0.6)
-    m.add(roar(rng, ns(0.7), 50.0, 300.0, 4.0, 0.4, -5.0) * env([(0, 0), (0.18, 1.0), (0.7, 0)], ns(0.7)), 0.0, 0.45)
-    m.add(clank(rng, 320.0, 0.25, HEAVY, 0.8, 0.4, 0.4, 4000.0), 0.08, 0.18)
-    m.add(tick(rng, 1800.0, 0.004, 0.03), 0.02, 0.1)
-    m.add(buzz(74.0, 0.6, None, 300.0) * env([(0, 0), (0.1, 0.7), (0.6, 0)], ns(0.6)), 0.0, 0.1)
-    return ui_room(m.render(True), c, 0.2)
-
-
-@sfx("story_close", n=1, target=-21.0, dur=0.8, fout=0.15)
-def story_close(c):
-    """对话演出结束：一记收束的低频落点，量轻、不振，尾音快速收干，避免盖住回到局内的第一个操作反馈。"""
-    rng = c.rng
-    m = Mix(0.8)
-    m.add(thump(rng, 150.0, 62.0, 0.42, 0.13, 0.03, 1.3, 0.12), 0.0, 0.5)
-    m.add(tone(180.0, 0.3, "sine", 0.1, 0.006), 0.0, 0.2)
-    m.add(whoosh(rng, 0.4, 900.0, 200.0, 0.2, 1.0, -4.0, 2.0), 0.0, 0.18)
-    m.add(tick(rng, 1500.0, 0.004, 0.03), 0.02, 0.1)
-    return ui_room(m.render(True), c, 0.1)
-
-
-@sfx("story_text", n=1, target=-30.0, dur=0.06, fout=0.008)
-def story_text(c):
-    """逐字显示：极轻的一记电子点击，高频、极短，只够让文字出现时有触感。"""
-    rng = c.rng
-    m = Mix(0.06)
-    m.add(tick(rng, 4200.0, 0.0018, 0.012, 0.35), 0.0, 0.5)
-    m.add(tone(2600.0, 0.018, "sine", 0.006, 0.0005), 0.0, 0.2)
-    return ui_room(m.render(True), c, 0.05)
-
-
-@sfx("comm_open", n=2, target=-20.0, dur=0.7, fout=0.08)
-def comm_open(c):
-    """无线电小窗：发射键的咔哒、载波接通时的电流嘶声、一声短促的上行提示，收在静电尾音里。"""
-    rng = c.rng
-    v = c.v
-    tune = [1.0, 0.92][v]
-    m = Mix(0.7)
-    m.add(tick(rng, 1600.0, 0.004, 0.03, 0.6), 0.0, 0.4)
-    m.add(hiss(rng, 0.35, 900.0, 7000.0, 0.003, 0.03, 0.35, (2200.0, 4800.0), 3.0, 0.7), 0.03, 0.25)
-    m.add(buzz(120.0, 0.3, None, 900.0) * env([(0, 0), (0.02, 0.8), (0.3, 0)], ns(0.3)), 0.02, 0.1)
-    m.add(tone(1240.0 * tune, 0.09, "sine", 0.04, 0.003), 0.14, 0.22)
-    m.add(tone(1560.0 * tune, 0.12, "sine", 0.05, 0.003), 0.24, 0.18)
-    m.add(tick(rng, 2400.0, 0.003, 0.02), 0.42, 0.12)
-    return ui_room(m.render(True), c, 0.12)
-
+from sfx_dsp import (
+    SR, sfx, env_exp, env_adsr, biquad, reson, sweep,
+    white, pink, brown, velvet, sat, place, mix, reverb_tail,
+)
+from sfx_lib import (
+    thump, crack, tick, clank, modal, METAL_HEAVY, METAL_HOLLOW, METAL_LIGHT,
+    METAL_BELL, GLASS_MODES, CHITIN_MODES, servo, hiss, whoosh, roar, rumble,
+    zap, buzz, turbine, squelch,
+)
+
+
+# ─────────────────────────────────────────────────────────────
+# 扩展重型武器（电磁轨道炮 / 电弧步枪 / 迫击炮 / 破岩钻头 / 等离子炮 / 浮游炮）
+# ─────────────────────────────────────────────────────────────
+@sfx("wpn_railgun_charge", n=1, target=-15.5, dur=1.4, fout=0.15)
+def _railgun_charge(v, rng):
+    # 电磁轨道炮高压电容蓄能：导轨机械闭锁 + 磁流体涡轮升频 + 洛伦兹力金属导轨呻吟
+    rail_lock = clank(0.24, 250, METAL_HEAVY, 14.0, rng, 0.82)
+    spool = turbine(1.15, 85, 310, rng, 6, 0.11) * env_adsr(1.15, 0.25, 0.2, 0.85, 0.2) * 0.72
+    mag_strain = buzz(1.10, 65, 195, rng, 1.9) * env_adsr(1.10, 0.3, 0.2, 0.8, 0.2) * 0.62
+    sparks = zap(0.45, 2300, rng, 38) * 0.48
+    ready_clank = clank(0.20, 340, METAL_HEAVY, 18.0, rng, 0.78) * 0.75
+    return sat(mix(
+        place(rail_lock, 0.0),
+        place(spool, 0.06),
+        place(mag_strain, 0.08),
+        place(sparks, 0.68),
+        place(ready_clank, 1.08),
+    ), 1.6)
+
+
+@sfx("wpn_railgun_fire", n=3, target=-12.5, dur=0.95, fout=0.15)
+def _railgun_fire(v, rng):
+    p = 1.0 + (v - 1.0) * 0.05
+    # 7马赫高超音速穿甲弹击发：电枢瞬间汽化爆震 + 超强音爆撕裂空气 + 导轨退磁颤音
+    sub_kick = thump(0.45, 140 * p, 22 * p, 7.5, rng, 3.0)
+    sonic_crack = crack(0.06, 2600 * p, rng, 2.8) * 0.95
+    plasma_arc = zap(0.28, 2500 * p, rng, 46) * 0.72
+    mach_roar = roar(0.58, 230 * p, 5.5, rng, 2.4) * 0.88
+    rail_ring = clank(0.48, 210 * p, METAL_HEAVY, 8.5, rng, 0.9) * 0.82
+    vent = hiss(0.45, 2100 * p, 1400, 6.5, rng) * 0.48
+    return reverb_tail(sat(mix(
+        place(sonic_crack, 0.0),
+        place(sub_kick, 0.002),
+        place(plasma_arc, 0.005),
+        place(mach_roar, 0.008),
+        place(rail_ring, 0.015),
+        place(vent, 0.14),
+    ), 1.9), 0.24, 0.22)
+
+
+@sfx("wpn_arc_fire", n=3, target=-14.5, dur=0.65, fout=0.08)
+def _arc_fire(v, rng):
+    p = 1.0 + (v - 1.0) * 0.06
+    # 高压电弧投射器：空气电离爆鸣（雷击式低频闷响）+ 狂暴电弧鞭挞声
+    ion_thump = thump(0.28, 128 * p, 30 * p, 12.0, rng, 2.4)
+    whip_crack = crack(0.055, 2400 * p, rng, 2.5) * 0.88
+    arc_storm = zap(0.45, 2300 * p, rng, 52) * 0.88
+    transformer = buzz(0.38, 82 * p, 64 * p, rng, 2.0) * env_exp(0.38, 8.0) * 0.58
+    ozone_hiss = hiss(0.35, 2600 * p, 1600, 9.0, rng) * 0.45
+    return reverb_tail(sat(mix(
+        place(whip_crack, 0.0),
+        place(ion_thump, 0.003),
+        place(arc_storm, 0.006),
+        place(transformer, 0.012),
+        place(ozone_hiss, 0.05),
+    ), 1.7), 0.18, 0.18)
+
+
+@sfx("wpn_mortar_fire", n=2, target=-13.5, dur=0.9, fout=0.12)
+def _mortar_fire(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 重型机甲臼炮：粗口径炮管空腔闷嘭（Thumper）+ 炮尾座钣金巨震 + 榴弹破空呼啸
+    tube_pop = thump(0.45, 130 * p, 24 * p, 7.5, rng, 2.8)
+    hollow_tube = modal(0.38, 155 * p, METAL_HOLLOW, 9.0, rng, 0.88)
+    breech_clank = clank(0.32, 230 * p, METAL_HEAVY, 11.0, rng, 0.82)
+    blast = roar(0.48, 195 * p, 6.5, rng, 2.1) * 0.82
+    shell_whoosh = whoosh(0.55, 260 * p, 1150 * p, rng, 2.2) * 0.68
+    return reverb_tail(sat(mix(
+        place(tube_pop, 0.0),
+        place(hollow_tube, 0.004),
+        place(breech_clank, 0.008),
+        place(blast, 0.012),
+        place(shell_whoosh, 0.06),
+    ), 1.8), 0.22, 0.2)
+
+
+@sfx("wpn_drill_ignite", n=1, target=-15.5, dur=0.95, fout=0.1)
+def _drill_ignite(v, rng):
+    # 攻城破岩钻头启动：离合器重型啮合 + 液压马达扭矩爆发 + 合金钻头高速旋转擦出火花
+    clutch = clank(0.26, 220, METAL_HEAVY, 13.0, rng, 0.85)
+    kick = thump(0.30, 115, 30, 11.0, rng, 2.3)
+    motor_up = turbine(0.75, 78, 225, rng, 6, 0.11) * 0.75
+    grind = roar(0.68, 280, 3.8, rng, 2.0) * 0.68
+    sparks = crack(0.18, 2100, rng, 2.0) * 0.55
+    return sat(mix(
+        place(clutch, 0.0),
+        place(kick, 0.01),
+        place(motor_up, 0.08),
+        place(grind, 0.12),
+        place(sparks, 0.22),
+    ), 1.65)
+
+
+@sfx("wpn_drill_loop", n=1, target=-17.5, loop=1.5, reps=4)
+def _drill_loop(v, rng):
+    dur = 1.5
+    # 破岩钻头持续钻探循环：粗犷液压马达轰鸣 + 碳化钨齿持续切削岩石甲壳的金属刮擦声
+    motor = rumble(dur, 72, 6.0, rng, 1.8) * 0.68
+    turb = turbine(dur, 145, 145, rng, 6, 0.09) * 0.62
+    grind_band = sweep(pink(dur, rng), "bp", 680, 920, 2.2) * 0.55
+    teeth = np.zeros(int(dur * SR))
+    for i in range(12):
+        t0 = i * (dur / 12.0)
+        cl = clank(0.08, 310 + (i % 3) * 40, METAL_HEAVY, 32.0, rng, 0.5) * 0.42
+        cr = crack(0.05, 1850, rng, 1.7) * 0.35
+        teeth = mix(teeth, place(cl, t0, dur), place(cr, t0 + 0.01, dur))
+    return sat(mix(motor, turb, grind_band, teeth), 1.45)
+
+
+@sfx("wpn_plasma_fire", n=2, target=-14.0, dur=0.75, fout=0.1)
+def _plasma_fire(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 重型等离子团喷射：磁约束腔室泄压爆震 + 高温电离气团呼啸 + 散热阀排障
+    chamber_thump = thump(0.36, 128 * p, 26 * p, 9.5, rng, 2.6)
+    mag_snap = zap(0.26, 2200 * p, rng, 40) * 0.68
+    plasma_whoosh = whoosh(0.48, 320 * p, 1450 * p, rng, 2.5) * 0.82
+    plasma_roar = roar(0.45, 240 * p, 6.0, rng, 2.1) * 0.78
+    breech = clank(0.24, 280 * p, METAL_HEAVY, 15.0, rng, 0.75) * 0.68
+    return reverb_tail(sat(mix(
+        place(chamber_thump, 0.0),
+        place(mag_snap, 0.005),
+        place(breech, 0.01),
+        place(plasma_whoosh, 0.015),
+        place(plasma_roar, 0.02),
+    ), 1.75), 0.18, 0.18)
+
+
+@sfx("wpn_drone_fire", n=3, target=-16.5, dur=0.35, fout=0.04)
+def _drone_fire(v, rng):
+    p = 1.0 + (v - 1.0) * 0.06
+    # 战术浮游炮速射：紧凑型电磁脉冲栓击发 + 清脆枪机复进声
+    snap = crack(0.035, 2200 * p, rng, 2.2) * 0.82
+    punch = thump(0.16, 125 * p, 42 * p, 22.0, rng, 2.0) * 0.78
+    bolt = clank(0.14, 380 * p, METAL_LIGHT, 24.0, rng, 0.7) * 0.72
+    arc = zap(0.12, 2400 * p, rng, 32) * 0.48
+    return sat(mix(
+        place(snap, 0.0),
+        place(punch, 0.002),
+        place(arc, 0.005),
+        place(bolt, 0.035),
+    ), 1.55)
+
+
+# ─────────────────────────────────────────────────────────────
+# 战术装备（无人机释放 / 诱饵弹 / 照明弹 / 能量棒直插 / 震荡网）
+# ─────────────────────────────────────────────────────────────
+@sfx("drone_deploy", n=1, target=-16.0, dur=1.1, fout=0.12)
+def _drone_deploy(v, rng):
+    # 背部无人机挂架弹射：挂钩脱锁 + 气压弹射出舱 + 微型涵道涡扇启动悬停
+    unlatch = clank(0.20, 290, METAL_HEAVY, 16.0, rng, 0.78)
+    eject_pop = thump(0.24, 115, 36, 15.0, rng, 2.1)
+    srv_wing = servo(0.25, 190, 360, rng, 0.45)
+    rotor_up = turbine(0.72, 130, 295, rng, 5, 0.09) * 0.62
+    air = whoosh(0.55, 320, 980, rng, 2.0) * 0.52
+    return sat(mix(
+        place(unlatch, 0.0),
+        place(eject_pop, 0.04),
+        place(srv_wing, 0.14),
+        place(rotor_up, 0.22),
+        place(air, 0.25),
+    ), 1.5)
+
+
+@sfx("decoy_deploy", n=1, target=-16.0, dur=1.1, fout=0.12)
+def _decoy_deploy(v, rng):
+    # 投掷机械声学诱饵：榴弹筒抛射 -> 落地弹跳锚定 -> 诱饵发生器脉冲启动
+    pop = thump(0.22, 118, 38, 16.0, rng, 2.0)
+    land_clank = clank(0.24, 270, METAL_HEAVY, 14.0, rng, 0.8)
+    spike_th = thump(0.24, 105, 32, 14.0, rng, 2.1) * 0.75
+    hum_start = buzz(0.55, 85, 145, rng, 1.8) * 0.55
+    zap_p = zap(0.32, 2100, rng, 34) * 0.48
+    return sat(mix(
+        place(pop, 0.0),
+        place(land_clank, 0.28),
+        place(spike_th, 0.285),
+        place(hum_start, 0.38),
+        place(zap_p, 0.42),
+    ), 1.5)
+
+
+@sfx("decoy_off", n=1, target=-17.0, dur=0.75, fout=0.1)
+def _decoy_off(v, rng):
+    # 诱饵耗尽自毁：电容烧毁啪嗒声 + 涡轮停转 + 残骸泄气
+    burn_pop = thump(0.22, 110, 34, 15.0, rng, 2.0)
+    arc = zap(0.24, 1950, rng, 32) * 0.55
+    cl = clank(0.22, 240, METAL_HOLLOW, 16.0, rng, 0.7)
+    spin_dn = turbine(0.48, 220, 70, rng, 5, 0.08) * 0.52
+    hiss_out = hiss(0.42, 1650, 1100, 7.0, rng) * 0.42
+    return sat(mix(
+        place(burn_pop, 0.0),
+        place(arc, 0.008),
+        place(cl, 0.015),
+        place(spin_dn, 0.05),
+        place(hiss_out, 0.08),
+    ), 1.45)
+
+
+@sfx("flare_ignite", n=1, target=-15.5, dur=1.4, fout=0.2)
+def _flare_ignite(v, rng):
+    # 高亮镁光照明弹击发：底火击穿清脆金属声 + 镁粉剧烈嘶嘶爆燃 + 升空呼啸
+    striker = clank(0.16, 380, METAL_LIGHT, 20.0, rng, 0.75)
+    pop = thump(0.24, 122, 36, 15.0, rng, 2.2)
+    mag_burn = hiss(1.15, 2500, 1600, 2.6, rng) * 0.82
+    flare_roar = roar(1.05, 320, 3.2, rng, 1.9) * 0.68
+    rise_whoosh = whoosh(0.85, 380, 1350, rng, 2.2) * 0.65
+    return sat(mix(
+        place(striker, 0.0),
+        place(pop, 0.025),
+        place(mag_burn, 0.04),
+        place(flare_roar, 0.05),
+        place(rise_whoosh, 0.06),
+    ), 1.6)
+
+
+@sfx("energy_cell_plug", n=1, target=-16.0, dur=0.95, fout=0.1)
+def _energy_cell_plug(v, rng):
+    # 战术能量电池直插：重型卡口推入锁死 + 高压液冷管路导通嘶鸣
+    push_th = thump(0.24, 112, 34, 14.0, rng, 2.1)
+    lock_cl = clank(0.24, 265, METAL_HEAVY, 15.0, rng, 0.82)
+    twist_srv = servo(0.22, 160, 280, rng, 0.45)
+    coolant = hiss(0.48, 1950, 1200, 6.0, rng) * 0.55
+    arc = zap(0.22, 2200, rng, 30) * 0.42
+    return sat(mix(
+        place(push_th, 0.0),
+        place(lock_cl, 0.006),
+        place(twist_srv, 0.14),
+        place(arc, 0.32),
+        place(coolant, 0.34),
+    ), 1.55)
+
+
+@sfx("web_pulse", n=2, target=-15.5, dur=0.85, fout=0.1)
+def _web_pulse(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 电磁束缚网抛射：网枪气压击发 + 配重块破风展开 + 电击网吸附麻痹电弧
+    launch = thump(0.26, 120 * p, 34 * p, 13.0, rng, 2.2)
+    canister = clank(0.20, 320 * p, METAL_HOLLOW, 18.0, rng, 0.72)
+    spread_whoosh = whoosh(0.42, 420 * p, 1450 * p, rng, 2.4) * 0.75
+    taser_arc = zap(0.45, 2350 * p, rng, 44) * 0.68
+    return sat(mix(
+        place(launch, 0.0),
+        place(canister, 0.006),
+        place(spread_whoosh, 0.03),
+        place(taser_arc, 0.22),
+    ), 1.6)
+
+
+# ─────────────────────────────────────────────────────────────
+# 战场动态事件与恶劣天气（空投补给着陆 / 货船坠毁 / 求救信标 / 中继塔 / 沙暴 / 酸雨）
+# ─────────────────────────────────────────────────────────────
+@sfx("supply_drop_land", n=2, target=-13.5, dur=1.6, fout=0.2)
+def _supply_drop_land(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 轨道补给舱砸落地面：反推喷气急停 + 沉重装甲箱体砸地 + 四面舱板液压解锁弹开
+    incoming = whoosh(0.38, 1200 * p, 280 * p, rng, 2.4) * 0.75
+    slam_sub = thump(0.65, 130 * p, 22 * p, 5.5, rng, 2.9)
+    slam_clank = clank(0.55, 185 * p, METAL_HEAVY, 7.5, rng, 0.92)
+    dirt_roar = roar(0.75, 195 * p, 4.0, rng, 2.2) * 0.82
+    unlatch = clank(0.32, 290 * p, METAL_HEAVY, 12.0, rng, 0.8) * 0.75
+    steam = hiss(0.55, 1850 * p, 1200, 5.0, rng) * 0.52
+    return reverb_tail(sat(mix(
+        place(incoming, 0.0),
+        place(slam_sub, 0.26),
+        place(slam_clank, 0.265),
+        place(dirt_roar, 0.27),
+        place(unlatch, 0.82),
+        place(steam, 0.85),
+    ), 1.8), 0.25, 0.22)
+
+
+@sfx("cargo_crash", n=1, target=-12.5, dur=2.8, fout=0.35)
+def _cargo_crash(v, rng):
+    # 运输船远方坠毁巨响：尖啸坠落 -> 地面连环大爆炸 -> 舰体龙骨撕裂扭曲巨响
+    scream_down = whoosh(0.85, 1650, 220, rng, 2.8) * 0.85
+    crash_sub1 = thump(1.1, 135, 20, 3.8, rng, 3.1)
+    crash_roar = roar(1.9, 180, 1.9, rng, 2.6) * 0.95
+    hull_crush = clank(1.1, 155, METAL_HEAVY, 4.5, rng, 0.95) * 0.88
+    sec_boom = thump(0.85, 115, 22, 4.5, rng, 2.8) * 0.85
+    debris = crack(0.45, 1450, rng, 2.4) * 0.72
+    return reverb_tail(sat(mix(
+        place(scream_down, 0.0),
+        place(crash_sub1, 0.62),
+        place(crash_roar, 0.63),
+        place(hull_crush, 0.65),
+        place(debris, 0.68),
+        place(sec_boom, 1.28),
+    ), 1.95), 0.35, 0.3)
+
+
+@sfx("distress_beacon", n=1, target=-17.0, dur=1.4, fout=0.18)
+def _distress_beacon(v, rng):
+    # 战损求救信标：受损继电器火花噼啪 + 机械旋转信标灯塔低沉嗡鸣与金属卡扣声
+    spark = zap(0.28, 2100, rng, 35) * 0.52
+    rotor = servo(0.85, 145, 195, rng, 0.42) * 0.58
+    pulse1 = clank(0.22, 320, METAL_BELL, 12.0, rng, 0.68) * 0.7
+    th1 = thump(0.18, 98, 36, 16.0, rng, 1.8) * 0.6
+    pulse2 = clank(0.24, 260, METAL_BELL, 11.0, rng, 0.72) * 0.75
+    return reverb_tail(sat(mix(
+        place(spark, 0.0),
+        place(rotor, 0.05),
+        place(pulse1, 0.12),
+        place(th1, 0.125),
+        place(pulse2, 0.52),
+    ), 1.45), 0.22, 0.2)
+
+
+@sfx("relay_unlock", n=1, target=-15.5, dur=1.6, fout=0.2)
+def _relay_unlock(v, rng):
+    # 激活通讯中继塔：重型机械断路器合闸 + 阵列天线液压展开锁死 + 高压电离连通
+    breaker = clank(0.28, 225, METAL_HEAVY, 12.0, rng, 0.85)
+    sub = thump(0.32, 115, 30, 11.0, rng, 2.3)
+    dish_srv = servo(0.65, 130, 285, rng, 0.48)
+    lock_top = clank(0.26, 310, METAL_HEAVY, 14.0, rng, 0.8)
+    online_arc = zap(0.38, 2250, rng, 38) * 0.55
+    turb = turbine(0.75, 95, 220, rng, 5, 0.09) * 0.55
+    return reverb_tail(sat(mix(
+        place(breaker, 0.0),
+        place(sub, 0.005),
+        place(dish_srv, 0.15),
+        place(turb, 0.25),
+        place(lock_top, 0.78),
+        place(online_arc, 0.82),
+    ), 1.6), 0.2, 0.2)
+
+
+@sfx("archive_pickup", n=1, target=-17.5, dur=0.75, fout=0.08)
+def _archive_pickup(v, rng):
+    # 回收黑匣子数据盘：拔出装甲存储卡带 + 磁带仓机械退弹锁合
+    unplug = clank(0.18, 340, METAL_LIGHT, 18.0, rng, 0.72)
+    slide = servo(0.22, 210, 145, rng, 0.38) * 0.48
+    slot_in = clank(0.20, 275, METAL_HEAVY, 16.0, rng, 0.75)
+    th = thump(0.18, 102, 36, 18.0, rng, 1.9) * 0.65
+    return sat(mix(
+        place(unplug, 0.0),
+        place(slide, 0.08),
+        place(slot_in, 0.32),
+        place(th, 0.325),
+    ), 1.45)
+
+
+@sfx("sandstorm_start", n=1, target=-15.5, dur=2.5, fout=0.35)
+def _sandstorm_start(v, rng):
+    # 强沙尘暴席卷而至：远方低频气压骤降轰鸣 + 狂风裹挟砂石猛烈抽打机甲装甲板
+    low_front = rumble(2.5, 65, 3.0, rng, 1.8) * 0.78
+    gale = whoosh(2.4, 180, 1250, rng, 2.5) * 0.85
+    grit_hiss = hiss(2.3, 2400, 1600, 1.4, rng) * 0.62
+    pelting = np.zeros(int(2.5 * SR))
+    for i in range(10):
+        t0 = 0.25 + i * 0.2 + rng.uniform(-0.04, 0.04)
+        p_cl = clank(0.08, 420 + (i % 4) * 60, METAL_LIGHT, 32.0, rng, 0.45) * 0.35
+        pelting = mix(pelting, place(p_cl, t0, 2.5))
+    return reverb_tail(sat(mix(low_front, gale, grit_hiss, pelting), 1.55), 0.28, 0.25)
+
+
+@sfx("sandstorm_end", n=1, target=-17.5, dur=2.0, fout=0.35)
+def _sandstorm_end(v, rng):
+    # 沙尘暴平息：风沙呼啸逐渐向低频退去 + 机甲防尘百叶窗复位轻响
+    wind_fade = whoosh(1.85, 1100, 160, rng, 1.8) * env_exp(1.85, 1.8) * 0.8
+    low_fade = rumble(1.85, 60, 2.5, rng, 1.4) * env_exp(1.85, 2.0) * 0.65
+    louver_reset = clank(0.20, 290, METAL_LIGHT, 18.0, rng, 0.62) * 0.55
+    return sat(mix(
+        place(wind_fade, 0.0),
+        place(low_fade, 0.0),
+        place(louver_reset, 1.35),
+    ), 1.35)
+
+
+@sfx("weather_rain_loop", n=1, target=-19.5, loop=6.0, reps=4)
+def _weather_rain_loop(v, rng):
+    dur = 6.0
+    # 异星酸雨环境循环：密集雨幕白/粉噪带通层 + 雨滴敲击机甲顶盖的细碎金属声 + 远方低沉闷雷
+    rain_bed = biquad(pink(dur, rng), "bp", 1650, 1.2) * 0.55
+    rain_hi = biquad(white(dur, rng), "bp", 3800, 1.8) * 0.28
+    roof_drops = velvet(dur, 42, rng)
+    roof_pings = biquad(roof_drops, "bp", 520, 2.2) * 0.35
+    distant_thunder = rumble(dur, 52, 2.2, rng, 1.5) * 0.48
+    return sat(mix(rain_bed, rain_hi, roof_pings, distant_thunder), 1.25)
+
+
+# ─────────────────────────────────────────────────────────────
+# 机师基地养成与通讯（改装升级 / 科研突破 / 晋升 / 好感 / 赠礼 / 进餐 / 休整 / 档案 / 通讯）
+# ─────────────────────────────────────────────────────────────
+@sfx("grow_upgrade", n=1, target=-16.0, dur=1.2, fout=0.15)
+def _grow_upgrade(v, rng):
+    # 机甲部件改装升级：气动扭矩扳手高速紧固 + 重型装甲卡榫落位 + 高压充能就绪
+    wrench = servo(0.28, 170, 340, rng, 0.48)
+    slam_th = thump(0.32, 118, 30, 11.0, rng, 2.4)
+    slam_cl = clank(0.30, 240, METAL_HEAVY, 12.0, rng, 0.85)
+    spool = turbine(0.65, 110, 260, rng, 5, 0.09) * 0.58
+    seal_hiss = hiss(0.38, 1900, 1200, 7.5, rng) * 0.45
+    return reverb_tail(sat(mix(
+        place(wrench, 0.0),
+        place(slam_th, 0.24),
+        place(slam_cl, 0.245),
+        place(spool, 0.32),
+        place(seal_hiss, 0.68),
+    ), 1.6), 0.18, 0.18)
+
+
+@sfx("grow_research", n=1, target=-16.5, dur=1.3, fout=0.15)
+def _grow_research(v, rng):
+    # 研发图纸解析完成：精密机械绘图仪滑轨到位 + 真空管腔体锁定 + 合金音叉双模态清澄共鸣
+    plotter = servo(0.32, 190, 320, rng, 0.42)
+    lock_cl = clank(0.22, 310, METAL_LIGHT, 16.0, rng, 0.72)
+    th = thump(0.24, 108, 34, 14.0, rng, 2.0) * 0.7
+    fork1 = modal(0.65, 380, METAL_BELL, 6.5, rng, 0.55) * 0.52
+    fork2 = modal(0.75, 510, GLASS_MODES, 5.5, rng, 0.58) * 0.55
+    return reverb_tail(sat(mix(
+        place(plotter, 0.0),
+        place(lock_cl, 0.28),
+        place(th, 0.285),
+        place(fork1, 0.32),
+        place(fork2, 0.48),
+    ), 1.5), 0.22, 0.2)
+
+
+@sfx("grow_level", n=1, target=-15.5, dur=1.5, fout=0.2)
+def _grow_level(v, rng):
+    # 军衔/等级晋升：重型勋章钢印砸落 + 三级液压动力舱依次点火轰鸣
+    stamp_th = thump(0.38, 122, 28, 9.5, rng, 2.5)
+    stamp_cl = clank(0.35, 235, METAL_HEAVY, 11.0, rng, 0.88)
+    bell1 = modal(0.65, 290, METAL_BELL, 6.0, rng, 0.6) * 0.55
+    bell2 = modal(0.75, 390, METAL_BELL, 5.5, rng, 0.65) * 0.6
+    spool = turbine(0.85, 105, 275, rng, 6, 0.1) * 0.58
+    return reverb_tail(sat(mix(
+        place(stamp_th, 0.0),
+        place(stamp_cl, 0.006),
+        place(bell1, 0.04),
+        place(spool, 0.18),
+        place(bell2, 0.32),
+    ), 1.65), 0.24, 0.22)
+
+
+@sfx("grow_affinity", n=1, target=-17.5, dur=1.0, fout=0.15)
+def _grow_affinity(v, rng):
+    # 机师羁绊加深：柔和的机械怀表/八音盒棘轮轻响 + 温润低频水晶模态泛音（无刺耳合成器）
+    w1 = tick(0.012, 1350, rng) * 0.6
+    w2 = tick(0.012, 1500, rng) * 0.6
+    warm_th = thump(0.22, 92, 36, 14.0, rng, 1.7) * 0.65
+    glass1 = modal(0.55, 340, GLASS_MODES, 6.5, rng, 0.48) * 0.55
+    glass2 = modal(0.65, 455, GLASS_MODES, 5.5, rng, 0.52) * 0.58
+    return reverb_tail(sat(mix(
+        place(w1, 0.0),
+        place(w2, 0.06),
+        place(warm_th, 0.12),
+        place(glass1, 0.13),
+        place(glass2, 0.30),
+    ), 1.38), 0.24, 0.22)
+
+
+@sfx("grow_gift", n=1, target=-17.5, dur=0.85, fout=0.1)
+def _grow_gift(v, rng):
+    # 赠送战术纪念品：精致金属礼盒卡扣打开 + 物品稳稳放置桌面
+    latch = clank(0.16, 380, METAL_LIGHT, 20.0, rng, 0.68)
+    slide = whoosh(0.20, 320, 720, rng, 1.8) * 0.42
+    set_down = thump(0.20, 98, 36, 16.0, rng, 1.8) * 0.7
+    bell = modal(0.45, 410, GLASS_MODES, 7.5, rng, 0.5) * 0.52
+    return sat(mix(
+        place(latch, 0.0),
+        place(slide, 0.06),
+        place(set_down, 0.24),
+        place(bell, 0.25),
+    ), 1.4)
+
+
+@sfx("grow_meal", n=1, target=-17.0, dur=1.1, fout=0.12)
+def _grow_meal(v, rng):
+    # 战地食堂补给进餐：不锈钢餐盘落桌清脆金属声 + 高压保温舱泄气嘶声
+    tray_clank = clank(0.24, 340, METAL_HOLLOW, 15.0, rng, 0.72)
+    tray_th = thump(0.20, 102, 36, 16.0, rng, 1.9) * 0.68
+    cutlery = clank(0.16, 480, METAL_LIGHT, 22.0, rng, 0.65) * 0.6
+    steam_sizzle = hiss(0.55, 2100, 1400, 5.5, rng) * 0.52
+    return sat(mix(
+        place(tray_clank, 0.0),
+        place(tray_th, 0.005),
+        place(cutlery, 0.18),
+        place(steam_sizzle, 0.28),
+    ), 1.45)
+
+
+@sfx("grow_recover", n=1, target=-16.5, dur=1.3, fout=0.18)
+def _grow_recover(v, rng):
+    # 医疗舱休整恢复：气密医疗舱门解封泄气 + 气压稳压深呼吸声 + 锁扣解除
+    seal_release = hiss(0.65, 1750, 1100, 4.5, rng) * 0.62
+    deep_breath = whoosh(0.75, 240, 780, rng, 1.9) * 0.65
+    unlatch = clank(0.24, 280, METAL_HEAVY, 15.0, rng, 0.75)
+    sub = thump(0.26, 98, 32, 13.0, rng, 2.0) * 0.7
+    return reverb_tail(sat(mix(
+        place(unlatch, 0.0),
+        place(sub, 0.006),
+        place(seal_release, 0.08),
+        place(deep_breath, 0.22),
+    ), 1.45), 0.2, 0.18)
+
+
+@sfx("story_open", n=1, target=-18.0, dur=0.65, fout=0.08)
+def _story_open(v, rng):
+    # 开启机密作战简报：缩微胶片/全息投影仪快门开启 + 导轨展开
+    shutter = clank(0.16, 350, METAL_LIGHT, 20.0, rng, 0.68)
+    srv = servo(0.26, 160, 275, rng, 0.38) * 0.48
+    slide = whoosh(0.32, 280, 820, rng, 1.8) * 0.5
+    lock = clank(0.16, 260, METAL_HOLLOW, 20.0, rng, 0.65) * 0.65
+    return sat(mix(
+        place(shutter, 0.0),
+        place(srv, 0.04),
+        place(slide, 0.05),
+        place(lock, 0.32),
+    ), 1.4)
+
+
+@sfx("story_close", n=1, target=-18.5, dur=0.5, fout=0.06)
+def _story_close(v, rng):
+    # 关闭作战简报：快门脱扣 + 卷宗合拢闷响 + 金属档案夹锁扣咬合
+    unlatch = clank(0.11, 330, METAL_LIGHT, 24.0, rng, 0.62)
+    slide = whoosh(0.20, 760, 240, rng, 1.8) * 0.45
+    shut_th = thump(0.20, 95, 34, 16.0, rng, 1.9) * 0.72
+    clasp = clank(0.16, 290, METAL_LIGHT, 20.0, rng, 0.68) * 0.68
+    return sat(mix(
+        place(unlatch, 0.0),
+        place(slide, 0.015),
+        place(shut_th, 0.12),
+        place(clasp, 0.125),
+    ), 1.4)
+
+
+@sfx("story_text", n=1, target=-24.5, dur=0.042, fout=0.006)
+def _story_text(v, rng):
+    # 简报电传打字机微触点声：干脆短促的机械撞针轻敲（剔除低频闷鼓声）
+    tap = tick(0.009, 2100, rng) * 0.85
+    carriage = modal(0.018, 760, METAL_LIGHT, 80.0, rng, 0.28) * 0.32
+    return sat(mix(place(tap, 0.0), place(carriage, 0.001)), 1.15)
+
+
+@sfx("comm_open", n=2, target=-17.5, dur=0.55, fout=0.06)
+def _comm_open(v, rng):
+    p = 1.0 + (v - 0.5) * 0.05
+    # 军用加密无线电PTT按下接通：重型胸前通话键咔哒按下 + 短促静电噪波开启声
+    ptt_click = clank(0.14, 340 * p, METAL_LIGHT, 22.0, rng, 0.72)
+    ptt_th = thump(0.12, 102 * p, 38 * p, 22.0, rng, 1.8) * 0.65
+    squelch_noise = hiss(0.18, 2100 * p, 1200, 14.0, rng) * 0.48
+    relay = tick(0.015, 1650 * p, rng) * 0.65
+    return sat(mix(
+        place(ptt_click, 0.0),
+        place(ptt_th, 0.003),
+        place(squelch_noise, 0.035),
+        place(relay, 0.18),
+    ), 1.45)
