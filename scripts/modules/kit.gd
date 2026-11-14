@@ -370,30 +370,30 @@ static func _receiver(v: Node3D, iface: String) -> void:
 	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.50, 0.12, dark(), Vector3(0, 0, 0.06), Vector3(90, 0, 0), -1.0, 28)
-			cy(v, 0.45, 0.08, M_R, Vector3(0, 0, 0.03), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.41, 0.48, 28), M_Y, Vector3(0, 0, 0.0), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
+			cy(v, 0.475, 0.10, dark(), Vector3(0, 0, 0.06), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.435, 0.07, M_R, Vector3(0, 0, 0.045), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.405, 0.46, 28), M_Y, Vector3(0, 0, 0.012), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
 			for i in 16:
 				var a := TAU * i / 16.0
-				A.add(v, A.cyl(0.018, 0.04, 0.022, 6), A.chrome(), Vector3(cos(a) * 0.44, sin(a) * 0.44, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.018, 0.04, 0.022, 6), A.chrome(), Vector3(cos(a) * 0.43, sin(a) * 0.43, 0.005), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-A1":
-			bb(v, Vector3(0.48, 0.48, 0.07), M_R, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
-			cy(v, 0.21, 0.08, dark(), Vector3(0, 0, 0.03), Vector3(90, 0, 0), -1.0, 20)
-			A.add(v, A.torus(0.15, 0.20, 20), M_Y, Vector3(0, 0, -0.005), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
+			bb(v, Vector3(0.48, 0.48, 0.065), M_R, Vector3(0, 0, 0.042), Vector3.ZERO, 0.02)
+			cy(v, 0.21, 0.07, dark(), Vector3(0, 0, 0.04), Vector3(90, 0, 0), -1.0, 20)
+			A.add(v, A.torus(0.15, 0.20, 20), M_Y, Vector3(0, 0, 0.004), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
 			for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-				A.add(v, A.cyl(0.024, 0.04, 0.028, 6), A.chrome(), Vector3(c.x * 0.18, c.y * 0.18, -0.01), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.024, 0.04, 0.028, 6), A.chrome(), Vector3(c.x * 0.18, c.y * 0.18, 0.0), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-B1":
 			for sx in [-0.3, 0.3]:
-				bb(v, Vector3(0.12, 0.64, 0.07), M_R, Vector3(sx, 0, 0.025), Vector3.ZERO, 0.015)
-				bb(v, Vector3(0.045, 0.60, 0.04), M_Y, Vector3(sx, 0, -0.018), Vector3.ZERO, 0.008)
+				bb(v, Vector3(0.12, 0.64, 0.065), M_R, Vector3(sx, 0, 0.038), Vector3.ZERO, 0.015)
+				bb(v, Vector3(0.045, 0.60, 0.036), M_Y, Vector3(sx, 0, -0.006), Vector3.ZERO, 0.008)
 				for sy in [-0.24, 0.0, 0.24]:
-					A.add(v, A.cyl(0.016, 0.03, 0.018, 6), A.chrome(), Vector3(sx, sy, -0.02), Vector3(90, 0, 0), Vector3.ONE, false)
+					A.add(v, A.cyl(0.016, 0.03, 0.018, 6), A.chrome(), Vector3(sx, sy, -0.008), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-G1":
-			bb(v, Vector3(0.82, 0.72, 0.06), M_R, Vector3(0, 0, 0.025), Vector3.ZERO, 0.02)
-			bb(v, Vector3(0.85, 0.05, 0.065), M_Y, Vector3(0, 0.36, 0.0), Vector3.ZERO, 0.01)
-			bb(v, Vector3(0.85, 0.05, 0.065), M_Y, Vector3(0, -0.36, 0.0), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.84, 0.72, 0.06), M_R, Vector3(0, 0, 0.038), Vector3.ZERO, 0.02)
+			bb(v, Vector3(0.86, 0.05, 0.055), M_Y, Vector3(0, 0.36, 0.022), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.86, 0.05, 0.055), M_Y, Vector3(0, -0.36, 0.022), Vector3.ZERO, 0.01)
 			for i in 4:
-				A.add(v, A.cyl(0.024, 0.05, 0.024, 8), brass(), Vector3(-0.18 + i * 0.12, -0.20, -0.02), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.024, 0.05, 0.024, 8), brass(), Vector3(-0.18 + i * 0.12, -0.20, 0.0), Vector3(90, 0, 0), Vector3.ONE, false)
 
 
 ## 公插头外观（局部 -Z 指向父模块；接合面在 z=0，插头本体在 +Z 侧即模块内部）
@@ -402,22 +402,22 @@ static func _plug(v: Node3D, iface: String) -> void:
 	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.42, 0.14, M_P, Vector3(0, 0, 0.07), Vector3(90, 0, 0), -1.0, 28)
-			cy(v, 0.35, 0.07, A.chrome(), Vector3(0, 0, -0.01), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.37, 0.43, 28), M_Y, Vector3(0, 0, 0.10), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
+			cy(v, 0.39, 0.12, M_P, Vector3(0, 0, 0.075), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.33, 0.06, A.chrome(), Vector3(0, 0, -0.005), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.35, 0.405, 28), M_Y, Vector3(0, 0, 0.095), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
 		"HP-A1":
-			bb(v, Vector3(0.42, 0.42, 0.07), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
-			cy(v, 0.14, 0.08, A.chrome(), Vector3(0, 0, -0.02), Vector3(90, 0, 0), -1.0, 18)
-			bb(v, Vector3(0.44, 0.045, 0.075), M_Y, Vector3(0, 0.19, 0.03), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.38, 0.38, 0.055), M_P, Vector3(0, 0, 0.032), Vector3.ZERO, 0.02)
+			cy(v, 0.13, 0.07, A.chrome(), Vector3(0, 0, -0.015), Vector3(90, 0, 0), -1.0, 18)
+			bb(v, Vector3(0.39, 0.042, 0.058), M_Y, Vector3(0, 0.175, 0.032), Vector3.ZERO, 0.01)
 		"HP-B1":
 			for sx in [-0.3, 0.3]:
 				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, 0.18, 0.06), Vector3.ZERO, 0.02)
 				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, -0.18, 0.06), Vector3.ZERO, 0.02)
 				bb(v, Vector3(0.20, 0.045, 0.135), M_Y, Vector3(sx, 0.0, 0.06), Vector3.ZERO, 0.01)
 		"HP-G1":
-			bb(v, Vector3(0.76, 0.66, 0.07), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
-			bb(v, Vector3(0.52, 0.11, 0.06), dark(), Vector3(0, -0.20, -0.01), Vector3.ZERO, 0.01)
-			bb(v, Vector3(0.78, 0.045, 0.075), M_Y, Vector3(0, 0.30, 0.03), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.72, 0.58, 0.06), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
+			bb(v, Vector3(0.48, 0.10, 0.05), dark(), Vector3(0, -0.18, -0.01), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.74, 0.042, 0.065), M_Y, Vector3(0, 0.25, 0.035), Vector3.ZERO, 0.01)
 
 
 # ================================================================ 接头转接件（v0.4.9 新模块用）
@@ -427,7 +427,7 @@ static func a1_mount(arm: Node3D, side: float, M: Material) -> Node3D:
 	var M_B := A.metal(Color(0.24, 0.24, 0.26))
 	var bolt := A.metal(Color(0.5, 0.5, 0.5))
 	# 法兰与加深肩部过渡轴套：从接口平面（x=-side*0.25）无缝延伸至轴承
-	bb(arm, Vector3(0.14, 0.44, 0.44), M_B, Vector3(-side * 0.19, 0, 0), Vector3.ZERO, 0.015)
+	bb(arm, Vector3(0.11, 0.44, 0.44), M_B, Vector3(-side * 0.185, 0, 0), Vector3.ZERO, 0.015)
 	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 		cy(arm, 0.024, 0.03, bolt, Vector3(-side * 0.12, c.y * 0.16, c.x * 0.16), Vector3(0, 0, 90), -1.0, 6)
 	# 回转轴承：外圈 + 镀铬滚道 + 内圈
@@ -468,7 +468,7 @@ static func b1_mount(root: Node3D, M: Material, width := 1.2) -> Node3D:
 
 ## HP-G1 动力舱转接：安装背板（四角锁销）。在动力模块根坐标建，返回背板后表面节点（+Z 向后）。
 static func g1_mount(root: Node3D, M: Material, w := 0.82, h := 0.66) -> Node3D:
-	plate(root, crect(w, h, [0.1, 0.1, 0.1, 0.1]), 0.14, frame(), Vector3(0, 0, 0.05), Vector3.ZERO, 0.02)
+	plate(root, crect(w, h, [0.1, 0.1, 0.1, 0.1]), 0.11, frame(), Vector3(0, 0, 0.058), Vector3.ZERO, 0.02)
 	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 		cy(root, 0.035, 0.06, A.chrome(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.13), Vector3(90, 0, 0), -1.0, 10)
 		cy(root, 0.05, 0.015, accent(), Vector3(c.x * (w * 0.5 - 0.08), c.y * (h * 0.5 - 0.08), 0.165), Vector3(90, 0, 0), -1.0, 10)
@@ -477,7 +477,7 @@ static func g1_mount(root: Node3D, M: Material, w := 0.82, h := 0.66) -> Node3D:
 
 ## 重型臂的加强件：在 a1_mount 法兰后面加第二圈法兰 + 上下三角加强筋 + 高耸肩甲立柱（同一 HP-A1 接口，只是更粗）
 static func heavy_gussets(arm: Node3D, side: float, M: Material) -> void:
-	bb(arm, Vector3(0.06, 0.5, 0.5), A.metal(Color(0.22, 0.22, 0.24)), Vector3(-side * 0.115, 0, 0), Vector3.ZERO, 0.015)
+	bb(arm, Vector3(0.05, 0.5, 0.5), A.metal(Color(0.22, 0.22, 0.24)), Vector3(-side * 0.16, 0, 0), Vector3.ZERO, 0.015)
 	bb(arm, Vector3(0.34, 0.44, 0.36), frame(), Vector3(side * 0.24, 0.38, 0.04), Vector3(0, 0, -side * 10.0), 0.02)
 	for i in 8:
 		var a := TAU * i / 8.0

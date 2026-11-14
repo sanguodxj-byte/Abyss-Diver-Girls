@@ -43,7 +43,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	# 顶上的测风十字横臂天线与护笼航空障碍灯（消除悬浮发光圆球）
 	A.add(raid.world, A.cyl(0.08, 3.6, 0.11, 16), M_MET, dome_c + Vector3(0, 8.8, 0))
 	A.add(raid.world, A.bevel_box(Vector3(1.15, 0.06, 0.06), 0.01), M_MET, dome_c + Vector3(0, 10.1, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(raid.world, A.bevel_box(Vector3(0.06, 0.06, 1.15), 0.01), M_MET, dome_c + Vector3(0, 10.1, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(0.06, 0.05, 1.15), 0.01), M_MET, dome_c + Vector3(0, 10.1, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.cyl(0.16, 0.14, 0.18, 14), M_MET, dome_c + Vector3(0, 10.62, 0))
 	A.add(raid.world, A.cyl(0.10, 0.22, 0.10, 12), A.emit(Color(1.0, 0.28, 0.12), 1.35), dome_c + Vector3(0, 10.80, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.torus(0.13, 0.16, 14), M_MET, dome_c + Vector3(0, 10.84, 0), Vector3.ZERO, Vector3.ONE, false)
@@ -84,10 +84,10 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.railing(raid, dome_c + Vector3(-1.95, 0.14, 11.4), 9.0, 90.0, 1.0)
 	K.railing(raid, dome_c + Vector3(1.95, 0.14, 11.4), 9.0, 90.0, 1.0)
 	# 水线：一圈深色湿痕与浮萍
-	A.ground_decal(raid.world, A.cloud_tex(), Color(0.1, 0.03, 0.05, 0.55), 19.0, dome_c + Vector3(0, 0.025, 0))
+	A.ground_decal(raid.world, A.cloud_tex(), Color(0.1, 0.03, 0.05, 0.55), 19.0, dome_c + Vector3(0, 0.138, 0))
 	for i in 6:
 		var a = r.randf() * TAU
-		A.ground_decal(raid.world, A.cloud_tex(), Color(0.14, 0.2, 0.1, 0.4), r.randf_range(2.0, 4.0), dome_c + Vector3(sin(a) * 8.6, 0.03, cos(a) * 8.6))
+		A.ground_decal(raid.world, A.cloud_tex(), Color(0.14, 0.2, 0.1, 0.4), r.randf_range(2.0, 4.0), dome_c + Vector3(sin(a) * 8.6, 0.140, cos(a) * 8.6))
 	# 岸上的观测桩与取样浮标
 	for i in 3:
 		A.add(raid.world, A.cyl(0.08, 1.4, 0.08, 12), A.metal(Color(0.45, 0.45, 0.42)), c + Vector3(-7.0 + i * 2.2, 0.7, -8.4))

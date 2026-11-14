@@ -18,23 +18,36 @@ func run() -> void:
 	m.shield_time = 999
 	await wait(0.5)
 	var results := {}
-	for w in ["arm_l", "arm_r"]:
-		var bug = raid.spawn_bug("beetle", m.global_position + Vector3(0, 0.5, -7))
-		bug.data = bug.data.duplicate()
-		bug.data.speed = 0.0
-		raid.aim_override = bug.global_position + Vector3(0, 1.8, 0)
-		await wait(0.4)
-		var hp0: float = bug.hp
-		var act := "fire_left" if w == "arm_l" else "fire_right"
-		Input.action_press(act)
-		await wait(1.5)
-		Input.action_release(act)
-		var hp1: float = bug.hp
-		results[w] = [hp0, hp1]
-		bug.queue_free()
-		await wait(0.3)
-		if not check(hp1 < hp0, "%s 没有打出伤害：%s" % [w, results[w]]):
-			return
+	# 左键按住交替射击（左臂激光 + 右臂火焰），并验证右键仅进入瞄准态
+	var bug = raid.spawn_bug("beetle", m.global_position + Vector3(0, 0.5, -5.5))
+	bug.hp = 500.0
+	bug.data = bug.data.duplicate()
+	bug.data.speed = 0.0
+	raid.aim_override = bug.global_position + Vector3(0, 1.8, 0)
+	await wait(0.4)
+	var hp0: float = bug.hp
+	var l_ammo0: int = int(m.ammo.get("arm_l", 0))
+	var r_ammo0: int = int(m.ammo.get("arm_r", 0))
+	Input.action_press("fire_left")
+	await wait(1.5)
+	Input.action_release("fire_left")
+	var hp1: float = bug.hp
+	var l_ammo1: int = int(m.ammo.get("arm_l", 0))
+	var r_ammo1: int = int(m.ammo.get("arm_r", 0))
+	results["alt_fire"] = [hp0, hp1, l_ammo0 - l_ammo1, r_ammo0 - r_ammo1]
+	bug.queue_free()
+	await wait(0.2)
+	if not check(hp1 < hp0 and l_ammo1 < l_ammo0 and r_ammo1 < r_ammo0, "左键交替射击未同时触发左右臂并造成伤害：%s" % [results["alt_fire"]]):
+		return
+	var z0: float = raid.cam_zoom
+	Input.action_press("fire_right")
+	await wait(0.35)
+	var aiming_ok: bool = bool(m.is_aiming)
+	var z1: float = raid.cam_zoom
+	Input.action_release("fire_right")
+	results["aim"] = [aiming_ok, z0, z1]
+	if not check(aiming_ok and z1 >= z0, "右键未能激活瞄准态：%s" % [results["aim"]]):
+		return
 	var bug2 = raid.spawn_bug("ling", m.global_position + Vector3(6, 0.5, 0))
 	bug2.data = bug2.data.duplicate()
 	bug2.data.speed = 0.0

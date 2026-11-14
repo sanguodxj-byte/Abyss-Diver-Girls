@@ -23,7 +23,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var dim := ColorRect.new()
 	dim.name = "Dim"
-	dim.color = Color(0.015, 0.018, 0.025, 0.88)
+	dim.color = Color(0.022, 0.022, 0.024, 0.88)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 	var center := CenterContainer.new()

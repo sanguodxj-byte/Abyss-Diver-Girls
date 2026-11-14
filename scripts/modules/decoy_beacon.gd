@@ -35,7 +35,7 @@ func _ready() -> void:
 	A.add(self, A.cyl(0.34, 0.32, 0.1, 18), A.metal(Color(0.32, 0.33, 0.36)), Vector3(0, 1.12, 0), Vector3(0, 0, 0))
 	A.add(self, A.cyl(0.02, 0.6, 0.02, 6), m, Vector3(0.18, 1.5, 0))
 	_lamp = A.add(self, A.sphere(0.07, -1, 12), A.emit(LURE, 4.0), Vector3(0.18, 1.82, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.ground_decal(self, A.ring_tex(), Color(LURE.r, LURE.g, LURE.b, 0.7), radius * 1.1, Vector3(0, 0.06, 0), true)
+	A.ground_vfx(self, A.ring_tex(), Color(LURE.r, LURE.g, LURE.b, 0.7), radius * 1.1, Vector3(0, 0.118, 0), true, 0.44, false, 3)
 	A.emitter(self, Vector3(0, 1.15, 0), {"amount": 10, "life": 1.4, "size": 0.3, "spread": 60.0, "vmin": 0.4, "vmax": 1.2, "gravity": Vector3(0, 0.8, 0),
 		"c0": Color(1.0, 0.8, 0.3, 0.6), "c1": Color(0.6, 0.3, 0.0, 0.0), "grow0": 0.6, "grow1": 1.4})
 	Audio.play_sfx("decoy_deploy", global_position)

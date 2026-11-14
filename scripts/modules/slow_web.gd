@@ -22,8 +22,8 @@ func setup(r, rad: float, dur: float) -> void:
 
 
 func _ready() -> void:
-	A.ground_decal(self, A.blob_tex(), Color(0.35, 0.95, 0.9, 0.5), radius * 2.4, Vector3(0, 0.07, 0), true)
-	A.ground_decal(self, A.ring_tex(), Color(0.4, 1.0, 0.95, 0.85), radius * 2.1, Vector3(0, 0.08, 0), true)
+	A.ground_vfx(self, A.soft_dot(), Color(0.35, 0.95, 0.9, 0.34), radius * 2.4, Vector3(0, 0.120, 0), true, 0.44, false, 3)
+	A.ground_vfx(self, A.ring_tex(), Color(0.4, 1.0, 0.95, 0.85), radius * 2.1, Vector3(0, 0.126, 0), true, 0.44, false, 4)
 	var m := A.emit(Color(0.45, 1.0, 0.95), 2.4)
 	for i in 8:
 		var a := TAU * i / 8.0 + randf() * 0.3

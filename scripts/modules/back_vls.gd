@@ -29,7 +29,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	A.stencil(top, "MK-41", Vector3(0.32, 0.44, -0.538), Vector3(4, 180, 0), 0.0026, Color(0.94, 0.92, 0.86, 0.85))
 	A.stencil(top, "HOT LAUNCH", Vector3(-0.34, 0.20, -0.538), Vector3(4, 180, 0), 0.0020, Color(0.95, 0.84, 0.28, 0.88))
 	K.bb(top, Vector3(1.60, 0.068, 1.04), M_GUN, Vector3(0, 0.675, 0.0), Vector3.ZERO, 0.018)
-	K.bb(top, Vector3(1.50, 0.030, 0.045), K.accent(), Vector3(0, 0.695, -0.49), Vector3.ZERO, 0.005)
+	K.bb(top, Vector3(1.50, 0.030, 0.045), K.accent(), Vector3(0, 0.702, -0.495), Vector3.ZERO, 0.005)
 	for sx in [-1.0, 1.0]:
 		# 两侧切角副装甲裙板 + 外露工字抗爆肋 + 检修法兰盖 + 吊装提手
 		K.plate(top, K.trap(0.94, 0.78, 0.58, 0.05), 0.055, M_A2, Vector3(sx * 0.79, 0.34, 0.0), Vector3(0, 90, 0), 0.015)

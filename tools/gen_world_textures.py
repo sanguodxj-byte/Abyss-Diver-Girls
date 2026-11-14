@@ -485,75 +485,76 @@ save_rgb("rock_strata_n.png", normal_from_height(rk_h, 4.8))
 
 
 # ==============================================================================
-# 8. 自然废土泥壤与碎石子地面 (ground_soil_a / ground_soil_n)
+# 8. 自然废土泥壤与压实粉土颗粒地面 (ground_soil_a / ground_soil_n)
 # ==============================================================================
-s_lo = fnoise(H, W, 2.4, seed=801)
-s_mid = fnoise(H, W, 1.5, seed=802)
-s_hi = fnoise(H, W, 0.85, seed=803)
-d_peb, _, id_peb = voronoi_periodic(H, W, 32, 32, jitter=0.95, seed=805)
+s_lo = fnoise(H, W, 2.5, seed=801)
+s_mid = fnoise(H, W, 1.6, seed=802)
+s_hi = fnoise(H, W, 0.95, seed=803)
+s_wind = fnoise(H, W, 1.8, seed=804, ax=2.6, ay=0.75)
+d_grit, e_grit, id_grit = voronoi_periodic(H, W, 64, 64, jitter=0.92, seed=805)
 
-# 稀疏小卵石与柔和有机土块起伏（去除网状土坷垃边界线）
-pebble = (1.0 - ss(0.14, 0.28, d_peb + (s_hi - 0.5) * 0.06)) * ss(0.76, 0.88, id_peb)
-clod_bump = (s_mid - 0.5) * 0.14 + (blur(s_hi, 1.2) - 0.5) * 0.10
-
-# 散落枯草茎碎屑
-litter = np.zeros((H, W), dtype=np.float32)
-rng_s = np.random.default_rng(806)
-for _ in range(95):
-    cy, cx = rng_s.uniform(0, H), rng_s.uniform(0, W)
-    ang = rng_s.uniform(0, np.pi)
-    ln = rng_s.uniform(6, 20)
-    ts = np.linspace(-0.5, 0.5, int(ln * 2))
-    ys = np.round(cy + np.sin(ang) * ln * ts).astype(np.int32) % H
-    xs = np.round(cx + np.cos(ang) * ln * ts).astype(np.int32) % W
-    litter[ys, xs] = 1.0
-litter = np.clip(blur(litter, 0.65) * 2.4, 0.0, 1.0)
+# 柔和有机土块起伏 + 嵌入泥土的细碎矿物砂砾（零刺眼白斑与白线）
+grit_body = ss(0.015, 0.085, e_grit + (s_hi - 0.5) * 0.03)
+grit_crevice = 1.0 - grit_body
+grit_shade = (id_grit - 0.5) * 0.10 * grit_body - grit_crevice * 0.045
+clod_bump = (s_mid - 0.5) * 0.12 + (blur(s_hi, 1.1) - 0.5) * 0.07 + (s_wind - 0.5) * 0.06
 
 soil_val = (
     0.82
-    + (s_lo - 0.5) * 0.18
+    + (s_lo - 0.5) * 0.13
     + clod_bump
-    + (s_hi - 0.5) * 0.11
-    + pebble * (0.15 + (id_peb - 0.8) * 0.35)
-    + litter * 0.10
+    + (s_hi - 0.5) * 0.045
+    + grit_shade * 0.72
 )
+soil_val = np.clip(soil_val, 0.72, 0.90)
 soil_rgb = np.dstack([
-    soil_val * 1.02 + litter * 0.03,
-    soil_val * 0.99 + litter * 0.02,
-    soil_val * 0.94 - litter * 0.02,
+    soil_val * (1.015 + (s_lo - 0.5) * 0.025),
+    soil_val * 0.995,
+    soil_val * (0.955 - (s_lo - 0.5) * 0.02),
 ])
-soil_h = s_lo * 0.32 + s_mid * 0.28 + s_hi * 0.18 + pebble * 0.44 + litter * 0.10
+soil_h = blur(
+    s_lo * 0.34 + s_mid * 0.28 + s_wind * 0.14 + s_hi * 0.10 + grit_body * (0.10 + id_grit * 0.08),
+    0.55,
+)
 save_rgb("ground_soil_a.png", soil_rgb)
-save_rgb("ground_soil_n.png", normal_from_height(soil_h, 4.0))
+save_rgb("ground_soil_n.png", normal_from_height(soil_h, 3.0))
 
 
 # ==============================================================================
-# 9. 压实工业道砟与粗碎石场坪 (ground_gravel_a / ground_gravel_n)
+# 9. 压实工业道砟与细碎矿渣地坪 (ground_gravel_a / ground_gravel_n)
 # ==============================================================================
 g_lo = fnoise(H, W, 2.3, seed=901)
-g_hi = fnoise(H, W, 0.8, seed=902)
-d_g1, e_g1, id_g1 = voronoi_periodic(H, W, 28, 28, jitter=0.92, seed=903)
-d_g2, e_g2, id_g2 = voronoi_periodic(H, W, 52, 52, jitter=0.92, seed=904)
+g_mid = fnoise(H, W, 1.5, seed=905)
+g_hi = fnoise(H, W, 0.95, seed=902)
+_, e_g1, id_g1 = voronoi_periodic(H, W, 76, 76, jitter=0.92, seed=903)
+_, e_g2, id_g2 = voronoi_periodic(H, W, 118, 118, jitter=0.92, seed=904)
 
-stone1 = ss(0.015, 0.12, e_g1 + (g_hi - 0.5) * 0.05)
-stone2 = ss(0.015, 0.14, e_g2 + (g_hi - 0.5) * 0.04)
-grav_val = (
-    0.83
-    + (g_lo - 0.5) * 0.15
-    + (id_g1 - 0.5) * 0.20 * stone1
-    + (id_g2 - 0.5) * 0.14 * stone2
-    - (1.0 - stone1) * 0.18
-    - (1.0 - stone2) * 0.10
-    + (g_hi - 0.5) * 0.09
+# 高频细骨料嵌入 55% 压实砂土基质，保留粗砺质感但彻底消除彩色玻璃式大 Voronoi 网格
+stone1 = ss(0.015, 0.11, e_g1 + (g_hi - 0.5) * 0.04)
+stone2 = ss(0.015, 0.12, e_g2 + (g_hi - 0.5) * 0.03)
+agg_mix = (id_g1 - 0.5) * 0.14 * stone1 * 0.65 + (id_g2 - 0.5) * 0.12 * stone2 * 0.45
+agg_crevice = (1.0 - stone1) * 0.055 + (1.0 - stone2) * 0.035
+fines_val = (g_lo - 0.5) * 0.12 + (g_mid - 0.5) * 0.09 + (g_hi - 0.5) * 0.05
+grav_val = np.clip(
+    0.82
+    + fines_val * 0.62
+    + agg_mix * 0.45
+    - agg_crevice * 0.45,
+    0.70,
+    0.92,
 )
 grav_rgb = np.dstack([
-    grav_val * (1.0 + (id_g1 - 0.5) * 0.04),
-    grav_val * 0.995,
-    grav_val * (0.98 - (id_g1 - 0.5) * 0.04),
+    grav_val * (1.005 + (id_g1 - 0.5) * 0.025),
+    grav_val * 0.996,
+    grav_val * (0.982 - (id_g1 - 0.5) * 0.025),
 ])
-grav_h = stone1 * (0.38 + id_g1 * 0.22) + stone2 * 0.24 + g_lo * 0.16 + g_hi * 0.10
+grav_h = blur(
+    g_lo * 0.24 + g_mid * 0.20 + fines_val * 0.10
+    + 0.45 * (stone1 * (0.24 + id_g1 * 0.12) + stone2 * (0.16 + id_g2 * 0.08)),
+    0.55,
+)
 save_rgb("ground_gravel_a.png", grav_rgb)
-save_rgb("ground_gravel_n.png", normal_from_height(grav_h, 4.8))
+save_rgb("ground_gravel_n.png", normal_from_height(grav_h, 3.4))
 
 
 # ==============================================================================

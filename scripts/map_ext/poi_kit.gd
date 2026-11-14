@@ -313,11 +313,12 @@ static func roof_kit(raid, c: Vector3, size: Vector2, top: float, col := CONCRET
 	var M_DUCT := A.paint(Color(0.50, 0.52, 0.50), 0.58, 0.46, {"wear": 0.45, "rust": 0.35, "panel_scale": 0.7})
 	var M_DARK := A.metal(Color(0.14, 0.145, 0.15))
 	var r = raid.rng
-	for seg in [[Vector3(0, top + 0.32, -size.y * 0.5), Vector3(size.x, 0.64, 0.36)], [Vector3(0, top + 0.32, size.y * 0.5), Vector3(size.x, 0.64, 0.36)],
-			[Vector3(-size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, size.y)], [Vector3(size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, size.y)]]:
+	for seg in [[Vector3(0, top + 0.32, -size.y * 0.5), Vector3(size.x, 0.64, 0.36), size.x + 0.08, 0.44],
+			[Vector3(0, top + 0.32, size.y * 0.5), Vector3(size.x, 0.64, 0.36), size.x + 0.08, 0.44],
+			[Vector3(-size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, maxf(0.4, size.y - 0.38)), 0.44, maxf(0.32, size.y - 0.46)],
+			[Vector3(size.x * 0.5, top + 0.32, 0), Vector3(0.36, 0.64, maxf(0.4, size.y - 0.38)), 0.44, maxf(0.32, size.y - 0.46)]]:
 		A.add(raid.world, A.bevel_box(seg[1], 0.03), M, c + seg[0])
-		var cap_sz: Vector3 = seg[1]
-		A.add(raid.world, A.bevel_box(Vector3(cap_sz.x + 0.08, 0.10, cap_sz.z + 0.08), 0.02), M_CAP, c + seg[0] + Vector3(0, 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.bevel_box(Vector3(seg[2], 0.10, seg[3]), 0.02), M_CAP, c + seg[0] + Vector3(0, 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
 	# 工业空调冷却机组：冲压机壳 + 侧面百叶暗格 + 顶部深黑风扇井与钢护圈
 	for i in 3:
 		var p := c + Vector3(r.randf_range(-size.x * 0.28, size.x * 0.28), top + 0.55, r.randf_range(-size.y * 0.26, size.y * 0.26))

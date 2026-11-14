@@ -19,7 +19,8 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(hall, A.cyl(3.2, 15.6, 3.2, 40), M_ROOF, Vector3(0, 3.6, 0), Vector3(0, 0, 90), Vector3.ONE)
 	for i in 6:
 		var rx := -7.0 + i * 2.8
-		A.add(hall, A.bevel_box(Vector3(0.2, 7.2, 0.14), 0.02), M_RIB, Vector3(rx, 0, 4.55), Vector3.ZERO, Vector3.ONE, false)
+		if absf(rx - 2.0) > 2.2:
+			A.add(hall, A.bevel_box(Vector3(0.2, 7.2, 0.14), 0.02), M_RIB, Vector3(rx, 0, 4.55), Vector3.ZERO, Vector3.ONE, false)
 		A.add(hall, A.torus(3.16, 3.3, 36), M_RIB, Vector3(rx, 3.6, 0), Vector3(0, 0, 90), Vector3(1, 0.45, 1), false)
 	A.add(hall, A.bevel_box(Vector3(4.0, 4.2, 0.14), 0.02), A.metal(Color(0.22, 0.22, 0.21)), Vector3(2.0, -1.5, 4.55), Vector3.ZERO, Vector3.ONE, false)
 	A.stencil(hall, "TURBINE HALL 2", Vector3(-4.0, 1.4, 4.56), Vector3.ZERO, 0.02, Color(0.8, 0.78, 0.7, 0.55), 44)
@@ -74,10 +75,10 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.cable(raid, c + Vector3(-9.0, 10.2, 9.6), c + Vector3(-1.0, 10.2, 9.6), 1.4, 0.05)
 	K.cable(raid, c + Vector3(-1.0, 10.2, 9.6), c + Vector3(7.0, 10.2, 9.6), 1.4, 0.05)
 	K.cable(raid, c + Vector3(-9.0, 9.4, 9.6), c + Vector3(-1.0, 9.4, 9.6), 1.2, 0.04)
-	# 控制室：一间矮墙小屋，门朝东，里面一排机柜
-	K.wall_line(raid, c + Vector3(1.0, 0, 3.0), 6.0, 3.0, 0.0, [[-0.6, 1.2]], WALL.darkened(0.08))
+	# 控制室：一间矮墙小屋，门朝东，里面一排机柜（门洞 >= 3.8m 确保机甲畅通）
+	K.wall_line(raid, c + Vector3(1.0, 0, 3.0), 6.0, 3.0, 0.0, [[-1.8, 2.2]], WALL.darkened(0.08))
 	K.wall_line(raid, c + Vector3(-2.0, 0, 5.6), 5.2, 3.0, 90.0, [], WALL.darkened(0.08))
-	K.wall_line(raid, c + Vector3(4.0, 0, 5.6), 5.2, 3.0, 90.0, [[0.4, 2.2]], WALL.darkened(0.08))
+	K.wall_line(raid, c + Vector3(4.0, 0, 5.6), 5.2, 3.0, 90.0, [[-1.2, 2.6]], WALL.darkened(0.08))
 	for i in 3:
 		A.add(raid.world, A.bevel_box(Vector3(0.9, 2.0, 0.7), 0.03), A.paint(Color(0.3, 0.34, 0.33), 0.4, 0.5, {"wear": 0.4, "rust": 0.4, "panel_scale": 0.5}), c + Vector3(0.0 + i * 1.3, 1.0, 4.2))
 	for i in 2:

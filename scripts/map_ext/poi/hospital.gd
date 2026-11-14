@@ -31,12 +31,12 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.bevel_box(Vector3(2.8, 2.8, 0.10), 0.03), M_DARK, c + Vector3(0, 5.4, -4.86))
 	var RED := A.emit(Color(0.85, 0.12, 0.1), 1.2)
 	A.add(raid.world, A.bevel_box(Vector3(0.7, 2.4, 0.14), 0.02), RED, c + Vector3(0, 5.4, -4.8), Vector3.ZERO, Vector3.ONE, false)
-	A.add(raid.world, A.bevel_box(Vector3(2.4, 0.7, 0.14), 0.02), RED, c + Vector3(0, 5.4, -4.8), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.bevel_box(Vector3(2.4, 0.7, 0.12), 0.02), RED, c + Vector3(0, 5.4, -4.8), Vector3.ZERO, Vector3.ONE, false)
 	K.roof_kit(raid, c + Vector3(0, 0, -8.4), Vector2(13.0, 7.0), 7.0, WALL)
-	# 东翼留观病房：三面墙，西侧向院子敞开
-	K.wall_line(raid, c + Vector3(8.6, 0, -3.2), 10.0, 3.6, 0.0, [[-4.4, -1.8]], WALL)
-	K.wall_line(raid, c + Vector3(8.6, 0, 6.4), 10.0, 2.8, 0.0, [[1.0, 4.0]], WALL.darkened(0.12))
-	K.wall_line(raid, c + Vector3(13.4, 0, 1.6), 9.6, 3.4, 90.0, [[-2.0, 0.6]], WALL)
+	# 东翼留观病房：三面墙，西侧向院子敞开（门洞 >= 3.8m 确保机甲自由进出）
+	K.wall_line(raid, c + Vector3(8.6, 0, -3.2), 10.0, 3.6, 0.0, [[-4.8, -1.0]], WALL)
+	K.wall_line(raid, c + Vector3(8.6, 0, 6.4), 10.0, 2.8, 0.0, [[0.6, 4.4]], WALL.darkened(0.12))
+	K.wall_line(raid, c + Vector3(13.4, 0, 1.6), 9.6, 3.4, 90.0, [[-2.2, 1.6]], WALL)
 	# 病床：床架 + 床头床尾钢管护栏 + 枕垫
 	var M_BED_F := A.metal(Color(0.45, 0.46, 0.44))
 	for i in 3:
@@ -106,7 +106,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.bevel_box(Vector3(0.9, 1.1, 0.6), 0.04), A.paint(Color(0.5, 0.5, 0.47), 0.2, 0.7), c + Vector3(9.0, 0.55, -4.4), Vector3(0, 20, 0))
 	# 血迹与倒塌的隔帘轨道
 	for i in 3:
-		A.ground_decal(raid.world, A.cloud_tex(), Color(0.24, 0.05, 0.04, 0.5), r.randf_range(2.0, 4.4), c + Vector3(r.randf_range(-3, 11), 0.025, r.randf_range(-2, 8)))
+		A.ground_decal(raid.world, A.cloud_tex(), Color(0.24, 0.05, 0.04, 0.5), r.randf_range(2.0, 4.4), c + Vector3(r.randf_range(-3, 11), 0.138, r.randf_range(-2, 8)))
 	A.add(raid.world, A.bevel_box(Vector3(9.0, 0.08, 0.08), 0.01), A.metal(Color(0.4, 0.4, 0.38)), c + Vector3(8.6, 3.1, 1.6), Vector3(0, 0, 3))
 	# 容器与环境叙事
 	K.crate(raid, c + Vector3(11.4, 0, 4.6), "safe")

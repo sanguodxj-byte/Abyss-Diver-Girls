@@ -61,7 +61,7 @@ func setup(k: String, loot: Array) -> void:
 		cs.shape = sh
 		cs.position.y = sz.y * 0.5 - sink
 		add_child(cs)
-		A.ground_decal(self, A.blob_tex(), Color(1, 1, 1, 0.55), max(sz.x, sz.z) * 1.6, Vector3(0, 0.02, 0))
+		A.ground_vfx(self, A.blob_tex(), Color(1, 1, 1, 0.55), max(sz.x, sz.z) * 1.6, Vector3(0, 0.036, 0), false, 0.34, false, 1)
 		match k:
 			"supply": _build_supply(sz, sink)
 			"tool": _build_tool(sz, sink)
@@ -350,7 +350,7 @@ func _build_wreck(sz: Vector3) -> void:
 	var M_HAZ := _worn(Color(0.72, 0.52, 0.14), 0.25, 0.45)
 	var m_core := A.emit(Color(0.95, 0.46, 0.12), 0.85)
 	m_core.albedo_color = Color(0.28, 0.11, 0.03)
-	A.ground_decal(self, A.blob_tex(), Color(0.04, 0.04, 0.045, 0.82), sz.x * 1.85, Vector3(0, 0.025, 0))
+	A.ground_vfx(self, A.blob_tex(), Color(0.04, 0.04, 0.045, 0.82), sz.x * 1.85, Vector3(0, 0.036, 0), false, 0.34, false, 1)
 	var yaw0 := _rng.randf() * 360.0
 	var hulk := Node3D.new()
 	add_child(hulk)

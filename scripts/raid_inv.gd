@@ -11,8 +11,9 @@ const UI = preload("res://scripts/ui.gd")
 const K = preload("res://scripts/hub_kit.gd")
 const Icons = preload("res://scripts/item_icons.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
+const GridPack = preload("res://scripts/grid_pack.gd")
 
-const PANEL_W := 1172
+const PANEL_W := 1216
 const PANEL_H := 656
 
 const RIG_ITEMS := [
@@ -124,23 +125,42 @@ class RaidGrid extends Control:
 	var inv
 	var grid_kind := "cargo" # "cargo" or "box"
 	var cell := 52
-	var cols := 7
+	var cols := 6
+	var fixed_cols := 6
 	var min_rows := 5
+	var cap_rows := 0
 	var entries: Array = [] # [{id, real_idx, mystery, quest, upgrade, is_mod}]
 	var selected := -1
 	var hover := -1
 	var _ox := 0.0
+	var _rects: Array = []
+	var _cell_map := PackedInt32Array()
+	var _rows_used := 0
 
-	func _init(owner_inv, kind: String, c_px := 52, c_cols := 7, m_rows := 5) -> void:
+	func _init(owner_inv, kind: String, c_px := 52, c_cols := 6, m_rows := 5) -> void:
 		inv = owner_inv
 		grid_kind = kind
 		cell = c_px
-		cols = c_cols
+		cols = maxi(1, c_cols)
+		fixed_cols = cols
 		min_rows = m_rows
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		custom_minimum_size = Vector2(cols * cell, min_rows * cell)
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+	func _draw_corners(r: Rect2, c: Color, arm: float, w: float) -> void:
+		var a: float = minf(arm, minf(r.size.x, r.size.y) * 0.38)
+		draw_line(r.position, r.position + Vector2(a, 0.0), c, w, true)
+		draw_line(r.position, r.position + Vector2(0.0, a), c, w, true)
+		var tr := Vector2(r.end.x, r.position.y)
+		draw_line(tr, tr + Vector2(-a, 0.0), c, w, true)
+		draw_line(tr, tr + Vector2(0.0, a), c, w, true)
+		var bl := Vector2(r.position.x, r.end.y)
+		draw_line(bl, bl + Vector2(a, 0.0), c, w, true)
+		draw_line(bl, bl + Vector2(0.0, -a), c, w, true)
+		draw_line(r.end, r.end + Vector2(-a, 0.0), c, w, true)
+		draw_line(r.end, r.end + Vector2(0.0, -a), c, w, true)
 
 	func set_entries(arr: Array) -> void:
 		entries = arr
@@ -156,14 +176,26 @@ class RaidGrid extends Control:
 			hover = -1
 			queue_redraw()
 
+	func _entry_size(e: Dictionary) -> Vector2i:
+		if e.has("grid_size") and e["grid_size"] is Vector2i:
+			return e["grid_size"]
+		return GameData.item_grid_size(str(e.get("id", "")))
+
 	func _relayout() -> void:
-		var c := maxi(cols, int(floor(size.x / cell))) if size.x > 10.0 else cols
-		cols = c
-		_ox = floor((size.x - cols * cell) * 0.5) if size.x > cols * cell else 0.0
-		var rows := maxi(min_rows, int(ceil(float(entries.size()) / cols)))
-		var h := float(rows * cell)
-		if absf(custom_minimum_size.y - h) > 0.5:
-			custom_minimum_size.y = h
+		cols = maxi(1, fixed_cols)
+		_ox = maxf(0.0, floorf((size.x - float(cols * cell)) * 0.5)) if size.x > float(cols * cell) else 0.0
+		var sizes: Array = []
+		for e_v in entries:
+			var e: Dictionary = e_v
+			sizes.append(_entry_size(e))
+		var pk: Dictionary = GridPack.pack(sizes, cols, 0)
+		_rects = pk.get("placements", [])
+		_rows_used = int(pk.get("rows_used", 0))
+		_cell_map = pk.get("cell_to_idx", PackedInt32Array())
+		var rows: int = maxi(min_rows, maxi(cap_rows, _rows_used))
+		var h: float = float(rows * cell)
+		if absf(custom_minimum_size.y - h) > 0.5 or absf(custom_minimum_size.x - float(cols * cell)) > 0.5:
+			custom_minimum_size = Vector2(float(cols * cell), h)
 		queue_redraw()
 
 	func index_at(p: Vector2) -> int:
@@ -171,39 +203,55 @@ class RaidGrid extends Control:
 		var r := int(floor(p.y / cell))
 		if c < 0 or c >= cols or r < 0:
 			return -1
-		var i := r * cols + c
-		return i if i >= 0 and i < entries.size() else -1
+		var idx_pos: int = r * cols + c
+		if idx_pos < 0 or idx_pos >= _cell_map.size():
+			return -1
+		return int(_cell_map[idx_pos])
 
 	func _cell_rect(i: int) -> Rect2:
-		return Rect2(_ox + (i % cols) * cell, int(i / cols) * cell, cell, cell)
+		if i >= 0 and i < _rects.size():
+			var rc: Rect2i = _rects[i]
+			if rc.position.x >= 0:
+				return Rect2(_ox + float(rc.position.x * cell), float(rc.position.y * cell), float(rc.size.x * cell), float(rc.size.y * cell))
+		return Rect2(_ox + float((i % cols) * cell), float(int(i / cols) * cell), float(cell), float(cell))
 
 	func _draw() -> void:
 		var font := get_theme_default_font()
-		var rows := maxi(min_rows, int(ceil(float(maxi(entries.size(), 1)) / cols)))
-		var total := rows * cols
-		draw_rect(Rect2(_ox, 0, cols * cell, rows * cell), Color(0.02, 0.022, 0.02, 0.92))
+		var rows: int = maxi(min_rows, maxi(cap_rows, _rows_used))
+		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), Color(0.06, 0.065, 0.07, 0.94))
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.008)
-		for i in total:
-			var r := _cell_rect(i)
-			if i >= entries.size():
-				draw_style_box(K.px9("cell9_empty", 6), r)
+		for gy: int in rows:
+			for gx: int in cols:
+				var idx_pos: int = gy * cols + gx
+				var occ_idx: int = int(_cell_map[idx_pos]) if idx_pos >= 0 and idx_pos < _cell_map.size() else -1
+				if occ_idx < 0:
+					draw_style_box(K.px9("cell9_empty", 6), Rect2(_ox + float(gx * cell), float(gy * cell), float(cell), float(cell)))
+		for i: int in entries.size():
+			if i >= _rects.size():
 				continue
+			var rc: Rect2i = _rects[i]
+			if rc.position.x < 0:
+				continue
+			var r := Rect2(_ox + float(rc.position.x * cell), float(rc.position.y * cell), float(rc.size.x * cell), float(rc.size.y * cell))
 			var e: Dictionary = entries[i]
 			var inner := Rect2(r.position + Vector2(1, 1), r.size - Vector2(1, 1))
+			var gsz: Vector2i = rc.size
 			if bool(e.get("mystery", false)):
 				draw_style_box(K.px9("cell9_empty", 6), inner)
 				var is_scanning := bool(e.get("scanning", false))
-				var bg_c := Color(0.22, 0.16, 0.04, 0.35 + 0.25 * pulse) if is_scanning else Color(0.08, 0.085, 0.08, 0.65)
+				var bg_c := Color(0.32, 0.20, 0.08, 0.35 + 0.25 * pulse) if is_scanning else Color(0.09, 0.095, 0.10, 0.70)
 				draw_rect(inner.grow(-3), bg_c)
 				# 扫描斜纹
 				var y := inner.position.y + 4.0
 				while y < inner.end.y - 4.0:
-					draw_rect(Rect2(inner.position.x + 4, y, inner.size.x - 8, 1), Color(1, 0.8, 0.3, 0.12 if is_scanning else 0.05))
+					draw_rect(Rect2(inner.position.x + 4, y, inner.size.x - 8, 1), Color(0.84, 0.56, 0.22, 0.18 if is_scanning else 0.06))
 					y += 4.0
 				var q_txt := Loc.t("扫描", "SCAN") if is_scanning else "???"
 				var q_col := K.AMBER.lightened(0.25 * pulse) if is_scanning else K.CREAM_DIM
-				var asc := font.get_ascent(12)
-				draw_string(font, Vector2(inner.position.x, inner.position.y + inner.size.y * 0.5 + asc * 0.4), q_txt, HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, 12, q_col)
+				var asc_m := font.get_ascent(12)
+				draw_string(font, Vector2(inner.position.x, inner.position.y + inner.size.y * 0.5 + asc_m * 0.4), q_txt, HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, 12, q_col)
+				if gsz.x > 1 or gsz.y > 1:
+					draw_string(font, Vector2(inner.position.x + 4.0, inner.position.y + 2.0 + asc_m), "%d×%d" % [gsz.x, gsz.y], HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 6.0, 12, Color(0.62, 0.60, 0.54, 0.8))
 				if is_scanning:
 					draw_rect(inner.grow(-1), K.AMBER.lightened(0.2), false, 1.0)
 				continue
@@ -211,24 +259,43 @@ class RaidGrid extends Control:
 			var it := GameData.item(id)
 			var rar := clampi(int(it.get("rar", 0)), 0, 3)
 			draw_style_box(K.px9("cell9_r%d" % rar, 6), inner)
+			if gsz.x > 1 or gsz.y > 1:
+				var cw_g: float = inner.size.x / float(gsz.x)
+				var ch_g: float = inner.size.y / float(gsz.y)
+				for gx_s: int in range(1, gsz.x):
+					var lx: float = inner.position.x + cw_g * float(gx_s)
+					draw_line(Vector2(lx, inner.position.y + 3.0), Vector2(lx, inner.end.y - 3.0), Color(1, 1, 1, 0.06), 1.0)
+				for gy_s: int in range(1, gsz.y):
+					var ly: float = inner.position.y + ch_g * float(gy_s)
+					draw_line(Vector2(inner.position.x + 3.0, ly), Vector2(inner.end.x - 3.0, ly), Color(1, 1, 1, 0.06), 1.0)
 			var tex: Texture2D = Icons.icon(id)
 			if tex:
-				var isz := Vector2(32, 32)
-				var ip := (inner.position + (inner.size - isz) * 0.5).floor()
+				var pad: float = 4.0
+				var avail := Vector2(maxf(12.0, inner.size.x - pad * 2.0), maxf(12.0, inner.size.y - pad * 2.0))
+				var tsz: Vector2 = tex.get_size()
+				if tsz.x < 1.0 or tsz.y < 1.0:
+					tsz = Vector2(maxf(1.0, float(gsz.x)), maxf(1.0, float(gsz.y)))
+				var sc: float = minf(avail.x / tsz.x, avail.y / tsz.y)
+				var isz: Vector2 = tsz * sc
+				var ip: Vector2 = inner.position + (inner.size - isz) * 0.5
 				draw_texture_rect(tex, Rect2(ip, isz), false)
 			var asc := font.get_ascent(12)
+			if gsz.x > 1 or gsz.y > 1:
+				var sz_s := "%d×%d" % [gsz.x, gsz.y]
+				draw_string(font, Vector2(inner.position.x + 5.0, inner.position.y + 3.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0, 0, 0, 0.85))
+				draw_string(font, Vector2(inner.position.x + 4.0, inner.position.y + 2.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0.84, 0.85, 0.82, 0.92))
 			# 右上角：任务 / 基建 / 模块标记
 			var badge := ""
 			var badge_c := K.AMBER
 			if bool(e.get("quest", false)):
 				badge = "★"
-				badge_c = Color(1.0, 0.84, 0.22)
+				badge_c = K.AMBER_HI
 			elif bool(e.get("upgrade", false)):
 				badge = "▲"
-				badge_c = Color(0.38, 0.92, 0.78)
+				badge_c = Color(0.46, 0.74, 0.60)
 			elif bool(e.get("is_mod", false)):
 				badge = "⚙"
-				badge_c = Color(0.88, 0.68, 0.28)
+				badge_c = K.AMBER
 			if badge != "":
 				draw_string(font, Vector2(inner.position.x, inner.position.y + 3 + asc), badge, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 3, 12, Color(0, 0, 0, 0.9))
 				draw_string(font, Vector2(inner.position.x - 1, inner.position.y + 2 + asc), badge, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 3, 12, badge_c)
@@ -236,15 +303,17 @@ class RaidGrid extends Control:
 			var by := inner.end.y - 2 - font.get_descent(12)
 			var val := int(it.get("v", it.get("val", 0)))
 			var vt := "¥%d" % val if val < 1000 else ("¥%.1fk" % (val / 1000.0))
-			var vc := Color(0.82, 0.68, 0.34) if rar < 2 else Color(0.98, 0.84, 0.42)
+			var vc: Color = Color(0.72, 0.69, 0.56) if rar < 2 else K.AMBER_HI
 			draw_string(font, Vector2(inner.position.x + 3, by + 1), vt, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 5, 12, Color(0, 0, 0, 0.88))
 			draw_string(font, Vector2(inner.position.x + 2, by), vt, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 5, 12, vc)
 			var st := 2 if i == selected else (1 if i == hover else 0)
 			if st == 2:
 				draw_style_box(K.px9("cell9_sel", 8), inner)
+				_draw_corners(inner, K.AMBER_HI, 7.0, 2.0)
 			elif st == 1:
 				draw_style_box(K.px9("cell9_hover", 8), inner)
-		draw_rect(Rect2(_ox, 0, cols * cell, rows * cell), K.LINE, false, 1.0)
+				_draw_corners(inner, K.STEEL, 5.0, 1.5)
+		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), K.LINE, false, 1.0)
 
 	func _gui_input(ev: InputEvent) -> void:
 		if ev is InputEventMouseMotion:
@@ -276,12 +345,15 @@ class RaidGrid extends Control:
 			return null
 		var e: Dictionary = entries[i]
 		var id := str(e.get("id", ""))
+		var gsz: Vector2i = _entry_size(e)
 		var pv := TextureRect.new()
 		pv.texture = Icons.icon(id)
-		pv.custom_minimum_size = Vector2(36, 36)
-		pv.size = Vector2(36, 36)
+		var psz := Vector2(clampf(36.0 * float(gsz.x), 40.0, 152.0), clampf(36.0 * float(gsz.y), 40.0, 112.0))
+		pv.custom_minimum_size = psz
+		pv.size = psz
 		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		set_drag_preview(pv)
 		return {"kind": grid_kind, "id": id, "real_idx": int(e.get("real_idx", i))}
 
@@ -332,6 +404,7 @@ class SlotCard extends PanelContainer:
 		add_child(h)
 
 		icon_cell = K.IconCell.new(48)
+		icon_cell.set_box_size(Vector2(72, 48))
 		icon_cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		h.add_child(icon_cell)
 
@@ -426,7 +499,7 @@ func _init(r, h) -> void:
 func _build_ui() -> void:
 	# 全屏战术暗色背景幕布（阻断底层 HUD 浮标与鼠标穿透）
 	var bg := ColorRect.new()
-	bg.color = Color(0.015, 0.018, 0.016, 0.84)
+	bg.color = Color(0.022, 0.022, 0.024, 0.86)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bg)
@@ -471,7 +544,7 @@ func _build_ui() -> void:
 	en_lbl = _stat_chip(top_h, Loc.t("能源", "Energy"), "100/100", K.AMBER.lightened(0.2))
 	load_lbl = _stat_chip(top_h, Loc.t("全重", "Mass"), "35.0t (×1.00)", K.CREAM)
 	cargo_top_lbl = _stat_chip(top_h, Loc.t("货舱", "Cargo"), "0.0/20kg", K.CREAM)
-	val_top_lbl = _stat_chip(top_h, Loc.t("本趟估值", "Haul Value"), "¥0", Color(0.95, 0.8, 0.35))
+	val_top_lbl = _stat_chip(top_h, Loc.t("本趟估值", "Haul Value"), "¥0", K.AMBER_HI)
 
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -541,6 +614,8 @@ func _build_left_col(parent: Container) -> void:
 	dmg_box.add_child(dv)
 
 	mech_summary_lbl = UI.label("", 12, K.CREAM)
+	mech_summary_lbl.clip_text = true
+	mech_summary_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	dv.add_child(mech_summary_lbl)
 
 	var btn_r := K.hbox(6)
@@ -566,7 +641,7 @@ func _build_center_col(parent: Container) -> void:
 	var p: PanelContainer = tp[0]
 	var body: VBoxContainer = tp[1]
 	cargo_hdr_lbl = tp[2]
-	p.custom_minimum_size = Vector2(404, 0)
+	p.custom_minimum_size = Vector2(412, 0)
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	p.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	parent.add_child(p)
@@ -604,14 +679,14 @@ func _build_center_col(parent: Container) -> void:
 	btn_sort.pressed.connect(func(): raid.sort_cargo())
 	flt_h.add_child(btn_sort)
 
-	# 塔科夫正方格货舱（7列 × 5行起，放入 ScrollContainer）
+	# 塔科夫正方格货舱（6列 × 能力行数，放入 ScrollContainer）
 	var sc := ScrollContainer.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	body.add_child(sc)
 
-	cargo_grid = RaidGrid.new(self, "cargo", 52, 7, 6)
+	cargo_grid = RaidGrid.new(self, "cargo", 58, GameData.CARGO_COLS, 4)
 	cargo_grid.cell_selected.connect(_on_cargo_selected)
 	cargo_grid.cell_activated.connect(_on_cargo_activated)
 	cargo_grid.cell_context.connect(_on_cargo_context)
@@ -649,7 +724,7 @@ func _build_rig_slot(rinfo: Dictionary) -> PanelContainer:
 	var top_r := K.hbox(2)
 	top_r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(top_r)
-	var kl := UI.label("[%s]" % str(rinfo.key), 12, K.AMBER)
+	var kl := UI.label("[%s]" % str(rinfo.key), 12, K.AMBER_HI)
 	top_r.add_child(kl)
 	var cl := UI.label("×0", 12, K.CREAM_DIM)
 	cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -695,7 +770,7 @@ func _activate_rig_item(iid: String) -> void:
 # ==================== 右栏：容器搜刮/战地备忘 + 战术检视对比 ====================
 func _build_right_col(parent: Container) -> void:
 	var right_v := K.vbox(8)
-	right_v.custom_minimum_size = Vector2(376, 0)
+	right_v.custom_minimum_size = Vector2(394, 0)
 	right_v.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	parent.add_child(right_v)
 
@@ -720,12 +795,14 @@ func _build_right_col(parent: Container) -> void:
 	scan_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box_bar.add_child(scan_box)
 	scan_lbl = UI.label(Loc.t("正在扫描容器特征...", "Scanning container..."), 12, K.AMBER)
+	scan_lbl.clip_text = true
+	scan_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	scan_box.add_child(scan_lbl)
 	scan_bar = K.PixBar.new(8)
 	scan_bar.color = K.AMBER
 	scan_box.add_child(scan_bar)
 
-	btn_take_all = K.primary(Loc.t("📥 全部拿取 [%s]", "📥 Take All [%s]") % Loc.space_key(), 28)
+	btn_take_all = K.primary(Loc.t("▼ 全部拿取 [%s]", "▼ Take All [%s]") % Loc.space_key(), 28)
 	btn_take_all.pressed.connect(func():
 		raid.take_all_from_box())
 	box_bar.add_child(btn_take_all)
@@ -735,7 +812,7 @@ func _build_right_col(parent: Container) -> void:
 	box_sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box_view.add_child(box_sc)
 
-	box_grid = RaidGrid.new(self, "box", 52, 6, 3)
+	box_grid = RaidGrid.new(self, "box", 54, 6, 3)
 	box_grid.cell_selected.connect(_on_box_selected)
 	box_grid.cell_activated.connect(_on_box_activated)
 	box_grid.cell_context.connect(_on_box_context)
@@ -746,7 +823,7 @@ func _build_right_col(parent: Container) -> void:
 	intel_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body_top.add_child(intel_view)
 
-	btn_open_near = K.primary(Loc.t("📦 打开附近容器 [G]", "📦 Open Nearby Crate [G]"), 28)
+	btn_open_near = K.primary(Loc.t("◈ 打开附近容器 [G]", "◈ Open Nearby Crate [G]"), 28)
 	btn_open_near.visible = false
 	btn_open_near.pressed.connect(func():
 		var nb = raid.nearest_box(3.6)
@@ -773,19 +850,22 @@ func _build_right_col(parent: Container) -> void:
 	var ih := K.hbox(8)
 	body_bot.add_child(ih)
 	insp_icon = K.IconCell.new(48)
+	insp_icon.set_box_size(Vector2(116, 76))
 	ih.add_child(insp_icon)
 
 	var iv := K.vbox(2)
 	iv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ih.add_child(iv)
 	insp_name = UI.label(Loc.t("选择任意模块或物资检视", "Select any module or item to inspect"), 12, K.CREAM)
+	insp_name.clip_text = true
+	insp_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	iv.add_child(insp_name)
-	insp_tags = UI.label("—", 12, K.CREAM_DIM)
+	insp_tags = K.wrap("—", K.CREAM_DIM)
 	iv.add_child(insp_tags)
-	insp_meta = UI.label("—", 12, K.AMBER)
+	insp_meta = K.wrap("—", K.AMBER)
 	iv.add_child(insp_meta)
 
-	insp_quest_lbl = UI.label("", 12, Color(1.0, 0.85, 0.25))
+	insp_quest_lbl = K.wrap("", K.AMBER_HI)
 	insp_quest_lbl.visible = false
 	body_bot.add_child(insp_quest_lbl)
 
@@ -889,7 +969,9 @@ func refresh() -> void:
 
 	var cw: float = m.cargo_weight()
 	var cc: float = m.cargo_cap()
-	cargo_top_lbl.text = "%.1f / %.0f kg" % [cw, cc]
+	var cells_used: int = m.cargo_cells()
+	var cells_cap: int = m.cargo_grid_cap()
+	cargo_top_lbl.text = "%.1f/%.0fkg · %d/%d%s" % [cw, cc, cells_used, cells_cap, Loc.t("格", "c")]
 	cargo_top_lbl.add_theme_color_override("font_color", K.NG_C if cw > cc else (K.AMBER if cw > cc * 0.8 else K.CREAM))
 
 	var total_val := GameData.value_of(m.cargo)
@@ -956,7 +1038,10 @@ func refresh() -> void:
 	var c_frac := clampf(cw / maxf(1.0, cc), 0.0, 1.0)
 	cargo_bar.set_frac(c_frac)
 	cargo_bar.color = K.NG_C if cw > cc else (K.AMBER if c_frac > 0.78 else K.OK_C)
-	cargo_hdr_lbl.text = Loc.t("%.1f / %.0f kg (%d件)", "%.1f / %.0f kg (%d items)") % [cw, cc, m.cargo.size()]
+	var crows: int = m.cargo_grid_rows()
+	cargo_grid.min_rows = crows
+	cargo_grid.cap_rows = crows
+	cargo_hdr_lbl.text = Loc.t("%.1f / %.0f kg · %d/%d格", "%.1f / %.0f kg · %d/%d cells") % [cw, cc, cells_used, cells_cap]
 
 	var c_entries: Array = []
 	for i in m.cargo.size():
@@ -1004,7 +1089,7 @@ func refresh() -> void:
 	if is_looting:
 		right_top_title.text = str(b.title)
 		right_top_en.text = "CONTAINER LOOT"
-		right_top_en.visible = Loc.is_en()
+		right_top_en.visible = not Loc.is_en()
 		right_top_sub.text = Loc.t("已判明 %d / %d", "Scanned %d / %d") % [int(b.revealed), b.items.size()]
 		box_view.visible = true
 		intel_view.visible = false
@@ -1030,14 +1115,14 @@ func refresh() -> void:
 	else:
 		right_top_title.text = Loc.t("战地急需物资备忘", "Field Intel & Needs")
 		right_top_en.text = "FIELD INTEL & NEEDS"
-		right_top_en.visible = Loc.is_en()
+		right_top_en.visible = not Loc.is_en()
 		right_top_sub.text = Loc.t("★委托 / ▲基建", "★Quest / ▲Facility")
 		box_view.visible = false
 		intel_view.visible = true
 		var nb = raid.nearest_box(3.6)
 		if nb != null and is_instance_valid(nb):
 			btn_open_near.visible = true
-			btn_open_near.text = Loc.t("📦 打开附近容器：%s [G]", "📦 Open Crate: %s [G]") % str(nb.title)
+			btn_open_near.text = Loc.t("◈ 打开附近容器：%s [G]", "◈ Open Crate: %s [G]") % str(nb.title)
 		else:
 			btn_open_near.visible = false
 		_refresh_intel_list()
@@ -1276,8 +1361,12 @@ func _refresh_inspector() -> void:
 
 	var w := float(it.get("w", 0.5))
 	var val := int(it.get("v", it.get("val", 0)))
+	var gsz: Vector2i = GameData.item_grid_size(sel_id)
 	var density := int(round(float(val) / maxf(0.1, w)))
-	insp_meta.text = Loc.t("重量 %.1f %s  |  估值 ¥%s  |  价值密度 ¥%s/kg", "Weight %.1f %s  |  Value ¥%s  |  ¥%s/kg") % [
+	insp_meta.text = Loc.t("占格 %d×%d (%d格)  |  重量 %.1f %s  |  估值 ¥%s  |  ¥%s/kg", "Grid %d×%d (%dc)  |  Weight %.1f %s  |  Value ¥%s  |  ¥%s/kg") % [
+		gsz.x,
+		gsz.y,
+		gsz.x * gsz.y,
 		w,
 		"t" if cat == "module" else "kg",
 		K._money_text(val),
@@ -1313,7 +1402,7 @@ func _refresh_inspector() -> void:
 				target_slot = sel_slot
 			var eq_id := str(raid.mech.loadout.get(target_slot, ""))
 			var eq_it := GameData.item(eq_id) if eq_id != "" else {}
-			var hdr := UI.label(Loc.t("▸ 与当前 [%s] (%s) 对比：", "▸ Compare with [%s] (%s):") % [str(GameData.SLOT_NAMES.get(target_slot, target_slot)), str(eq_it.get("name", Loc.t("无", "None")))], 12, K.AMBER)
+			var hdr := K.wrap(Loc.t("▸ 与当前 [%s] (%s) 对比：", "▸ Compare with [%s] (%s):") % [str(GameData.SLOT_NAMES.get(target_slot, target_slot)), str(eq_it.get("name", Loc.t("无", "None")))], K.AMBER)
 			insp_cmp_box.add_child(hdr)
 			_append_module_stats(insp_cmp_box, it, eq_it)
 
@@ -1366,7 +1455,7 @@ func _append_module_stats(box: VBoxContainer, it: Dictionary, cmp_it) -> void:
 
 func _build_inspector_buttons(cat: String, it: Dictionary) -> void:
 	if sel_source == "box":
-		var b_take := K.primary(Loc.t("📥 拿取至货舱", "📥 Move to Cargo"), 26)
+		var b_take := K.primary(Loc.t("📥 拿取至货舱", "📥 Take"), 26)
 		b_take.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b_take.pressed.connect(func(): raid.take_from_box(sel_index))
 		insp_actions.add_child(b_take)
@@ -1437,7 +1526,9 @@ func _build_inspector_buttons(cat: String, it: Dictionary) -> void:
 					raid.equip_from_box(int(first.idx), sel_slot))
 			insp_actions.add_child(b_swap)
 		else:
-			insp_actions.add_child(UI.label(Loc.t("货舱/容器中暂无同槽位可替换模块", "No compatible replacement modules in cargo or crate"), 12, K.CREAM_DIM))
+			var empty_l := K.wrap(Loc.t("货舱/容器中暂无同槽位可替换模块", "No compatible replacement modules in cargo or crate"), K.CREAM_DIM)
+			empty_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			insp_actions.add_child(empty_l)
 	elif sel_source == "rig":
 		var cnt: int = raid.mech.cargo.count(sel_id)
 		var b_use := K.primary(Loc.t("💊 使用 %s (×%d)", "💊 Use %s (×%d)") % [str(it.get("name", sel_id)), cnt], 26)

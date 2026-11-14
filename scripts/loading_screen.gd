@@ -211,9 +211,9 @@ func _build_ui() -> void:
 		var sname := str(GameData.SLOT_NAMES.get(sl, sl))
 		var mid: String = str(loadout.get(sl, ""))
 		if mid != "":
-			cell.add_child(K.icon_rect(Icons.icon(mid), 16))
+			cell.add_child(K.icon_rect(Icons.icon(mid), 24))
 		else:
-			cell.add_child(K.icon_rect(K.small_icon("equip"), 16))
+			cell.add_child(K.icon_rect(K.small_icon("equip"), 24))
 		var mtitle := GameData.item_name(mid) if mid != "" else Loc.t("未挂载", "Empty")
 		var nl := UI.label("[%s] %s" % [sname, mtitle], 12, UI.TEXT)
 		nl.clip_text = true
@@ -356,31 +356,34 @@ class _ShutterCanvas extends Control:
 			return
 		var sz := size
 		var half_h := sz.y * 0.5 * clampf(close_ratio, 0.0, 1.0)
-		var plate_c := Color(0.08, 0.085, 0.095, 0.98)
-		var rib_c := Color(0.14, 0.15, 0.165, 1.0)
+		var plate_c := Color(0.072, 0.078, 0.084, 0.98)
+		var rib_c := Color(0.24, 0.26, 0.28, 0.94)
+		var steel_trim := Color(0.16, 0.18, 0.20, 0.96)
 		var stripe_y := 18.0
 
-		# 上下装甲门板
+		# 上下废土重型灰白/铅灰装甲舱门
 		draw_rect(Rect2(0, 0, sz.x, half_h), plate_c)
 		draw_rect(Rect2(0, sz.y - half_h, sz.x, half_h), plate_c)
 
-		# 横向加强筋
+		# 横向工业灰黑加强筋与浅凹槽
 		for r: float in [0.35, 0.7]:
 			var y1: float = half_h * r
 			var y2: float = sz.y - half_h * r
-			draw_rect(Rect2(0, y1 - 3.0, sz.x, 6.0), rib_c)
-			draw_rect(Rect2(0, y2 - 3.0, sz.x, 6.0), rib_c)
+			draw_rect(Rect2(0, y1 - 4.0, sz.x, 8.0), steel_trim)
+			draw_rect(Rect2(0, y1 - 2.0, sz.x, 3.0), rib_c)
+			draw_rect(Rect2(0, y2 - 4.0, sz.x, 8.0), steel_trim)
+			draw_rect(Rect2(0, y2 - 2.0, sz.x, 3.0), rib_c)
 
-		# 门沿黑黄警示条与亮橙咬合线
+		# 门沿碳灰/做旧橙黄警示条与咬合线
 		if half_h > stripe_y:
 			_draw_hazard_bar(Rect2(0, half_h - stripe_y, sz.x, stripe_y))
 			_draw_hazard_bar(Rect2(0, sz.y - half_h, sz.x, stripe_y))
-		var seam_c := Color(0.95, 0.65, 0.18, clampf(close_ratio * 1.1, 0.0, 1.0))
+		var seam_c := Color(0.84, 0.56, 0.22, clampf(close_ratio * 1.1, 0.0, 1.0))
 		draw_line(Vector2(0, half_h), Vector2(sz.x, half_h), seam_c, 2.5)
 		draw_line(Vector2(0, sz.y - half_h), Vector2(sz.x, sz.y - half_h), seam_c, 2.5)
 
 	func _draw_hazard_bar(r: Rect2) -> void:
-		draw_rect(r, Color(0.12, 0.11, 0.09, 1.0))
+		draw_rect(r, Color(0.08, 0.085, 0.09, 1.0))
 		var step := 28.0
 		var x := r.position.x - r.size.y
 		while x < r.end.x + r.size.y:
@@ -390,7 +393,7 @@ class _ShutterCanvas extends Control:
 				Vector2(clampf(x + step * 0.5 + r.size.y, r.position.x, r.end.x), r.position.y),
 				Vector2(clampf(x + r.size.y, r.position.x, r.end.x), r.position.y),
 			])
-			draw_colored_polygon(pts, Color(0.76, 0.52, 0.1, 0.85))
+			draw_colored_polygon(pts, Color(0.76, 0.47, 0.16, 0.90))
 			x += step
 
 
@@ -403,8 +406,8 @@ class _RadarCanvas extends Control:
 
 	func _draw() -> void:
 		var sz := size
-		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.05, 0.065, 0.06, 0.95))
-		var grid_c := Color(0.25, 0.55, 0.42, 0.16)
+		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.065, 0.065, 0.96))
+		var grid_c := Color(0.55, 0.62, 0.58, 0.14)
 		var step := 24.0
 		var x := step
 		while x < sz.x:
@@ -418,36 +421,36 @@ class _RadarCanvas extends Control:
 		var c := sz * 0.5
 		var max_r := minf(sz.x, sz.y) * 0.42
 		for frac in [0.35, 0.68, 1.0]:
-			draw_arc(c, max_r * frac, 0.0, TAU, 48, Color(0.35, 0.78, 0.58, 0.28), 1.2)
-		draw_line(Vector2(c.x - max_r * 1.15, c.y), Vector2(c.x + max_r * 1.15, c.y), Color(0.35, 0.78, 0.58, 0.22), 1.0)
-		draw_line(Vector2(c.x, c.y - max_r * 1.15), Vector2(c.x, c.y + max_r * 1.15), Color(0.35, 0.78, 0.58, 0.22), 1.0)
+			draw_arc(c, max_r * frac, 0.0, TAU, 48, Color(0.68, 0.72, 0.70, 0.28), 1.2)
+		draw_line(Vector2(c.x - max_r * 1.15, c.y), Vector2(c.x + max_r * 1.15, c.y), Color(0.68, 0.72, 0.70, 0.22), 1.0)
+		draw_line(Vector2(c.x, c.y - max_r * 1.15), Vector2(c.x, c.y + max_r * 1.15), Color(0.68, 0.72, 0.70, 0.22), 1.0)
 
 		# 旋转扫描扇区
 		var ang := anim_t * 2.4
 		for i in 12:
 			var a0 := ang - float(i) * 0.045
 			var a1 := a0 - 0.045
-			var alpha := (1.0 - float(i) / 12.0) * 0.24
+			var alpha := (1.0 - float(i) / 12.0) * 0.22
 			var pts := PackedVector2Array([c, c + Vector2(cos(a0), sin(a0)) * max_r, c + Vector2(cos(a1), sin(a1)) * max_r])
-			draw_colored_polygon(pts, Color(0.38, 0.92, 0.62, alpha))
-		draw_line(c, c + Vector2(cos(ang), sin(ang)) * max_r, Color(0.45, 1.0, 0.68, 0.85), 1.8)
+			draw_colored_polygon(pts, Color(0.46, 0.72, 0.58, alpha))
+		draw_line(c, c + Vector2(cos(ang), sin(ang)) * max_r, Color(0.58, 0.82, 0.66, 0.85), 1.8)
 
-		# 首领高危热点（红）与撤离点（绿）与着陆点（橙）
+		# 首领高危热点（铁锈红）与撤离点（工业灰白/浅绿）与着陆点（做旧橙黄）
 		var pulse := 0.5 + 0.5 * sin(anim_t * 6.0)
 		for bp: Vector2 in [Vector2(-0.48, -0.36), Vector2(0.52, 0.28)]:
 			var p: Vector2 = c + bp * max_r
-			draw_circle(p, 4.0 + pulse * 2.5, Color(1.0, 0.3, 0.25, 0.28))
-			draw_circle(p, 3.2, Color(1.0, 0.38, 0.32, 0.95))
+			draw_circle(p, 4.0 + pulse * 2.5, Color(0.80, 0.26, 0.20, 0.30))
+			draw_circle(p, 3.2, Color(0.84, 0.32, 0.24, 0.95))
 		for ep: Vector2 in [Vector2(-0.62, 0.55), Vector2(0.65, -0.48)]:
 			var p: Vector2 = c + ep * max_r
-			draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), Color(0.4, 1.0, 0.6, 0.88))
+			draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), Color(0.48, 0.74, 0.52, 0.88))
 		var lz := c + (Vector2(-0.75, 0.0) if is_transit else Vector2(0.08, 0.12)) * max_r
-		draw_arc(lz, 6.5 + (1.0 - progress) * 8.0, 0.0, TAU, 24, Color(0.95, 0.68, 0.2, 0.9), 1.6)
-		draw_circle(lz, 3.0, Color(1.0, 0.8, 0.3, 1.0))
+		draw_arc(lz, 6.5 + (1.0 - progress) * 8.0, 0.0, TAU, 24, Color(0.84, 0.54, 0.20, 0.92), 1.6)
+		draw_circle(lz, 3.0, Color(0.88, 0.62, 0.28, 1.0))
 
 		# 横向地形扫描线
 		var scan_y := fposmod(anim_t * 58.0, sz.y)
-		draw_line(Vector2(0, scan_y), Vector2(sz.x, scan_y), Color(0.72, 0.5, 0.09, 0.35), 1.2)
+		draw_line(Vector2(0, scan_y), Vector2(sz.x, scan_y), Color(0.80, 0.50, 0.18, 0.36), 1.2)
 
 
 # ================================================================ 子画布：空投/转场轨迹图
@@ -460,7 +463,7 @@ class _DropTelemetryCanvas extends Control:
 
 	func _draw() -> void:
 		var sz := size
-		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.06, 0.07, 0.95))
+		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.07, 0.075, 0.08, 0.96))
 		var p0 := Vector2(36.0, 24.0)
 		var p1 := Vector2(sz.x * 0.46, 32.0)
 		var p2 := Vector2(sz.x * 0.72, sz.y - 34.0)
@@ -472,7 +475,7 @@ class _DropTelemetryCanvas extends Control:
 			p3 = Vector2(sz.x - 42.0, sz.y * 0.52)
 
 		# 地面基线
-		draw_line(Vector2(16, sz.y - 22), Vector2(sz.x - 16, sz.y - 22), Color(1, 1, 1, 0.14), 1.2)
+		draw_line(Vector2(16, sz.y - 22), Vector2(sz.x - 16, sz.y - 22), Color(0.36, 0.39, 0.42, 0.30), 1.2)
 
 		# 轨迹虚线与已完成高亮段
 		var segs := 28
@@ -481,20 +484,20 @@ class _DropTelemetryCanvas extends Control:
 			var u := float(i) / float(segs)
 			var pt := _bezier(p0, p1, p2, p3, u)
 			var active := u <= progress
-			var col := Color(0.95, 0.68, 0.2, 0.92) if active else Color(1, 1, 1, 0.18)
+			var col := Color(0.82, 0.52, 0.18, 0.94) if active else Color(0.34, 0.37, 0.40, 0.35)
 			if i % 2 == 1 or active:
 				draw_line(prev, pt, col, 2.2 if active else 1.2)
 			prev = pt
 
 		# 起点（信天翁号母舰 / 原战区）与终点（LZ 着陆点 / 目标战区）
-		draw_circle(p0, 4.5, Color(0.4, 0.8, 1.0, 0.9))
-		draw_circle(p3, 5.0, Color(0.4, 1.0, 0.6, 0.95))
+		draw_circle(p0, 4.5, Color(0.46, 0.49, 0.52, 0.94))
+		draw_circle(p3, 5.0, Color(0.46, 0.72, 0.48, 0.95))
 
 		# 当前空投舱/机甲位置游标与尾焰
 		var cur := _bezier(p0, p1, p2, p3, clampf(progress, 0.0, 1.0))
 		var pulse := 1.0 + 0.35 * sin(anim_t * 12.0)
-		draw_circle(cur, 7.0 * pulse, Color(1.0, 0.58, 0.15, 0.32))
-		draw_circle(cur, 4.0, Color(1.0, 0.88, 0.55, 1.0))
+		draw_circle(cur, 7.0 * pulse, Color(0.82, 0.48, 0.16, 0.35))
+		draw_circle(cur, 4.0, Color(0.89, 0.64, 0.30, 1.0))
 
 		var font := PixelUI.pixel_font()
 		if font:
@@ -504,8 +507,8 @@ class _DropTelemetryCanvas extends Control:
 			var vel := int(round(lerpf(280.0, 18.0, progress)))
 			var pct := int(round(progress * 100.0))
 			var top_txt := (("Progress %d%%  ·  Transit Gate Clear" if is_e else "推进距离 %d%%  ·  边界通道畅通") % pct) if is_transit else (("ALT %04dm  ·  VEL %d m/s" if is_e else "高度 %04dm  ·  速度 %d m/s") % [alt, vel])
-			draw_string(font, Vector2(18, 20), top_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.95, 0.72, 0.25))
-			draw_string(font, Vector2(sz.x - 110, sz.y - 8), "LZ LOCKED" if is_e else "着陆点锁定", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.4, 1.0, 0.6))
+			draw_string(font, Vector2(18, 20), top_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.87, 0.59, 0.25))
+			draw_string(font, Vector2(sz.x - 110, sz.y - 8), "LZ LOCKED" if is_e else "着陆点锁定", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.48, 0.74, 0.52))
 
 	static func _bezier(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
 		var u := 1.0 - t
@@ -519,15 +522,15 @@ class _ProgressCanvas extends Control:
 
 	func _draw() -> void:
 		var sz := size
-		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.07, 0.07, 0.08, 0.95))
-		draw_rect(Rect2(Vector2.ZERO, sz), Color(1, 1, 1, 0.14), false, 1.0)
+		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.058, 0.062, 0.068, 0.97))
+		draw_rect(Rect2(Vector2.ZERO, sz), Color(0.32, 0.35, 0.38, 0.36), false, 1.0)
 		var pad := 3.0
 		var inner := Rect2(pad, pad, maxf(0.0, sz.x - pad * 2.0), maxf(0.0, sz.y - pad * 2.0))
 		var fill_w := inner.size.x * clampf(progress, 0.0, 1.0)
 		if fill_w > 0.5:
-			draw_rect(Rect2(inner.position, Vector2(fill_w, inner.size.y)), Color(0.82, 0.56, 0.12, 0.95))
+			draw_rect(Rect2(inner.position, Vector2(fill_w, inner.size.y)), Color(0.78, 0.48, 0.16, 0.95))
 			var head_w := minf(14.0, fill_w)
-			draw_rect(Rect2(inner.position.x + fill_w - head_w, inner.position.y, head_w, inner.size.y), Color(1.0, 0.88, 0.52, 0.95))
+			draw_rect(Rect2(inner.position.x + fill_w - head_w, inner.position.y, head_w, inner.size.y), Color(0.90, 0.89, 0.84, 0.96))
 		# 分段刻度线
 		var segs := 20
 		for i in range(1, segs):

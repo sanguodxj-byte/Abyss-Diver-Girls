@@ -53,8 +53,8 @@ static func build(ctx: Dictionary) -> Node3D:
 			K.bb(g, Vector3(0.035, 0.22, 0.07), M_INS, Vector3(sx * 0.068, 0, z), Vector3.ZERO, 0.006)
 			for by in [-0.13, 0.13]:
 				K.cy(g, 0.016, 0.26, A.chrome(), Vector3(0, by, z), Vector3(0, 0, 90), -1.0, 6)
-		K.bb(g, Vector3(0.25, 0.045, 0.09), M_DARK, Vector3(0, 0.18, z), Vector3.ZERO, 0.008)
-		K.bb(g, Vector3(0.25, 0.045, 0.09), M_DARK, Vector3(0, -0.18, z), Vector3.ZERO, 0.008)
+		K.bb(g, Vector3(0.25, 0.045, 0.078), M_DARK, Vector3(0, 0.18, z), Vector3.ZERO, 0.008)
+		K.bb(g, Vector3(0.25, 0.045, 0.078), M_DARK, Vector3(0, -0.18, z), Vector3.ZERO, 0.008)
 	# 粗重高压馈电母排软缆：电容组 → 炮尾铜端子
 	for sx in [-1.0, 1.0]:
 		K.cy(g, 0.028, 0.06, COPPER, Vector3(sx * 0.11, -0.14, -0.54), Vector3(0, 0, 90), -1.0, 8)

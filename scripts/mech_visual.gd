@@ -96,7 +96,7 @@ static func _generic(slot: String, ctx: Dictionary) -> Node3D:
 
 
 # ================================================================ 装配
-static func build(lo: Dictionary, with_lights := true) -> Node3D:
+static func build(lo: Dictionary, with_lights := true, with_shadow := true) -> Node3D:
 	var root := Node3D.new()
 	root.name = "MechVisual"
 	root.set_meta("lights", with_lights)
@@ -104,7 +104,8 @@ static func build(lo: Dictionary, with_lights := true) -> Node3D:
 	root.set_meta("modules", {})
 	root.set_meta("loadout", {})
 	root.set_meta("explode", 0.0)
-	A.ground_decal(root, A.blob_tex(), Color(1, 1, 1, 0.9), 3.8, Vector3(0, 0.03, 0))
+	if with_shadow:
+		A.ground_vfx(root, A.blob_tex(), Color(1, 1, 1, 0.9), 3.8, Vector3(0, 0.034, 0), false, 0.34, false, 1)
 	var mount := Node3D.new()
 	mount.name = "TorsoMount"
 	mount.set_meta("out", Vector3.UP)

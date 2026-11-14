@@ -16,7 +16,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 		A.add(raid.world, A.bevel_box(Vector3(23.0, 0.32, 7.0), 0.06), A.concrete(CONCRETE, true), c + Vector3(0, lv, -5.0))
 		A.add(raid.world, A.bevel_box(Vector3(7.0, 0.32, 10.0), 0.06), A.concrete(CONCRETE, true), c + Vector3(8.0, lv, 3.5))
 		# 外沿防撞护墙与黄色防擦条
-		for seg in [[Vector3(0, 0.55, -8.35), Vector3(23.0, 1.05, 0.3)], [Vector3(11.35, 0.55, 0.0), Vector3(0.3, 1.05, 17.0)], [Vector3(8.0, 0.55, 8.35), Vector3(7.0, 1.05, 0.3)]]:
+		for seg in [[Vector3(0, 0.55, -8.35), Vector3(23.0, 1.05, 0.3)], [Vector3(11.35, 0.55, 0.0), Vector3(0.3, 1.05, 16.3)], [Vector3(8.0, 0.55, 8.35), Vector3(7.0, 1.05, 0.3)]]:
 			A.add(raid.world, A.bevel_box(seg[1], 0.04), A.concrete(CONCRETE.darkened(0.12), false), c + seg[0] + Vector3(0, lv, 0))
 	# 顶层车位线与通风机组
 	for k in 7:
@@ -24,7 +24,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for k in 3:
 		A.add(raid.world, A.bevel_box(Vector3(5.0, 0.02, 0.12), 0.004), A.paint(Color(0.62, 0.6, 0.53), 0.0, 0.9, {"wear": 0.8, "dust": 0.5}), c + Vector3(8.2, 6.97, 0.2 + k * 3.0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(2.4, 1.4, 1.8), 0.06), A.paint(Color(0.46, 0.47, 0.44), 0.45, 0.6, {"wear": 0.5, "rust": 0.6, "panel_scale": 0.8}), c + Vector3(8.4, 7.6, -6.8))
-	A.add(raid.world, A.cyl(0.5, 0.06, 0.5, 14), A.metal(Color(0.22, 0.22, 0.21)), c + Vector3(8.4, 8.34, -6.8), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.cyl(0.5, 0.06, 0.5, 14), A.metal(Color(0.22, 0.22, 0.21)), c + Vector3(8.4, 8.32, -6.8), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(3.0, 2.6, 3.6), 0.08), A.paint(Color(0.5, 0.49, 0.45), 0.3, 0.6, {"wear": 0.5, "rust": 0.5}), c + Vector3(-9.0, 8.1, -5.0))
 	# 柱网：只保留能站人的底层碰撞
 	for gx in [-9.0, -4.5, 0.0, 4.5, 9.0]:
@@ -41,7 +41,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for car_info in [[Vector3(-6.0, 0, 5.6), 8.0], [Vector3(5.2, 0, 5.6), -12.0], [Vector3(10.8, 0, 7.2), 4.0]]:
 		K.car(raid, c + car_info[0], float(car_info[1]))
 	for i in 5:
-		A.ground_decal(raid.world, A.cloud_tex(), Color(0.05, 0.05, 0.05, 0.55), r.randf_range(2.0, 4.2), c + Vector3(r.randf_range(-9, 9), 0.02, r.randf_range(-6, 8)))
+		A.ground_decal(raid.world, A.cloud_tex(), Color(0.05, 0.05, 0.05, 0.55), r.randf_range(2.0, 4.2), c + Vector3(r.randf_range(-9, 9), 0.138, r.randf_range(-6, 8)))
 	# 一辆被掀开后备箱的车，箱子旁边散着工具
 	var trunk := c + Vector3(1.0, 0, 5.0)
 	A.add(raid.world, A.bevel_box(Vector3(1.8, 0.9, 2.4), 0.06, 0.9), A.paint(Color(0.32, 0.28, 0.24), 0.4, 0.6, {"wear": 0.7, "rust": 0.8}), trunk + Vector3(0, 0.55, 0))
@@ -63,10 +63,10 @@ static func build(raid, c: Vector3, pid: String) -> void:
 				A.add(bc, A.cyl(0.30, 0.22, 0.30, 12), M_RIM, Vector3(wx_b, 0.28, wz_b), Vector3(0, 0, 90))
 	for i in 4:
 		A.add(raid.world, A.bevel_box(Vector3(r.randf_range(0.8, 2.4), 0.4, r.randf_range(0.8, 2.0)), 0.05), A.concrete(CONCRETE.darkened(0.2), false), c + Vector3(r.randf_range(-10, 10), 0.2, r.randf_range(0, 8)), Vector3(r.randf_range(-20, 20), r.randf_range(0, 360), r.randf_range(-20, 20)))
-	# 楼梯核心筒：小房间，门朝西
-	K.wall_line(raid, c + Vector3(6.4, 0, -1.0), 5.0, 3.2, 0.0, [[-1.0, 1.0]], CONCRETE.darkened(0.1))
+	# 楼梯核心筒：门洞加宽至 3.6~3.8m
+	K.wall_line(raid, c + Vector3(6.4, 0, -1.0), 5.0, 3.2, 0.0, [[-1.9, 1.9]], CONCRETE.darkened(0.1))
 	K.wall_line(raid, c + Vector3(4.0, 0, 1.2), 4.4, 3.2, 90.0, [], CONCRETE.darkened(0.1))
-	K.wall_line(raid, c + Vector3(8.8, 0, 1.2), 4.4, 3.2, 90.0, [[0.2, 1.8]], CONCRETE.darkened(0.1))
+	K.wall_line(raid, c + Vector3(8.8, 0, 1.2), 4.4, 3.2, 90.0, [[-1.4, 2.2]], CONCRETE.darkened(0.1))
 	K.steps(raid, c + Vector3(6.4, 0, 1.6), 8, 0.24, 0.34, 2.2, 0.0)
 	# 缴费亭与限高杆
 	A.add(raid.world, A.bevel_box(Vector3(3.0, 2.6, 2.4), 0.06), A.paint(Color(0.45, 0.42, 0.34), 0.2, 0.7, {"wear": 0.6, "rust": 0.5}), c + Vector3(-7.0, 1.3, -8.4))

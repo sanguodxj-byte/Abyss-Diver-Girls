@@ -47,6 +47,7 @@ const SFX := {
 	"wpn_flamer_ignite": {"files": ["wpn_flamer_ignite.wav"], "when": "火焰喷射器按下扳机开始喷射的瞬间（mech.gd try_fire）"},
 	"wpn_flamer_loop": {"files": ["wpn_flamer_loop.wav"], "when": "火焰喷射器持续喷射时循环，松开扳机 0.15 秒后淡出（mech.gd）"},
 	"wpn_laser_fire": {"files": ["wpn_laser_fire_01.wav", "wpn_laser_fire_02.wav", "wpn_laser_fire_03.wav"], "when": "聚焦激光每射击一次（mech.gd try_fire）"},
+	"wpn_railgun_fire": {"files": ["wpn_railgun_fire_01.wav", "wpn_railgun_fire_02.wav", "wpn_railgun_fire_03.wav"], "when": "重型狙击与电磁轨道武器每次击发（mech.gd _fire_sfx）"},
 	"wpn_mg_reload": {"files": ["wpn_mg_reload.wav"], "when": "速射机炮开始换弹（mech.gd start_reload）"},
 	"wpn_shotgun_reload": {"files": ["wpn_shotgun_reload.wav"], "when": "霰弹臂开始换弹（mech.gd start_reload）"},
 	"wpn_flamer_reload": {"files": ["wpn_flamer_reload.wav"], "when": "火焰喷射器开始更换燃料罐（mech.gd start_reload）"},

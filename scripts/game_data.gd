@@ -4,6 +4,9 @@ extends Node
 const MapsData = preload("res://scripts/maps.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 const AudioReg = preload("res://scripts/audio/audio_registry.gd")
+const GridPack = preload("res://scripts/grid_pack.gd")
+
+const CARGO_COLS := 6
 
 const SAVE_FILE := "salvage_save.json"
 ## 需要迁移存档的旧数据目录名（与当前数据目录同在 app_userdata 下）。
@@ -23,7 +26,7 @@ const _ZH_SLOT_NAMES := {"core": "躯干", "legs": "底盘", "arm_l": "左臂武
 var SLOT_NAMES := _ZH_SLOT_NAMES.duplicate()
 const STD_RANGE := 10.0
 const RANGE_M_SCALE := 3.0
-const RARITY_COLORS := [Color(0.82, 0.82, 0.82), Color(0.45, 0.88, 0.45), Color(0.4, 0.65, 1.0), Color(0.88, 0.52, 1.0)]
+const RARITY_COLORS := [Color(0.68, 0.70, 0.72), Color(0.52, 0.73, 0.48), Color(0.46, 0.66, 0.82), Color(0.86, 0.58, 0.22)]
 const _ZH_RARITY_NAMES := ["普通", "优良", "稀有", "传说"]
 var RARITY_NAMES := _ZH_RARITY_NAMES.duplicate()
 const _ZH_CAT_NAMES := {"food": "食物", "misc": "杂物", "use": "消耗品", "money": "货币", "module": "机甲模块"}
@@ -39,6 +42,7 @@ var AMMO := {
 	"shotgun": {"mag": 6, "reload": 2.2, "tex": "ammo_shell"},
 	"flamer": {"mag": 60, "reload": 2.4, "tex": "ammo_fuel", "fire_loop": true},
 	"laser": {"mag": 6, "reload": 2.0, "tex": "ammo_cell"},
+	"sniper": {"mag": 5, "reload": 2.4, "tex": "ammo_mg"},
 }
 
 ## 技能：Space=底盘机动，F=背部挂载。icon 对应 assets/ui/ic_<icon>.png
@@ -309,6 +313,77 @@ func value_of(list: Array) -> int:
 		t += int(item(id).v)
 	return t
 
+func item_grid_size(id: String) -> Vector2i:
+	var it: Dictionary = item(id)
+	if it.is_empty():
+		return Vector2i(1, 1)
+	var cat: String = str(it.get("cat", "misc"))
+	if cat == "misc" or cat == "food" or cat == "use":
+		return Vector2i(1, 1)
+	if it.has("gw") and it.has("gh"):
+		return Vector2i(maxi(1, int(it.gw)), maxi(1, int(it.gh)))
+	if base_id(id) == "gold":
+		return Vector2i(2, 1)
+	if cat == "module":
+		var s: String = str(it.get("slot", "arm"))
+		var w: float = float(it.get("w", 5.0))
+		match s:
+			"core":
+				if w >= 19.0:
+					return Vector2i(3, 3)
+				return Vector2i(2, 2) if w <= 9.0 else Vector2i(2, 3)
+			"legs":
+				var lt: String = str(it.get("type", "biped"))
+				if lt == "biped":
+					return Vector2i(2, 2) if w <= 10.0 else Vector2i(2, 3)
+				return Vector2i(3, 3) if w >= 18.0 else Vector2i(3, 2)
+			"arm":
+				if bool(it.get("scope", false)) or float(it.get("range", 10.0)) >= 16.0:
+					return Vector2i(4, 1)
+				return Vector2i(2, 1) if w <= 7.5 else Vector2i(3, 1)
+			"back":
+				return Vector2i(2, 3) if str(it.get("ability", "none")) == "missile" else Vector2i(2, 2)
+			"gen":
+				return Vector2i(1, 2) if w <= 8.5 else Vector2i(2, 2)
+	return Vector2i(1, 1)
+
+func cargo_grid_rows(cargo_cap: float) -> int:
+	return maxi(3, ceili(maxf(1.0, cargo_cap) / 4.0))
+
+func cargo_grid_cap(cargo_cap: float) -> int:
+	return CARGO_COLS * cargo_grid_rows(cargo_cap)
+
+func cargo_cells_used(list: Array) -> int:
+	var total: int = 0
+	for id in list:
+		var sz: Vector2i = item_grid_size(str(id))
+		total += sz.x * sz.y
+	return total
+
+func cargo_sizes(list: Array) -> Array:
+	var out: Array = []
+	for id in list:
+		out.append(item_grid_size(str(id)))
+	return out
+
+func can_pack_cargo(list: Array, cargo_cap: float) -> bool:
+	return GridPack.can_fit(cargo_sizes(list), CARGO_COLS, cargo_grid_rows(cargo_cap))
+
+func pack_cargo_inplace(list: Array, cargo_cap: float) -> bool:
+	var order: PackedInt32Array = GridPack.find_packing_order(cargo_sizes(list), CARGO_COLS, cargo_grid_rows(cargo_cap))
+	if order.is_empty():
+		return false
+	var changed: bool = false
+	for i: int in order.size():
+		if order[i] != i:
+			changed = true
+			break
+	if changed:
+		var orig: Array = list.duplicate()
+		for i: int in order.size():
+			list[i] = orig[order[i]]
+	return true
+
 func slot_accepts(slot: String, id: String) -> bool:
 	if not is_module(id):
 		return false
@@ -386,14 +461,15 @@ func compute_stats(lo: Dictionary) -> Dictionary:
 		s["armor"] += float(m.get("armor", 0))
 		if slot == "core":
 			s["core_armor_class"] = int(m.get("armor_class", 2))
-			s["recon"] = float(m.get("recon", 0.0))
-			s["recon_tag"] = has_recon_tag(m)
 		elif slot == "legs":
 			s["speed"] = float(m.speed)
 			s["load"] = float(m.load)
 			s["legs_armor_class"] = int(m.get("armor_class", 2))
 		elif slot == "arm_l" or slot == "arm_r":
 			s["weapon_range"] = maxf(float(s["weapon_range"]), float(m.get("range", STD_RANGE)))
+		s["recon"] = float(s["recon"]) + float(m.get("recon", 0.0))
+		if has_recon_tag(m):
+			s["recon_tag"] = true
 		if m.has("ergo"):
 			ergo_sum += float(m.get("ergo", 60.0))
 			ergo_cnt += 1
@@ -411,6 +487,7 @@ func compute_stats(lo: Dictionary) -> Dictionary:
 	s["eff"] = eff
 	for f: Callable in _stat_hooks:
 		f.call(s, lo)
+	s["view_range"] = maxf(STD_RANGE, float(s["weapon_range"])) + float(s["recon"])
 	return s
 
 ## 超载减速：总质量（模块+货物）超过底盘承重时速度下降（负重肌力精英专精减轻 30% 超载减速惩罚）
@@ -429,6 +506,8 @@ func can_deploy(lo: Dictionary) -> String:
 	var st := compute_stats(lo)
 	if weight_of(cargo) > st.cargo:
 		return Loc.t("出击货舱超出容量", "Cargo Exceeds Capacity")
+	if not can_pack_cargo(cargo, float(st.cargo)):
+		return Loc.t("出击货舱格位不足", "Cargo Grid Full")
 	return ""
 
 

@@ -157,27 +157,27 @@ const MODULES_EN := {
 	# ---- Reactor ----
 	"gen_diesel": {
 		"name": "DS-6 Diesel Generator",
-		"desc": "Rugged twin-turbo military diesel genset providing 120 Energy and 5% power efficiency.",
+		"desc": "Rugged twin-turbo military diesel genset providing 240 Energy and 5% power efficiency.",
 	},
 	"gen_hfc": {
 		"name": "HFC-3 Hydrogen Fuel Cell",
-		"desc": "High-output PEM hydrogen-oxygen fuel stack—quiet, thermally efficient, and reduces total power drain by 12%.",
+		"desc": "High-output PEM hydrogen-oxygen fuel stack—providing 340 Energy and reducing total power drain by 12%.",
 	},
 	"gen_turbine": {
 		"name": "TB-5 Turbine Unit",
-		"desc": "Aviation gas-turbine and flywheel hybrid unit delivering 200 Energy with 8% efficiency savings for heavy weapon rigs.",
+		"desc": "Aviation gas-turbine and flywheel hybrid unit delivering 400 Energy with 8% efficiency savings for heavy weapon rigs.",
 	},
 	"gen_cell": {
 		"name": "B-40 Light Battery Pack",
-		"desc": "Modular lithium-sulfur battery bank weighing only 5kg; ideal for weight-sensitive light recon frames.",
+		"desc": "Modular lithium-sulfur battery bank weighing only 5kg and supplying 200 Energy; ideal for light recon frames.",
 	},
 	"gen_crystal": {
 		"name": "CR-8 Prototype Crystal Reactor",
-		"desc": "Piezoelectric Abyss Crystal isotope reactor supplying 230 Energy and cutting total mech power drain by 20%.",
+		"desc": "Piezoelectric Abyss Crystal isotope reactor supplying 460 Energy and cutting total mech power drain by 20%.",
 	},
 	"gen_reactor": {
 		"name": "RT-1 Prototype Fission Reactor",
-		"desc": "Compact liquid-metal cooled fission reactor delivering 150 Energy and 10% power efficiency; standard medium core power.",
+		"desc": "Compact liquid-metal cooled fission reactor delivering 300 Energy and 10% power efficiency; standard medium core power.",
 	},
 	# ---- Arm Weapons ----
 	"arm_hmg": {
@@ -207,8 +207,9 @@ const MODULES_EN := {
 	},
 	"arm_rail": {
 		"name": "RG-9 Railgun",
+		"tags": ["Recon"],
 		"caliber": "16mm Tungsten Fin-Stabilized Sabot",
-		"desc": "Hyper-velocity electromagnetic rail sniper (range 16, Class 6 pen) launching long tungsten darts; boosts optical view range.",
+		"desc": "Hyper-velocity electromagnetic rail sniper (range 16, Class 6 pen) launching long tungsten darts; RMB activates long-range optical scope.",
 	},
 	"arm_flamer": {
 		"name": "FT-20 Incendiary Launcher",
@@ -229,6 +230,18 @@ const MODULES_EN := {
 		"name": "SG-7 Heavy Shotgun",
 		"caliber": "23×75mmR 8.5mm Buckshot (7 pellets)",
 		"desc": "23mm military automatic shotgun (range 7) blasting 7 heavy buckshot pellets per shot (Class 1 pen), devastating soft targets.",
+	},
+	"arm_sniper": {
+		"name": "M99 Precision Sniper Rifle",
+		"tags": ["Recon"],
+		"caliber": "12.7×99mm M33 Match AP",
+		"desc": "High-precision heavy sniper rifle with optical scope (RMB black-mask long-range zoom), range 22, Class 5 AP penetration.",
+	},
+	"arm_amr": {
+		"name": "NTW-20 Anti-Materiel Cannon",
+		"tags": ["Recon"],
+		"caliber": "20×110mm HEAP Anti-Materiel",
+		"desc": "Heavy 20mm anti-materiel cannon with extreme long-range optical scope (RMB scope zoom) capable of punching through Class 6 armor.",
 	},
 }
 

@@ -66,10 +66,10 @@ func _init() -> void:
 	top.add_theme_constant_override("separation", 8)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(top)
-	_name = UI.label("", 12, Color(1, 0.9, 0.72), true)
+	_name = UI.label("", 12, UI.TEXT, true)
 	_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(_name)
-	_tag = UI.label("", 12, Color(0.56, 0.78, 0.92), true)
+	_tag = UI.label("", 12, UI.ACCENT_HI, true)
 	_tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(_tag)
@@ -83,7 +83,7 @@ func _init() -> void:
 	_bars.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(_bars)
 
-	_text = UI.label("", 12, Color(0.95, 0.94, 0.90), true)
+	_text = UI.label("", 12, UI.TEXT, true)
 	_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_text.max_lines_visible = 3
 	_text.clip_text = true
@@ -156,6 +156,16 @@ func clear() -> void:
 	_bar.value = 0.0
 
 
+static func _ind_emotion_color(motion: String) -> Color:
+	match motion:
+		"urgent":
+			return Color(0.84, 0.34, 0.24)
+		"happy", "surprised":
+			return Color(0.87, 0.59, 0.25)
+		_:
+			return Color(0.64, 0.67, 0.68)
+
+
 func refresh_lang() -> void:
 	if _cur.is_empty():
 		_name.text = ""
@@ -167,8 +177,9 @@ func refresh_lang() -> void:
 	var sp := str(_cur.get("speaker", ""))
 	var em := AP.resolve_emotion(_cur)
 	var tag_label := AP.emotion_text(str(_cur.get("tag", em.get("label", "沉着"))))
-	var tag_col: Color = em.get("color", Color(0.74, 0.57, 0.3))
 	var motion := str(em.get("motion", "calm"))
+	var tag_col := _ind_emotion_color(motion)
+	var sig_col := Color(0.84, 0.34, 0.24) if motion == "urgent" else Color(0.82, 0.52, 0.18)
 	var line := Story.line_text(_cur)
 	var loc := get_node_or_null("/root/Loc")
 	if loc != null and loc.has_method("is_en") and bool(loc.call("is_en")):
@@ -182,7 +193,8 @@ func refresh_lang() -> void:
 		_tag.add_theme_color_override("font_color", tag_col)
 		_tag.visible = tag_label != ""
 	_text.text = line
-	_avatar.set_char(sp, str(_cur.get("expr", "")), tag_label, motion, tag_col)
+	_bars.accent = sig_col
+	_avatar.set_char(sp, str(_cur.get("expr", "")), tag_label, motion, sig_col)
 
 
 func _queued(id: String) -> bool:
@@ -214,8 +226,9 @@ func _show(entry: Dictionary) -> void:
 	var sp := str(entry.get("speaker", ""))
 	var em := AP.resolve_emotion(entry)
 	var tag_label := AP.emotion_text(str(entry.get("tag", em.get("label", "沉着"))))
-	var tag_col: Color = em.get("color", Color(0.74, 0.57, 0.3))
 	var motion := str(em.get("motion", "calm"))
+	var tag_col := _ind_emotion_color(motion)
+	var sig_col := Color(0.84, 0.34, 0.24) if motion == "urgent" else Color(0.82, 0.52, 0.18)
 	_name.text = Story.char_name(sp, str(entry.get("name", "")))
 	if _tag != null:
 		_tag.text = "[%s]" % tag_label if tag_label != "" else ""
@@ -223,7 +236,7 @@ func _show(entry: Dictionary) -> void:
 		_tag.visible = tag_label != ""
 	var zh := Story.line_text(entry)
 	_text.text = zh
-	_avatar.set_char(sp, str(entry.get("expr", "")), tag_label, motion, tag_col)
+	_avatar.set_char(sp, str(entry.get("expr", "")), tag_label, motion, sig_col)
 	_dur = clampf(zh.length() * HOLD_RATE + 1.2, HOLD_MIN, HOLD_MAX)
 	var v := str(entry.get("voice", ""))
 	if v != "":
@@ -233,7 +246,7 @@ func _show(entry: Dictionary) -> void:
 	Audio.play_ui("comm_open")
 	_bar.max_value = _dur
 	_bar.value = 0.0
-	_bars.accent = tag_col
+	_bars.accent = sig_col
 	_bars.speed_mult = 1.65 if motion == "urgent" else (1.25 if motion in ["happy", "surprised"] else 0.9)
 	_bars.active = true
 	_bars.reset()
@@ -310,6 +323,7 @@ class AvatarMark extends Control:
 
 	func _ready() -> void:
 		clip_contents = true
+		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		_view = SubViewport.new()
 		_view.size = Vector2i(384, 384)
 		_view.transparent_bg = true
@@ -324,6 +338,7 @@ class AvatarMark extends Control:
 		_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_rect.stretch_mode = TextureRect.STRETCH_SCALE
 		_rect.texture = _view.get_texture()
+		_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var m := ShaderMaterial.new()
 		m.shader = load("res://shaders/portrait_key.gdshader")
@@ -347,7 +362,7 @@ class AvatarMark extends Control:
 		if _rect != null and _rect.visible:
 			_rect.position = Vector2.ZERO
 
-	func set_char(cid: String, expr: String, tag := "", motion := "calm", col := Color(0.72, 0.5, 0.09)) -> void:
+	func set_char(cid: String, expr: String, tag := "", motion := "calm", col := Color(0.78, 0.48, 0.16)) -> void:
 		_motion = motion
 		_talking = true
 		accent = col
@@ -397,7 +412,7 @@ class AvatarMark extends Control:
 		var h := size.y
 		if w <= 0.0 or h <= 0.0:
 			return
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.065, 0.075, 0.95))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.08, 0.085, 0.09, 0.96))
 		if _clip == "":
 			if tex:
 				var s := minf(w / float(tex.get_width()), h / float(tex.get_height()))
@@ -419,9 +434,9 @@ class AvatarMark extends Control:
 		while scan_y < h:
 			draw_line(Vector2(0, scan_y), Vector2(w, scan_y), Color(0, 0, 0, 0.16), 1.0)
 			scan_y += 4.0
-		draw_rect(Rect2(Vector2.ZERO, size), Color(accent.r, accent.g, accent.b, 0.42), false, 1.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(accent.r, accent.g, accent.b, 0.56), false, 1.0)
 		var l := 10.0
-		var col := Color(accent.r, accent.g, accent.b, 0.78)
+		var col := Color(0.48, 0.51, 0.54, 0.90)
 		for sx in [0.0, 1.0]:
 			for sy in [0.0, 1.0]:
 				var o := Vector2(sx * w, sy * h)
@@ -436,7 +451,7 @@ class SignalBars extends Control:
 	var t := 0.0
 	var active := true
 	var speed_mult := 1.0
-	var accent := Color(0.74, 0.57, 0.3)
+	var accent := Color(0.78, 0.48, 0.16)
 
 	func reset() -> void:
 		t = 0.0

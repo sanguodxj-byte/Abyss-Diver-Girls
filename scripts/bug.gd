@@ -43,6 +43,11 @@ var scythes: Array = []
 var spinners: Array = []   ## [节点, 局部轴, 待机转速, 攻击转速]：钻头、雷达、核心转子
 var sac: MeshInstance3D
 var flash_t := 0.0
+var _hit_meshes: Array = []
+var _hit_meshes_ready := false
+var _hit_flash_q := 0
+const FLASH_DUR := 0.13
+static var _dead_eye_mat: StandardMaterial3D
 var gun: Node3D
 var gun_tip: Node3D
 var gun_glow: MeshInstance3D
@@ -274,7 +279,7 @@ static func _bx(v: Vector3) -> Mesh:
 
 
 func _pustule(p: Node3D, pos: Vector3, r: float, c: Color, e := 1.0) -> void:
-	A.add(p, A.sphere(r, -1, 10), A.emit(c, e), pos, Vector3.ZERO, Vector3(1, 0.75, 1), false)
+	parts.append(A.add(p, A.sphere(r, -1, 10), A.emit(c, e), pos, Vector3.ZERO, Vector3(1, 0.75, 1), false))
 
 
 # ---------------------------------------------------------------- v2 异形虫族（星际争霸 Zerg × 绝地潜兵 Terminid）
@@ -702,7 +707,8 @@ func _build_visual() -> void:
 	visual = Node3D.new()
 	add_child(visual)
 	var s: float = data.scale
-	A.ground_decal(visual, A.blob_tex(), Color(1, 1, 1, 0.75), 2.6 * s, Vector3(0, 0.03, 0))
+	var sd := A.ground_vfx(visual, A.blob_tex(), Color(1, 1, 1, 0.75), 2.6 * s, Vector3(0, 0.03, 0), false, 0.34, false, 1)
+	sd.set_meta("no_flash", true)
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
@@ -1525,6 +1531,8 @@ func _lod_dt(delta: float) -> float:
 	var d2 := 0.0
 	if raid and is_instance_valid(raid.mech):
 		d2 = global_position.distance_squared_to(raid.mech.global_position)
+		if "cam_focus" in raid and raid.cam_focus != Vector3.ZERO:
+			d2 = minf(d2, global_position.distance_squared_to(raid.cam_focus))
 	if busy or d2 < LOD_NEAR * LOD_NEAR:
 		lod = 0
 	elif d2 < LOD_MID * LOD_MID or state == "chase":
@@ -1937,9 +1945,8 @@ func _physics_tick(delta: float) -> void:
 		_last_state = state
 	atk_cd = max(0.0, atk_cd - delta)
 	if flash_t > 0.0:
-		flash_t -= delta
-		if flash_t <= 0.0:
-			_set_flash(false)
+		flash_t = maxf(0.0, flash_t - delta)
+		_update_flash()
 	var dir := Vector3.ZERO
 	var valid: bool = _alive(target)
 	var to := Vector3.ZERO
@@ -2144,12 +2151,59 @@ func _animate_impl(delta: float, mv: float) -> void:
 		visual.position.y = 0.0
 
 
-func _set_flash(on: bool) -> void:
+func _collect_hit_meshes() -> void:
+	if _hit_meshes_ready or not is_instance_valid(visual):
+		return
+	_hit_meshes_ready = true
+	_hit_meshes.clear()
+	for n in visual.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or mi.get_meta("no_flash", false) or mi.get_meta("shield", false):
+			continue
+		if mi.mesh is PlaneMesh:
+			continue
+		_hit_meshes.append(mi)
 	for p in parts:
-		p.material_overlay = A.flash_overlay() if on else null
+		if is_instance_valid(p) and not p.get_meta("no_flash", false) and not _hit_meshes.has(p):
+			_hit_meshes.append(p)
 
 
-func take_damage(amount: float, _from := Vector3.ZERO, ap := 0.0) -> void:
+func _update_flash() -> void:
+	var q := clampi(int(ceil(clampf(flash_t / FLASH_DUR, 0.0, 1.0) * 5.0)), 0, 5) if flash_t > 0.0 else 0
+	if q == _hit_flash_q:
+		return
+	_hit_flash_q = q
+	_collect_hit_meshes()
+	var mat: Material = A.hit_flash_overlay(float(q) / 5.0) if q > 0 else null
+	for p in _hit_meshes:
+		if is_instance_valid(p):
+			p.material_overlay = mat
+
+
+func _set_flash(on: bool) -> void:
+	if not on:
+		flash_t = 0.0
+	elif flash_t <= 0.0:
+		flash_t = FLASH_DUR
+	_update_flash()
+
+
+func _apply_hit_jolt(from: Vector3, push: float) -> void:
+	var mag := maxf(push, 0.22) * 4.2
+	var away := Vector3.ZERO
+	if from != Vector3.ZERO:
+		away = global_position - from
+		away.y = 0.0
+	if away.length_squared() > 0.0025 and is_instance_valid(visual):
+		away = away.normalized()
+		var local_away := visual.global_transform.basis.inverse() * away
+		hit_v.x += local_away.z * mag + randf_range(-0.4, 0.4) * mag
+		hit_v.z += -local_away.x * mag + randf_range(-0.4, 0.4) * mag
+	else:
+		hit_v += Vector3(randf_range(0.6, 1.1), 0, randf_range(-0.7, 0.7)) * mag
+
+
+func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	if hp <= 0.0:
 		return
 	_wake()
@@ -2158,11 +2212,11 @@ func take_damage(amount: float, _from := Vector3.ZERO, ap := 0.0) -> void:
 	var dmg := amount * (1.0 - eff_arm) if ap > 0.0 else amount
 	hp -= dmg
 	_aggro_on_hit()
-	flash_t = 0.07
-	_set_flash(true)
-	# 受击后仰：越小的虫晃得越厉害
+	flash_t = FLASH_DUR
+	_update_flash()
+	# 受击倾斜冲击：按来弹方位沿受击侧倾仰
 	var push := clampf(amount / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
-	hit_v += Vector3(randf_range(-1.0, -0.4), 0, randf_range(-0.6, 0.6)) * push * 4.0
+	_apply_hit_jolt(from, push)
 	if hp <= 0.0:
 		raid.on_bug_killed(self)
 		_die()
@@ -2211,10 +2265,41 @@ func _die() -> void:
 			"gravity": Vector3(0, -14, 0), "c0": Color(1, 0.85, 0.5), "c1": Color(1, 0.35, 0.1, 0)})
 		A.burst(raid.fx, p, {"amount": 10, "life": 1.6, "size": 0.7 * sc, "additive": false, "vmin": 0.5, "vmax": 1.5, "spread": 30.0, "dir": Vector3.UP,
 			"gravity": Vector3(0, 1.2, 0), "damp": 0.5, "tex": A.soft_dot(), "c0": Color(0.12, 0.12, 0.13, 0.45), "c1": Color(0.15, 0.15, 0.16, 0.0), "grow0": 0.6, "grow1": 1.8})
-	var t2 := create_tween()
-	t2.tween_interval(4.0)
-	t2.tween_property(self, "position:y", position.y - 1.4 * sc, 2.0)
-	t2.tween_callback(queue_free)
+	tw.finished.connect(_finalize_corpse)
+
+
+static func _get_dead_eye_mat() -> StandardMaterial3D:
+	if _dead_eye_mat == null:
+		_dead_eye_mat = StandardMaterial3D.new()
+		_dead_eye_mat.albedo_color = Color(0.08, 0.08, 0.09)
+		_dead_eye_mat.roughness = 0.85
+		_dead_eye_mat.metallic = 0.25
+	return _dead_eye_mat
+
+
+func _finalize_corpse() -> void:
+	if not is_instance_valid(self):
+		return
+	set_physics_process(false)
+	set_process(false)
+	set_notify_transform(false)
+	var sh_fx = get_meta("shield_fx") if has_meta("shield_fx") else null
+	if sh_fx != null and is_instance_valid(sh_fx):
+		sh_fx.queue_free()
+		remove_meta("shield_fx")
+	var dm := _get_dead_eye_mat()
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null:
+			continue
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.material_overlay = null
+		if not (mi.mesh is PlaneMesh) and mi.visibility_range_end <= 0.0:
+			mi.visibility_range_end = 68.0
+			mi.visibility_range_end_margin = 4.0
+		var m := mi.material_override as StandardMaterial3D
+		if m != null and m.emission_enabled:
+			mi.material_override = dm
 
 
 static func _panelize(m: StandardMaterial3D, scale := 1.1) -> void:

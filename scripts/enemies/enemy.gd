@@ -142,7 +142,8 @@ func _build_visual() -> void:
 	add_child(visual)
 	var s: float = data.scale
 	# 影子贴地挂在根节点上：飞行种抬升 visual 时地面阴影留在原处
-	ART.ground_decal(self, ART.blob_tex(), Color(1, 1, 1, 0.7), Models.decal_size(kind) * s, Vector3(0, 0.03, 0))
+	var sd := ART.ground_vfx(self, ART.blob_tex(), Color(1, 1, 1, 0.7), Models.decal_size(kind) * s, Vector3(0, 0.03, 0), false, 0.34, false, 1)
+	sd.set_meta("no_flash", true)
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
@@ -167,10 +168,10 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	amt = maxf(amt, 1.0)
 	hp -= amt
 	_aggro_on_hit()
-	flash_t = 0.07
-	_set_flash(true)
+	flash_t = FLASH_DUR
+	_update_flash()
 	var push := clampf(amt / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
-	hit_v += Vector3(randf_range(-1.0, -0.4), 0, randf_range(-0.6, 0.6)) * push * 4.0
+	_apply_hit_jolt(from, push)
 	if interrupt > 0.0 and act == "wind":
 		wind_dmg += amt
 		if wind_dmg >= float(data.hp) * interrupt:
@@ -334,9 +335,8 @@ func _physics_tick(delta: float) -> void:
 		_perceive()
 	atk_cd = maxf(0.0, atk_cd - delta)
 	if flash_t > 0.0:
-		flash_t -= delta
-		if flash_t <= 0.0:
-			_set_flash(false)
+		flash_t = maxf(0.0, flash_t - delta)
+		_update_flash()
 	var to := Vector3.ZERO
 	var d := 999.0
 	var valid: bool = _alive(target)
@@ -843,10 +843,11 @@ func _pulse() -> void:
 	if raid == null:
 		return
 	_sfx("pulse")
-	var ring := ART.ground_decal(raid.fx, ART.ring_tex(), Color(0.45, 1.0, 0.75, 0.9), pulse_r * 0.5, Vector3(global_position.x, 0.06, global_position.z), true)
+	var rc := Color(0.45, 1.0, 0.75, 0.9)
+	var ring := ART.ground_vfx(raid.fx, ART.ring_tex(), rc, pulse_r * 0.5, Vector3(global_position.x, 0.06, global_position.z), true, 0.44, true, 4)
 	var tw := ring.create_tween()
 	tw.tween_property(ring, "scale", Vector3.ONE * 4.0, 0.35)
-	tw.parallel().tween_property(ring, "transparency", 1.0, 0.4)
+	tw.parallel().tween_property(ring.material_override, "shader_parameter/col", Color(rc.r, rc.g, rc.b, 0.0), 0.4)
 	tw.tween_callback(ring.queue_free)
 	for b in get_tree().get_nodes_in_group("bugs"):
 		if not is_instance_valid(b) or b.dying:

@@ -22,7 +22,7 @@ const FILL_REACH := 0.6       ## 填缝凸体收录“离对方不超过 缝宽 
 const BRIDGE_HALF := 0.4      ## 两最近点之间的连接条半宽（再受两侧障碍物厚度限制，避免薄墙填缝凸出墙面）
 const LOOT_CLEAR := 1.6       ## 填缝 / 凸包离搜刮箱中心至少这么远
 const LOOT_REACH := 3.4       ## 搜刮交互距离 3.6（raid.nearest_box）留 0.2 余量
-const LOOT_WIN := 16.0        ## 搜刮箱封死判定的局部窗口半宽（32m 见方，装得下 18m 的围墙院落）
+const LOOT_WIN := 24.0        ## 搜刮箱封死判定的局部窗口半宽（48m 见方，覆盖大型院落并配合视线校验避免穿墙误判）
 const CELL := 0.5             ## 可达性栅格边长
 const HULL_FILL := 0.85       ## 簇凸包填充率阈值
 const HULL_MAX_AREA := 900.0  ## 只对凸包面积小于它的簇做整体替换（大簇保持“原形状 + 填缝”）
@@ -538,6 +538,44 @@ static func _cells_of(poly: PackedVector2Array) -> PackedInt32Array:
 	return out
 
 
+## 判断搜刮箱格 (cx, cz) 到交互圈内自由格 (tx, tz) 之间是否隔着完整墙体：
+## 允许从箱子紧邻墙边的 <= 2 格（1m）膨胀皮肤走出进入室内，但禁止穿墙（连续 >=3 格或离开自由格再撞墙）跳到街对面。
+static func _grid_can_seed(g: PackedByteArray, nx: int, nz: int, x0: int, z0: int, x1: int, z1: int) -> bool:
+	var dx := absi(x1 - x0)
+	var dz := absi(z1 - z0)
+	var sx := 1 if x1 >= x0 else -1
+	var sz := 1 if z1 >= z0 else -1
+	var x := x0
+	var z := z0
+	var err := dx - dz
+	var skin := 0
+	var exited := false
+	var guard := dx + dz + 2
+	while guard > 0:
+		guard -= 1
+		if x >= 0 and z >= 0 and x < nx and z < nz:
+			var solid := g[z * nx + x] != 0
+			if not exited:
+				if not solid:
+					exited = true
+				else:
+					skin += 1
+					if skin > 2:
+						return false
+			elif solid:
+				return false
+		if x == x1 and z == z1:
+			return exited
+		var e2 := err * 2
+		if e2 > -dz:
+			err -= dz
+			x += sx
+		if e2 < dx:
+			err += dx
+			z += sz
+	return exited
+
+
 ## 从搜刮箱交互圈内的空格出发洪泛，能到窗口边缘 = 走得到
 static func escapes(grid: Dictionary, lp: Vector2) -> bool:
 	var g: PackedByteArray = grid.g
@@ -557,7 +595,7 @@ static func escapes(grid: Dictionary, lp: Vector2) -> bool:
 			if x < 0 or z < 0 or x >= nx or z >= nz:
 				continue
 			var c := org + Vector2((x + 0.5) * CELL, (z + 0.5) * CELL)
-			if c.distance_to(lp) <= LOOT_REACH and g[z * nx + x] == 0:
+			if c.distance_to(lp) <= LOOT_REACH and g[z * nx + x] == 0 and _grid_can_seed(g, nx, nz, cx, cz, x, z):
 				seen[z * nx + x] = 1
 				stack[top] = z * nx + x
 				top += 1

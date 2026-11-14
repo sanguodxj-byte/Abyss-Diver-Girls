@@ -66,6 +66,8 @@ func _pick_spot() -> Vector3:
 			continue
 		if raid._blocked(p, 2.8, true):
 			continue
+		if raid.nav != null and not raid.nav.is_reachable(p, true, 0.0):
+			continue
 		return p
 	return Vector3(INF, 0, INF)
 
@@ -208,7 +210,7 @@ func _spawn_cargo_wreck(p: Vector3) -> void:
 	w.position = p
 	var yaw: float = raid.rng.randf_range(-28.0, 28.0)
 	w.rotation_degrees.y = yaw
-	A.ground_decal(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.03, 0))
+	A.ground_vfx(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.038, 0))
 	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})
 	var M_RIB := A.paint(Color(0.20, 0.22, 0.20), 0.52, 0.60, {"rust": 0.85, "grime": 0.8})
 	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
@@ -223,7 +225,7 @@ func _spawn_cargo_wreck(p: Vector3) -> void:
 		for sy in [-1.08, 1.08]:
 			for sz in [-2.76, 2.76]:
 				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
-	A.add(body, A.bevel_box(Vector3(2.46, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
+	A.add(body, A.bevel_box(Vector3(2.42, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
 	for rx_c in [-0.72, 0.72]:
 		A.add(body, A.cyl(0.32, 0.44, 0.40, 12), M_DARK, Vector3(rx_c, 0.65, 2.92), Vector3(90, 0, 0))
 	for dk in 4:

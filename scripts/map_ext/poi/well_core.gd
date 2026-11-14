@@ -17,7 +17,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 		var a := TAU * i / 8.0
 		var seg := Node3D.new()
 		raid.world.add_child(seg)
-		seg.position = c + Vector3(sin(a) * 9.0, 0.18, cos(a) * 9.0)
+		seg.position = c + Vector3(sin(a) * 9.0, 0.18 + (0.014 if (i % 2) == 1 else 0.0), cos(a) * 9.0)
 		seg.rotation_degrees = Vector3(0, -rad_to_deg(a), 0)
 		A.add(seg, A.bevel_box(Vector3(7.2, 0.36, 4.2), 0.06), A.concrete(PLATE, true), Vector3.ZERO)
 		A.add(seg, A.bevel_box(Vector3(7.24, 0.06, 0.4), 0.02), A.metal(Color(0.28, 0.27, 0.3)), Vector3(0, 0.18, 1.9), Vector3.ZERO, Vector3.ONE, false)

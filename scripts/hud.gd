@@ -54,6 +54,8 @@ var pause_panel: PanelContainer
 var settings_panel: PanelContainer
 var hurt_t := 0.0
 var smoke_rect: ColorRect
+var scope_rect: ColorRect
+var _scope_alpha := 0.0
 var last_toggle_frame := -1
 var radio                       ## 无线电通讯小窗：剧情流程在行动中把通讯推到它上面
 var touch_layer: Control        ## 手机端双摇杆与触控快捷按键层
@@ -128,13 +130,14 @@ shader_type canvas_item;
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 uniform vec2 cam_off = vec2(0.0);
 uniform vec4 tint : source_color = vec4(0.66, 0.63, 0.56, 1.0);
-uniform float strength = 0.04;
+uniform float strength = 0.018;
 void fragment(){
 	vec2 uv = (UV * vec2(1.78, 1.0) * 2.2 + cam_off) * 0.12;
 	float t = TIME * 0.003;
 	float c = texture(noise_tex, uv + vec2(t, t * 0.4)).r;
 	c = texture(noise_tex, uv * 0.6 + vec2(c * 0.2, -t)).r;
-	float m = smoothstep(0.42, 0.78, c);
+	float edge = smoothstep(0.18, 0.72, length(UV - vec2(0.5)));
+	float m = smoothstep(0.45, 0.80, c) * edge;
 	COLOR = vec4(tint.rgb, m * strength);
 }
 """
@@ -143,6 +146,58 @@ void fragment(){
 	smoke_rect.material = sm
 	root.add_child(smoke_rect)
 	root.add_child(vignette)
+	scope_rect = ColorRect.new()
+	scope_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scope_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scope_rect.z_index = 15
+	scope_rect.visible = false
+	var scm := ShaderMaterial.new()
+	var scs := Shader.new()
+	scs.code = """
+shader_type canvas_item;
+uniform float alpha = 0.0;
+uniform vec2 center_px = vec2(640.0, 360.0);
+uniform vec2 vp_size = vec2(1280.0, 720.0);
+uniform float radius_px = 230.0;
+void fragment(){
+	vec2 p = UV * vp_size;
+	vec2 d = p - center_px;
+	float r = length(d);
+	float outer = smoothstep(radius_px - 2.5, radius_px + 1.0, r);
+	vec3 col = vec3(0.0);
+	float a = outer * alpha;
+	// 光学镜筒内壁压暗与金属环圈
+	float rim = smoothstep(radius_px - 14.0, radius_px - 4.0, r) * (1.0 - outer);
+	float edge_vig = smoothstep(radius_px * 0.62, radius_px - 6.0, r) * (1.0 - outer);
+	a = max(a, edge_vig * 0.42 * alpha);
+	col = mix(col, vec3(0.05, 0.06, 0.07), rim * (1.0 - outer));
+	float bevel = exp(-pow((r - (radius_px - 6.0)) * 0.45, 2.0)) * (1.0 - outer);
+	col += vec3(0.24, 0.28, 0.30) * bevel;
+	a = max(a, bevel * 0.55 * alpha);
+	// 镜内精确分化线与测距刻痕
+	if (r < radius_px - 5.0) {
+		float in_gap = step(7.5, r);
+		float thin_h = (1.0 - smoothstep(0.5, 1.35, abs(d.y))) * step(abs(d.x), radius_px - 8.0) * in_gap;
+		float thin_v = (1.0 - smoothstep(0.5, 1.35, abs(d.x))) * step(abs(d.y), radius_px - 8.0) * in_gap;
+		float post_h = (1.0 - smoothstep(1.6, 2.8, abs(d.y))) * step(radius_px * 0.48, abs(d.x)) * step(abs(d.x), radius_px - 7.0);
+		float post_v = (1.0 - smoothstep(1.6, 2.8, abs(d.x))) * step(radius_px * 0.48, abs(d.y)) * step(abs(d.y), radius_px - 7.0);
+		float tx = abs(mod(abs(d.x) + 13.0, 26.0) - 13.0);
+		float ty = abs(mod(abs(d.y) + 13.0, 26.0) - 13.0);
+		float tick_h = (1.0 - smoothstep(0.5, 1.2, tx)) * (1.0 - smoothstep(3.5, 5.2, abs(d.y))) * step(18.0, abs(d.x)) * step(abs(d.x), radius_px * 0.46);
+		float tick_v = (1.0 - smoothstep(0.5, 1.2, ty)) * (1.0 - smoothstep(3.5, 5.2, abs(d.x))) * step(18.0, abs(d.y)) * step(abs(d.y), radius_px * 0.46);
+		float ring_m = exp(-pow((r - radius_px * 0.32) * 0.75, 2.0)) * 0.45;
+		float center_dot = 1.0 - smoothstep(1.4, 2.5, r);
+		float ret = clamp(max(max(thin_h, thin_v) * 0.65, max(max(post_h, post_v) * 0.9, max(max(tick_h, tick_v) * 0.7, max(ring_m, center_dot)))), 0.0, 1.0);
+		vec3 ret_col = mix(vec3(0.04, 0.04, 0.04), vec3(0.95, 0.76, 0.34), max(center_dot, max(thin_h, thin_v) * 0.72));
+		col = mix(col, ret_col, ret);
+		a = max(a, ret * 0.92 * alpha);
+	}
+	COLOR = vec4(col, a);
+}
+"""
+	scm.shader = scs
+	scope_rect.material = scm
+	root.add_child(scope_rect)
 
 	# 驾驶舱面罩四角极简取景角标（纯视觉不拦截鼠标）
 	var visor := Control.new()
@@ -220,24 +275,35 @@ func _build_status() -> void:
 	root.add_child(L)
 	var CH := 168.0  # 拐角面板边长
 	var base_y := 560.0 - CH
-	# 竖轨（子弹栏）：贴在拐角上方
+	# 竖轨（子弹栏）：贴在拐角上方（HD2 扁平战术装甲背板）
 	var rail_w := 100.0
 	var rail_h := 230.0
-	var rv := TextureRect.new()
-	rv.texture = UI.tex("rail_v")
-	rv.stretch_mode = TextureRect.STRETCH_TILE
-	rv.position = Vector2(10, base_y - rail_h + 6)
-	rv.size = Vector2(76, rail_h)
-	rv.scale = Vector2(rail_w / 76.0, 1.0)
+	var rv := Control.new()
+	rv.position = Vector2(10, base_y - rail_h - 14)
+	rv.size = Vector2(rail_w, rail_h + 20)
 	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rv.draw.connect(func():
+		var sz := rv.size
+		var ch := 10.0
+		var pts := PackedVector2Array([
+			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
+			Vector2(sz.x, sz.y), Vector2(0.0, sz.y),
+		])
+		rv.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.93))
+		var opt_pts := PackedVector2Array([
+			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
+			Vector2(sz.x, sz.y), Vector2(0.0, sz.y), Vector2(0.0, ch),
+		])
+		rv.draw_polyline(opt_pts, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
+		# 顶部工业灰黑护盖与做旧橙黄警示块
+		rv.draw_rect(Rect2(ch, 0.0, sz.x - ch, 4.0), Color(0.20, 0.22, 0.24, 0.96))
+		rv.draw_rect(Rect2(ch, 4.0, 26.0, 3.0), Color(0.78, 0.48, 0.16, 0.95))
+		rv.draw_rect(Rect2(sz.x - 20.0, 4.0, 14.0, 3.0), Color(0.78, 0.48, 0.16, 0.85))
+		# 铆钉与中轴隔离梁
+		for rp in [Vector2(sz.x - 6.0, 10.0), Vector2(6.0, sz.y - 6.0), Vector2(sz.x - 6.0, sz.y - 6.0)]:
+			rv.draw_rect(Rect2(rp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), Color(0.44, 0.47, 0.50, 0.85))
+		rv.draw_line(Vector2(sz.x * 0.5, 10.0), Vector2(sz.x * 0.5, sz.y - 10.0), Color(0.34, 0.37, 0.39, 0.82), 1.5))
 	L.add_child(rv)
-	var cap := TextureRect.new()
-	cap.texture = UI.tex("rail_v_cap")
-	cap.position = Vector2(10, base_y - rail_h - 20)
-	cap.size = Vector2(76, 26)
-	cap.scale = Vector2(rail_w / 76.0, 1.0)
-	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	L.add_child(cap)
 	var k := rail_w / 76.0
 	var i := 0
 	for slot in ["arm_l", "arm_r"]:
@@ -253,18 +319,29 @@ func _build_status() -> void:
 	# 横轨（技能栏）：从拐角右侧伸出，仅保留 SPACE（底盘机动）与 F（背部挂载）两个核心主动子系统槽
 	var keys := [["space", Loc.space_key()], ["f", "F"]]
 	var sw := 92.0
-	var rh := TextureRect.new()
-	rh.texture = UI.tex("rail_h")
-	rh.stretch_mode = TextureRect.STRETCH_TILE
+	var rh_w := sw * keys.size() + 26.0
+	var rh := Control.new()
 	rh.position = Vector2(CH - 8, 560 - 104)
-	rh.size = Vector2(sw * keys.size() + 18, 88)
+	rh.size = Vector2(rh_w, 88)
 	rh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rh.draw.connect(func():
+		var sz := rh.size
+		var ch := 10.0
+		var pts := PackedVector2Array([
+			Vector2(0.0, 0.0), Vector2(sz.x - ch, 0.0), Vector2(sz.x, ch),
+			Vector2(sz.x, sz.y), Vector2(0.0, sz.y),
+		])
+		rh.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.93))
+		var outline := PackedVector2Array([
+			Vector2(0.0, 0.0), Vector2(sz.x - ch, 0.0), Vector2(sz.x, ch),
+			Vector2(sz.x, sz.y), Vector2(0.0, sz.y), Vector2(0.0, 0.0),
+		])
+		rh.draw_polyline(outline, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
+		rh.draw_rect(Rect2(0.0, 0.0, sz.x - ch, 2.5), Color(0.24, 0.26, 0.28, 0.92))
+		rh.draw_rect(Rect2(sz.x - 5.0, ch + 2.0, 5.0, sz.y - ch - 6.0), Color(0.78, 0.48, 0.16, 0.94))
+		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.042, 0.047, 0.052, 0.94))
+		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.28, 0.31, 0.33, 0.85), false, 1.0))
 	L.add_child(rh)
-	var hc := TextureRect.new()
-	hc.texture = UI.tex("rail_h_cap")
-	hc.position = rh.position + Vector2(rh.size.x, 0)
-	hc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	L.add_child(hc)
 	for j in keys.size():
 		var ss = HL.SkillSlot.new()
 		ss.position = rh.position + Vector2(12 + j * sw, -18)
@@ -274,20 +351,57 @@ func _build_status() -> void:
 		skill_slots[keys[j][0]] = ss
 	energy_strip = HL.EnergyStrip.new()
 	energy_strip.mech = m
-	energy_strip.position = rh.position + Vector2(4, 88 - 13)
-	energy_strip.size = Vector2(rh.size.x - 8, 6)
+	energy_strip.position = rh.position + Vector2(8, 88 - 13)
+	energy_strip.size = Vector2(rh_w - 20.0, 6)
 	energy_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	L.add_child(energy_strip)
-	# 拐角：底板 + 全息投影 + 货舱条（纯图形，无重叠文字）
-	var cr := TextureRect.new()
-	cr.texture = UI.tex("corner")
+	# 拐角：底板 + 全息投影 + 货舱条（HD2 扁平直角护框）
+	var cr := Control.new()
 	cr.position = Vector2(0, base_y)
-	cr.scale = Vector2(CH / cr.texture.get_width(), CH / cr.texture.get_height())
+	cr.size = Vector2(CH, CH)
 	cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cr.draw.connect(func():
+		var sz := cr.size
+		var ch := 12.0
+		var pts := PackedVector2Array([
+			Vector2(ch, 0.0), Vector2(sz.x, 0.0), Vector2(sz.x, sz.y),
+			Vector2(0.0, sz.y), Vector2(0.0, ch),
+		])
+		cr.draw_colored_polygon(pts, Color(0.082, 0.088, 0.094, 0.95))
+		var outline := PackedVector2Array([
+			Vector2(ch, 0.0), Vector2(sz.x, 0.0), Vector2(sz.x, sz.y),
+			Vector2(0.0, sz.y), Vector2(0.0, ch), Vector2(ch, 0.0),
+		])
+		cr.draw_polyline(outline, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
+		# 顶部工业灰黑结构护沿 + 角部铆钉
+		cr.draw_rect(Rect2(ch + 1.0, 0.0, sz.x - ch - 2.0, 3.0), Color(0.22, 0.24, 0.26, 0.96))
+		cr.draw_rect(Rect2(0.0, ch + 1.0, 3.0, 28.0), Color(0.22, 0.24, 0.26, 0.85))
+		cr.draw_rect(Rect2(sz.x - 28.0, 3.0, 22.0, 2.5), Color(0.78, 0.48, 0.16, 0.92))
+		var well := Rect2(10.0, 12.0, sz.x - 20.0, 128.0)
+		cr.draw_rect(well, Color(0.042, 0.048, 0.052, 0.96))
+		cr.draw_rect(well, Color(0.30, 0.34, 0.36, 0.92), false, 1.0)
+		var wc := well.position + well.size * 0.5
+		cr.draw_line(Vector2(well.position.x + 8.0, wc.y), Vector2(well.end.x - 8.0, wc.y), Color(0.56, 0.62, 0.60, 0.14), 1.0)
+		cr.draw_line(Vector2(wc.x, well.position.y + 8.0), Vector2(wc.x, well.end.y - 8.0), Color(0.56, 0.62, 0.60, 0.14), 1.0)
+		var yc := Color(0.78, 0.48, 0.16, 0.94)
+		var arm := 9.0
+		cr.draw_line(well.position, well.position + Vector2(arm, 0.0), yc, 2.0, true)
+		cr.draw_line(well.position, well.position + Vector2(0.0, arm), yc, 2.0, true)
+		var wtr := Vector2(well.end.x, well.position.y)
+		cr.draw_line(wtr, wtr + Vector2(-arm, 0.0), yc, 2.0, true)
+		cr.draw_line(wtr, wtr + Vector2(0.0, arm), yc, 2.0, true)
+		var wbl := Vector2(well.position.x, well.end.y)
+		cr.draw_line(wbl, wbl + Vector2(arm, 0.0), yc, 2.0, true)
+		cr.draw_line(wbl, wbl + Vector2(0.0, -arm), yc, 2.0, true)
+		cr.draw_line(well.end, well.end + Vector2(-arm, 0.0), yc, 2.0, true)
+		cr.draw_line(well.end, well.end + Vector2(0.0, -arm), yc, 2.0, true)
+		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.04, 0.045, 0.05, 0.94))
+		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.32, 0.35, 0.37, 0.72), false, 1.0))
 	L.add_child(cr)
 	holo = HL.HoloPortrait.new()
 	holo.position = Vector2(12, base_y + 15)
 	holo.size = Vector2(CH - 24, 122)
+	holo.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	L.add_child(holo)
 	holo.setup(m)
 	cargo_strip = HL.CargoStrip.new()
@@ -373,15 +487,15 @@ func _card(key: String, item_id := "") -> Dictionary:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(box)
 	if item_id != "":
-		var ic := K.icon_rect(Icons.icon(item_id), 28)
-		ic.position = Vector2(10, 10)
-		ic.size = Vector2(28, 28)
+		var ic := K.icon_rect(Icons.icon(item_id), 38)
+		ic.position = Vector2(5, 5)
+		ic.size = Vector2(38, 38)
 		box.add_child(ic)
 	var kc := UI.keycap(key, 11)
 	kc.position = Vector2(-2, -2)
 	kc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(kc)
-	var sub := UI.label("", 12, Color(0.96, 0.93, 0.85), true)
+	var sub := UI.label("", 12, UI.TEXT, true)
 	sub.position = Vector2(18, 32)
 	sub.size = Vector2(28, 16)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -492,11 +606,12 @@ func _build_center() -> void:
 			var t := (float(k) + 0.5) / float(slices)
 			var w := pow(sin(t * PI), 1.4)
 			var x := float(k) * sw
-			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, sz.y), Color(0.03, 0.035, 0.045, 0.74 * w))
-			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, 1.5), Color(0.86, 0.66, 0.24, 0.85 * w))
-			zone_banner.draw_rect(Rect2(x, sz.y - 1.5, sw + 0.6, 1.5), Color(0.86, 0.66, 0.24, 0.55 * w))
+			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, sz.y), Color(0.056, 0.060, 0.066, 0.88 * w))
+			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, 2.0), Color(0.28, 0.31, 0.34, 0.94 * w))
+			zone_banner.draw_rect(Rect2(x, sz.y - 2.0, sw + 0.6, 2.0), Color(0.78, 0.48, 0.16, 0.82 * w))
 		var cx := sz.x * 0.5
-		zone_banner.draw_colored_polygon(PackedVector2Array([Vector2(cx, -3), Vector2(cx + 4, 1), Vector2(cx, 5), Vector2(cx - 4, 1)]), Color(0.95, 0.74, 0.28, 0.95)))
+		zone_banner.draw_colored_polygon(PackedVector2Array([Vector2(cx, -4), Vector2(cx + 5, 1), Vector2(cx, 6), Vector2(cx - 5, 1)]), Color(0.78, 0.48, 0.16, 0.98))
+		zone_banner.draw_colored_polygon(PackedVector2Array([Vector2(cx, -1), Vector2(cx + 2, 1), Vector2(cx, 3), Vector2(cx - 2, 1)]), Color(0.18, 0.20, 0.22, 0.96)))
 	root.add_child(zone_banner)
 	var zv := VBoxContainer.new()
 	zv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -504,10 +619,10 @@ func _build_center() -> void:
 	zv.add_theme_constant_override("separation", 1)
 	zv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zone_banner.add_child(zv)
-	zone_sub_lbl = UI.label(Loc.t("进入战区", "ENTERING SECTOR"), 12, UI.GOLD, true)
+	zone_sub_lbl = UI.label(Loc.t("进入战区", "ENTERING SECTOR"), 12, UI.ACCENT_HI, true)
 	zone_sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	zv.add_child(zone_sub_lbl)
-	zone_title_lbl = UI.label("", 22, Color(0.97, 0.94, 0.86), true)
+	zone_title_lbl = UI.label("", 22, UI.TEXT, true)
 	zone_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	zv.add_child(zone_title_lbl)
 
@@ -553,7 +668,7 @@ func _build_center() -> void:
 	extract_bar = ProgressBar.new()
 	extract_bar.show_percentage = false
 	extract_bar.custom_minimum_size = Vector2(0, 10)
-	extract_bar.add_theme_stylebox_override("fill", UI.tex9("bar_fill9", 4, 0))
+	extract_bar.add_theme_stylebox_override("fill", UI.flat_bar(UI.GOOD, Color(0, 0, 0, 0), 0, 0))
 	ev.add_child(extract_bar)
 
 	prompt_panel = PanelContainer.new()
@@ -874,7 +989,7 @@ func _update_cursor() -> void:
 		zone_banner.visible = _zone_active and not ui_open
 	if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	crosshair.visible = not ui_open
+	crosshair.visible = not ui_open and _scope_alpha < 0.35
 	if touch_layer != null:
 		touch_layer.visible = _touch_revealed and not ui_open
 		if ui_open:
@@ -1024,6 +1139,24 @@ func _refresh_fast(m) -> void:
 	if smoke_rect and raid.camera:
 		var cp: Vector3 = raid.camera.global_position
 		(smoke_rect.material as ShaderMaterial).set_shader_parameter("cam_off", Vector2(cp.x, cp.z) * 0.045)
+	if scope_rect != null:
+		var ui_open_sc: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible) or loot_panel.visible or raid.ended or map_open()
+		var want_scope: bool = not ui_open_sc and m.is_scoping()
+		_scope_alpha = move_toward(_scope_alpha, 1.0 if want_scope else 0.0, maxf(get_process_delta_time(), 0.016) * 9.0)
+		scope_rect.visible = _scope_alpha > 0.005
+		if scope_rect.visible:
+			var vp_sz := get_viewport().get_visible_rect().size
+			var cpx := vp_sz * 0.5
+			if raid.aim_override != null or raid._joy_aim_active or is_touch_busy():
+				if raid.camera != null:
+					cpx = raid.camera.unproject_position(m.aim_point)
+			else:
+				cpx = get_viewport().get_mouse_position().clamp(Vector2.ZERO, vp_sz)
+			var scm := scope_rect.material as ShaderMaterial
+			scm.set_shader_parameter("alpha", _scope_alpha)
+			scm.set_shader_parameter("vp_size", vp_sz)
+			scm.set_shader_parameter("center_px", cpx)
+			scm.set_shader_parameter("radius_px", minf(vp_sz.x, vp_sz.y) * 0.34)
 	_update_markers()
 	_update_cursor()
 

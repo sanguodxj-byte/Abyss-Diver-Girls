@@ -5,8 +5,8 @@ extends "res://tests/lib/test_base.gd"
 
 const ARENA := Vector3(760, 0, 760)
 ## 炮击型要放进它的射程里才会开火
-## 曲炮虫放在 16 米：敌人视野封顶为玩家视野的 0.9 倍，机甲正下方（屏幕下边最近）只有约 17.6 米
-const SPAWN_D := {"mortar": 16.0, "wasp": 10.0, "shielder": 11.0}
+## 曲炮虫放在 12.5 米：敌人视野封顶为玩家视野的 0.9 倍，机甲正下方（屏幕下边最近）约 14.1 米
+const SPAWN_D := {"mortar": 12.5, "wasp": 10.0, "shielder": 11.0}
 const REGULARS := ["mantis", "bomber", "crystal_bug", "burrower", "mech_beetle", "wasp", "shielder", "mortar", "ironjaw"]
 const BOSSES := [
 	"grey_brood", "harbor_reaper", "terminus_warden",
@@ -109,6 +109,13 @@ func _clear() -> void:
 		b.queue_free()
 	for n in get_tree().get_nodes_in_group("nests"):
 		n.queue_free()
+	for lb in get_tree().get_nodes_in_group("lootboxes"):
+		if lb.global_position.distance_to(ARENA) < 90.0:
+			lb.queue_free()
+	if raid and raid.world:
+		for ch in raid.world.get_children():
+			if ch is CharacterBody3D and ch.global_position.distance_to(ARENA) < 90.0:
+				ch.queue_free()
 	await frames(3)
 
 
@@ -232,7 +239,7 @@ func _test_traits() -> bool:
 func _test_boss(kind: String) -> bool:
 	await _clear()
 	var ev0: int = int(seen.get("boss_appeared", 0))
-	var b = raid.spawn_bug(kind, ARENA + Vector3(0, 0.5, 15.0))
+	var b = raid.spawn_bug(kind, ARENA + Vector3(0, 0.5, 12.5))
 	if not check(b != null, "%s 生成失败" % kind):
 		return false
 	if not check(b.has_method("hp_ratio"), "%s 不是 Boss 行为脚本" % kind):
@@ -302,5 +309,14 @@ func _test_boss(kind: String) -> bool:
 		return false
 	await frames(3)
 	if not check(not b.is_in_group("boss") and not b.is_in_group("bugs"), "%s 死亡后仍留在虫群 / Boss 组里" % kind):
+		return false
+	if not check(is_instance_valid(b), "%s 尸体被意外清除（应当永久保留）" % kind):
+		return false
+	var has_vault := false
+	for lb in get_tree().get_nodes_in_group("lootboxes"):
+		if is_instance_valid(lb) and bool(lb.get_meta("boss_extra_drop", false)) and lb.global_position.distance_to(ARENA) < 30.0:
+			has_vault = true
+			break
+	if not check(has_vault, "%s 击破后没有生成独立的首领秘藏额外掉落" % kind):
 		return false
 	return true

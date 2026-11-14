@@ -1,374 +1,347 @@
 extends RefCounted
-## 物品像素图标：v0.7.1 起优先取手绘像素图集 assets/ui/px/atlas16.png（tools/gen_tarkov_px.py 逐像素绘制，16×16 美术像素，
-## 界面按 2 倍 / 3 倍最近邻放大，与角色像素头像同一像素尺度）。按物品 id 逐个绘制；没有专属图的物品依次按
-## 武器类型 → 底盘类型 → 背部技能 → 模块槽位 → 物品类别回退到同类图标，最后是「?」木箱。
-## 图集缺失时（例如删掉了 assets/ui/px）退回旧的运行时程序图标（下方 _make），扩展数据的新物品因此总有图标。
+## High-res baked 3D item icon loader & HD2 flat tactical vector icon synthesizer.
+## Items & mech modules load baked multi-cell 3D renders from res://assets/icons/items/<id>.png.
+## Facility, navigation, and active skill glyphs are synthesized as crisp anti-aliased 48x48 icons.
 
-const S := 16
-const PX = preload("res://scripts/px_atlas.gd")
-const ATLAS_PATH := "res://assets/ui/px/atlas16.png"
+const S := 48
+const BAKED_DIR := "res://assets/icons/items"
 
-## 旧版程序图标（图集缺失时回退）：物品 id → [形状, 主色]
-const MAP := {
-	"can_food": ["can", Color(0.72, 0.36, 0.22)],
-	"biscuit": ["biscuit", Color(0.82, 0.66, 0.38)],
-	"water_tab": ["pill", Color(0.45, 0.72, 0.9)],
-	"coffee": ["bean", Color(0.5, 0.32, 0.2)],
-	"circuit": ["board", Color(0.24, 0.55, 0.3)],
-	"wire": ["coil", Color(0.85, 0.5, 0.24)],
-	"bolts": ["bolt", Color(0.66, 0.68, 0.7)],
-	"hdd": ["hdd", Color(0.42, 0.45, 0.5)],
-	"toy": ["toy", Color(0.85, 0.3, 0.3)],
-	"chitin": ["shell", Color(0.48, 0.42, 0.52)],
-	"bug_crystal": ["gem", Color(0.55, 0.85, 0.95)],
-	"fuel_cell": ["cell", Color(0.9, 0.66, 0.18)],
-	"repair_kit": ["medkit", Color(0.78, 0.22, 0.2)],
-	"beacon": ["antenna", Color(0.95, 0.55, 0.15)],
-	"credit_s": ["chip", Color(0.35, 0.6, 0.85)],
-	"credit_l": ["chip", Color(0.6, 0.42, 0.9)],
-	"gold": ["goldbar", Color(0.95, 0.76, 0.24)],
-	"sonic_decoy": ["speaker", Color(0.4, 0.62, 0.55)],
-	"extract_flare": ["canister", Color(0.35, 0.8, 0.45)],
-	"energy_rod": ["rod", Color(0.95, 0.85, 0.3)],
-	"coolant_pack": ["canister", Color(0.4, 0.75, 0.95)],
-	"extract_barrier": ["shield", Color(0.4, 0.7, 0.95)],
-	"surge_cell": ["cell", Color(0.7, 0.45, 0.95)],
-}
-## 模块槽位 → 形状
-const SLOT_SHAPE := {"core": "core", "legs": "legs", "arm": "arm", "back": "back", "gen": "gen"}
-const SLOT_COLOR := {"core": Color(0.62, 0.64, 0.58), "legs": Color(0.55, 0.58, 0.52), "arm": Color(0.5, 0.52, 0.55),
-	"back": Color(0.56, 0.6, 0.46), "gen": Color(0.88, 0.62, 0.2)}
-const CAT_SHAPE := {"food": ["can", Color(0.7, 0.5, 0.3)], "misc": ["bolt", Color(0.6, 0.62, 0.64)],
-	"use": ["cell", Color(0.85, 0.6, 0.2)], "money": ["chip", Color(0.4, 0.6, 0.85)]}
-## 飞空艇设施 / 技能卡片图标
-const FAC := {"hangar": ["core", Color(0.95, 0.66, 0.16)], "workshop": ["wrench", Color(0.7, 0.72, 0.74)],
-	"infirmary": ["medkit", Color(0.8, 0.25, 0.22)], "lab": ["flask", Color(0.45, 0.85, 0.7)], "kitchen": ["can", Color(0.85, 0.5, 0.25)],
-	"research": ["flask", Color(0.55, 0.75, 0.95)], "ability": ["gen", Color(0.95, 0.7, 0.2)], "talent": ["star", Color(0.95, 0.8, 0.35)],
-	"training": ["star", Color(0.6, 0.85, 0.95)], "meal": ["can", Color(0.9, 0.55, 0.25)]}
+const _HD2_Y := Color(0.81, 0.51, 0.19, 1.0)
+const _HD2_W := Color(0.86, 0.88, 0.88, 1.0)
+const _HD2_C := Color(0.58, 0.73, 0.78, 1.0)
+const _HD2_G := Color(0.48, 0.76, 0.52, 1.0)
 
-static var _cache := {}
-static var _atlas: Texture2D
-static var _atlas_tried := false
+static var _cache: Dictionary = {}
+
+
+static func _gamedata() -> Node:
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		return (ml as SceneTree).root.get_node_or_null("GameData")
+	return null
+
+
+static func _base_id(id: String) -> String:
+	var gd := _gamedata()
+	if gd != null:
+		return str(gd.call("base_id", id))
+	var hash_pos := id.find("#")
+	return id.substr(0, hash_pos) if hash_pos >= 0 else id
 
 
 static func atlas() -> Texture2D:
-	if not _atlas_tried:
-		_atlas_tried = true
-		if ResourceLoader.exists(ATLAS_PATH):
-			_atlas = load(ATLAS_PATH)
-	return _atlas
+	return null
 
 
-## 图集里一格（16×16）；没有这一格返回 null
-static func atlas_icon(key: String) -> Texture2D:
-	if not PX.ICONS.has(key) or atlas() == null:
-		return null
-	var ck := "@px_" + key
-	if _cache.has(ck):
-		return _cache[ck]
-	var at := AtlasTexture.new()
-	at.atlas = atlas()
-	var cell: Vector2i = PX.ICONS[key]
-	at.region = Rect2(cell.x * S, cell.y * S, S, S)
-	at.filter_clip = true
-	_cache[ck] = at
-	return at
-
-
-## 物品 id → 图集格名（含回退链）
 static func sprite_key(id: String) -> String:
-	var gd = Engine.get_main_loop().root.get_node_or_null("GameData")
-	var base := id
-	if gd != null and gd.has_method("base_id"):
-		base = gd.base_id(id)
-	if PX.ICONS.has(base):
-		return base
-	if gd != null and gd.is_module(id):
-		var m: Dictionary = gd.module(id)
-		var w := str(m.get("weapon", ""))
-		if w != "" and PX.WEAPON.has(w):
-			return PX.WEAPON[w]
-		var slot := str(m.get("slot", ""))
-		if slot == "legs" and PX.LEGS.has(str(m.get("type", ""))):
-			return PX.LEGS[str(m.get("type", ""))]
-		if slot == "back" and PX.BACK.has(str(m.get("ability", ""))):
-			return PX.BACK[str(m.get("ability", ""))]
-		if PX.SLOT.has(slot):
-			return PX.SLOT[slot]
-	elif gd != null:
-		var cat := str(gd.item(id).get("cat", ""))
-		if PX.CAT.has(cat):
-			return PX.CAT[cat]
-	return "unknown"
+	return _base_id(id)
 
 
+static func atlas_icon(key: String) -> Texture2D:
+	if key == "":
+		return null
+	return ui_icon(key)
+
+
+## Returns baked 3D PNG icon for any item or module ID.
 static func icon(id: String) -> Texture2D:
-	if _cache.has(id):
-		return _cache[id]
-	var t := atlas_icon(sprite_key(id))
-	if t == null:
-		t = _legacy_icon(id)
-	_cache[id] = t
-	return t
+	var base := _base_id(id)
+	var ck := "@item_" + base
+	if _cache.has(ck):
+		var cached: Texture2D = _cache[ck]
+		return cached
+	var path := "%s/%s.png" % [BAKED_DIR, base]
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		var res: Resource = ResourceLoader.load(path)
+		if res is Texture2D:
+			tex = res as Texture2D
+	if tex == null:
+		var abs_path := ProjectSettings.globalize_path(path)
+		if FileAccess.file_exists(abs_path):
+			var img := Image.load_from_file(abs_path)
+			if img != null and not img.is_empty():
+				img.generate_mipmaps()
+				tex = ImageTexture.create_from_image(img)
+	if tex == null:
+		tex = _vector_icon("unknown")
+	_cache[ck] = tex
+	return tex
 
 
-## 设施 / 技能卡图标
+## Returns crisp 48x48 flat tactical vector icon for airship facilities.
 static func facility_icon(id: String) -> Texture2D:
-	var t := atlas_icon(str(PX.FAC.get(id, "")))
-	return t if t != null else _legacy_facility_icon(id)
+	var ck := "@fac_" + id
+	if _cache.has(ck):
+		var cached: Texture2D = _cache[ck]
+		return cached
+	var tex: Texture2D = _vector_icon("fac_" + id)
+	_cache[ck] = tex
+	return tex
 
 
-## 界面图标（底部导航 nav_*、地图标记等，直接按图集格名取）
+## Resolves UI icons: returns baked 3D icon if key is an item ID (e.g. Growth tracks),
+## otherwise returns a crisp 48x48 anti-aliased HD2 tactical glyph.
 static func ui_icon(key: String) -> Texture2D:
-	return atlas_icon(key)
-
-
-static func _legacy_icon(id: String) -> Texture2D:
-	if _cache.has("@l" + id):
-		return _cache["@l" + id]
-	var shape := "box"
-	var col := Color(0.6, 0.6, 0.6)
-	var gd = Engine.get_main_loop().root.get_node_or_null("GameData")
-	var base := id
+	if key == "":
+		return null
+	var ck := "@ui_" + key
+	if _cache.has(ck):
+		var cached: Texture2D = _cache[ck]
+		return cached
+	var gd := _gamedata()
+	var base := _base_id(key)
 	if gd != null:
-		base = gd.base_id(id) if gd.has_method("base_id") else id
-	if MAP.has(base):
-		shape = MAP[base][0]
-		col = MAP[base][1]
-	elif gd != null and gd.is_module(id):
-		var slot := str(gd.module(id).get("slot", "core"))
-		shape = SLOT_SHAPE.get(slot, "box")
-		col = SLOT_COLOR.get(slot, col)
-	elif gd != null:
-		var cat := str(gd.item(id).get("cat", "misc"))
-		if CAT_SHAPE.has(cat):
-			shape = CAT_SHAPE[cat][0]
-			col = CAT_SHAPE[cat][1]
-	var t := _make(shape, col)
-	_cache["@l" + id] = t
-	return t
+		var items_dict: Variant = gd.get("ITEMS")
+		if items_dict is Dictionary and (items_dict as Dictionary).has(base):
+			var it_tex := icon(base)
+			_cache[ck] = it_tex
+			return it_tex
+	var tex: Texture2D = _vector_icon(key)
+	_cache[ck] = tex
+	return tex
 
 
-static func _legacy_facility_icon(id: String) -> Texture2D:
-	var key := "@lfac_" + id
-	if _cache.has(key):
-		return _cache[key]
-	var d: Array = FAC.get(id, ["box", Color(0.7, 0.7, 0.7)])
-	var t := _make(str(d[0]), d[1])
-	_cache[key] = t
-	return t
+# ==============================================================================
+# Analytic 48x48 SDF vector glyph renderer (mipmapped, smooth anti-aliasing)
+# ==============================================================================
+
+static func _sd_box(p: Vector2, c: Vector2, half: Vector2) -> float:
+	var d := (p - c).abs() - half
+	return Vector2(maxf(d.x, 0.0), maxf(d.y, 0.0)).length() + minf(maxf(d.x, d.y), 0.0)
 
 
-# ---------------------------------------------------------------- 绘制
-static func _make(shape: String, c: Color) -> ImageTexture:
+static func _sd_seg(p: Vector2, a: Vector2, b: Vector2, r: float) -> float:
+	var pa := p - a
+	var ba := b - a
+	var denom := maxf(ba.dot(ba), 1e-6)
+	var h := clampf(pa.dot(ba) / denom, 0.0, 1.0)
+	return (pa - ba * h).length() - r
+
+
+static func _sd_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> float:
+	var e0 := b - a
+	var e1 := c - b
+	var e2 := a - c
+	var v0 := p - a
+	var v1 := p - b
+	var v2 := p - c
+	var pq0 := v0 - e0 * clampf(v0.dot(e0) / maxf(e0.dot(e0), 1e-6), 0.0, 1.0)
+	var pq1 := v1 - e1 * clampf(v1.dot(e1) / maxf(e1.dot(e1), 1e-6), 0.0, 1.0)
+	var pq2 := v2 - e2 * clampf(v2.dot(e2) / maxf(e2.dot(e2), 1e-6), 0.0, 1.0)
+	var s := signf(e0.x * e2.y - e0.y * e2.x)
+	var d0 := Vector2(pq0.dot(pq0), s * (v0.x * e0.y - v0.y * e0.x))
+	var d1 := Vector2(pq1.dot(pq1), s * (v1.x * e1.y - v1.y * e1.x))
+	var d2 := Vector2(pq2.dot(pq2), s * (v2.x * e2.y - v2.y * e2.x))
+	var dm := Vector2(minf(d0.x, minf(d1.x, d2.x)), minf(d0.y, minf(d1.y, d2.y)))
+	return -sqrt(dm.x) * signf(dm.y)
+
+
+static func _sd_ring(p: Vector2, c: Vector2, r: float, thick: float) -> float:
+	return absf((p - c).length() - r) - thick
+
+
+static func _sd_hex(p: Vector2, c: Vector2, r: float) -> float:
+	var q := (p - c).abs()
+	return maxf(q.x * 0.8660254 + q.y * 0.5, q.y) - r
+
+
+static func _blend(dst: Color, col: Color, sd: float) -> Color:
+	var cov := clampf(0.65 - sd, 0.0, 1.0)
+	if cov <= 0.001:
+		return dst
+	var src_a := col.a * cov
+	var out_a := src_a + dst.a * (1.0 - src_a)
+	if out_a <= 0.0001:
+		return Color(0, 0, 0, 0)
+	var out_rgb := (Vector3(col.r, col.g, col.b) * src_a + Vector3(dst.r, dst.g, dst.b) * dst.a * (1.0 - src_a)) / out_a
+	return Color(out_rgb.x, out_rgb.y, out_rgb.z, out_a)
+
+
+static func _vector_icon(kind: String) -> Texture2D:
 	var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var hi := c.lightened(0.35)
-	var lo := c.darkened(0.35)
-	var dk := c.darkened(0.6)
-	match shape:
-		"core":
-			_r(img, 2, 4, 12, 3, c)
-			_r(img, 4, 7, 8, 6, c)
-			_r(img, 6, 5, 4, 2, Color(0.55, 0.85, 1.0))
-			_r(img, 5, 9, 6, 1, dk)
-			_r(img, 5, 11, 6, 1, dk)
-			_r(img, 2, 4, 12, 1, hi)
-			_r(img, 7, 2, 2, 2, lo)
-		"legs":
-			_r(img, 4, 2, 8, 3, c)
-			_r(img, 4, 5, 3, 7, c)
-			_r(img, 9, 5, 3, 7, c)
-			_r(img, 3, 12, 5, 2, lo)
-			_r(img, 8, 12, 5, 2, lo)
-			_r(img, 4, 2, 8, 1, hi)
-			_r(img, 4, 8, 3, 1, dk)
-			_r(img, 9, 8, 3, 1, dk)
-		"arm":
-			_r(img, 1, 6, 14, 2, lo)
-			_r(img, 3, 5, 7, 5, c)
-			_r(img, 5, 10, 2, 3, lo)
-			_r(img, 13, 5, 2, 4, dk)
-			_r(img, 3, 5, 7, 1, hi)
-			_r(img, 4, 7, 4, 1, dk)
-		"back":
-			_r(img, 3, 3, 10, 11, c)
-			_r(img, 4, 2, 8, 2, lo)
-			_r(img, 5, 8, 6, 4, lo)
-			_r(img, 3, 3, 10, 1, hi)
-			_r(img, 5, 6, 6, 1, dk)
-		"gen":
-			_r(img, 4, 3, 8, 11, c)
-			_r(img, 6, 2, 4, 1, lo)
-			_r(img, 4, 3, 2, 11, hi)
-			_r(img, 8, 5, 2, 3, Color(1, 1, 0.85))
-			_r(img, 7, 8, 2, 1, Color(1, 1, 0.85))
-			_r(img, 6, 9, 2, 3, Color(1, 1, 0.85))
-		"can":
-			_r(img, 4, 4, 8, 9, c)
-			_r(img, 4, 3, 8, 2, Color(0.75, 0.76, 0.78))
-			_r(img, 4, 7, 8, 3, Color(0.92, 0.88, 0.72))
-			_r(img, 4, 12, 8, 1, Color(0.6, 0.6, 0.62))
-			_r(img, 4, 4, 1, 9, hi)
-		"biscuit":
-			_r(img, 2, 5, 12, 6, c)
-			_r(img, 2, 5, 12, 1, hi)
-			for x in [4, 7, 10]:
-				_r(img, x, 7, 1, 1, lo)
-				_r(img, x + 1, 9, 1, 1, lo)
-		"pill":
-			_r(img, 3, 4, 10, 8, Color(0.78, 0.8, 0.82))
-			for p in [Vector2i(4, 5), Vector2i(8, 5), Vector2i(4, 8), Vector2i(8, 8)]:
-				_r(img, p.x, p.y, 3, 2, c)
-				_r(img, p.x, p.y, 1, 1, hi)
-		"bean":
-			_r(img, 4, 4, 8, 9, c)
-			_r(img, 5, 3, 6, 1, c)
-			_r(img, 5, 13, 6, 1, c)
-			_r(img, 7, 4, 1, 9, dk)
-			_r(img, 5, 5, 1, 3, hi)
-		"board":
-			_r(img, 2, 3, 12, 10, c)
-			_r(img, 5, 5, 4, 4, Color(0.15, 0.16, 0.18))
-			_r(img, 10, 6, 2, 2, Color(0.15, 0.16, 0.18))
-			_r(img, 3, 10, 9, 1, Color(0.9, 0.75, 0.3))
-			_r(img, 9, 4, 1, 6, Color(0.9, 0.75, 0.3))
-			_r(img, 2, 3, 12, 1, hi)
-		"coil":
-			_ring(img, 8, 8, 6, 3, c)
-			_ring(img, 8, 8, 5, 4, hi)
-			_r(img, 12, 11, 3, 1, lo)
-		"bolt":
-			_r(img, 4, 2, 8, 4, c)
-			_r(img, 6, 6, 4, 8, lo)
-			for y in [7, 9, 11]:
-				_r(img, 6, y, 4, 1, dk)
-			_r(img, 4, 2, 8, 1, hi)
-		"hdd":
-			_r(img, 2, 3, 12, 10, c)
-			_ring(img, 7, 8, 4, 0, Color(0.7, 0.72, 0.75))
-			_r(img, 7, 8, 1, 1, dk)
-			_r(img, 11, 10, 2, 2, Color(0.4, 1.0, 0.6))
-			_r(img, 2, 3, 12, 1, hi)
-		"toy":
-			_ring(img, 7, 9, 5, 0, c)
-			_r(img, 5, 7, 2, 2, Color(1, 1, 1))
-			_r(img, 12, 4, 1, 4, Color(0.75, 0.76, 0.78))
-			_r(img, 11, 3, 3, 1, Color(0.75, 0.76, 0.78))
-			_r(img, 4, 6, 2, 1, hi)
-		"shell":
-			for y in range(3, 13):
-				var hw := int(round(sqrt(max(0.0, 36.0 - pow((y - 9) * 0.9, 2)))))
-				_r(img, 8 - hw, y, hw * 2, 1, c)
-			_r(img, 7, 3, 2, 10, lo)
-			_r(img, 4, 7, 2, 1, hi)
-			_r(img, 10, 7, 2, 1, hi)
-		"gem":
-			for y in range(2, 14):
-				var hw := (y - 2) if y < 7 else (13 - y)
-				hw = clampi(hw, 0, 5)
-				_r(img, 8 - hw, y, hw * 2, 1, c)
-			_r(img, 6, 4, 2, 4, hi)
-			_r(img, 9, 8, 2, 3, lo)
-		"cell":
-			_r(img, 5, 3, 6, 11, c)
-			_r(img, 6, 2, 4, 1, Color(0.75, 0.76, 0.78))
-			_r(img, 5, 6, 6, 1, dk)
-			_r(img, 5, 10, 6, 1, dk)
-			_r(img, 5, 3, 1, 11, hi)
-		"medkit":
-			_r(img, 2, 5, 12, 8, Color(0.85, 0.85, 0.82))
-			_r(img, 6, 3, 4, 2, Color(0.5, 0.5, 0.5))
-			_r(img, 7, 6, 2, 6, c)
-			_r(img, 5, 8, 6, 2, c)
-		"antenna":
-			_r(img, 5, 10, 6, 4, c)
-			_r(img, 7, 4, 2, 6, lo)
-			_r(img, 7, 3, 2, 1, Color(1, 0.4, 0.3))
-			_r(img, 3, 4, 1, 3, hi)
-			_r(img, 12, 4, 1, 3, hi)
-			_r(img, 1, 3, 1, 5, hi)
-			_r(img, 14, 3, 1, 5, hi)
-		"chip":
-			_r(img, 2, 4, 12, 8, c)
-			_r(img, 4, 6, 4, 4, Color(0.95, 0.8, 0.35))
-			_r(img, 9, 7, 3, 1, hi)
-			_r(img, 9, 9, 3, 1, hi)
-			_r(img, 2, 4, 12, 1, hi)
-		"goldbar":
-			for i in 6:
-				_r(img, 2 + i / 2, 11 - i, 12 - i, 1, c if i > 0 else lo)
-			_r(img, 5, 7, 6, 1, hi)
-		"speaker":
-			_r(img, 3, 3, 10, 11, c)
-			_ring(img, 8, 9, 3, 1, dk)
-			_r(img, 7, 4, 2, 2, dk)
-			_r(img, 3, 3, 10, 1, hi)
-		"canister":
-			_r(img, 5, 4, 6, 10, c)
-			_r(img, 6, 2, 4, 2, Color(0.75, 0.76, 0.78))
-			_r(img, 5, 8, 6, 2, Color(0.15, 0.16, 0.18))
-			_r(img, 5, 4, 1, 10, hi)
-		"rod":
-			for i in 10:
-				_r(img, 3 + i, 12 - i, 2, 2, c)
-			_r(img, 2, 12, 3, 3, lo)
-			_r(img, 12, 1, 3, 3, Color(1, 1, 0.8))
-		"shield":
-			for y in range(2, 14):
-				var hw := 6 if y < 9 else 6 - (y - 8)
-				_r(img, 8 - hw, y, hw * 2, 1, c)
-			_r(img, 7, 3, 2, 9, hi)
-		"wrench":
-			for i in 9:
-				_r(img, 3 + i, 12 - i, 2, 2, c)
-			_r(img, 10, 2, 4, 2, c)
-			_r(img, 12, 4, 2, 2, c)
-			_r(img, 2, 11, 3, 3, lo)
-		"flask":
-			_r(img, 6, 2, 4, 5, Color(0.75, 0.8, 0.82))
-			for y in range(7, 14):
-				var hw := mini(2 + (y - 7), 6)
-				_r(img, 8 - hw, y, hw * 2, 1, c)
-			_r(img, 5, 10, 2, 2, hi)
-		"star":
-			_r(img, 7, 2, 2, 12, c)
-			_r(img, 2, 6, 12, 2, c)
-			_r(img, 4, 4, 8, 6, c)
-			_r(img, 5, 11, 2, 2, c)
-			_r(img, 9, 11, 2, 2, c)
-			_r(img, 7, 5, 2, 2, hi)
-		_:
-			_r(img, 3, 3, 10, 10, c)
-			_r(img, 3, 3, 10, 1, hi)
-	_outline(img)
+	var ctr := Vector2(24.0, 24.0)
+	var key := kind.to_lower()
+
+	for y in S:
+		for x in S:
+			var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+			var col := Color(0, 0, 0, 0)
+
+			match key:
+				"nav_maintenance", "fac_hangar":
+					# Tactical wrench + gear plate
+					var plate := maxf(_sd_hex(p, ctr, 18.0), -_sd_hex(p, ctr, 14.5))
+					col = _blend(col, Color(_HD2_W.r, _HD2_W.g, _HD2_W.b, 0.35), plate)
+					var shaft := _sd_seg(p, Vector2(14, 34), Vector2(31, 17), 3.0)
+					var head := _sd_box(Vector2((p.x - 32.5) * 0.707 - (p.y - 15.5) * 0.707, (p.x - 32.5) * 0.707 + (p.y - 15.5) * 0.707), Vector2.ZERO, Vector2(6.5, 5.5))
+					var jaw := _sd_box(Vector2((p.x - 35.5) * 0.707 - (p.y - 12.5) * 0.707, (p.x - 35.5) * 0.707 + (p.y - 12.5) * 0.707), Vector2.ZERO, Vector2(3.6, 2.4))
+					var pommel := (p - Vector2(13.0, 35.0)).length() - 4.4
+					col = _blend(col, _HD2_Y, minf(shaft, minf(pommel, maxf(head, -jaw))))
+
+				"fac_workshop":
+					# Crossed wrench + hex nut
+					var nut := maxf(_sd_hex(p, ctr, 14.5), -((p - ctr).length() - 5.5))
+					var bar1 := _sd_seg(p, Vector2(11, 37), Vector2(37, 11), 2.4)
+					var bar2 := _sd_seg(p, Vector2(11, 11), Vector2(22, 22), 2.4)
+					col = _blend(col, Color(_HD2_W.r, _HD2_W.g, _HD2_W.b, 0.36), nut)
+					col = _blend(col, _HD2_Y, minf(bar1, bar2))
+
+				"nav_trade":
+					# Exchange double chevrons + credit diamond
+					var a_top := _sd_seg(p, Vector2(10, 17), Vector2(34, 17), 2.3)
+					var a_head := _sd_tri(p, Vector2(39, 17), Vector2(29, 11), Vector2(29, 23))
+					var b_bot := _sd_seg(p, Vector2(14, 31), Vector2(38, 31), 2.3)
+					var b_head := _sd_tri(p, Vector2(9, 31), Vector2(19, 25), Vector2(19, 37))
+					col = _blend(col, _HD2_Y, minf(a_top, a_head))
+					col = _blend(col, _HD2_W, minf(b_bot, b_head))
+
+				"nav_deploy":
+					# HD2 Hellpod drop reticle + triple downward chevron
+					var ring := _sd_ring(p, ctr, 18.0, 1.5)
+					var pod := _sd_tri(p, Vector2(24, 35), Vector2(15, 19), Vector2(33, 19))
+					var fin := _sd_box(p, Vector2(24, 14.5), Vector2(7.0, 2.5))
+					var core := _sd_tri(p, Vector2(24, 29), Vector2(20, 22), Vector2(28, 22))
+					col = _blend(col, _HD2_W, ring)
+					col = _blend(col, _HD2_Y, maxf(minf(pod, fin), -core))
+
+				"nav_skills", "fac_talent", "fac_training", "fac_star", "fac_star_b":
+					# Sharp 4-point tactical chevron star + ring
+					var is_b := key.ends_with("_b")
+					var tint := _HD2_C if is_b else _HD2_Y
+					var ring := _sd_ring(p, ctr, 18.5, 1.2)
+					var s1 := _sd_tri(p, Vector2(24, 7), Vector2(28.5, 24), Vector2(19.5, 24))
+					var s2 := _sd_tri(p, Vector2(24, 41), Vector2(19.5, 24), Vector2(28.5, 24))
+					var s3 := _sd_tri(p, Vector2(7, 24), Vector2(24, 19.5), Vector2(24, 28.5))
+					var s4 := _sd_tri(p, Vector2(41, 24), Vector2(24, 28.5), Vector2(24, 19.5))
+					col = _blend(col, Color(_HD2_W.r, _HD2_W.g, _HD2_W.b, 0.55), ring)
+					col = _blend(col, tint, minf(minf(s1, s2), minf(s3, s4)))
+
+				"nav_stash":
+					# 2x2 tactical cargo grid emblem
+					var outer := maxf(_sd_box(p, ctr, Vector2(17, 17)), -_sd_box(p, ctr, Vector2(14.5, 14.5)))
+					var c1 := _sd_box(p, Vector2(17.5, 17.5), Vector2(4.8, 4.8))
+					var c2 := _sd_box(p, Vector2(30.5, 17.5), Vector2(4.8, 4.8))
+					var c3 := _sd_box(p, Vector2(17.5, 30.5), Vector2(4.8, 4.8))
+					var c4 := _sd_box(p, Vector2(30.5, 30.5), Vector2(4.8, 4.8))
+					col = _blend(col, _HD2_W, outer)
+					col = _blend(col, _HD2_Y, minf(c1, c4))
+					col = _blend(col, Color(_HD2_W.r, _HD2_W.g, _HD2_W.b, 0.78), minf(c2, c3))
+
+				"nav_codex":
+					# Open tactical dossier plates
+					var left_p := _sd_box(p, Vector2(16.5, 24.0), Vector2(6.5, 13.0))
+					var right_p := _sd_box(p, Vector2(31.5, 24.0), Vector2(6.5, 13.0))
+					var spine := _sd_box(p, ctr, Vector2(1.5, 14.0))
+					var l1 := _sd_box(p, Vector2(31.5, 18.0), Vector2(4.0, 1.3))
+					var l2 := _sd_box(p, Vector2(31.5, 23.0), Vector2(4.0, 1.3))
+					var l3 := _sd_box(p, Vector2(31.5, 28.0), Vector2(3.0, 1.3))
+					col = _blend(col, _HD2_W, minf(left_p, spine))
+					col = _blend(col, _HD2_Y, maxf(right_p, -minf(l1, minf(l2, l3))))
+
+				"fac_infirmary":
+					# Medical hex badge + crisp cross
+					var shield := _sd_hex(p, ctr, 18.0)
+					var hole := _sd_hex(p, ctr, 14.5)
+					var cross_v := _sd_box(p, ctr, Vector2(3.2, 9.5))
+					var cross_h := _sd_box(p, ctr, Vector2(9.5, 3.2))
+					col = _blend(col, _HD2_W, maxf(shield, -hole))
+					col = _blend(col, _HD2_G, minf(cross_v, cross_h))
+
+				"fac_lab", "fac_research", "fac_flask", "fac_flask_b":
+					# Crisp flat Erlenmeyer flask
+					var is_b := key.ends_with("_b") or key.ends_with("research")
+					var liq_c := _HD2_Y if is_b else _HD2_C
+					var neck := _sd_box(p, Vector2(24, 14), Vector2(3.6, 5.5))
+					var lip := _sd_box(p, Vector2(24, 9.5), Vector2(5.5, 1.5))
+					var body := _sd_tri(p, Vector2(24, 16), Vector2(10, 38), Vector2(38, 38))
+					var outer := minf(lip, minf(neck, body))
+					var inner_body := _sd_tri(p, Vector2(24, 21), Vector2(14, 35.5), Vector2(34, 35.5))
+					var fluid := maxf(inner_body, 28.5 - p.y)
+					col = _blend(col, _HD2_W, maxf(outer, -maxf(inner_body, 28.0 - p.y)))
+					col = _blend(col, liq_c, fluid)
+
+				"fac_kitchen", "fac_meal":
+					# Ration tin / supply canister
+					var can := _sd_box(p, ctr, Vector2(12.0, 14.0))
+					var band := _sd_box(p, Vector2(24.0, 24.0), Vector2(12.5, 4.0))
+					var lid := _sd_box(p, Vector2(24.0, 9.5), Vector2(13.5, 2.0))
+					col = _blend(col, _HD2_W, minf(can, lid))
+					col = _blend(col, _HD2_Y, band)
+
+				"fac_ability", "dash":
+					# Triple forward tactical boost chevrons (>>>)
+					var d := 1e6
+					for off: float in [-10.0, 0.0, 10.0]:
+						var s1 := _sd_seg(p, Vector2(18.0 + off, 12.0), Vector2(27.0 + off, 24.0), 2.3)
+						var s2 := _sd_seg(p, Vector2(27.0 + off, 24.0), Vector2(18.0 + off, 36.0), 2.3)
+						d = minf(d, minf(s1, s2))
+					col = _blend(col, _HD2_W, d)
+
+				"ram":
+					# Armored ram plow wedge
+					var w1 := _sd_tri(p, Vector2(40, 24), Vector2(14, 10), Vector2(18, 24))
+					var w2 := _sd_tri(p, Vector2(40, 24), Vector2(18, 24), Vector2(14, 38))
+					var trail := _sd_seg(p, Vector2(8, 17), Vector2(16, 17), 2.0)
+					var trail2 := _sd_seg(p, Vector2(8, 31), Vector2(16, 31), 2.0)
+					col = _blend(col, _HD2_W, minf(minf(w1, w2), minf(trail, trail2)))
+
+				"leap":
+					# Parabolic thruster leap arc + upward arrowhead
+					var arc := maxf(_sd_ring(p, Vector2(24, 34), 16.0, 2.2), p.y - 31.0)
+					var tip := _sd_tri(p, Vector2(41, 29), Vector2(31, 22), Vector2(36, 33))
+					var pad := _sd_box(p, Vector2(24, 38), Vector2(14, 1.8))
+					col = _blend(col, _HD2_W, minf(pad, minf(arc, tip)))
+
+				"quake":
+					# Concentric ground impact shockwaves
+					var r1 := _sd_ring(p, ctr, 18.0, 2.0)
+					var r2 := _sd_ring(p, ctr, 11.0, 2.0)
+					var dot := (p - ctr).length() - 4.5
+					col = _blend(col, _HD2_W, minf(r1, minf(r2, dot)))
+
+				"missile":
+					# Salvo trio of angled warheads
+					var d := 1e6
+					for off: Vector2 in [Vector2(-9, 2), Vector2(0, -4), Vector2(9, 2)]:
+						var bp: Vector2 = Vector2(24, 26) + off
+						var fin := _sd_box(p, bp + Vector2(0, 7), Vector2(4.2, 2.0))
+						var shaft := _sd_box(p, bp + Vector2(0, 1), Vector2(2.4, 7.0))
+						var nose := _sd_tri(p, bp + Vector2(0, -10), bp + Vector2(-2.6, -5), bp + Vector2(2.6, -5))
+						d = minf(d, minf(fin, minf(shaft, nose)))
+					col = _blend(col, _HD2_W, d)
+
+				"shield":
+					# Hexagonal deflective shield barrier
+					var hex_o := _sd_hex(p, ctr, 18.5)
+					var hex_i := _sd_hex(p, ctr, 14.2)
+					var cross_v := _sd_box(p, ctr, Vector2(2.2, 8.5))
+					var cross_h := _sd_box(p, ctr, Vector2(8.5, 2.2))
+					col = _blend(col, _HD2_W, minf(maxf(hex_o, -hex_i), minf(cross_v, cross_h)))
+
+				"lock":
+					# Shackle + padlock body
+					var shackle := maxf(_sd_ring(p, Vector2(24, 18), 7.5, 2.2), p.y - 22.0)
+					var body := _sd_box(p, Vector2(24, 30), Vector2(11.0, 9.0))
+					var slit := _sd_box(p, Vector2(24, 30), Vector2(1.8, 4.0))
+					col = _blend(col, _HD2_W, minf(shackle, maxf(body, -slit)))
+
+				"reload":
+					# Circular reload arrows
+					var ring := _sd_ring(p, ctr, 14.0, 2.2)
+					var cut1 := _sd_box(p, Vector2(36, 14), Vector2(6, 5))
+					var cut2 := _sd_box(p, Vector2(12, 34), Vector2(6, 5))
+					var a1 := _sd_tri(p, Vector2(37, 23), Vector2(30, 17), Vector2(41, 16))
+					col = _blend(col, _HD2_Y, minf(maxf(ring, -minf(cut1, cut2)), a1))
+
+				_:
+					# Unknown / tactical emblem hexagon
+					var ring := maxf(_sd_hex(p, ctr, 16.5), -_sd_hex(p, ctr, 13.0))
+					var dot := (p - ctr).length() - 3.5
+					col = _blend(col, _HD2_Y, minf(ring, dot))
+
+			img.set_pixel(x, y, col)
+
+	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
-
-
-static func _r(img: Image, x: int, y: int, w: int, h: int, c: Color) -> void:
-	for yy in range(maxi(0, y), mini(S, y + h)):
-		for xx in range(maxi(0, x), mini(S, x + w)):
-			img.set_pixel(xx, yy, c)
-
-
-static func _ring(img: Image, cx: int, cy: int, r: int, inner: int, c: Color) -> void:
-	for y in S:
-		for x in S:
-			var d := Vector2(x - cx + 0.5, y - cy + 0.5).length()
-			if d <= r + 0.2 and d > inner + 0.2:
-				img.set_pixel(x, y, c)
-
-
-## 透明像素若与不透明像素四邻相接，涂成描边色
-static func _outline(img: Image) -> void:
-	var src := img.duplicate()
-	var oc := Color(0.03, 0.03, 0.035, 1)
-	for y in S:
-		for x in S:
-			if src.get_pixel(x, y).a > 0.0:
-				continue
-			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				var p: Vector2i = Vector2i(x, y) + d
-				if p.x >= 0 and p.y >= 0 and p.x < S and p.y < S and src.get_pixel(p.x, p.y).a > 0.0:
-					img.set_pixel(x, y, oc)
-					break

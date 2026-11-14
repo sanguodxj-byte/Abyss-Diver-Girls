@@ -147,8 +147,8 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 		"prism_archon":
 			glow_c = Color(0.55, 0.82, 1.0)
 	var is_lm_boss := boss_id in ["terminus_warden", "foundry_dreadnought", "silo_warhead", "spillway_leviathan", "excavator_titan", "core_overlord", "drydock_behemoth"]
-	A.ground_decal(lair, A.blob_tex(), Color(0.12, 0.12, 0.13, 0.76) if is_lm_boss else Color(0.16, 0.08, 0.18, 0.82), 16.0 if is_lm_boss else 18.0, Vector3(0, 0.03, 0))
-	A.ground_decal(lair, A.ring_tex(), Color(glow_c.r, glow_c.g, glow_c.b, 0.34), 14.0 if is_lm_boss else 15.0, Vector3(0, 0.05, 0), true)
+	A.ground_vfx(lair, A.blob_tex(), Color(0.12, 0.12, 0.13, 0.76) if is_lm_boss else Color(0.16, 0.08, 0.18, 0.82), 16.0 if is_lm_boss else 18.0, Vector3(0, 0.092, 0), false, 0.44, false, 2)
+	A.ground_vfx(lair, A.ring_tex(), Color(glow_c.r, glow_c.g, glow_c.b, 0.34), 14.0 if is_lm_boss else 15.0, Vector3(0, 0.114, 0), true, 0.44, false, 3)
 	if is_lm_boss:
 		var mat_st: Material = A.paint(Color(0.24, 0.25, 0.27), 0.65, 0.50, {"rust": 0.68, "wear": 0.55})
 		var mat_hz: Material = A.hazard()

@@ -21,10 +21,10 @@ static func build(ctx: Dictionary) -> Node3D:
 		for sz in [-0.28, 0.28]:
 			K.cy(top, 0.028, 0.66, M_TUBE, Vector3(sx, 0.36, sz), Vector3.ZERO, -1.0, 10)
 			K.plate(top, [Vector2(0, 0), Vector2(0.11, 0), Vector2(0, 0.11)], 0.022, M_GUN, Vector3(sx - signf(sx) * 0.05, 0.08, sz), Vector3(0, 0 if sx < 0 else 180, 0), 0.004)
-		K.cy(top, 0.028, 0.58, M_TUBE, Vector3(sx, 0.69, 0), Vector3(90, 0, 0), -1.0, 10)
+		K.cy(top, 0.025, 0.56, M_TUBE, Vector3(sx, 0.69, 0), Vector3(90, 0, 0), -1.0, 10)
 		K.cy(top, 0.022, 0.58, M_TUBE, Vector3(sx, 0.36, 0), Vector3(90, 0, 0), -1.0, 8)
 	for sz in [-0.28, 0.28]:
-		K.cy(top, 0.028, 1.18, M_TUBE, Vector3(0, 0.69, sz), Vector3(0, 0, 90), -1.0, 10)
+		K.cy(top, 0.0265, 1.16, M_TUBE, Vector3(0, 0.69, sz), Vector3(0, 0, 90), -1.0, 10)
 	# 30MM 军规弹药箱：钢包角 + 锁扣 + 提把
 	var M_CRATE := A.paint(Color(0.28, 0.31, 0.22), 0.06, 0.78, {"wear": 0.62, "panel_scale": 0.0})
 	K.bb(top, Vector3(0.50, 0.36, 0.46), M_CRATE, Vector3(-0.28, 0.23, 0), Vector3.ZERO, 0.02)

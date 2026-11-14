@@ -159,7 +159,7 @@ func _build_title() -> void:
 	_chapter_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_chapter_lbl.visible = str(ch.get("title", "")) != ""
 	v.add_child(_chapter_lbl)
-	_title_lbl = UI.label(str(scene.get("title", "")), 22, Color(0.96, 0.94, 0.9), true)
+	_title_lbl = UI.label(str(scene.get("title", "")), 22, UI.TEXT, true)
 	_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_title_lbl)
 	var rule := ColorRect.new()
@@ -203,7 +203,7 @@ func _build_box() -> void:
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_box.add_child(v)
 
-	_text_lbl = UI.label("", 24, Color(0.96, 0.94, 0.89), true)
+	_text_lbl = UI.label("", 24, UI.TEXT, true)
 	_text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_text_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_text_lbl.add_theme_constant_override("line_spacing", 8)
@@ -245,10 +245,10 @@ func _build_box() -> void:
 	ph.add_theme_constant_override("separation", 10)
 	ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_plate.add_child(ph)
-	_name_lbl = UI.label("", 12, Color(1, 0.93, 0.8), true)
+	_name_lbl = UI.label("", 12, UI.TEXT, true)
 	_name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ph.add_child(_name_lbl)
-	_tag_lbl = UI.label("", 12, UI.ACCENT, true)
+	_tag_lbl = UI.label("", 12, UI.ACCENT_HI, true)
 	_tag_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_tag_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ph.add_child(_tag_lbl)
@@ -275,6 +275,8 @@ func _small_button(text: String, act: Callable) -> Button:
 	b.add_theme_stylebox_override("normal", UI.px9("btn9_n", 8, 8, 8, 4))
 	b.add_theme_stylebox_override("hover", UI.px9("btn9_h", 8, 8, 8, 4))
 	b.add_theme_stylebox_override("pressed", UI.px9("btn9_main_n", 8, 8, 8, 4))
+	b.add_theme_color_override("font_pressed_color", Color(0.08, 0.08, 0.09))
+	b.add_theme_color_override("font_hover_pressed_color", Color(0.08, 0.08, 0.09))
 	b.set_meta("sfx", "ui_click")
 	b.pressed.connect(act)
 	return b
@@ -678,9 +680,9 @@ func press(keycode: Key) -> void:
 # ============================================================ 背景与部件
 const BACKDROP_SHADER := """
 shader_type canvas_item;
-uniform vec4 top_col : source_color = vec4(0.055, 0.062, 0.078, 1.0);
-uniform vec4 bot_col : source_color = vec4(0.13, 0.108, 0.094, 1.0);
-uniform vec4 glow_col : source_color = vec4(1.0, 0.62, 0.24, 1.0);
+uniform vec4 top_col : source_color = vec4(0.068, 0.072, 0.076, 1.0);
+uniform vec4 bot_col : source_color = vec4(0.125, 0.112, 0.100, 1.0);
+uniform vec4 glow_col : source_color = vec4(0.82, 0.50, 0.20, 1.0);
 uniform float glow_amt = 0.30;
 uniform vec2 glow_pos = vec2(0.5, 0.60);
 float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -721,6 +723,7 @@ class PortraitPlace extends Control:
 	var _anim_off := Vector2.ZERO
 
 	func _ready() -> void:
+		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		view = SubViewport.new()
 		view.size = Vector2i(768, 768)
 		view.transparent_bg = true
@@ -735,6 +738,7 @@ class PortraitPlace extends Control:
 		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		rect.stretch_mode = TextureRect.STRETCH_SCALE
 		rect.texture = view.get_texture()
+		rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var m := ShaderMaterial.new()
 		m.shader = load("res://shaders/portrait_key.gdshader")

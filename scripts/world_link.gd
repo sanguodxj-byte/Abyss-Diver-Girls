@@ -172,9 +172,9 @@ func _build_gate(g: Dictionary) -> void:
 	var bw := span_w / float(seg_n)
 	for bi in seg_n:
 		var bx := -HALF_SPAN + (float(bi) + 0.5) * bw
-		A.add(n, A.bevel_box(Vector3(bw + 0.04, 0.24, 0.62), 0.02), M_DARK, Vector3(bx, 8.02, 0))
+		A.add(n, A.bevel_box(Vector3(bw - 0.03, 0.24, 0.62), 0.02), M_DARK, Vector3(bx, 8.02, 0))
 		for ty in [8.35, 9.15]:
-			A.add(n, A.bevel_box(Vector3(bw + 0.08, 0.22, 1.38), 0.02), M_ST, Vector3(bx, ty, 0))
+			A.add(n, A.bevel_box(Vector3(bw - 0.03, 0.22, 1.38), 0.02), M_ST, Vector3(bx, ty, 0))
 		for sd_z in [-0.58, 0.58]:
 			A.add(n, A.bevel_box(Vector3(0.16, 0.80, 0.16), 0.01), M_DARK, Vector3(bx - bw * 0.5, 8.75, sd_z), Vector3.ZERO, Vector3.ONE, false)
 			A.add(n, A.bevel_box(Vector3(bw * 0.52, 0.10, 0.10), 0.01), M_DARK, Vector3(bx - bw * 0.25, 8.75, sd_z), Vector3(0, 0, 18), Vector3.ONE, false)
@@ -190,11 +190,12 @@ func _build_gate(g: Dictionary) -> void:
 	for k in 3:
 		var z := 6.0 + k * 4.5
 		for s in [-1.0, 1.0]:
-			A.add(n, A.bevel_box(Vector3(3.56, 0.05, 0.72), 0.02), M_DARK, Vector3(s * 1.2, 0.025, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
-			var bar := A.add(n, A.bevel_box(Vector3(3.32, 0.075, 0.42), 0.02), am, Vector3(s * 1.2, 0.055, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
+			var dy_s := 0.004 if s > 0.0 else 0.0
+			A.add(n, A.bevel_box(Vector3(3.56, 0.05, 0.72), 0.02), M_DARK, Vector3(s * 1.42, 0.115 + dy_s, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
+			var bar := A.add(n, A.bevel_box(Vector3(3.32, 0.075, 0.42), 0.02), am, Vector3(s * 1.42, 0.155 + dy_s, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
 			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# 地面边框
-	A.ground_decal(n, A.ring_tex(), Color(c.r, c.g, c.b, 0.16), HALF_SPAN * 1.6, Vector3(0, 0.04, 6.0), true)
+	A.ground_vfx(n, A.ring_tex(), Color(c.r, c.g, c.b, 0.16), HALF_SPAN * 1.6, Vector3(0, 0.112, 6.0), true, 0.44, false, 3)
 	var l := OmniLight3D.new()
 	l.light_color = c
 	l.light_energy = 1.4
@@ -433,14 +434,14 @@ func _build_shaft(pos: Vector3) -> void:
 	var m_emit := A.emit(col, 2.2)
 	m_emit.albedo_color = col.darkened(0.45)
 	A.add(n, A.cyl(4.4, 0.24, 4.6, 16), A.concrete(Color(0.32, 0.31, 0.30), false), Vector3(0, 0.12, 0))
-	A.add(n, A.cyl(3.6, 0.28, 3.8, 16), m_dark, Vector3(0, 0.14, 0))
-	A.add(n, A.cyl(3.8, 0.08, 3.9, 16), A.hazard(), Vector3(0, 0.25, 0))
+	A.add(n, A.cyl(3.6, 0.28, 3.8, 16), m_dark, Vector3(0, 0.145, 0))
+	A.add(n, A.cyl(3.8, 0.08, 3.9, 16), A.hazard(), Vector3(0, 0.26, 0))
 	for ai in 4:
 		var ang := float(ai) * PI * 0.5 + PI * 0.25
 		var p_off := Vector3(cos(ang) * 3.8, 1.3, sin(ang) * 3.8)
 		A.add(n, A.bevel_box(Vector3(0.38, 2.6, 0.38), 0.03), m_dark, p_off)
 		A.add(n, A.cyl(0.20, 0.32, 0.20, 10), m_emit, p_off + Vector3(0, 1.45, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.ground_decal(n, A.ring_tex(), Color(col.r, col.g, col.b, 0.38), 8.2, Vector3(0, 0.27, 0), true)
+	A.ground_vfx(n, A.ring_tex(), Color(col.r, col.g, col.b, 0.38), 9.2, Vector3(0, 0.31, 0), true, 0.25, false, 3)
 	var l := OmniLight3D.new()
 	l.light_color = col
 	l.light_energy = 1.6

@@ -24,6 +24,10 @@ var lod := 0
 var killed_by_player := false
 var marker: Node3D
 var name_label: Label3D
+var _hit_meshes: Array = []
+var _hit_meshes_ready := false
+var _hit_flash_q := 0
+var _ring_fx: MeshInstance3D
 
 var _think_t := 0.0
 var _lod_acc := 0.0
@@ -81,6 +85,21 @@ static var _tint_cache := {}
 func _add_raider_kit() -> void:
 	if torso == null:
 		return
+	var cid := str(torso.get_meta("id", "core_std"))
+	# [bar_y, bar_z, bar_w, post_h, ex_x, ex_y, ex_z, slat_y, slat_z, slat_w]
+	var cfg_map := {
+		"core_std": [1.06, 0.08, 1.18, 0.34, 0.56, 0.96, 0.56, 0.16, -0.76, 1.04],
+		"core_scout": [0.94, 0.08, 1.08, 0.24, 0.48, 0.92, 0.56, 0.10, -0.92, 0.92],
+		"core_heavy": [1.42, 0.06, 1.38, 0.30, 0.82, 1.36, 0.62, 0.22, -0.98, 1.36],
+		"core_assault": [1.34, 0.10, 1.18, 0.28, 0.56, 1.26, 0.62, 0.34, -0.88, 1.14],
+		"core_command": [1.58, 0.12, 1.16, 0.28, 0.52, 1.44, 0.54, 0.44, -0.75, 1.06],
+		"core_fortress": [2.12, 0.22, 1.56, 0.34, 0.76, 1.92, 0.98, 0.56, -1.38, 1.54],
+	}
+	var cfg: Array = cfg_map.get(cid, cfg_map["core_std"])
+	var bar_y: float = cfg[0]; var bar_z: float = cfg[1]; var bar_w: float = cfg[2]; var post_h: float = cfg[3]
+	var ex_x: float = cfg[4]; var ex_y: float = cfg[5]; var ex_z: float = cfg[6]
+	var slat_y: float = cfg[7]; var slat_z: float = cfg[8]; var slat_w: float = cfg[9]
+	var post_x := bar_w * 0.5 - 0.04
 	var kit := Node3D.new()
 	kit.name = "RaiderKit"
 	torso.add_child(kit)
@@ -89,22 +108,22 @@ func _add_raider_kit() -> void:
 	var m_bore := A2.rubber()
 	var m_haz := A2.hazard()
 	# 顶部战地焊接防滚横梁 + 警示黄端牌 + 敌我识别红闪信标座
-	A2.add(kit, A2.bevel_box(Vector3(1.16, 0.06, 0.08), 0.015), m_iron, Vector3(0, 0.92, 0.18))
+	A2.add(kit, A2.bevel_box(Vector3(bar_w, 0.06, 0.08), 0.015), m_iron, Vector3(0, bar_y, bar_z))
 	for sx: float in [-1.0, 1.0]:
-		A2.add(kit, A2.bevel_box(Vector3(0.06, 0.34, 0.06), 0.012), m_iron, Vector3(sx * 0.54, 0.76, 0.18), Vector3(0, 0, sx * -8.0))
-		A2.add(kit, A2.bevel_box(Vector3(0.16, 0.12, 0.03), 0.008), m_haz, Vector3(sx * 0.54, 0.88, 0.13))
+		A2.add(kit, A2.bevel_box(Vector3(0.06, post_h, 0.06), 0.012), m_iron, Vector3(sx * post_x, bar_y - post_h * 0.5 + 0.01, bar_z), Vector3(0, 0, sx * -8.0))
+		A2.add(kit, A2.bevel_box(Vector3(0.16, 0.12, 0.03), 0.008), m_haz, Vector3(sx * post_x, bar_y - 0.04, bar_z - 0.06))
 		# 双侧锈蚀柴油直排烟管 + 空心黑烟口
-		A2.add(kit, A2.cyl(0.055, 0.56, 0.065, 10), m_rust, Vector3(sx * 0.44, 0.88, 0.42), Vector3(-10, 0, sx * -4.0))
-		A2.add(kit, A2.cyl(0.042, 0.10, 0.042, 8), m_bore, Vector3(sx * 0.46, 1.14, 0.47), Vector3(-10, 0, sx * -4.0), Vector3.ONE, false)
+		A2.add(kit, A2.cyl(0.055, 0.56, 0.065, 10), m_rust, Vector3(sx * ex_x, ex_y, ex_z), Vector3(-10, 0, sx * -4.0))
+		A2.add(kit, A2.cyl(0.042, 0.10, 0.042, 8), m_bore, Vector3(sx * (ex_x + 0.02), ex_y + 0.26, ex_z + 0.05), Vector3(-10, 0, sx * -4.0), Vector3.ONE, false)
 	# 右后鞭状通讯天线 + 装甲信标灯罩
-	A2.add(kit, A2.cyl(0.045, 0.12, 0.055, 8), m_iron, Vector3(0.36, 0.96, 0.18))
-	A2.add(kit, A2.cyl(0.032, 0.09, 0.032, 8), A2.emit(ROVER_GLOW, 2.2), Vector3(0.36, 1.05, 0.18), Vector3.ZERO, Vector3.ONE, false)
-	A2.add(kit, A2.cyl(0.008, 0.82, 0.016, 6), m_iron, Vector3(-0.38, 1.32, 0.18), Vector3(-6, 0, 5), Vector3.ONE, false)
+	A2.add(kit, A2.cyl(0.045, 0.12, 0.055, 8), m_iron, Vector3(post_x * 0.62, bar_y + 0.06, bar_z))
+	A2.add(kit, A2.cyl(0.032, 0.09, 0.032, 8), A2.emit(ROVER_GLOW, 2.2), Vector3(post_x * 0.62, bar_y + 0.155, bar_z), Vector3.ZERO, Vector3.ONE, false)
+	A2.add(kit, A2.cyl(0.008, 0.82, 0.016, 6), m_iron, Vector3(-post_x * 0.65, bar_y + 0.42, bar_z), Vector3(-6, 0, 5), Vector3.ONE, false)
 	# 胸前战地焊接双横档格栅防破甲护栏（Slat Armor）
 	for sx: float in [-1.0, 1.0]:
-		A2.add(kit, A2.bevel_box(Vector3(0.04, 0.24, 0.14), 0.008), m_iron, Vector3(sx * 0.46, 0.16, -0.58))
+		A2.add(kit, A2.bevel_box(Vector3(0.04, 0.24, 0.14), 0.008), m_iron, Vector3(sx * (slat_w * 0.5 - 0.05), slat_y + 0.08, slat_z + 0.07))
 	for ky in 2:
-		A2.add(kit, A2.bevel_box(Vector3(1.02, 0.038, 0.028), 0.006), m_rust if ky == 0 else m_iron, Vector3(0, 0.08 + ky * 0.15, -0.65))
+		A2.add(kit, A2.bevel_box(Vector3(slat_w, 0.038, 0.028), 0.006), m_rust if ky == 0 else m_iron, Vector3(0, slat_y + ky * 0.15, slat_z))
 
 
 ## 敌对涂装：流浪者的装甲赋予高风化铁锈炭灰涂装（保留裸钢/镀铬/橡胶与警示条对比度）、光学窗改为猩红；队友仅替换青色识别灯
@@ -163,8 +182,9 @@ func _add_marker() -> void:
 	var core_dot := A2.add(marker, A2.bevel_box(Vector3(0.11, 0.11, 0.05), 0.015), m_em,
 		Vector3(0, 0.12, 0), Vector3(0, 0, 45.0), Vector3.ONE, false)
 	core_dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var ring := A2.ground_decal(self, A2.ring_tex(), Color(c.r, c.g, c.b, 0.55), 3.6, Vector3(0, 0.05, 0), true)
-	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ring_fx = A2.ground_vfx(self, A2.ring_tex(), Color(c.r, c.g, c.b, 0.55), 3.6, Vector3(0, 0.112, 0), true, 0.44, false, 3)
+	_ring_fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ring_fx.set_meta("no_flash", true)
 	name_label = Label3D.new()
 	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	name_label.no_depth_test = true
@@ -191,6 +211,8 @@ func _lod_dt(delta: float) -> float:
 	var d2 := 0.0
 	if raid and is_instance_valid(raid.mech):
 		d2 = global_position.distance_squared_to(raid.mech.global_position)
+		if "cam_focus" in raid and raid.cam_focus != Vector3.ZERO:
+			d2 = minf(d2, global_position.distance_squared_to(raid.cam_focus))
 	_near = d2 < 30.0 * 30.0
 	lod = 0 if d2 < 48.0 * 48.0 else (1 if d2 < 120.0 * 120.0 else 2)
 	var vis := lod == 0 or raid == null
@@ -231,6 +253,7 @@ func _physics_tick(delta: float) -> void:
 				reload_t[k] = 0.0
 				ammo[k] = mag[k]
 	hurt_flash = maxf(0.0, hurt_flash - delta)
+	_update_hit_flash()
 	if marker and lod == 0:
 		marker.rotation.y += delta * 2.0
 	_think_t -= delta
@@ -541,7 +564,7 @@ func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
 			var wake_c := Color(0.76, 0.70, 0.66) if faction == "rover" else Color(0.78, 0.75, 0.70)
 			for i in n:
 				var a := deg_to_rad(randf_range(-float(m.get("spread", 2.0)), float(m.get("spread", 2.0))) * 0.5)
-				var cal := "cannon" if (w == "shotgun" and raw_dmg >= 55.0) else ("slug" if (w == "shotgun" and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else "mg")))
+				var cal := "sniper_ap" if (w == "sniper" and raw_dmg >= 100.0) else ("sniper" if w == "sniper" else ("cannon" if (w == "shotgun" and raw_dmg >= 55.0) else ("slug" if (w == "shotgun" and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else "mg")))))
 				var p = raid._tracer(origin, dir.rotated(Vector3.UP, a) * speed, dmg, rng_m / speed, wake_c, 0.12, 0.065, cal)
 				p.mask = mask
 				p.source = self
@@ -554,7 +577,8 @@ func take_damage(amount: float) -> void:
 	var armor: float = clampf(float(stats.get("armor", 0.0)), 0.0, 0.6)
 	var eff := amount * (1.0 - armor)
 	hp -= eff
-	hurt_flash = 0.2
+	hurt_flash = 0.13
+	_update_hit_flash()
 	kick_v += Vector3(randf_range(0.8, 1.6), randf_range(-1.0, 1.0), randf_range(-1.2, 1.2)) * clampf(eff / 14.0, 0.3, 1.2)
 	if _ok(aggressor) and (aggressor == raid.mech or aggressor.is_in_group("coop_players") or aggressor.is_in_group("allies")):
 		killed_by_player = true
@@ -563,6 +587,30 @@ func take_damage(amount: float) -> void:
 	if hp <= 0.0:
 		hp = 0.0
 		die("destroyed")
+
+
+func _collect_hit_meshes() -> void:
+	if _hit_meshes_ready or not is_instance_valid(visual):
+		return
+	_hit_meshes_ready = true
+	_hit_meshes.clear()
+	for n in visual.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or mi.get_meta("no_flash", false) or (mi.mesh is PlaneMesh):
+			continue
+		_hit_meshes.append(mi)
+
+
+func _update_hit_flash() -> void:
+	var q := clampi(int(ceil(clampf(hurt_flash / 0.13, 0.0, 1.0) * 5.0)), 0, 5) if hurt_flash > 0.0 else 0
+	if q == _hit_flash_q:
+		return
+	_hit_flash_q = q
+	_collect_hit_meshes()
+	var mat: Material = A2.hit_flash_overlay(float(q) / 5.0) if q > 0 else null
+	for mi in _hit_meshes:
+		if is_instance_valid(mi):
+			mi.material_overlay = mat
 
 
 func die(_reason: String) -> void:
@@ -574,8 +622,16 @@ func die(_reason: String) -> void:
 	remove_from_group("rovers")
 	remove_from_group("allies")
 	collision_layer = 0
-	collision_mask = 1
+	collision_mask = 0
+	for c in get_children():
+		if c is CollisionShape3D:
+			c.queue_free()
 	velocity = Vector3.ZERO
+	hurt_flash = 0.0
+	_update_hit_flash()
+	set_physics_process(false)
+	set_process(false)
+	set_notify_transform(false)
 	var p := global_position
 	if raid and is_instance_valid(raid.fx):
 		raid.explode_fx(p + Vector3(0, 1.6, 0), 3.2, Color(1.0, 0.5, 0.2))
@@ -584,36 +640,43 @@ func die(_reason: String) -> void:
 	if marker:
 		marker.queue_free()
 		marker = null
+	if _ring_fx and is_instance_valid(_ring_fx):
+		_ring_fx.queue_free()
+		_ring_fx = null
 	if name_label:
 		name_label.queue_free()
 		name_label = null
-	if faction == "rover" and raid:
-		_drop_loot(p)
-		if killed_by_player:
-			raid.kills += 1
-			if raid.hud:
-				raid.hud.msg(Loc.t("流浪者机甲被击毁，残骸里散出物资箱。", "Rover mech destroyed; supply crate dropped in wreckage."))
-	elif faction == "ally" and raid and raid.hud:
-		raid.hud.msg(Loc.t("▲ 队友 %s 的机甲失去战斗能力" % _pilot_name().split(" · ")[0], "▲ Wingmate %s's mech incapacitated" % _pilot_name().split(" · ")[0]))
+	if is_instance_valid(visual):
+		for n in visual.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			if mi == null:
+				continue
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.material_overlay = null
+			if not (mi.mesh is PlaneMesh) and mi.visibility_range_end <= 0.0:
+				mi.visibility_range_end = 75.0
+				mi.visibility_range_end_margin = 5.0
+	if not Net.is_client():
+		if faction == "rover" and raid:
+			_drop_loot(p)
+			if killed_by_player:
+				raid.kills += 1
+				if raid.hud:
+					raid.hud.msg(Loc.t("流浪者机甲被击毁，残骸里散出物资箱。", "Rover mech destroyed; supply crate dropped in wreckage."))
+		elif faction == "ally" and raid and raid.hud:
+			raid.hud.msg(Loc.t("▲ 队友 %s 的机甲失去战斗能力" % _pilot_name().split(" · ")[0], "▲ Wingmate %s's mech incapacitated" % _pilot_name().split(" · ")[0]))
 	npc_died.emit(self)
-	var tw := create_tween()
-	tw.tween_interval(14.0)
-	tw.tween_property(self, "position:y", position.y - 3.0, 3.0)
-	tw.tween_callback(queue_free)
 
 
-## 流浪者残骸：一个军械箱，内容来自 rover 掉落表，另有一半概率拆下它身上的一件模块
+## 流浪者残骸：一个军械箱，内容来自 rover 掉落表，身上每件已装备模块各有 15% 概率爆出
 func _drop_loot(p: Vector3) -> void:
 	var items: Array = []
 	if GameData.LOOT_TABLES.has("rover"):
 		items = GameData.roll_loot("rover", raid.rng)
-	if randf() < 0.5:
-		var slots: Array = []
-		for s in loadout:
-			if str(loadout[s]) != "":
-				slots.append(s)
-		if not slots.is_empty():
-			items.append(str(loadout[slots[randi() % slots.size()]]))
+	for slot in ["core", "legs", "arm_l", "arm_r", "back", "gen"]:
+		var mid := str(loadout.get(slot, ""))
+		if mid != "" and GameData.is_module(mid) and raid.rng.randf() < 0.15:
+			items.append(mid)
 	if items.is_empty():
 		items = ["bolts"]
 	var b = raid._place_box("military", Vector3(p.x + 1.5, 0, p.z), items)

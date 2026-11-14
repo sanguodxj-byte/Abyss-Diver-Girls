@@ -49,8 +49,58 @@ var _settings_tab := "video"
 
 ## 视图容器
 var views := {}
-var tab_bg: TextureRect
-const TAB_BG := {"trade": "bg_trade", "deploy": "bg_deploy", "skills": "bg_skills", "stash": "bg_stash", "codex": "bg_codex"}
+var tab_bg: Control
+const TAB_TINT := {
+	"trade": Color(0.78, 0.48, 0.16),
+	"deploy": Color(0.52, 0.56, 0.58),
+	"skills": Color(0.46, 0.72, 0.50),
+	"stash": Color(0.72, 0.52, 0.24),
+	"codex": Color(0.48, 0.52, 0.55),
+}
+
+
+class Hd2Backdrop extends Control:
+	var accent := Color(0.78, 0.48, 0.16)
+
+	func set_tab(tab_key: String) -> void:
+		accent = TAB_TINT.get(tab_key, Color(0.78, 0.48, 0.16))
+		queue_redraw()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		draw_rect_filled_grad(r)
+		var step := 48.0
+		var grid_c := Color(0.38, 0.41, 0.44, 0.045)
+		var x := 0.0
+		while x <= size.x:
+			draw_line(Vector2(x, 0.0), Vector2(x, size.y), grid_c, 1.0)
+			x += step
+		var y := 0.0
+		while y <= size.y:
+			draw_line(Vector2(0.0, y), Vector2(size.x, y), grid_c, 1.0)
+			y += step
+		# 隔行工业校准十字线（灰黑钢线）与横向舱壁接缝
+		var cross_c := Color(0.46, 0.49, 0.52, 0.09)
+		var gx := step * 2.0
+		while gx < size.x:
+			var gy := step * 2.0
+			while gy < size.y:
+				draw_line(Vector2(gx - 4.0, gy), Vector2(gx + 4.0, gy), cross_c, 1.0)
+				draw_line(Vector2(gx, gy - 4.0), Vector2(gx, gy + 4.0), cross_c, 1.0)
+				gy += step * 2.0
+			gx += step * 2.0
+		draw_line(Vector2(0.0, size.y * 0.5), Vector2(size.x, size.y * 0.5), Color(0.05, 0.055, 0.06, 0.55), 2.0)
+		var ac := Color(accent.r, accent.g, accent.b, 0.10)
+		var sc := Color(0.38, 0.41, 0.44, 0.10)
+		for k in 5:
+			var ox := size.x - 240.0 + float(k) * 32.0
+			draw_line(Vector2(ox, 0.0), Vector2(ox + 160.0, 160.0), ac if k % 2 == 0 else sc, 2.0, true)
+
+	func draw_rect_filled_grad(r: Rect2) -> void:
+		var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
+		var c0 := Color(0.062, 0.068, 0.074, 0.98)
+		var c1 := Color(0.092, 0.100, 0.108, 0.98)
+		draw_polygon(pts, PackedColorArray([c0, c0, c1, c1]))
 var ctx_popup: PopupMenu
 var ctx_id := ""
 var ctx_from := ""
@@ -146,7 +196,7 @@ var selected_stash := ""
 var stash_filter := "all"
 var stash_detail_lbl: Label
 var stash_name_lbl: Label
-var stash_tag_box: HBoxContainer
+var stash_tag_box: HFlowContainer
 var stash_icon_rect
 var stash_count_lbl: Label
 var stash_kv_box: VBoxContainer
@@ -313,11 +363,14 @@ class DropButton extends Button:
 		var d = drag_fn.call()
 		if d == null:
 			return null
+		var id_s := str(d.get("id", ""))
+		var gsz: Vector2i = GameData.item_grid_size(id_s)
 		var pv := TextureRect.new()
-		pv.texture = load("res://scripts/item_icons.gd").icon(str(d.get("id", "")))
-		pv.size = Vector2(32, 32)
+		pv.texture = load("res://scripts/item_icons.gd").icon(id_s)
+		pv.size = Vector2(clampf(30.0 * float(gsz.x), 36.0, 128.0), clampf(30.0 * float(gsz.y), 36.0, 96.0))
 		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		set_drag_preview(pv)
 		return d
 
@@ -333,21 +386,18 @@ func _ready() -> void:
 	theme = K.theme()
 	_build_hangar()
 
+	# 全屏战术背板（除整备页外覆盖整个机库画幅，避免底栏上方露出 3D 机库条带）
+	tab_bg = Hd2Backdrop.new()
+	tab_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tab_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(tab_bg)
+
 	var content := Control.new()
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.offset_top = K.TOP_H
 	content.offset_bottom = -K.BOT_H - 64
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
-	# 舱壁像素背景（各页签微差：交易 = 货舱集装箱、降落 = 作战室地图桌、技能 = 工坊、仓库 = 货架、图鉴 = 档案室）；
-	# 整备页保留 3D 机库与机甲，不铺背景
-	tab_bg = TextureRect.new()
-	tab_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	tab_bg.stretch_mode = TextureRect.STRETCH_TILE
-	tab_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tab_bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	tab_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(tab_bg)
 
 	_build_maintenance_view(content)
 	_build_trade_view(content)
@@ -484,7 +534,7 @@ func _build_top_bar() -> void:
 	var ship := K.hbox(6)
 	ship.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	th.add_child(ship)
-	ship.add_child(UI.label(Loc.t("信天翁号", "ALBATROSS"), 12, Color(0.74, 0.58, 0.3)))
+	ship.add_child(K.tag(Loc.t("信天翁号", "ALBATROSS"), false))
 	ship.add_child(UI.label(Loc.t("三号整备舱", "BAY 03"), 12, K.CREAM_DIM))
 	_vsep(th)
 
@@ -502,7 +552,7 @@ func _build_top_bar() -> void:
 			nv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			var nh := K.hbox(6)
 			nv.add_child(nh)
-			lead_name_lbl = UI.label("", 12, Color(0.74, 0.61, 0.32))
+			lead_name_lbl = UI.label("", 12, K.AMBER_HI)
 			lead_name_lbl.clip_text = true
 			lead_name_lbl.custom_minimum_size = Vector2(56, 0)
 			lead_name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -636,7 +686,7 @@ func _switch_tab(tab_key: String) -> void:
 			var tw := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 			tw.tween_property(views[k], "modulate:a", 1.0, 0.12)
 	if tab_bg:
-		tab_bg.texture = K.px_tex(TAB_BG.get(tab_key, "bg_base"))
+		(tab_bg as Hd2Backdrop).set_tab(tab_key)
 		tab_bg.visible = tab_key != "maintenance"
 	if hangar_vp:
 		hangar_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if tab_key == "maintenance" else SubViewport.UPDATE_DISABLED
@@ -856,7 +906,8 @@ func _item_tip(e: Dictionary) -> Control:
 	v.custom_minimum_size = Vector2(240, 0)
 	var nh := K.hbox(8)
 	v.add_child(nh)
-	var ic = K.IconCell.new(40)
+	var ic = K.IconCell.new(56)
+	ic.set_box_size(Vector2(96, 56))
 	ic.set_entry({"id": id, "label": ""})
 	nh.add_child(ic)
 	var nv := K.vbox(2)
@@ -877,9 +928,11 @@ func _item_tip(e: Dictionary) -> Control:
 	r.solid = true
 	v.add_child(r)
 	v.add_child(K.kv(Loc.t("重量", "Weight"), "%.1f kg" % float(it.get("w", 0))))
-	v.add_child(K.kv(Loc.t("价值", "Value"), "¥ %s" % _fmt_money(int(it.get("v", 0))), Color(0.74, 0.61, 0.28)))
+	var gsz: Vector2i = GameData.item_grid_size(id)
+	v.add_child(K.kv(Loc.t("占用格位", "Grid Size"), Loc.t("%d×%d（%d格）", "%d×%d (%d cells)") % [gsz.x, gsz.y, gsz.x * gsz.y]))
+	v.add_child(K.kv(Loc.t("价值", "Value"), "¥ %s" % _fmt_money(int(it.get("v", 0))), K.AMBER_HI))
 	if e.has("price"):
-		v.add_child(K.kv(Loc.t("售价", "Price"), "¥ %s" % _fmt_money(int(e.price)), Color(0.74, 0.61, 0.28)))
+		v.add_child(K.kv(Loc.t("售价", "Price"), "¥ %s" % _fmt_money(int(e.price)), K.AMBER_HI))
 	v.add_child(K.kv(Loc.t("仓库", "Stash"), "×%d" % GameData.count_in_stash(id)))
 	if cat == "module":
 		var m: Dictionary = GameData.module(id)
@@ -1017,6 +1070,7 @@ func _build_maintenance_view(parent: Control) -> void:
 		bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		m.add_child(bh)
 		var ic = K.IconCell.new(48)
+		ic.set_box_size(Vector2(68, 48))
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bh.add_child(ic)
 		var bv := K.vbox(2)
@@ -1028,7 +1082,7 @@ func _build_maintenance_view(parent: Control) -> void:
 		top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bv.add_child(top_row)
 		top_row.add_child(UI.label(GameData.SLOT_NAMES[slot], 12, K.CREAM_DIM))
-		var en := UI.label(SLOT_EN.get(slot, str(slot).to_upper()), 12, Color(0.38, 0.38, 0.33))
+		var en := UI.label(SLOT_EN.get(slot, str(slot).to_upper()), 12, K.CREAM_DIM)
 		en.visible = false
 		en.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		top_row.add_child(en)
@@ -1100,8 +1154,8 @@ func _build_maintenance_view(parent: Control) -> void:
 	var sh := K.hbox(0)
 	sv.add_child(sh)
 	var first := true
-	for k in [["hp", Loc.t("结构", "Hull"), "HP", UI.HP_C], ["armor", Loc.t("护甲", "Armor"), "ARM", Color(0.7, 0.75, 0.8)], ["energy", Loc.t("能源", "Energy"), "EN", UI.EN_C],
-			["speed", Loc.t("速度", "Speed"), "SPD", UI.INFO], ["load", Loc.t("承重", "Load"), "LOAD", Color(0.75, 0.6, 1.0)], ["cargo", Loc.t("货舱", "Cargo"), "CARGO", UI.GOOD]]:
+	for k in [["hp", Loc.t("结构", "Hull"), "HP", UI.HP_C], ["armor", Loc.t("护甲", "Armor"), "ARM", K.STEEL], ["energy", Loc.t("能源", "Energy"), "EN", UI.EN_C],
+			["speed", Loc.t("速度", "Speed"), "SPD", UI.INFO], ["load", Loc.t("承重", "Load"), "LOAD", K.AMBER_HI], ["cargo", Loc.t("货舱", "Cargo"), "CARGO", UI.GOOD]]:
 		if not first:
 			_vsep(sh, 34)
 		first = false
@@ -1116,7 +1170,7 @@ func _build_maintenance_view(parent: Control) -> void:
 		var lh := K.hbox(4)
 		cell.add_child(lh)
 		lh.add_child(UI.label(k[1], 12, K.CREAM_DIM))
-		var en := UI.label(k[2], 12, Color(0.38, 0.38, 0.33))
+		var en := UI.label(k[2], 12, K.CREAM_DIM)
 		en.visible = false
 		lh.add_child(en)
 		var val := UI.label("", 12, K.CREAM)
@@ -1234,6 +1288,7 @@ func _build_trade_view(parent: Control) -> void:
 	var dh := K.hbox(12)
 	deal.add_child(dh)
 	deal_cell = K.IconCell.new(56)
+	deal_cell.set_box_size(Vector2(88, 56))
 	deal_cell.tip_fn = _item_tip
 	dh.add_child(deal_cell)
 	var dv := K.vbox(2)
@@ -1251,7 +1306,7 @@ func _build_trade_view(parent: Control) -> void:
 	pv.custom_minimum_size = Vector2(200, 0)
 	pv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dh.add_child(pv)
-	deal_price_lbl = UI.label("", 24, Color(0.74, 0.61, 0.28))
+	deal_price_lbl = UI.label("", 24, K.AMBER_HI)
 	deal_price_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pv.add_child(deal_price_lbl)
 	deal_after_lbl = UI.label("", 12, K.CREAM_DIM)
@@ -1260,7 +1315,7 @@ func _build_trade_view(parent: Control) -> void:
 	buy_btn = K.primary(Loc.t("买入", "Buy"), 44)
 	buy_btn.custom_minimum_size.x = 110
 	buy_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	buy_btn.add_theme_font_size_override("font_size", 24)
+	buy_btn.add_theme_font_size_override("font_size", 18)
 	buy_btn.set_meta("sfx", "")
 	buy_btn.pressed.connect(func():
 		if trade_side == "buy" and selected_shop >= 0:
@@ -1272,7 +1327,7 @@ func _build_trade_view(parent: Control) -> void:
 	sell_btn.text = Loc.t("卖出", "Sell")
 	sell_btn.custom_minimum_size = Vector2(110, 44)
 	sell_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	sell_btn.add_theme_font_size_override("font_size", 24)
+	sell_btn.add_theme_font_size_override("font_size", 18)
 	sell_btn.set_meta("sfx", "")
 	sell_btn.pressed.connect(func():
 		if trade_side == "sell":
@@ -1469,7 +1524,7 @@ func _build_deploy_view(parent: Control) -> void:
 	bv.add_child(bsp)
 	bv.add_child(K.hazard_strip())
 	var nx := K.primary(Loc.t("下一步 · 确认携带  →", "Next · Loadout Check  →"), 52)
-	nx.add_theme_font_size_override("font_size", 24)
+	nx.add_theme_font_size_override("font_size", 18)
 	nx.pressed.connect(func(): _deploy_show(2))
 	bv.add_child(nx)
 
@@ -1493,7 +1548,12 @@ func _build_deploy_view(parent: Control) -> void:
 			selected_stash = deploy_stash_ids[i]
 			_move_to_cargo())
 	deploy_stash_list.accept_drop = func(d: Dictionary): return str(d.get("kind", "")) == "cargo"
-	deploy_stash_list.on_drop = func(d: Dictionary): _cargo_back_id(str(d.id))
+	deploy_stash_list.on_drop = func(d: Dictionary):
+		var cidx: int = int(d.get("index", -1))
+		if cidx >= 0 and cidx < GameData.cargo.size():
+			_cargo_back(cidx)
+		else:
+			_cargo_back_id(str(d.id))
 	gl.add_child(_scroll(deploy_stash_list))
 	var load_b := _btn(gl, Loc.t("装入出击货舱  →", "Load into Cargo  →"), func():
 		var sel = deploy_stash_list.get_selected_items()
@@ -1507,9 +1567,10 @@ func _build_deploy_view(parent: Control) -> void:
 	gh.add_child(gr)
 	cargo_lbl = _sec(gr, Loc.t("出击货舱", "Sortie Cargo"), "Cargo")
 	cargo_list = _grid_widget(K.CELL, "cargo")
+	cargo_list.fixed_cols = GameData.CARGO_COLS
 	cargo_list.item_activated.connect(func(i):
 		if i >= 0 and i < cargo_ids.size():
-			_cargo_back_id(str(cargo_ids[i])))
+			_cargo_back(i))
 	cargo_list.accept_drop = func(d: Dictionary): return str(d.get("kind", "")) == "dstash"
 	cargo_list.on_drop = func(d: Dictionary):
 		selected_stash = str(d.id)
@@ -1518,7 +1579,7 @@ func _build_deploy_view(parent: Control) -> void:
 	var back_b := _btn(gr, Loc.t("←  退回仓库", "←  Return to Stash"), func():
 		var sel = cargo_list.get_selected_items()
 		if not sel.is_empty() and sel[0] < cargo_ids.size():
-			_cargo_back_id(str(cargo_ids[sel[0]])))
+			_cargo_back(int(sel[0])))
 	back_b.custom_minimum_size = Vector2(0, 30)
 	squad_count_lbl = _sec(lv, Loc.t("随行队友", "Squadmates"), "Squad")
 	squad_box = K.hbox(8)
@@ -1548,7 +1609,7 @@ func _build_deploy_view(parent: Control) -> void:
 	dv.add_child(deploy_err)
 	dv.add_child(K.hazard_strip())
 	deploy_btn = K.primary(Loc.t("▼  空投出击", "▼  LAUNCH SORTIE"), 60)
-	deploy_btn.add_theme_font_size_override("font_size", 24)
+	deploy_btn.add_theme_font_size_override("font_size", 18)
 	deploy_btn.set_meta("sfx", "ui_confirm")
 	deploy_btn.pressed.connect(func(): deploy_requested.emit())
 	dv.add_child(deploy_btn)
@@ -1590,7 +1651,7 @@ func _deploy_show(n: int) -> void:
 		var sn := "nav9_on" if st == "on" else ("nav9_n" if st == "done" else "nav9_p")
 		b.add_theme_stylebox_override("normal", K.px9(sn, 12, 12, 8, 4))
 		b.add_theme_stylebox_override("hover", K.px9("nav9_on" if st == "on" else "nav9_h", 12, 12, 8, 4))
-		b.add_theme_color_override("font_color", Color(0.74, 0.59, 0.3) if st == "on" else (K.CREAM if st == "done" else K.CREAM_DIM))
+		b.add_theme_color_override("font_color", K.AMBER_HI if st == "on" else (K.CREAM if st == "done" else K.CREAM_DIM))
 
 
 func _map_quest(id: String) -> String:
@@ -1655,7 +1716,10 @@ func _refresh_checklist(st: Dictionary, cw: float, err: String) -> void:
 		check_box.remove_child(c)
 		c.queue_free()
 	check_box.add_child(K.req_row(Loc.t("机体组装", "Rig Assembly"), Loc.t("完整", "Complete") if err == "" else err, err == ""))
-	check_box.add_child(K.req_row(Loc.t("出击货舱", "Sortie Cargo"), "%.1f / %.0f kg" % [cw, st.cargo], cw <= st.cargo))
+	var used_cells: int = GameData.cargo_cells_used(GameData.cargo)
+	var max_cells: int = GameData.cargo_grid_cap(float(st.cargo))
+	var grid_ok: bool = GameData.can_pack_cargo(GameData.cargo, float(st.cargo))
+	check_box.add_child(K.req_row(Loc.t("出击货舱", "Sortie Cargo"), "%.1f/%.0f kg · %d/%d%s" % [cw, st.cargo, used_cells, max_cells, Loc.t("格", "c")], cw <= st.cargo and grid_ok))
 	var sf := GameData.speed_factor(st, cw)
 	check_box.add_child(K.req_row(Loc.t("机体承重", "Chassis Load"), "%.0f / %.0f kg" % [st.mass + cw, st.load], sf > 0.99))
 	var runtime: float = st.energy / max(0.01, st.drain)
@@ -1793,7 +1857,7 @@ func _refresh_salvage() -> void:
 		return
 	for c in salvage_box.get_children():
 		c.queue_free()
-	salvage_box.add_child(K.kv(Loc.t("信用点", "Credits"), "¥ %s" % _fmt_money(GameData.money), Color(0.74, 0.61, 0.28)))
+	salvage_box.add_child(K.kv(Loc.t("信用点", "Credits"), "¥ %s" % _fmt_money(GameData.money), K.AMBER_HI))
 	var tot := 0
 	var es: Array = []
 	for id in Growth.material_ids():
@@ -1852,7 +1916,7 @@ func _skill_card(title: String, lv: int, mx: int, lines: Array, cost: Dictionary
 		tr.texture = Icons.facility_icon(icon)
 		tr.custom_minimum_size = Vector2(32, 32)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		ib.add_child(tr)
 	var tv := K.vbox(2)
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2069,7 +2133,7 @@ func _proficiency_card(id: String) -> PanelContainer:
 	tr.texture = tex if tex != null else Icons.facility_icon("ability")
 	tr.custom_minimum_size = Vector2(28, 28)
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	ib.add_child(tr)
 	var tv := K.vbox(1)
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2091,7 +2155,7 @@ func _proficiency_card(id: String) -> PanelContainer:
 	cat_lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sub_h.add_child(cat_lb)
 	var focus_txt := "▲129%" if mult > 1.05 else ("▼50%" if mult < 0.95 else "100%")
-	var focus_col := Color(0.45, 0.88, 0.98) if mult > 1.05 else (Color(0.95, 0.55, 0.34) if mult < 0.95 else K.CREAM_DIM)
+	var focus_col := UI.INFO if mult > 1.05 else (Color(0.84, 0.44, 0.24) if mult < 0.95 else K.CREAM_DIM)
 	sub_h.add_child(UI.label(focus_txt, 10, focus_col))
 
 	var ph := K.hbox(5)
@@ -2205,7 +2269,7 @@ func _skills_pods() -> void:
 # ============================================================ 5. 仓库视图（藏匿处：大网格 + 分类筛选 + 物品详情）
 func _build_stash_view(parent: Control) -> void:
 	var v_s := _view(parent, "stash")
-	const RW := 300.0
+	const RW := 380.0
 
 	var lp := _tpanel(v_s, Loc.t("仓库"), "Stash", FILL, [K.M, K.GAP, -K.M - RW - K.GAP, -K.GAP])
 	stash_count_lbl = lp[2]
@@ -2248,26 +2312,32 @@ func _build_stash_view(parent: Control) -> void:
 	var ih := K.hbox(10)
 	rv.add_child(ih)
 	stash_icon_rect = K.IconCell.new(96)
+	stash_icon_rect.set_box_size(Vector2(168, 96))
 	ih.add_child(stash_icon_rect)
 	var nv := K.vbox(4)
 	nv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	ih.add_child(nv)
-	stash_name_lbl = UI.label(Loc.t("未选择物品", "No Item Selected"), 12, K.CREAM)
+	stash_name_lbl = UI.label(Loc.t("未选择物品", "No Item Selected"), 13, K.CREAM)
 	stash_name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	nv.add_child(stash_name_lbl)
-	stash_tag_box = K.hbox(4)
+	stash_tag_box = HFlowContainer.new()
+	stash_tag_box.add_theme_constant_override("h_separation", 4)
+	stash_tag_box.add_theme_constant_override("v_separation", 4)
 	nv.add_child(stash_tag_box)
 	var r := K.Rule.new()
 	r.solid = true
 	rv.add_child(r)
+	var insp_v := K.vbox(6)
+	insp_v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stash_kv_box = K.vbox(4)
-	rv.add_child(stash_kv_box)
+	insp_v.add_child(stash_kv_box)
 	stash_detail_lbl = K.wrap("", K.CREAM)
-	rv.add_child(stash_detail_lbl)
-	_sec(rv, Loc.t("升级用途", "Used in"), "Used in")
+	insp_v.add_child(stash_detail_lbl)
+	_sec(insp_v, Loc.t("升级用途", "Used in"), "Used in")
 	stash_use_lbl = K.wrap("", K.CREAM_DIM)
-	rv.add_child(stash_use_lbl)
+	insp_v.add_child(stash_use_lbl)
+	rv.add_child(_scroll(insp_v))
 
 
 # ============================================================ 6. 图鉴视图（手册：左侧分类树 + 搜索，右侧详情）
@@ -2303,10 +2373,10 @@ func _build_codex_view(parent: Control) -> void:
 	codex_avatar = K.Avatar.new(128, "nao", "on")
 	ch.add_child(codex_avatar)
 	codex_portrait = TextureRect.new()
-	codex_portrait.custom_minimum_size = Vector2(80, 80)
+	codex_portrait.custom_minimum_size = Vector2(168, 104)
 	codex_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	codex_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	codex_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	codex_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	codex_portrait.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	ch.add_child(codex_portrait)
 	var cv := K.vbox(6)
@@ -2631,9 +2701,9 @@ func _build_hangar() -> void:
 				A.add(preview_root, A.torus(0.05, 0.09, 12), M_GUN, Vector3(x * 3.0 + 1.2, 0.01, z * 3.0 + 1.2), Vector3.ZERO, Vector3(1, 0.4, 1), false)
 	# 两侧纵向排水钢格栅沟槽 + 前沿安全黄黑警戒带
 	for sx in [-3.95, 3.95]:
-		A.add(preview_root, A.bevel_box(Vector3(0.46, 0.04, 18.0), 0.008), M_DARK, Vector3(sx, -0.005, -2.5))
+		A.add(preview_root, A.bevel_box(Vector3(0.46, 0.04, 18.0), 0.008), M_DARK, Vector3(sx, -0.015, -2.5))
 		for gi in 26:
-			A.add(preview_root, A.bevel_box(Vector3(0.40, 0.02, 0.10), 0.004), M_GUN, Vector3(sx, 0.012, -10.8 + gi * 0.65), Vector3.ZERO, Vector3.ONE, false)
+			A.add(preview_root, A.bevel_box(Vector3(0.40, 0.02, 0.10), 0.004), M_GUN, Vector3(sx, 0.016, -10.8 + gi * 0.65), Vector3.ZERO, Vector3.ONE, false)
 	A.add(preview_root, A.bevel_box(Vector3(27, 0.028, 0.42), 0.008), A.hazard(), Vector3(0, 0.008, 4.9))
 
 	# 沉降式重工机械回转台（取代悬浮霓虹发光圈：黄黑防撞井圈 + 法兰螺栓转盘 + 四角液压驻车卡钳 + 脐带油管）
@@ -2678,7 +2748,7 @@ func _build_hangar() -> void:
 	for rx in range(-9, 10, 2):
 		A.add(preview_root, A.bevel_box(Vector3(0.06, 0.92, 0.06), 0.01), M_ST, Vector3(float(rx), 4.52, -8.02))
 		A.add(preview_root, A.bevel_box(Vector3(0.14, 0.65, 1.15), 0.02), M_DARK, Vector3(float(rx), 3.62, -8.75), Vector3(26, 0, 0))
-	A.add(preview_root, A.bevel_box(Vector3(18.6, 0.06, 0.06), 0.01), M_CRANE, Vector3(0, 4.96, -8.02))
+	A.add(preview_root, A.bevel_box(Vector3(18.64, 0.07, 0.08), 0.01), M_CRANE, Vector3(0, 4.98, -8.02))
 	A.add(preview_root, A.bevel_box(Vector3(18.6, 0.04, 0.04), 0.01), M_ST, Vector3(0, 4.52, -8.02))
 
 	# 两侧百叶采光天窗（下移至视口清晰区，柔化辉光避免切顶）
@@ -2713,15 +2783,15 @@ func _build_hangar() -> void:
 	for sx in [-1.0, 1.0]:
 		for cz in [-8.6, -4.4, 0.6]:
 			A.add(preview_root, A.bevel_box(Vector3(0.54, 7.6, 0.54), 0.04), M_DARK, Vector3(sx * 6.8, 3.8, cz))
-			A.add(preview_root, A.bevel_box(Vector3(0.22, 7.6, 0.66), 0.02), M_GUN, Vector3(sx * 6.8, 3.8, cz))
-			A.add(preview_root, A.bevel_box(Vector3(0.66, 0.32, 0.66), 0.03), A.hazard(), Vector3(sx * 6.8, 0.85, cz))
+			A.add(preview_root, A.bevel_box(Vector3(0.22, 7.56, 0.66), 0.02), M_GUN, Vector3(sx * 6.8, 3.8, cz))
+			A.add(preview_root, A.bevel_box(Vector3(0.68, 0.32, 0.70), 0.03), A.hazard(), Vector3(sx * 6.8, 0.85, cz))
 			A.add(preview_root, A.bevel_box(Vector3(1.35, 0.22, 0.26), 0.02), M_GUN, Vector3(sx * 6.22, 5.22, cz), Vector3(0, 0, sx * 36.0))
 		A.add(preview_root, A.bevel_box(Vector3(0.40, 0.46, 15.6), 0.03), M_CRANE, Vector3(sx * 6.38, 5.38, -3.8))
 		# 左右工位整备道具：重型抽屉工具车、军械备件托盘、备用液压油桶（严格位于 x = ±4.9..6.4，绝不遮挡中央机甲）
-		A.add(preview_root, A.bevel_box(Vector3(1.55, 0.14, 1.25), 0.02), M_DARK, Vector3(sx * 5.4, 0.07, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.42, 0.96, 1.08), 0.05), M_OLIVE, Vector3(sx * 5.4, 0.62, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.46, 0.10, 1.12), 0.02), M_DARK, Vector3(sx * 5.4, 0.92, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.06, 0.72, 0.88), 0.04), M_CRANE, Vector3(sx * 5.55, 1.46, -5.3), Vector3(0, sx * 14.0, 0))
+		A.add(preview_root, A.bevel_box(Vector3(1.55, 0.14, 1.25), 0.02), M_DARK, Vector3(sx * 5.4, 0.065, -5.4))
+		A.add(preview_root, A.bevel_box(Vector3(1.42, 0.98, 1.08), 0.05), M_OLIVE, Vector3(sx * 5.4, 0.610, -5.4))
+		A.add(preview_root, A.bevel_box(Vector3(1.50, 0.10, 1.16), 0.02), M_DARK, Vector3(sx * 5.4, 1.140, -5.4))
+		A.add(preview_root, A.bevel_box(Vector3(1.06, 0.72, 0.88), 0.04), M_CRANE, Vector3(sx * 5.55, 1.545, -5.3), Vector3(0, sx * 14.0, 0))
 		# 车间红色重型工具柜 + 液压油桶
 		A.add(preview_root, A.bevel_box(Vector3(0.86, 1.24, 1.48), 0.04), M_CAB, Vector3(sx * 5.15, 0.66, -1.8), Vector3(0, sx * -12.0, 0))
 		A.add(preview_root, A.bevel_box(Vector3(0.90, 0.06, 1.52), 0.015), M_DARK, Vector3(sx * 5.15, 1.30, -1.8), Vector3(0, sx * -12.0, 0))
@@ -2797,6 +2867,8 @@ func _build_hangar() -> void:
 	var cam := Camera3D.new()
 	cam.position = Vector3(0, 3.1, 8.8)
 	cam.fov = 40
+	cam.near = 0.25
+	cam.far = 45.0
 	preview_root.add_child(cam)
 	cam.look_at(Vector3(0, 1.9, 0))
 	preview_cam = cam
@@ -2859,10 +2931,10 @@ func refresh() -> void:
 			MechScript._batch_visual(preview_mech)
 	elif turntable:
 		_last_preview_loadout = GameData.loadout.duplicate()
-		preview_mech = MV.build(GameData.loadout)
+		preview_mech = MV.build(GameData.loadout, true, false)
 		MechScript._batch_visual(preview_mech)
 		turntable.add_child(preview_mech)
-		preview_mech.position.y = 0.2
+		preview_mech.position.y = 0.168
 		preview_mech.rotation.y = PI
 
 	var mass := 0.0
@@ -2899,7 +2971,7 @@ func refresh() -> void:
 	if not stat_rows.is_empty():
 		_stat("hp", st.hp, 300.0, "%d" % st.hp)
 		_stat("armor", float(st.get("armor", 0.0)), 0.5, "%d%%" % int(round(float(st.get("armor", 0.0)) * 100)))
-		_stat("energy", st.energy, 250.0, "%d · %d:%02d" % [st.energy, int(runtime) / 60, int(runtime) % 60])
+		_stat("energy", st.energy, 500.0, "%d · %d:%02d" % [st.energy, int(runtime) / 60, int(runtime) % 60])
 		_stat("speed", st.speed * sf, 10.0, "%.1f%s" % [st.speed * sf, "" if sf > 0.99 else " ↓"])
 		_stat("load", st.mass + cw, max(1.0, st.load), "%.0f / %.0f" % [st.mass + cw, st.load])
 		_stat("cargo", cw, max(1.0, st.cargo), "%.1f / %.0f" % [cw, st.cargo])
@@ -2912,8 +2984,11 @@ func refresh() -> void:
 
 	_populate_cargo()
 	if cargo_lbl:
-		cargo_lbl.text = "%.1f / %.0f kg" % [cw, st.cargo]
-		cargo_lbl.add_theme_color_override("font_color", UI.BAD if cw > st.cargo else K.CREAM_DIM)
+		var used_c: int = GameData.cargo_cells_used(GameData.cargo)
+		var max_c: int = GameData.cargo_grid_cap(float(st.cargo))
+		var grid_ok: bool = GameData.can_pack_cargo(GameData.cargo, float(st.cargo))
+		cargo_lbl.text = Loc.t("%.1f / %.0f kg · %d/%d格", "%.1f / %.0f kg · %d/%d cells") % [cw, st.cargo, used_c, max_c]
+		cargo_lbl.add_theme_color_override("font_color", UI.BAD if (cw > st.cargo or not grid_ok) else K.CREAM_DIM)
 
 	var err := GameData.can_deploy(GameData.loadout)
 	if deploy_err:
@@ -3153,11 +3228,17 @@ func _populate_deploy_stash() -> void:
 func _populate_cargo() -> void:
 	if not cargo_list:
 		return
-	var es := _stack(GameData.cargo)
+	var st := GameData.compute_stats(GameData.loadout)
+	var crows: int = GameData.cargo_grid_rows(float(st.cargo))
+	cargo_list.fixed_cols = GameData.CARGO_COLS
+	cargo_list.min_rows = crows
+	cargo_list.cap_rows = crows
+	GameData.pack_cargo_inplace(GameData.cargo, float(st.cargo))
+	var es: Array = []
 	cargo_ids.clear()
-	for e in es:
-		cargo_ids.append(e.id)
-		e["hint"] = ""
+	for id in GameData.cargo:
+		cargo_ids.append(id)
+		es.append({"id": id, "count": 1, "hint": ""})
 	cargo_list.empty_text = Loc.t("货舱是空的：从左侧装入消耗品与食物。", "Cargo bay empty: load consumables and rations from the left.")
 	cargo_list.set_entries(es)
 
@@ -3227,6 +3308,8 @@ func _on_stash_selected(i: int) -> void:
 		stash_kv_box.remove_child(c)
 		c.queue_free()
 	stash_kv_box.add_child(K.kv(Loc.t("重量", "Weight"), "%.1f kg" % float(it.w)))
+	var gsz: Vector2i = GameData.item_grid_size(selected_stash)
+	stash_kv_box.add_child(K.kv(Loc.t("占用格位", "Grid Size"), Loc.t("%d×%d（%d格）", "%d×%d (%d cells)") % [gsz.x, gsz.y, gsz.x * gsz.y]))
 	stash_kv_box.add_child(K.kv(Loc.t("价值", "Value"), "¥ %s" % _fmt_money(int(it.v)), Color(0.74, 0.61, 0.28)))
 	stash_kv_box.add_child(K.kv(Loc.t("库存", "In Stash"), "×%d" % GameData.count_in_stash(selected_stash)))
 	stash_kv_box.add_child(K.kv(Loc.t("合计重量", "Total Weight"), "%.1f kg" % (float(it.w) * GameData.count_in_stash(selected_stash))))
@@ -3306,8 +3389,17 @@ func _move_to_cargo() -> void:
 			deploy_err.visible = true
 		Audio.play_ui("ui_denied")
 		return
+	var next_c: Array = GameData.cargo.duplicate()
+	next_c.append(selected_stash)
+	if not GameData.can_pack_cargo(next_c, float(st.cargo)):
+		if deploy_err:
+			deploy_err.text = Loc.t("出击货舱格位不足", "Cargo bay grid space full")
+			deploy_err.visible = true
+		Audio.play_ui("ui_denied")
+		return
 	GameData.stash.erase(selected_stash)
 	GameData.cargo.append(selected_stash)
+	GameData.pack_cargo_inplace(GameData.cargo, float(st.cargo))
 	Audio.play_ui("cargo_load")
 	refresh()
 

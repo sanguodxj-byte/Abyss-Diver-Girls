@@ -24,8 +24,8 @@ var loadout := {}
 var stats := {}
 var max_hp := 100.0
 var hp := 100.0
-var max_energy := 100.0
-var energy := 100.0
+var max_energy := 200.0
+var energy := 200.0
 var cargo: Array = []
 var visual: Node3D
 var torso: Node3D
@@ -92,6 +92,17 @@ var _thrusters: Array = []        ## 推进飞行时的喷口粒子
 var DASH_DUR := 0.6
 ## 音效与事件状态
 var _emerg_was := false
+var _alt_next := 0               ## 交替射击：0 = 优先左臂，1 = 优先右臂
+var _alt_stagger_t := 0.0        ## 双臂连射交替半周期节流
+var is_aiming := false           ## 右键瞄准态（拉远视角 / 开启狙击镜 / 收紧散布）
+const PLAYER_RING_COLORS := [
+	Color(0.28, 0.88, 1.0, 0.62),
+	Color(0.45, 0.96, 0.42, 0.62),
+	Color(1.0, 0.68, 0.24, 0.62),
+	Color(0.86, 0.46, 1.0, 0.62),
+]
+var player_ring: MeshInstance3D
+var player_ring_color: Color = PLAYER_RING_COLORS[0]
 var _low_warned := false
 var _overloaded := false
 var _fire_held := {"arm_l": 0.0, "arm_r": 0.0}   ## 持续喷射类武器：距上一发的剩余保持时间，归零时停止循环音
@@ -151,8 +162,17 @@ void fragment() {
 	shield_mesh.position.y = 1.6
 	shield_mesh.visible = false
 	add_child(shield_mesh)
+	if get("faction") == null:
+		player_ring = A.ground_vfx(self, A.player_ring_tex(), player_ring_color, 4.1, Vector3(0, 0.08, 0), false, 0.48, true, 5)
+		player_ring.set_meta("player_ring", true)
 	if leg_type == "tread":
 		Audio.loop_start(_lk("legs"), "legs_tread_loop", self)
+
+
+func set_player_ring_color(c: Color) -> void:
+	player_ring_color = Color(c.r, c.g, c.b, 0.62)
+	if player_ring != null and is_instance_valid(player_ring) and player_ring.material_override is ShaderMaterial:
+		(player_ring.material_override as ShaderMaterial).set_shader_parameter("col", player_ring_color)
 
 
 ## 本机甲的循环音效 key（同时存在多台机甲时互不干扰）
@@ -165,6 +185,22 @@ func cargo_weight() -> float:
 
 func cargo_cap() -> float:
 	return float(stats.cargo)
+
+func cargo_grid_rows() -> int:
+	return GameData.cargo_grid_rows(cargo_cap())
+
+func cargo_grid_cap() -> int:
+	return GameData.cargo_grid_cap(cargo_cap())
+
+func cargo_cells() -> int:
+	return GameData.cargo_cells_used(cargo)
+
+func can_fit_cargo_item(id: String) -> bool:
+	if cargo_weight() + float(GameData.item(id).w) > cargo_cap() + 0.001:
+		return false
+	var next_c: Array = cargo.duplicate()
+	next_c.append(id)
+	return GameData.can_pack_cargo(next_c, cargo_cap())
 
 func speed_mult() -> float:
 	var f: float = GameData.speed_factor(stats, cargo_weight())
@@ -185,11 +221,26 @@ func ergo_factor() -> float:
 	return clampf(0.75 + (float(stats.get("ergo", 60.0)) - 30.0) / 140.0, 0.72, 1.22)
 
 
-## 手臂有效散布角（度）：手臂完好度低于 50% 时伺服电机抖动导致散布扩大（最高 +45%）
+## 手臂有效散布角（度）：手臂完好度低于 50% 时伺服电机抖动导致散布扩大（最高 +45%）；瞄准时收束弹道
 func eff_spread(slot: String, base_spread: float) -> float:
 	var p := float(parts.get(slot, 1.0))
 	var dmg_pen := clampf((0.5 - p) / 0.5, 0.0, 1.0) * 0.45
-	return base_spread * (1.0 + dmg_pen)
+	var aim_mul := (0.45 if is_scoping() else 0.65) if is_aiming else 1.0
+	return base_spread * (1.0 + dmg_pen) * aim_mul
+
+
+func has_sniper_scope() -> bool:
+	for slot in ["arm_l", "arm_r"]:
+		var id := str(loadout.get(slot, ""))
+		if id != "" and float(parts.get(slot, 1.0)) > 0.0:
+			var m: Dictionary = GameData.module(id)
+			if bool(m.get("scope", false)) or str(m.get("weapon", "")) == "sniper":
+				return true
+	return false
+
+
+func is_scoping() -> bool:
+	return is_aiming and not dead and not net_done and not input_locked and has_sniper_scope()
 
 
 ## 手臂实际装填耗时（秒）：受人机工效加成，且手臂受损低于 50% 时供弹导轨卡滞（最高延长 35%）
@@ -249,9 +300,11 @@ func _physics_tick(delta: float) -> void:
 		_shown_damage = dmg_now
 		RenderingServer.global_shader_parameter_set("mech_damage", dmg_now)
 	if dead:
+		is_aiming = false
 		return
 	for k in arm_cd:
 		arm_cd[k] = max(0.0, arm_cd[k] - delta)
+	_alt_stagger_t = maxf(0.0, _alt_stagger_t - delta)
 	ability_cd = max(0.0, ability_cd - delta)
 	guard_t = max(0.0, guard_t - delta)
 	stealth_t = max(0.0, stealth_t - delta)
@@ -280,6 +333,7 @@ func _physics_tick(delta: float) -> void:
 
 	if raid and raid.dropping:
 		# 空投中由 raid 的补间控制位置，不叠加重力
+		is_aiming = false
 		velocity = Vector3.ZERO
 		_vis_sync()
 		_animate(delta, Vector3.ZERO)
@@ -370,22 +424,33 @@ func _physics_tick(delta: float) -> void:
 	_energy_watch()
 
 	if input_locked:
+		is_aiming = false
 		return
-	if raid != null and raid.coop != null:
-		if net_peer > 1:
-			if net_fire & 1: try_fire("arm_l")
-			if net_fire & 2: try_fire("arm_r")
-			return
-		if raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing(): return
 	var map_on: bool = raid != null and raid.hud != null and raid.hud.map_open()
-	var joy_firing: bool = joy_aim.length() >= 0.28
 	var hud_busy: bool = raid != null and raid.hud != null and raid.hud.is_touch_busy()
-	if (joy_firing or (Input.is_action_pressed("fire_left") and not hud_busy)) and not map_on:
+	var joy_firing: bool = joy_aim.length() >= 0.28
+	if raid != null and raid.coop != null:
+		if _is_local_actor() and not Net.is_host():
+			var blocked_cli: bool = map_on or hud_busy or raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing()
+			is_aiming = (not blocked_cli) and Input.is_action_pressed("fire_right")
+			return
+		if net_peer > 1:
+			is_aiming = (net_fire & 2) != 0
+			if net_fire & 1:
+				fire_alternating(false)
+			return
+		if raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing():
+			is_aiming = false
+			return
+	is_aiming = (not map_on) and (not hud_busy) and Input.is_action_pressed("fire_right")
+	var fire_just: bool = (not map_on) and (not hud_busy) and Input.is_action_just_pressed("fire_left")
+	var fire_held: bool = (not map_on) and ((Input.is_action_pressed("fire_left") and not hud_busy) or joy_firing)
+	if fire_held:
 		var _t3 := Prof.t0()
-		try_fire("arm_l")
+		fire_alternating(fire_just)
 		Prof.add("mech.fire", _t3)
-	if (joy_firing or (Input.is_action_pressed("fire_right") and not hud_busy)) and not map_on:
-		try_fire("arm_r")
+	else:
+		_alt_stagger_t = 0.0
 	if Input.is_action_just_pressed("dash"):
 		try_dash(move)
 	if Input.is_action_just_pressed("ability"):
@@ -634,6 +699,47 @@ func can_spend(amount: float) -> bool:
 	return emergency <= 0.0 and energy >= amount
 
 
+func _arm_ready(slot: String) -> bool:
+	var id: String = loadout.get(slot, "")
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0 or ammo[slot] <= 0:
+		return false
+	var m: Dictionary = GameData.module(id)
+	return can_spend(float(m.cost))
+
+
+func _arm_active(slot: String) -> bool:
+	return str(loadout.get(slot, "")) != "" and float(parts.get(slot, 1.0)) > 0.0
+
+
+## 交替射击：左键点击/按住轮流触发左臂与右臂武装（单臂可用/另一臂冷却或换弹时自动接管）
+func fire_alternating(force_click := false) -> void:
+	if not force_click and _alt_stagger_t > 0.0:
+		return
+	var primary := "arm_l" if _alt_next == 0 else "arm_r"
+	var secondary := "arm_r" if _alt_next == 0 else "arm_l"
+	# 主次槽位均空弹且未在装填时先触发装填
+	for sl in [primary, secondary]:
+		var mid := str(loadout.get(sl, ""))
+		if mid != "" and float(parts.get(sl, 1.0)) > 0.0 and ammo[sl] <= 0 and reload_t[sl] <= 0.0:
+			start_reload(sl)
+	var chosen := ""
+	if _arm_ready(primary):
+		chosen = primary
+	elif _arm_ready(secondary):
+		chosen = secondary
+	if chosen == "":
+		return
+	try_fire(chosen)
+	var other := "arm_r" if chosen == "arm_l" else "arm_l"
+	if _arm_active(other):
+		_alt_next = 1 if chosen == "arm_l" else 0
+		var om: Dictionary = GameData.module(str(loadout.get(other, "")))
+		var o_half := 0.5 / maxf(float(om.get("rate", 1.0)), 0.5)
+		_alt_stagger_t = minf(arm_cd[chosen] * 0.5, o_half)
+	else:
+		_alt_stagger_t = 0.0
+
+
 func try_fire(slot: String) -> void:
 	var id: String = loadout.get(slot, "")
 	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0:
@@ -647,7 +753,8 @@ func try_fire(slot: String) -> void:
 	use_energy(float(m.cost))
 	arm_cd[slot] = 1.0 / float(m.rate) / (2.0 if overdrive_t > 0.0 else 1.0)
 	recoil[slot] = 1.0
-	kick_v += Vector3(-0.9 if m.weapon != "flamer" else -0.2, (0.5 if slot == "arm_l" else -0.5), 0.0) * (1.6 if m.weapon == "shotgun" else 1.0)
+	var kick_mul := 1.8 if m.weapon == "sniper" else (1.6 if m.weapon == "shotgun" else 1.0)
+	kick_v += Vector3(-0.9 if m.weapon != "flamer" else -0.2, (0.5 if slot == "arm_l" else -0.5), 0.0) * kick_mul
 	var muzzle: Node3D = muzzles[slot]
 	var origin := muzzle.global_position
 	origin.y = clamp(origin.y, 1.2, 2.6)
@@ -686,7 +793,10 @@ func _fire_sfx(slot: String, weapon: String, origin: Vector3) -> void:
 			Audio.loop_start(_lk("fire_" + slot), "wpn_%s_loop" % weapon, self)
 		_fire_held[slot] = maxf(0.15, arm_cd[slot] * 2.5)
 	else:
-		Audio.play_sfx("wpn_%s_fire" % weapon, origin)
+		if weapon == "sniper":
+			Audio.play_sfx(["wpn_sniper_fire", "wpn_railgun_fire"], origin)
+		else:
+			Audio.play_sfx("wpn_%s_fire" % weapon, origin)
 
 
 ## 躯干实际朝向（水平）
@@ -712,7 +822,10 @@ func start_reload(slot: String) -> void:
 	reload_t[slot] = _reload_dur(slot)
 	if _is_local_actor():
 		Growth.record_skill_xp("ab_firearm", 0.42)
-	Audio.play_sfx("wpn_%s_reload" % w, global_position + Vector3(0, 2.0, 0))
+	if w == "sniper":
+		Audio.play_sfx(["wpn_sniper_reload", "wpn_mg_reload"], global_position + Vector3(0, 2.0, 0))
+	else:
+		Audio.play_sfx("wpn_%s_reload" % w, global_position + Vector3(0, 2.0, 0))
 
 
 func reload_frac(slot: String) -> float:
@@ -1049,6 +1162,8 @@ func die(reason: String) -> void:
 	dead = true
 	for k in ["legs", "alarm", "fire_arm_l", "fire_arm_r"]:
 		Audio.loop_stop(_lk(k))
+	if player_ring != null and is_instance_valid(player_ring):
+		player_ring.visible = false
 	Audio.play_sfx("mech_destroyed")
 	_event("mech_destroyed", [reason])
 	# 模块化残骸：各模块从标准接口处崩脱、散落，底盘跪倒
@@ -1070,9 +1185,11 @@ func _footfall(leg: Node3D, i: int) -> void:
 		var aj: Node3D = leg.get_meta("ankle")
 		var fp := aj.global_position
 		Audio.play_sfx("step_biped", fp, {"vol": lerpf(-9.0, -1.5, clampf(w, 0.0, 1.0))})
-		A.burst(raid.fx, Vector3(fp.x, 0.15, fp.z), {"amount": 5, "life": 0.9, "size": 0.9, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(0, 0.2, 0),
-			"spread": 90.0, "vmin": 1.0, "vmax": 2.2, "gravity": Vector3(0, 0.3, 0), "damp": 3.0, "radius": 0.25,
-			"c0": Color(0.72, 0.66, 0.56, 0.55), "c1": Color(0.68, 0.62, 0.54, 0.0), "grow0": 0.5, "grow1": 1.6})
+		var dt: Color = raid.ground_dust_tint() if raid != null and raid.has_method("ground_dust_tint") else Color(0.72, 0.66, 0.56, 1.0)
+		A.burst(raid.fx, Vector3(fp.x, 0.24, fp.z), {"amount": 4, "life": 0.70, "size": 0.76, "tex": A.dust_tex(), "additive": false, "dir": Vector3(0, 0.24, 0),
+			"spread": 82.0, "vmin": 1.1, "vmax": 2.3, "gravity": Vector3(0, 0.25, 0), "damp": 4.2, "radius": 0.22,
+			"c0": Color(dt.r, dt.g, dt.b, 0.0), "cmid": Color(dt.r, dt.g, dt.b, 0.38), "cmid_pos": 0.16, "c1": Color(dt.r * 0.9, dt.g * 0.9, dt.b * 0.9, 0.0),
+			"grow0": 0.45, "grow1": 1.48, "soft_depth": 0.20})
 
 
 func _quad_footfall() -> void:
@@ -1089,15 +1206,17 @@ func _thrust_start() -> void:
 			"c0": Color(1.0, 0.95, 0.8), "cmid": Color(1.0, 0.62, 0.22, 0.9), "c1": Color(0.7, 0.2, 0.05, 0.0), "grow0": 0.6, "grow1": 1.3})
 		f.set_meta("sx", sx)
 		_thrusters.append(f)
-	var sm := A.emitter(self, Vector3.ZERO, {"amount": 26, "life": 1.0, "size": 1.4, "tex": A.smoke_tex(), "additive": false, "spread": 25.0, "vmin": 2.0, "vmax": 4.0,
-		"gravity": Vector3(0, 0.6, 0), "c0": Color(0.8, 0.77, 0.72, 0.45), "c1": Color(0.75, 0.72, 0.68, 0.0), "grow0": 0.5, "grow1": 2.0})
+	var sm := A.emitter(self, Vector3.ZERO, {"amount": 20, "life": 0.78, "size": 0.96, "tex": A.smoke_tex(), "additive": false, "spread": 22.0, "vmin": 2.2, "vmax": 4.2,
+		"gravity": Vector3(0, 0.6, 0), "c0": Color(0.78, 0.75, 0.70, 0.0), "cmid": Color(0.76, 0.73, 0.68, 0.36), "cmid_pos": 0.20, "c1": Color(0.72, 0.70, 0.66, 0.0), "grow0": 0.45, "grow1": 1.65, "soft_depth": 0.26})
 	sm.set_meta("sx", 0.0)
 	sm.set_meta("smoke", true)
 	_thrusters.append(sm)
 	if raid:
 		var p := global_position
-		A.burst(raid.fx, Vector3(p.x, 0.2, p.z), {"amount": 14, "life": 1.0, "size": 1.6, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(1, 0, 0), "spread": 180.0,
-			"vmin": 4.0, "vmax": 7.0, "gravity": Vector3(0, 0.4, 0), "damp": 5.0, "c0": Color(0.74, 0.68, 0.58, 0.7), "c1": Color(0.7, 0.64, 0.56, 0.0), "grow0": 0.5, "grow1": 2.0}).flatness = 0.9
+		var dt: Color = raid.ground_dust_tint() if raid.has_method("ground_dust_tint") else Color(0.74, 0.68, 0.58, 1.0)
+		A.burst(raid.fx, Vector3(p.x, 0.26, p.z), {"amount": 14, "life": 0.85, "size": 1.25, "tex": A.dust_tex(), "additive": false, "flat": 0.90, "dir": Vector3(1, 0, 0), "spread": 180.0,
+			"vmin": 4.2, "vmax": 7.5, "gravity": Vector3(0, 0.35, 0), "damp": 5.5, "c0": Color(dt.r, dt.g, dt.b, 0.0), "cmid": Color(dt.r, dt.g, dt.b, 0.48), "cmid_pos": 0.16,
+			"c1": Color(dt.r * 0.9, dt.g * 0.9, dt.b * 0.9, 0.0), "grow0": 0.45, "grow1": 1.75, "soft_depth": 0.24})
 		raid.shake = maxf(raid.shake, 0.12)
 
 
@@ -1133,8 +1252,16 @@ func _thrust_land() -> void:
 	if raid:
 		raid.shake = maxf(raid.shake, 0.18)
 		var p := global_position
-		A.burst(raid.fx, Vector3(p.x, 0.2, p.z), {"amount": 12, "life": 1.1, "size": 1.5, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(1, 0, 0), "spread": 180.0,
-			"vmin": 3.0, "vmax": 6.0, "gravity": Vector3(0, 0.4, 0), "damp": 5.0, "c0": Color(0.74, 0.68, 0.58, 0.7), "c1": Color(0.7, 0.64, 0.56, 0.0), "grow0": 0.5, "grow1": 2.0}).flatness = 0.9
+		var dt: Color = raid.ground_dust_tint() if raid.has_method("ground_dust_tint") else Color(0.74, 0.68, 0.58, 1.0)
+		A.burst(raid.fx, Vector3(p.x, 0.26, p.z), {"amount": 12, "life": 0.92, "size": 1.25, "tex": A.dust_tex(), "additive": false, "flat": 0.90, "dir": Vector3(1, 0, 0), "spread": 180.0,
+			"vmin": 3.5, "vmax": 6.8, "gravity": Vector3(0, 0.35, 0), "damp": 5.5, "c0": Color(dt.r, dt.g, dt.b, 0.0), "cmid": Color(dt.r, dt.g, dt.b, 0.48), "cmid_pos": 0.16,
+			"c1": Color(dt.r * 0.9, dt.g * 0.9, dt.b * 0.9, 0.0), "grow0": 0.45, "grow1": 1.75, "soft_depth": 0.24})
+		var scorch := A.ground_vfx(raid.fx, A.scorch_tex(), Color(0.24, 0.21, 0.18, 0.36), 2.4, Vector3(p.x, 0.092, p.z), false, 0.44, true, 2)
+		scorch.rotation.y = randf() * TAU
+		var stw := scorch.create_tween()
+		stw.tween_interval(3.0)
+		stw.tween_property(scorch.material_override, "shader_parameter/col", Color(0.24, 0.21, 0.18, 0.0), 2.5)
+		stw.tween_callback(scorch.queue_free)
 
 
 func _thrust_clear() -> void:

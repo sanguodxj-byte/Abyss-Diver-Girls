@@ -7,6 +7,7 @@ extends RefCounted
 ##   TouchBtn        —— 战术触控圆钮：冲刺 / 机能 / 换弹快捷触控键
 
 const MV = preload("res://scripts/mech_visual.gd")
+const Icons = preload("res://scripts/item_icons.gd")
 
 static func part_color(f: float) -> Color:
 	return _pc(f)
@@ -14,12 +15,12 @@ static func part_color(f: float) -> Color:
 
 static func _pc(f: float) -> Color:
 	if f > 0.75:
-		return Color(0.55, 0.86, 1.0)
+		return Color(0.76, 0.82, 0.80)
 	if f > 0.5:
-		return Color(0.74, 0.62, 0.2)
+		return Color(0.84, 0.58, 0.22)
 	if f > 0.25:
-		return Color(1.0, 0.55, 0.15)
-	return Color(1.0, 0.2, 0.14)
+		return Color(0.82, 0.38, 0.14)
+	return Color(0.78, 0.22, 0.18)
 
 
 # ====================================================================== 全息投影
@@ -37,7 +38,7 @@ class HoloPortrait extends SubViewportContainer:
 	const HOLO := """
 shader_type spatial;
 render_mode unshaded, cull_back;
-uniform vec3 col = vec3(0.55, 0.86, 1.0);
+uniform vec3 col = vec3(0.76, 0.82, 0.80);
 uniform float flash = 0.0;
 void fragment() {
 	float fr = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 1.6);
@@ -99,7 +100,7 @@ void fragment() {
 		env.environment = Environment.new()
 		env.environment.background_mode = Environment.BG_CLEAR_COLOR
 		vp.add_child(env)
-		model = MV.build(m.loadout, false)
+		model = MV.build(m.loadout, false, false)
 		vp.add_child(model)
 		var sh := Shader.new()
 		sh.code = HOLO
@@ -222,12 +223,12 @@ void fragment() {
 
 	func _col(f: float) -> Color:
 		if f > 0.75:
-			return Color(0.55, 0.86, 1.0)
+			return Color(0.76, 0.82, 0.80)
 		if f > 0.5:
-			return Color(0.74, 0.62, 0.2)
+			return Color(0.84, 0.58, 0.22)
 		if f > 0.25:
-			return Color(1.0, 0.55, 0.15)
-		return Color(1.0, 0.2, 0.14)
+			return Color(0.82, 0.38, 0.14)
+		return Color(0.78, 0.22, 0.18)
 
 	func part_frac(slot: String) -> float:
 		if slot == "core":
@@ -282,6 +283,7 @@ class AmmoColumn extends Control:
 		slot = s
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		font = PixelUI.pixel_font()
 		var id: String = m.loadout.get(s, "")
 		if id == "":
@@ -353,21 +355,21 @@ class AmmoColumn extends Control:
 			var y: float = size.y - (i + 1) * pitch - float(yoff[i]) + (pitch - bh) * 0.5
 			var mod := Color(1, 1, 1)
 			if od:
-				mod = Color(1.3, 1.1, 0.6)
+				mod = Color(1.18, 0.92, 0.58)
 			draw_texture_rect(tex, Rect2(x, y, bw, bh), false, mod)
 		for e in ejects:
 			draw_set_transform(e.p, e.r, Vector2.ONE)
 			draw_texture_rect(tex, Rect2(-bw * 0.5, -bh * 0.5, bw, bh), false, Color(1, 1, 1, clampf(e.life / 0.3, 0.0, 1.0)))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		if mech.parts[slot] <= 0.0:
-			draw_rect(Rect2(Vector2.ZERO, size), Color(0.18, 0.03, 0.02, 0.62))
+			draw_rect(Rect2(Vector2.ZERO, size), Color(0.18, 0.04, 0.03, 0.65))
 			var pad := Vector2(6, 12)
-			draw_line(pad, size - pad, Color(1.0, 0.25, 0.18, 0.85), 2.0)
-			draw_line(Vector2(size.x - pad.x, pad.y), Vector2(pad.x, size.y - pad.y), Color(1.0, 0.25, 0.18, 0.85), 2.0)
+			draw_line(pad, size - pad, Color(0.80, 0.24, 0.18, 0.88), 2.0)
+			draw_line(Vector2(size.x - pad.x, pad.y), Vector2(pad.x, size.y - pad.y), Color(0.80, 0.24, 0.18, 0.88), 2.0)
 		elif mech.reload_t[slot] > 0.0:
 			var prog := clampf(1.0 - mech.reload_frac(slot), 0.0, 1.0)
 			var bh_r := (size.y - 4.0) * prog
-			draw_rect(Rect2(Vector2(2, size.y - 2.0 - bh_r), Vector2(2.5, bh_r)), Color(0.95, 0.72, 0.22, 0.88))
+			draw_rect(Rect2(Vector2(2, size.y - 2.0 - bh_r), Vector2(3.5, bh_r)), Color(0.84, 0.56, 0.20, 0.95))
 
 
 # ====================================================================== 技能槽
@@ -376,9 +378,6 @@ class SkillSlot extends Control:
 	var key := "space"
 	var cap_text := "SPACE"
 	var icon: Texture2D
-	var t_slot: Texture2D
-	var t_ready: Texture2D
-	var t_cap: Texture2D
 	var font: Font
 	var ready_flash := 0.0
 	var press_flash := 0.0
@@ -391,12 +390,10 @@ class SkillSlot extends Control:
 		cap_text = label
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		font = PixelUI.pixel_font()
-		t_slot = load("res://assets/ui/slot.png")
-		t_ready = load("res://assets/ui/slot_ready.png")
-		t_cap = load("res://assets/ui/%s.png" % ("cap_wide" if label.length() > 1 else "cap"))
 		var info: Dictionary = m.skill_info(k)
-		icon = load("res://assets/ui/ic_%s.png" % info.icon)
+		icon = Icons.ui_icon(str(info.get("icon", "dash")))
 		custom_minimum_size = Vector2(84, 96)
 
 	func trigger() -> void:
@@ -426,19 +423,40 @@ class SkillSlot extends Control:
 	func _draw() -> void:
 		var info: Dictionary = mech.skill_info(key)
 		var s := 76.0
-		var o := Vector2((size.x - s) * 0.5, 0)
-		draw_texture_rect(t_slot, Rect2(o, Vector2(s, s)), false)
+		var o := Vector2((size.x - s) * 0.5, 0.0)
+		var box := Rect2(o, Vector2(s, s))
 		var ready: bool = info.ok and info.cd <= 0.0 and mech.can_spend(info.cost)
 		if ready and not was_ready:
 			ready_flash = 1.0
 		was_ready = ready
-		var ic := Color(0.74, 0.53, 0.11) if ready else Color(0.5, 0.5, 0.52)
+		var amber := Color(0.78, 0.48, 0.16)
+		var amber_hi := Color(0.87, 0.59, 0.25)
+		var steel_hi := Color(0.46, 0.49, 0.52)
+		# 半科幻废土工业槽底 + 倒角高光框
+		var fill_c := Color(0.068, 0.074, 0.080, 0.96).lerp(amber_hi, press_flash * 0.24)
+		draw_rect(box, fill_c)
+		draw_line(o + Vector2(2, 2), o + Vector2(s - 2, 2), Color(steel_hi.r, steel_hi.g, steel_hi.b, 0.22), 1.0)
+		var border_c := amber_hi if (info.active or press_flash > 0.05) else (Color(0.36, 0.39, 0.41, 0.95) if ready else Color(0.18, 0.20, 0.22, 0.94))
+		draw_rect(box, border_c, false, 1.5)
+		if ready or info.active:
+			var a := 8.0
+			var bc := Color(amber_hi.r, amber_hi.g, amber_hi.b, clampf(0.76 + ready_flash * 0.24, 0.0, 1.0))
+			draw_line(o, o + Vector2(a, 0), bc, 2.0, true)
+			draw_line(o, o + Vector2(0, a), bc, 2.0, true)
+			draw_line(o + Vector2(s, 0), o + Vector2(s - a, 0), bc, 2.0, true)
+			draw_line(o + Vector2(s, 0), o + Vector2(s, a), bc, 2.0, true)
+			draw_line(o + Vector2(0, s), o + Vector2(a, s), bc, 2.0, true)
+			draw_line(o + Vector2(0, s), o + Vector2(0, s - a), bc, 2.0, true)
+			draw_line(o + Vector2(s, s), o + Vector2(s - a, s), bc, 2.0, true)
+			draw_line(o + Vector2(s, s), o + Vector2(s, s - a), bc, 2.0, true)
+		var ic := Color(0.86, 0.58, 0.24) if ready else Color(0.46, 0.49, 0.50)
 		if not info.ok:
-			ic = Color(0.3, 0.3, 0.32)
+			ic = Color(0.30, 0.32, 0.34)
 		if info.active:
-			ic = Color(0.76, 0.68, 0.4)
+			ic = Color(0.92, 0.91, 0.86)
 		var isz := 42.0
-		draw_texture_rect(icon, Rect2(o + Vector2((s - isz) * 0.5, (s - isz) * 0.5 - 2), Vector2(isz, isz)), false, ic)
+		if icon != null:
+			draw_texture_rect(icon, Rect2(o + Vector2((s - isz) * 0.5, (s - isz) * 0.5 - 2.0), Vector2(isz, isz)), false, ic)
 		# 扇形冷却遮罩（12 点方向起顺时针退去）
 		if info.cd > 0.0 and info.ok:
 			var f: float = clampf(info.cd / maxf(info.cd_max, 0.01), 0.0, 1.0)
@@ -448,19 +466,22 @@ class SkillSlot extends Control:
 			for i in n + 1:
 				var a := -PI * 0.5 + TAU * (1.0 - f) + TAU * f * float(i) / float(n)
 				var d := Vector2(cos(a), sin(a))
-				var k: float = (s * 0.5 - 7.0) / maxf(absf(d.x), absf(d.y))
+				var k: float = (s * 0.5 - 4.0) / maxf(absf(d.x), absf(d.y))
 				pts.append(c + d * k)
-			draw_colored_polygon(pts, Color(0, 0, 0, 0.62))
+			draw_colored_polygon(pts, Color(0.04, 0.045, 0.05, 0.78))
 			var txt := "%.1f" % info.cd if info.cd < 10.0 else "%d" % int(info.cd)
-			draw_string_outline(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, 4, Color(0, 0, 0, 0.9))
-			draw_string(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, Color(1, 0.92, 0.75))
-		if ready or info.active or press_flash > 0.0:
-			draw_texture_rect(t_ready, Rect2(o, Vector2(s, s)), false, Color(1, 1, 1, clampf(0.35 + ready_flash * 0.65 + press_flash * 0.5, 0.0, 1.0)))
-		# 键帽
-		var cw: float = float(t_cap.get_width())
-		var cpos := Vector2((size.x - cw) * 0.5, s - 8)
-		draw_texture(t_cap, cpos)
-		draw_string(font, cpos + Vector2(0, 14), cap_text, HORIZONTAL_ALIGNMENT_CENTER, cw, 12, Color(1, 1, 1))
+			draw_string_outline(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, 3, Color(0, 0, 0, 0.92))
+			draw_string(font, o + Vector2(0, s * 0.5 + 7), txt, HORIZONTAL_ALIGNMENT_CENTER, s, 12, Color(0.90, 0.89, 0.84))
+		# 工业灰黑阳极氧化金属冲压键帽（浅灰白丝印高对比）
+		var text_w := font.get_string_size(cap_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		var cw := clampf(text_w + 16.0, 28.0, s - 6.0)
+		var ch := 18.0
+		var cpos := Vector2((size.x - cw) * 0.5, s - 7.0)
+		var crect := Rect2(cpos, Vector2(cw, ch))
+		draw_rect(crect, Color(0.16, 0.18, 0.20, 0.97) if info.ok else Color(0.10, 0.11, 0.12, 0.94))
+		draw_rect(crect, Color(0.38, 0.41, 0.44, 0.95) if info.ok else Color(0.22, 0.24, 0.26, 0.92), false, 1.0)
+		draw_rect(Rect2(cpos.x, cpos.y + ch - 2.5, cw, 2.5), amber_hi if (ready or info.active) else Color(0.24, 0.26, 0.28, 0.92))
+		draw_string(font, cpos + Vector2(0, 12.5), cap_text, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color(0.88, 0.89, 0.86) if info.ok else Color(0.44, 0.46, 0.46))
 
 
 # ====================================================================== 能源条（横轨底部刻槽里）
@@ -478,7 +499,7 @@ class EnergyStrip extends Control:
 			a = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.015)
 		for i in n:
 			var on := float(i) / float(n) < f
-			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), Color(0.74, 0.53, 0.11, a) if on else Color(1, 1, 1, 0.06))
+			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), Color(0.84, 0.56, 0.20, a) if on else Color(0.78, 0.80, 0.78, 0.08))
 
 
 # ====================================================================== 货舱负重条（拐角底槽，纯图形）
@@ -494,10 +515,10 @@ class CargoStrip extends Control:
 		var n := maxi(1, int(size.x / 6.0))
 		var over: bool = mech.speed_mult() < 0.99
 		var a := 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.015) if over else 1.0
-		var col := Color(1.0, 0.30, 0.20, a) if over else (Color(0.86, 0.62, 0.18, a) if f > 0.75 else Color(0.46, 0.78, 0.64, a))
+		var col := Color(0.80, 0.24, 0.18, a) if over else (Color(0.84, 0.56, 0.22, a) if f > 0.75 else Color(0.56, 0.70, 0.62, a))
 		for i in n:
 			var on := float(i) / float(n) < f
-			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), col if on else Color(1, 1, 1, 0.08))
+			draw_rect(Rect2(i * 6.0, 0, 4.0, size.y), col if on else Color(0.78, 0.80, 0.78, 0.09))
 
 
 # ====================================================================== 工业风双虚拟摇杆
@@ -578,7 +599,7 @@ class TouchStick extends Control:
 		var c := size * 0.5
 		var active := is_active()
 		var firing := fire_mode and value.length() >= fire_zone
-		var amber := Color(0.95, 0.42, 0.16) if firing else Color(0.76, 0.54, 0.12)
+		var amber := Color(0.84, 0.40, 0.16) if firing else Color(0.78, 0.48, 0.16)
 		var ring_a := 0.88 if active else 0.58
 		# 装甲暗底盘 + 双层金属刻度环
 		draw_circle(c, outer_r + 4.0, Color(0.03, 0.035, 0.04, 0.58 if active else 0.42))
@@ -614,7 +635,7 @@ class TouchStick extends Control:
 		if fire_mode:
 			# 右摇杆准星小十字
 			for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-				draw_line(kp + dv * 4.0, kp + dv * 9.0, Color(1, 0.95, 0.85, 0.85), 1.5)
+				draw_line(kp + dv * 4.0, kp + dv * 9.0, Color(0.90, 0.90, 0.86, 0.85), 1.5)
 
 
 # ====================================================================== 战术触控圆钮（纯图标：冲刺 / 机能 / 换弹）
@@ -634,6 +655,7 @@ class TouchBtn extends Control:
 		size = Vector2(rad * 2.0, rad * 2.0)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		font = PixelUI.pixel_font()
 		_icon_id = ""
 		_icon = null
@@ -642,7 +664,7 @@ class TouchBtn extends Control:
 		if _icon_id == icon_name:
 			return
 		_icon_id = icon_name
-		_icon = load("res://assets/ui/ic_%s.png" % icon_name) if icon_name != "" else null
+		_icon = Icons.ui_icon(icon_name) if icon_name != "" else null
 
 	func _trigger() -> void:
 		if mech == null or mech.input_locked or mech.dead:
@@ -685,18 +707,18 @@ class TouchBtn extends Control:
 				cd_frac = clampf(float(info.cd) / maxf(float(info.cd_max), 0.01), 0.0, 1.0)
 		elif kind == "reload":
 			cd_frac = maxf(mech.reload_frac("arm_l"), mech.reload_frac("arm_r"))
-		var amber := Color(0.76, 0.54, 0.12) if ok else Color(0.42, 0.42, 0.45)
+		var amber := Color(0.78, 0.48, 0.16) if ok else Color(0.42, 0.44, 0.46)
 		draw_circle(c + Vector2(0, 2), r + 1.0, Color(0, 0, 0, 0.55))
-		draw_circle(c, r, Color(0.09, 0.1, 0.12, 0.86).lerp(amber, press_t * 0.45))
-		draw_arc(c, r, 0, TAU, 36, Color(amber.r, amber.g, amber.b, 0.85 if cd_frac <= 0.0 else 0.35), 2.2)
+		draw_circle(c, r, Color(0.085, 0.092, 0.098, 0.92).lerp(amber, press_t * 0.42))
+		draw_arc(c, r, 0, TAU, 40, Color(amber.r, amber.g, amber.b, 0.88 if cd_frac <= 0.0 else 0.35), 2.0, true)
 		if cd_frac > 0.0:
-			draw_arc(c, r - 3.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - cd_frac), 28, Color(0.95, 0.72, 0.22, 0.9), 3.0)
+			draw_arc(c, r - 3.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - cd_frac), 28, Color(0.84, 0.56, 0.22, 0.92), 3.0, true)
 		if kind in ["dash", "ability"] and _icon != null:
 			var isz := Vector2(r * 1.1, r * 1.1)
-			draw_texture_rect(_icon, Rect2(c - isz * 0.5, isz), false, Color(0.96, 0.93, 0.86) if ok else Color(0.45, 0.45, 0.48))
+			draw_texture_rect(_icon, Rect2(c - isz * 0.5, isz), false, Color(0.90, 0.90, 0.86) if ok else Color(0.45, 0.45, 0.48))
 		elif kind == "reload":
 			var rr := r * 0.46
-			var ic := Color(0.96, 0.93, 0.86, 0.92)
+			var ic := Color(0.90, 0.90, 0.86, 0.92)
 			draw_arc(c, rr, -0.4, TAU - 1.15, 20, ic, 2.2)
 			var tip := c + Vector2(cos(-0.4), sin(-0.4)) * rr
 			draw_colored_polygon(PackedVector2Array([tip + Vector2(2, 4), tip + Vector2(4, -3), tip + Vector2(-4, -1)]), ic)

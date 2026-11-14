@@ -12,6 +12,9 @@ var spawn_t := 4.0
 var children_alive: Array = []
 var pulse: MeshInstance3D
 var t := 0.0
+var flash_t := 0.0
+var _hit_meshes: Array = []
+var _hit_flash_q := 0
 
 
 func setup(r) -> void:
@@ -87,6 +90,10 @@ func setup(r) -> void:
 		if ch is GeometryInstance3D:
 			ch.visibility_range_end = 70.0
 			ch.visibility_range_end_margin = 4.0
+	_hit_meshes.clear()
+	for ch in find_children("*", "MeshInstance3D", true, false):
+		if ch is MeshInstance3D:
+			_hit_meshes.append(ch)
 	A.emitter(self, Vector3(0, 3.05, 0), {"amount": 12, "life": 2.4, "size": 0.22, "spread": 42.0, "vmin": 0.5, "vmax": 1.2, "gravity": Vector3(0, 0.55, 0),
 		"c0": Color(0.28, 0.26, 0.24, 0.62), "c1": Color(0.16, 0.15, 0.15, 0.0), "grow0": 0.9, "grow1": 0.3})
 	var l := OmniLight3D.new()
@@ -112,6 +119,9 @@ func _physics_process(delta: float) -> void:
 func _physics_tick(delta: float) -> void:
 	t += delta
 	pulse.scale = Vector3.ONE * (1.0 + sin(t * 3.0) * 0.15)
+	if flash_t > 0.0:
+		flash_t = maxf(0.0, flash_t - delta)
+		_update_flash()
 	children_alive = children_alive.filter(func(b): return is_instance_valid(b) and not b.dying)
 	if raid == null or raid.mech == null or raid.mech.dead:
 		return
@@ -135,12 +145,27 @@ func _physics_tick(delta: float) -> void:
 			Audio.play_sfx("nest_spawn", global_position + Vector3(0, 1.5, 0))
 
 
+func _update_flash() -> void:
+	var q := clampi(int(ceil(clampf(flash_t / 0.13, 0.0, 1.0) * 5.0)), 0, 5) if flash_t > 0.0 else 0
+	if q == _hit_flash_q:
+		return
+	_hit_flash_q = q
+	var mat: Material = A.hit_flash_overlay(float(q) / 5.0) if q > 0 else null
+	for ch in _hit_meshes:
+		if is_instance_valid(ch):
+			ch.material_overlay = mat
+
+
 func take_damage(amount: float) -> void:
 	if hp <= 0.0:
 		return
 	hp -= amount
 	pulse.scale = Vector3.ONE * 1.4
+	flash_t = 0.13
+	_update_flash()
 	if hp <= 0.0:
+		flash_t = 0.0
+		_update_flash()
 		Audio.play_sfx("nest_destroyed", global_position + Vector3(0, 1.5, 0))
 		raid.on_nest_destroyed(self)
 		queue_free()

@@ -89,6 +89,11 @@ func show_hub() -> void:
 	if Net.state == "results":
 		Net.return_to_room()
 	var after_raid: bool = result_layer != null or raid != null
+	if menu and is_instance_valid(menu):
+		if menu.get_parent():
+			menu.get_parent().remove_child(menu)
+		menu.queue_free()
+		menu = null
 	if result_layer:
 		result_layer.queue_free()
 		result_layer = null

@@ -43,6 +43,20 @@ func _items_modules() -> void:
 			p("物品 %s 的 rar 超出 0..%d" % [id, GameData.RARITY_NAMES.size() - 1])
 		if it.has("cat") and not GameData.CAT_NAMES.has(it.cat):
 			p("物品 %s 的 cat「%s」不在 CAT_NAMES 里" % [id, it.cat])
+		var gsz: Vector2i = GameData.item_grid_size(id)
+		if gsz.x < 1 or gsz.x > GameData.CARGO_COLS or gsz.y < 1:
+			p("物品 %s 占格尺寸非法：%s" % [id, gsz])
+		var cat_s := str(it.get("cat", "misc"))
+		if (cat_s == "misc" or cat_s == "food" or cat_s == "use") and gsz != Vector2i(1, 1):
+			p("物品 %s（类别 %s）必须固定为 1×1 格，当前为 %s" % [id, cat_s, gsz])
+		elif id == "gold" and gsz != Vector2i(2, 1):
+			p("金条占格应为 2×1，当前为 %s" % [gsz])
+		elif cat_s == "module" and gsz.x * gsz.y < 2:
+			p("模块 %s 占格过小：%s" % [id, gsz])
+	if not GameData.can_pack_cargo(["arm_sniper", "core_heavy", "can_food", "fuel_cell"], 22.0):
+		p("2D 货舱装箱测试失败：常规组合无法装入 6×6 格")
+	if GameData.can_pack_cargo(["core_heavy", "core_heavy", "core_heavy", "core_heavy", "core_heavy"], 22.0):
+		p("2D 货舱几何装箱校验失败：5 个 3×3 核心不应能装入 6×6 格")
 	var slots := ["core", "legs", "arm", "back", "gen"]
 	var allowed_leg_types := ["tread", "biped", "quad", "hex"]
 	var leg_type_counts := {"tread": 0, "biped": 0, "quad": 0, "hex": 0}

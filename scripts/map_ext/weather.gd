@@ -134,6 +134,7 @@ func _apply() -> void:
 		gm.set_shader_parameter("mud", _base.mud)
 		gm.set_shader_parameter("grass", _base.grass)
 		gm.set_shader_parameter("grass2", _base.grass2)
+		gm.set_shader_parameter("wet_amt", 1.0 if preset == "rain" else (0.35 if preset == "lake_mist" else 0.0))
 
 
 func _build_particles() -> void:
@@ -150,12 +151,6 @@ func _build_particles() -> void:
 		_spore_light.light_energy = 4.0
 		_spore_light.omni_range = 34.0
 		add_child(_spore_light)
-	# 雨天在地面上留一层水洼
-	if preset == "rain":
-		var wh: float = raid.EXT_HALF if "EXT_HALF" in raid else 230.0
-		for i in 110:
-			var q = Vector3(raid.rng.randf_range(-wh, wh), 0.025, raid.rng.randf_range(-wh, wh))
-			A.ground_decal(raid.world, A.cloud_tex(), Color(0.06, 0.08, 0.1, raid.rng.randf_range(0.2, 0.42)), raid.rng.randf_range(1.6, 4.6), q)
 
 
 func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
@@ -164,10 +159,20 @@ func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
 	p.lifetime = float(opts.get("life", 2.0))
 	p.local_coords = false
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var tex: Texture2D = opts.get("tex", A.soft_dot())
+	var additive: bool = bool(opts.get("additive", true))
+	var prox: float = float(opts.get("prox_fade", -1.0))
 	var qm := QuadMesh.new()
 	qm.size = opts.get("size", Vector2(0.06, 0.06))
-	qm.material = A.particle_mat(opts.get("tex", A.soft_dot()), bool(opts.get("additive", true)))
+	qm.material = A.particle_mat(tex, additive, prox)
 	p.mesh = qm
+	if bool(opts.get("align_y", false)):
+		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY, true)
+	elif A._is_cloud_tex(tex):
+		p.angle_min = -180.0
+		p.angle_max = 180.0
+		p.angular_velocity_min = -18.0
+		p.angular_velocity_max = 18.0
 	p.direction = opts.get("dir", Vector3.DOWN)
 	p.spread = float(opts.get("spread", 10.0))
 	p.initial_velocity_min = float(opts.get("vmin", 4.0))
@@ -179,34 +184,44 @@ func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
 	var g := Gradient.new()
 	g.set_color(0, opts.get("c0", Color(1, 1, 1, 0.5)))
 	g.set_color(1, opts.get("c1", Color(1, 1, 1, 0.0)))
+	if opts.has("cmid"):
+		g.add_point(float(opts.get("cmid_pos", 0.3)), opts.cmid)
 	p.color_ramp = g
+	if bool(opts.get("ground_fx", false)):
+		p.set_meta("ground_fx", true)
 	add_child(p)
 	emitters.append(p)
 	return p
 
 
 func _rain() -> void:
-	_emit("rain", {"amount": 1100, "life": 1.2, "size": Vector2(0.018, 0.72), "dir": Vector3(0.24, -1.0, 0.1), "spread": 3.0,
-		"vmin": 32.0, "vmax": 40.0, "gravity": Vector3(0.6, -6.0, 0.3), "box": Vector3(34, 16, 30), "additive": false,
-		"c0": Color(0.76, 0.84, 0.92, 0.22), "c1": Color(0.65, 0.76, 0.88, 0.04)})
+	_emit("rain", {"amount": 1200, "life": 1.15, "size": Vector2(0.018, 0.95), "dir": Vector3(0.24, -1.0, 0.1), "spread": 2.5,
+		"vmin": 34.0, "vmax": 42.0, "gravity": Vector3(0.6, -6.0, 0.3), "box": Vector3(34, 16, 30), "additive": false,
+		"align_y": true, "prox_fade": 0.08, "c0": Color(0.76, 0.84, 0.92, 0.34), "c1": Color(0.65, 0.76, 0.88, 0.06)})
+	_emit("rain_splash", {"amount": 460, "life": 0.24, "size": Vector2(0.08, 0.18), "dir": Vector3.UP, "spread": 32.0,
+		"vmin": 1.4, "vmax": 2.6, "gravity": Vector3(0, -14.0, 0), "box": Vector3(28, 0.15, 24), "additive": false,
+		"align_y": true, "prox_fade": 0.04, "ground_fx": true, "c0": Color(0.80, 0.88, 0.96, 0.54), "c1": Color(0.68, 0.78, 0.88, 0.0)})
 
 
 func _sand() -> void:
-	_emit("sand", {"amount": 1500, "life": 3.2, "size": Vector2(0.09, 0.09), "dir": Vector3(1.0, -0.12, 0.35), "spread": 22.0,
-		"vmin": 16.0, "vmax": 26.0, "gravity": Vector3(1.2, -0.4, 0.5), "box": Vector3(38, 14, 32), "additive": false,
-		"c0": Color(0.62, 0.54, 0.4, 0.42), "c1": Color(0.6, 0.52, 0.38, 0.1)})
+	_emit("sand", {"amount": 1200, "life": 2.8, "size": Vector2(0.05, 0.22), "dir": Vector3(1.0, -0.10, 0.35), "spread": 18.0,
+		"vmin": 18.0, "vmax": 28.0, "gravity": Vector3(1.2, -0.4, 0.5), "box": Vector3(38, 14, 32), "additive": false,
+		"align_y": true, "prox_fade": 0.10, "c0": Color(0.72, 0.62, 0.45, 0.38), "c1": Color(0.65, 0.56, 0.40, 0.06)})
+	_emit("sand_gust", {"amount": 100, "life": 4.2, "size": Vector2(4.6, 2.6), "tex": A.dust_tex(), "dir": Vector3(1.0, -0.02, 0.35), "spread": 16.0,
+		"vmin": 7.5, "vmax": 12.5, "gravity": Vector3(0.4, 0.0, 0.15), "box": Vector3(36, 4.0, 30), "additive": false,
+		"prox_fade": 0.90, "c0": Color(0.70, 0.58, 0.40, 0.0), "cmid": Color(0.66, 0.55, 0.38, 0.11), "c1": Color(0.62, 0.52, 0.36, 0.0)})
 
 
 func _dust_lite() -> void:
-	_emit("dust", {"amount": 500, "life": 5.0, "size": Vector2(0.07, 0.07), "dir": Vector3(1.0, -0.05, 0.2), "spread": 30.0,
-		"vmin": 2.0, "vmax": 5.0, "gravity": Vector3(0.3, -0.1, 0.2), "box": Vector3(36, 12, 30), "additive": false,
-		"c0": Color(0.66, 0.6, 0.48, 0.22), "c1": Color(0.6, 0.55, 0.44, 0.03)})
+	_emit("dust", {"amount": 420, "life": 4.6, "size": Vector2(0.06, 0.06), "dir": Vector3(1.0, -0.05, 0.2), "spread": 28.0,
+		"vmin": 2.2, "vmax": 5.2, "gravity": Vector3(0.3, -0.1, 0.2), "box": Vector3(36, 12, 30), "additive": false,
+		"c0": Color(0.66, 0.6, 0.48, 0.20), "c1": Color(0.6, 0.55, 0.44, 0.02)})
 
 
 func _mist(scale := 1.0) -> void:
-	_emit("mist", {"amount": int(160 * scale), "life": 9.0, "size": Vector2(9.0, 6.0), "dir": Vector3(1.0, 0.02, 0.25), "spread": 40.0,
-		"vmin": 0.3, "vmax": 0.9, "gravity": Vector3(0.05, 0.02, 0.05), "box": Vector3(38, 5, 34), "additive": false,
-		"c0": Color(0.62, 0.58, 0.56, 0.10), "c1": Color(0.58, 0.54, 0.54, 0.0), "tex": A.cloud_tex()})
+	_emit("mist", {"amount": int(140 * scale), "life": 9.0, "size": Vector2(8.5, 5.5), "dir": Vector3(1.0, 0.02, 0.25), "spread": 36.0,
+		"vmin": 0.35, "vmax": 0.95, "gravity": Vector3(0.05, 0.02, 0.05), "box": Vector3(38, 4.5, 34), "additive": false,
+		"prox_fade": 1.25, "c0": Color(0.62, 0.58, 0.56, 0.0), "cmid": Color(0.62, 0.58, 0.56, 0.075), "c1": Color(0.58, 0.54, 0.54, 0.0), "tex": A.cloud_tex()})
 
 
 func _spores() -> void:
@@ -219,10 +234,11 @@ func _process(delta: float) -> void:
 	if raid == null or not is_instance_valid(raid) or raid.camera == null:
 		return
 	var cam: Camera3D = raid.camera
-	var focus := cam.global_position + Vector3(0, -12.0, -16.0)
+	var focus := cam.global_position + Vector3(0, -16.0, -12.0)
+	var ground_focus := Vector3(cam.global_position.x, 0.12, cam.global_position.z - 8.0)
 	for e in emitters:
 		if is_instance_valid(e):
-			e.global_position = focus
+			e.global_position = ground_focus if e.has_meta("ground_fx") else focus
 	if _spore_light:
 		var mp: Vector3 = raid.mech.global_position if raid.mech else focus
 		_spore_light.global_position = mp + Vector3(0, 7.0, 0)
@@ -257,3 +273,6 @@ func _exit_tree() -> void:
 	gm.set_shader_parameter("mud", d.mud)
 	gm.set_shader_parameter("grass", d.grass)
 	gm.set_shader_parameter("grass2", d.grass2)
+	gm.set_shader_parameter("wet_amt", 0.0)
+	gm.set_shader_parameter("zone_on", 0.0)
+	gm.set_shader_parameter("sector_on", 0.0)

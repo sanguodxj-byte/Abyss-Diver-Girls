@@ -52,6 +52,8 @@ func build(root: Node, half_size: float) -> void:
 	dist_mech.resize(n * n)
 	dist_bug.fill(99.0)
 	dist_mech.fill(99.0)
+	_tmp_wall.resize(n * n)
+	_tmp_wall.fill(99.0)
 	shape_count = 0
 	var stack: Array = [root]
 	while not stack.is_empty():
@@ -62,9 +64,10 @@ func build(root: Node, half_size: float) -> void:
 			if ch is StaticBody3D or ch is AnimatableBody3D:
 				var layer: int = ch.collision_layer
 				if layer & (1 | 8):
+					var is_crate: bool = ch.is_in_group("lootboxes")
 					for cs in ch.get_children():
 						if cs is CollisionShape3D and not cs.disabled and cs.shape != null:
-							_raster(cs, true, dist_bug, dist_mech)   # 层 8（河湖）现在也挡地面虫子
+							_raster(cs, true, dist_bug, dist_mech, not is_crate)   # 层 8（河湖）现在也挡地面虫子
 			if ch.get_child_count() > 0:
 				stack.append(ch)
 	solid_bug.resize(n * n)
@@ -89,6 +92,13 @@ func build(root: Node, half_size: float) -> void:
 	astar_mech = _make_astar(solid_mech)
 	_runs_bug = _label_runs(solid_bug)
 	_runs_mech = _label_runs(solid_mech)
+	_wall_hit = PackedByteArray()
+	_wall_hit.resize(n * n)
+	for k in n * n:
+		_wall_hit[k] = 1 if _tmp_wall[k] <= 0.45 else 0
+	_tmp_wall = PackedFloat32Array()
+	main_comp_bug = _largest_comp(_runs_bug)
+	main_comp_mech = _largest_comp(_runs_mech)
 	_cache.clear()
 	build_ms = (Time.get_ticks_usec() - t0) / 1000.0
 
@@ -117,7 +127,7 @@ func _make_astar(solid: PackedByteArray) -> AStarGrid2D:
 
 
 ## 把一个碰撞形状写进距离场（只记录 R_MECH 以内的距离，够判断两种间隙就行）
-func _raster(cs: CollisionShape3D, both: bool, dist_bug: PackedFloat32Array, dist_mech: PackedFloat32Array) -> void:
+func _raster(cs: CollisionShape3D, both: bool, dist_bug: PackedFloat32Array, dist_mech: PackedFloat32Array, mark_wall := true) -> void:
 	var xf: Transform3D = cs.global_transform
 	var sh: Shape3D = cs.shape
 	var b := xf.basis
@@ -209,6 +219,8 @@ func _raster(cs: CollisionShape3D, both: bool, dist_bug: PackedFloat32Array, dis
 				var k := j * n + i
 				if d < dist_mech[k]:
 					dist_mech[k] = d
+				if mark_wall and d < _tmp_wall[k]:
+					_tmp_wall[k] = d
 				if both and d < dist_bug[k]:
 					dist_bug[k] = d
 
@@ -335,6 +347,119 @@ func request_path(from: Vector3, to: Vector3, mech := false):
 ## 结果每行一个 PackedInt32Array：[起列, 止列, 区域号, ...]，查询时在该行区段里找
 var _runs_bug: Array = []
 var _runs_mech: Array = []
+var _wall_hit := PackedByteArray()
+var _tmp_wall := PackedFloat32Array()
+var main_comp_bug := -1
+var main_comp_mech := -1
+
+
+func _largest_comp(runs: Array) -> int:
+	var counts := {}
+	var best := -1
+	var best_n := 0
+	for j in runs.size():
+		var row: PackedInt32Array = runs[j]
+		var q := 0
+		while q < row.size():
+			var cid := row[q + 2]
+			var sz := row[q + 1] - row[q] + 1
+			var nv := int(counts.get(cid, 0)) + sz
+			counts[cid] = nv
+			if nv > best_n:
+				best_n = nv
+				best = cid
+			q += 3
+	return best
+
+
+func set_seed(seed_pos: Vector3) -> void:
+	var c := cell_of(seed_pos)
+	var cm := _comp_of(_runs_mech, c)
+	if cm < 0:
+		var free_m := nearest_free(c, true, 10)
+		if free_m.x >= 0:
+			cm = _comp_of(_runs_mech, free_m)
+	if cm >= 0:
+		main_comp_mech = cm
+	var cb := _comp_of(_runs_bug, c)
+	if cb < 0:
+		var free_b := nearest_free(c, false, 10)
+		if free_b.x >= 0:
+			cb = _comp_of(_runs_bug, free_b)
+	if cb >= 0:
+		main_comp_bug = cb
+
+
+func _wall_clear_cells(c0: Vector2i, c1: Vector2i, allow_skin := false) -> bool:
+	if _wall_hit.size() != n * n:
+		return true
+	var dx := absi(c1.x - c0.x)
+	var dz := absi(c1.y - c0.y)
+	var sx := 1 if c1.x >= c0.x else -1
+	var sz := 1 if c1.y >= c0.y else -1
+	var x := c0.x
+	var z := c0.y
+	var err := dx - dz
+	var guard := dx + dz + 2
+	while guard > 0:
+		guard -= 1
+		if x < 0 or z < 0 or x >= n or z >= n:
+			return false
+		var w := _wall_hit[z * n + x] != 0
+		var is_start := (x == c0.x and z == c0.y)
+		if w and not (allow_skin and is_start):
+			return false
+		if x == c1.x and z == c1.y:
+			return true
+		var e2 := err * 2
+		if e2 > -dz:
+			err -= dz
+			x += sx
+		if e2 < dx:
+			err += dx
+			z += sz
+	return true
+
+
+func is_reachable(p: Vector3, mech := false, rmax := 0.0) -> bool:
+	var runs := _runs_mech if mech else _runs_bug
+	var mcomp := main_comp_mech if mech else main_comp_bug
+	if mcomp < 0:
+		return is_free(p, mech)
+	var c := cell_of(p)
+	if _comp_of(runs, c) == mcomp:
+		return true
+	if rmax <= 0.0:
+		return false
+	var cr := ceili(rmax / CELL)
+	var rmax2 := rmax * rmax
+	for dz in range(-cr, cr + 1):
+		var z := c.y + dz
+		if z < 0 or z >= n:
+			continue
+		for dx in range(-cr, cr + 1):
+			var x := c.x + dx
+			if x < 0 or x >= n:
+				continue
+			if float(dx * dx + dz * dz) * CELL * CELL > rmax2:
+				continue
+			if _comp_of(runs, Vector2i(x, z)) == mcomp and _wall_clear_cells(c, Vector2i(x, z), true):
+				return true
+	return false
+
+
+func nearest_reachable(p: Vector3, mech := false, max_dist := 18.0) -> Vector3:
+	var runs := _runs_mech if mech else _runs_bug
+	var mcomp := main_comp_mech if mech else main_comp_bug
+	if mcomp < 0:
+		return p
+	var best := _closest_in_comp(runs, mcomp, cell_of(p))
+	if best.x < 0:
+		return Vector3.INF
+	var w := Vector3(origin.x + (float(best.x) + 0.5) * CELL, 0.0, origin.y + (float(best.y) + 0.5) * CELL)
+	if Vector2(w.x - p.x, w.z - p.z).length() > max_dist:
+		return Vector3.INF
+	return w
 
 
 func _label_runs(solid: PackedByteArray) -> Array:

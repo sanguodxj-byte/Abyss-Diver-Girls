@@ -16,8 +16,9 @@ var color := Color(1, 0.8, 0.3)
 var raid
 var exclude: Array = []
 var grow := 0.0
-var tail: Node3D = null      ## 曳光尾迹：从枪口逐渐拉长到 tail_len
+var tail: Node3D = null      ## 曳光尾迹：从弹尾向后延伸到 tail_len
 var tail_len := 0.0
+var tail_offset := 0.0
 var traveled := 0.0
 var body_node: Node3D = null ## 3D 实体弹头/导弹/酸囊节点（用于膛线自旋或脉动翻滚）
 var spin_spd := 0.0          ## 沿弹轴 (-Z) 的自旋角速度（弧度/秒）
@@ -43,6 +44,7 @@ func reset_state() -> void:
 	color = Color(1, 0.8, 0.3)
 	exclude = []
 	grow = 0.0
+	tail_offset = 0.0
 	traveled = 0.0
 	hit_sfx = ""
 	source = null
@@ -68,9 +70,10 @@ func _physics_tick(delta: float) -> void:
 		position += vel * delta
 		if tail:
 			traveled += vel.length() * delta
-			var L := minf(traveled, tail_len)
+			var L := clampf(traveled - tail_offset, 0.0, tail_len)
+			tail.visible = L > 0.012
 			tail.scale.z = maxf(L, 0.01)
-			tail.position.z = L * 0.5
+			tail.position.z = tail_offset + L * 0.5
 		if body_node != null and is_instance_valid(body_node) and spin_spd != 0.0:
 			body_node.rotation.z += spin_spd * delta
 		life -= delta
@@ -114,9 +117,10 @@ func _physics_tick(delta: float) -> void:
 	global_position = to
 	if tail:
 		traveled += vel.length() * delta
-		var L := minf(traveled, tail_len)
+		var L := clampf(traveled - tail_offset, 0.0, tail_len)
+		tail.visible = L > 0.012
 		tail.scale.z = maxf(L, 0.01)
-		tail.position.z = L * 0.5
+		tail.position.z = tail_offset + L * 0.5
 	if vel.length() > 0.1:
 		look_at(global_position + vel, Vector3.UP if abs(vel.normalized().y) < 0.95 else Vector3.FORWARD)
 	if body_node != null and is_instance_valid(body_node):

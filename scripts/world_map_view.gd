@@ -15,12 +15,12 @@ signal map_locked(id: String)
 
 const META_PATH := "res://assets/ui/worldmap/worldmap.json"
 const ZOOMS := [0.25, 0.5, 1.0, 2.0, 3.0]
-const AMBER := Color(0.72, 0.5, 0.09)
-const CREAM := Color(0.86, 0.84, 0.75)
-const DIM := Color(0.55, 0.54, 0.47)
-const INK := Color(0.03, 0.03, 0.04)
-const GREEN := Color(0.45, 0.85, 0.4)
-const CYAN := Color(0.3, 0.85, 0.95)
+const AMBER := Color(0.78, 0.48, 0.16)
+const CREAM := Color(0.84, 0.85, 0.82)
+const DIM := Color(0.56, 0.58, 0.58)
+const INK := Color(0.06, 0.065, 0.07)
+const GREEN := Color(0.46, 0.72, 0.46)
+const CYAN := Color(0.42, 0.68, 0.74)
 
 var meta := {}
 var _poly_cache := {}     ## 战区 id → 底图像素不规则多边形 PackedVector2Array
@@ -459,17 +459,17 @@ func _draw() -> void:
 	for id: String in order:
 		var zp: PackedVector2Array = polys[id]
 		var ok := bool(available.get(id, false))
-		var col := Color(0.58, 0.44, 0.2)
+		var col := Color(0.54, 0.46, 0.30)
 		if not ok:
-			col = Color(0.36, 0.36, 0.38)
+			col = Color(0.34, 0.36, 0.38)
 		if id == hover and ok:
 			col = CREAM
 		if id == selected:
 			col = AMBER
 		if id == hover and ok and id != selected:
-			_fill_poly(zp, Color(1, 0.95, 0.8, 0.09))
+			_fill_poly(zp, Color(0.84, 0.85, 0.82, 0.10))
 		elif id == selected:
-			_fill_poly(zp, Color(1.0, 0.78, 0.25, 0.05))
+			_fill_poly(zp, Color(0.78, 0.48, 0.16, 0.08))
 		var lw := 3.0 if id == selected else 2.0
 		_poly_outline(zp, INK, lw + 3.0)
 		_poly_outline(zp, col, lw)
@@ -595,9 +595,9 @@ func _draw() -> void:
 		var r: Rect2 = rects[id]
 		var m: Dictionary = maps[id]
 		var ok := bool(available.get(id, false))
-		var col := Color(0.58, 0.44, 0.2)
+		var col := Color(0.54, 0.46, 0.30)
 		if not ok:
-			col = Color(0.36, 0.36, 0.38)
+			col = Color(0.34, 0.36, 0.38)
 		if id == hover and ok:
 			col = CREAM
 		if id == selected:
@@ -619,7 +619,7 @@ func _draw() -> void:
 			var pw_top := minf(maxf(44.0, top_ch.z - 4.0), tw + 12.0)
 			var pp := Vector2(floorf(top_ch.x - pw_top * 0.5), floorf(top_ch.y - 9.0))
 			var plate := Rect2(pp, Vector2(pw_top, 18))
-			draw_rect(plate, Color(0.06, 0.06, 0.06, 0.92))
+			draw_rect(plate, Color(0.085, 0.092, 0.098, 0.94))
 			_box(plate, col, 2)
 			_text(font, Vector2(floorf(top_ch.x - tw * 0.5), pp.y + 14), nm, AMBER if id == selected else (CREAM if ok else DIM))
 			if id == selected:
@@ -630,17 +630,17 @@ func _draw() -> void:
 				var pw_bot := minf(maxf(38.0, bot_ch.z - 6.0), tw2 + 10.0)
 				var bp := Vector2(floorf(bot_ch.x - pw_bot * 0.5), floorf(bot_ch.y - 8.0))
 				var bplate := Rect2(bp, Vector2(pw_bot, 16))
-				draw_rect(bplate, Color(0.06, 0.06, 0.06, 0.90))
+				draw_rect(bplate, Color(0.085, 0.092, 0.098, 0.92))
 				_box(bplate, col, 1)
-				_text(font, Vector2(floorf(bot_ch.x - tw2 * 0.5), bp.y + 12), tag, Color(0.95, 0.35, 0.3) if not ok else AMBER)
+				_text(font, Vector2(floorf(bot_ch.x - tw2 * 0.5), bp.y + 12), tag, Color(0.80, 0.30, 0.24) if not ok else AMBER)
 		else:
 			var pp := Vector2(floorf(top_ch.x - pw * 0.5), floorf(top_ch.y - 10.0))
 			var plate := Rect2(pp, Vector2(pw, 20))
-			draw_rect(plate, Color(0.06, 0.06, 0.06, 0.92))
+			draw_rect(plate, Color(0.085, 0.092, 0.098, 0.94))
 			_box(plate, col, 2)
 			_text(font, pp + Vector2(8, 15), nm, AMBER if id == selected else (CREAM if ok else DIM))
 			if tag != "":
-				_text(font, pp + Vector2(8 + tw + 10, 15), tag, Color(0.95, 0.35, 0.3) if not ok else AMBER)
+				_text(font, pp + Vector2(8 + tw + 10, 15), tag, Color(0.80, 0.30, 0.24) if not ok else AMBER)
 			if id == selected:
 				sel_plate = plate
 				sel_chord_r = top_ch.x + top_ch.z * 0.5
@@ -664,7 +664,7 @@ func _draw() -> void:
 	var cmp_txt := Loc.t("◀ 北  ·  ▲ 东", "◀ N  ·  ▲ E")
 	var cmp_w := font.get_string_size(cmp_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	var cmp_rect := Rect2(8, 8, ceilf(cmp_w) + 14.0, 20.0)
-	draw_rect(cmp_rect, Color(0.06, 0.06, 0.06, 0.88))
+	draw_rect(cmp_rect, Color(0.085, 0.092, 0.098, 0.92))
 	_box(cmp_rect, AMBER, 1.0)
 	_text(font, Vector2(15, 22), cmp_txt, CREAM)
 	if zoom_lbl:

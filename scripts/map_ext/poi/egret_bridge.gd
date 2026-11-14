@@ -13,7 +13,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	var r = raid.rng
 	K.slab(raid, c, Vector2(24, 20), Color(0.38, 0.36, 0.32))
 	# 坠毁坑：焦土 + 甩出的舰体碎片
-	A.ground_decal(raid.world, A.cloud_tex(), Color(0.08, 0.07, 0.06, 0.7), 22.0, c + Vector3(0, 0.03, 0))
+	A.ground_decal(raid.world, A.cloud_tex(), Color(0.08, 0.07, 0.06, 0.7), 22.0, c + Vector3(0, 0.138, 0))
 	for i in 10:
 		var a = r.randf() * TAU
 		var d = r.randf_range(6.0, 11.5)

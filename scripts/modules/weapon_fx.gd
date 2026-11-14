@@ -68,8 +68,8 @@ static func ring(raid, p: Vector3, c: Color, radius: float, life := 0.4) -> void
 static func marker(raid, p: Vector3, c: Color, radius: float, life: float) -> Node3D:
 	var n := Node3D.new()
 	raid.fx.add_child(n)
-	n.global_position = p + Vector3(0, 0.06, 0)
-	var mi := A.add(n, A.quad(radius * 2.0, radius * 2.0), A.decal_mat(A.ring_tex(), Color(c.r, c.g, c.b, 0.85), true), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	n.global_position = p + Vector3(0, 0.124, 0)
+	var mi := A.add(n, A.quad(radius * 2.0, radius * 2.0), A.ground_vfx_mat(A.ring_tex(), Color(c.r, c.g, c.b, 0.85), true, 0.44, false, 4), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	mi.rotation.x = 0.0
 	mi.set_meta("ring", true)
 	var tw := n.create_tween()

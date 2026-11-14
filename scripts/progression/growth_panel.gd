@@ -348,7 +348,7 @@ func _build_meal() -> void:
 	var cost: Dictionary = Growth.meal_cost()
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
-	h.add_child(_label(Loc.t("出击食堂", "Mess Hall"), 19, Color(0.74, 0.67, 0.52)))
+	h.add_child(_label(Loc.t("出击食堂", "Mess Hall"), 19, Color(0.88, 0.88, 0.84)))
 	h.add_child(_label(Loc.t("厨房 %s", "Kitchen %s") % Loc.lv(lv) if lv > 0 else Loc.t("厨房未建造", "Kitchen Not Built"), 13, UI.MUTED))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -379,7 +379,7 @@ func _build_facility(id: String) -> void:
 	var reason: String = Growth.can_upgrade(id)
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.1))
 	var h := _row(v)
-	h.add_child(_label(Growth.facility_name(id), 19, Color(0.74, 0.67, 0.52)))
+	h.add_child(_label(Growth.facility_name(id), 19, Color(0.88, 0.88, 0.84)))
 	h.add_child(_label("%s / %d" % [Loc.lv(lv), mx], 13, UI.MUTED))
 	h.add_child(_pips(lv, mx))
 	var sp := Control.new()
@@ -395,7 +395,7 @@ func _build_facility(id: String) -> void:
 	btn.disabled = reason != ""
 	h.add_child(btn)
 	if lv > 0:
-		v.add_child(_label(Loc.t("当前：", "Current: ") + Growth.facility_effect(id), 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("当前：", "Current: ") + Growth.facility_effect(id), 13, Color(0.80, 0.82, 0.80)))
 	var effects: Array = Growth.facility_effects(id)
 	if not cost.is_empty() and lv < effects.size():
 		v.add_child(_label(Loc.t("下一级：", "Next: ") + str(effects[lv]), 13, UI.ACCENT))
@@ -426,9 +426,9 @@ func _build_research() -> void:
 		var d: Dictionary = Growth.research_data(rid)
 		var reason: String = Growth.can_research(rid)
 		var done := reason == "已完成"
-		var v := _card(Color(0.4, 1.0, 0.6, 0.45) if done else Color(1, 1, 1, 0.12))
+		var v := _card(UI.ACCENT_DIM if done else Color(1, 1, 1, 0.12))
 		var h := _row(v)
-		h.add_child(_label(str(d.get("name", rid)), 18, Color(0.74, 0.67, 0.52)))
+		h.add_child(_label(str(d.get("name", rid)), 18, Color(0.88, 0.88, 0.84)))
 		var status_color := UI.GOOD if done else (UI.ACCENT if reason == "" else (UI.BAD if reason in ["材料不足", "信用点不足"] else UI.MUTED))
 		var status_text := Loc.t("已完成", "Completed") if done else (Loc.t("可研究", "Available") if reason == "" else Loc.reason(reason))
 		h.add_child(_label(status_text, 13, status_color))
@@ -439,7 +439,7 @@ func _build_research() -> void:
 		btn.custom_minimum_size = Vector2(120, 34)
 		btn.disabled = done or reason != ""
 		h.add_child(btn)
-		v.add_child(_label(str(d.get("effect", "")), 13, Color(0.82, 0.88, 0.8)))
+		v.add_child(_label(str(d.get("effect", "")), 13, Color(0.80, 0.82, 0.80)))
 		if done:
 			continue
 		var lab := int(d.get("lab", 1))
@@ -488,7 +488,7 @@ func _build_pilot(id: String) -> void:
 	var is_active := id == active
 	var v := _card(UI.ACCENT_DIM if is_active else Color(1, 1, 1, 0.12))
 	var h := _row(v)
-	h.add_child(_label(str(d.get("name", id)), 21, Color(0.74, 0.67, 0.52)))
+	h.add_child(_label(str(d.get("name", id)), 21, Color(0.88, 0.88, 0.84)))
 	h.add_child(_label(Loc.lv(lv), 14, UI.MUTED))
 	if is_active:
 		h.add_child(_label(Loc.t("出击中", "Active"), 13, UI.GOOD))
@@ -511,7 +511,7 @@ func _build_pilot(id: String) -> void:
 	xh.add_child(_label(xp_text, 12, UI.MUTED))
 	var per := _stat_line(d.get("level_stat", {}))
 	if per != "":
-		v.add_child(_label(Loc.t("每级：", "Per Level: ") + per, 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("每级：", "Per Level: ") + per, 13, Color(0.80, 0.82, 0.80)))
 	var th := _row(v, 8)
 	th.add_child(_label(Loc.t("天赋", "Talents"), 14, UI.MUTED))
 	var tl := ColorRect.new()
@@ -525,7 +525,7 @@ func _build_pilot(id: String) -> void:
 		var tr := _row(v, 8)
 		tr.add_child(_label(str(t.get("name", tid)), 15, UI.ACCENT if learned else UI.TEXT))
 		tr.add_child(_label(Loc.lv(int(t.get("level", 1))), 12, UI.MUTED))
-		var eff := _label(str(t.get("effect", "")), 12, Color(0.8, 0.88, 0.8))
+		var eff := _label(str(t.get("effect", "")), 12, Color(0.80, 0.82, 0.80))
 		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tr.add_child(eff)
 		tr.add_child(_label(Loc.t("天赋点 %d", "Pts %d") % int(t.get("points", 1)), 12, UI.MUTED))
@@ -562,7 +562,7 @@ func _build_crew_card(id: String) -> void:
 	var need: int = Growth.crew_need(lv)
 	var v := _card(UI.ACCENT_DIM if lv > 0 else Color(1, 1, 1, 0.12))
 	var h := _row(v)
-	h.add_child(_label(str(d.get("name", id)), 20, Color(0.74, 0.67, 0.52)))
+	h.add_child(_label(str(d.get("name", id)), 20, Color(0.88, 0.88, 0.84)))
 	h.add_child(_label(Loc.t("好感 %s", "Trust %s") % Loc.lv(lv), 13, UI.MUTED))
 	h.add_child(_pips(lv, 5))
 	h.add_child(_label(Loc.t("已满", "Max") if need <= 0 else "%d / %d" % [points, need], 12, UI.MUTED))
@@ -571,7 +571,7 @@ func _build_crew_card(id: String) -> void:
 	h.add_child(sp)
 	var levels: Array = d.get("levels", [])
 	if lv > 0 and lv <= levels.size():
-		v.add_child(_label(Loc.t("支援：", "Support: ") + str(levels[lv - 1]), 13, Color(0.8, 0.88, 0.8)))
+		v.add_child(_label(Loc.t("支援：", "Support: ") + str(levels[lv - 1]), 13, Color(0.80, 0.82, 0.80)))
 	else:
 		v.add_child(_label(Loc.t("支援 —", "Support —"), 13, UI.MUTED))
 	if lv < 5 and lv < levels.size():
@@ -610,7 +610,7 @@ func _build_voyage() -> void:
 	var cur: Dictionary = _chapter(Growth.current_chapter())
 	var th := _row(top)
 	th.add_child(_label(Loc.t("当前章节", "Current Chapter"), 13, UI.MUTED))
-	th.add_child(_label(str(cur.get("title", "—")), 18, Color(0.74, 0.67, 0.52)))
+	th.add_child(_label(str(cur.get("title", "—")), 18, Color(0.88, 0.88, 0.84)))
 	var ph := _row(top, 8)
 	ph.add_child(_label(Loc.t("进度", "Progress"), 12, UI.MUTED))
 	var bar := _pips(done, maxi(1, total), UI.ACCENT, maxi(1, total))
@@ -634,7 +634,7 @@ func _build_voyage() -> void:
 		var mark := _label("◆" if status != "未解锁" else "◇", 15, col)
 		mark.custom_minimum_size = Vector2(20, 0)
 		h.add_child(mark)
-		h.add_child(_label(str(ch.title), 17, Color(0.74, 0.67, 0.52) if status != "未解锁" else UI.MUTED))
+		h.add_child(_label(str(ch.title), 17, Color(0.88, 0.88, 0.84) if status != "未解锁" else UI.MUTED))
 		var sp := Control.new()
 		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(sp)

@@ -12,11 +12,11 @@ const FLOOR := Color(0.4, 0.4, 0.37)
 static func build(raid, c: Vector3, pid: String) -> void:
 	var r = raid.rng
 	K.slab(raid, c, Vector2(21, 21), FLOOR)
-	# 围栏：四面墙留出两处通道
-	K.wall_line(raid, c + Vector3(0, 0, -9.6), 19.0, 2.2, 0.0, [[-3.2, 0.4]], STEEL)
-	K.wall_line(raid, c + Vector3(0, 0, 9.6), 19.0, 2.2, 0.0, [[1.8, 5.2]], STEEL)
-	K.wall_line(raid, c + Vector3(-9.6, 0, 0), 19.0, 2.2, 90.0, [[3.6, 7.2]], STEEL)
-	K.wall_line(raid, c + Vector3(9.6, 0, 0), 19.0, 2.2, 90.0, [[-6.4, -2.8]], STEEL)
+	# 围栏：四面墙留出宽敞通道（>= 4m）
+	K.wall_line(raid, c + Vector3(0, 0, -9.6), 19.0, 2.2, 0.0, [[-3.4, 0.6]], STEEL)
+	K.wall_line(raid, c + Vector3(0, 0, 9.6), 19.0, 2.2, 0.0, [[1.6, 5.6]], STEEL)
+	K.wall_line(raid, c + Vector3(-9.6, 0, 0), 19.0, 2.2, 90.0, [[3.4, 7.4]], STEEL)
+	K.wall_line(raid, c + Vector3(9.6, 0, 0), 19.0, 2.2, 90.0, [[-6.6, -2.6]], STEEL)
 	# 格构塔：收分主材 + 交叉斜撑 + 高细分圆形检修平台与护栏 + 顶部天线
 	var tp := c + Vector3(0, 0, 0.5)
 	_mast(raid, tp, 24.0, 6.0)
@@ -34,7 +34,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	var sp := c + Vector3(-6.2, 0, 6.0)
 	K.wall_line(raid, sp + Vector3(0, 0, -2.6), 6.4, 3.0, 0.0, [], Color(0.42, 0.42, 0.39))
 	K.wall_line(raid, sp + Vector3(-3.1, 0, 0), 5.2, 3.0, 90.0, [], Color(0.42, 0.42, 0.39))
-	K.wall_line(raid, sp + Vector3(3.1, 0, 0), 5.2, 3.0, 90.0, [[0.2, 2.8]], Color(0.42, 0.42, 0.39))
+	K.wall_line(raid, sp + Vector3(3.1, 0, 0), 5.2, 3.0, 90.0, [[-1.2, 2.8]], Color(0.42, 0.42, 0.39))
 	A.add(raid.world, A.bevel_box(Vector3(6.8, 0.2, 5.6), 0.04), A.paint(Color(0.35, 0.36, 0.33), 0.4, 0.6, {"rust": 0.7, "wear": 0.5}), sp + Vector3(0, 3.1, 0))
 	K.roof_kit(raid, sp, Vector2(6.8, 5.6), 3.2, Color(0.42, 0.42, 0.39))
 	A.add(raid.world, A.bevel_box(Vector3(1.2, 1.8, 0.8), 0.04), A.paint(Color(0.28, 0.3, 0.28), 0.4, 0.6, {"rust": 0.6}), sp + Vector3(-1.6, 0.9, 1.2))

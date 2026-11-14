@@ -94,8 +94,8 @@ func _build_scene(sv: SubViewport) -> void:
 	refs = MenuShip.build(root)
 	cam = Camera3D.new()
 	cam.fov = 62
-	cam.near = 0.03
-	cam.far = 40000.0
+	cam.near = 0.22
+	cam.far = 16000.0
 	var ca := CameraAttributesPractical.new()
 	ca.dof_blur_near_enabled = true
 	ca.dof_blur_near_distance = 0.35
@@ -176,7 +176,7 @@ func _build_ui(reopen_settings := false, settings_tab := "video") -> void:
 	title_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	title_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	title_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # 标题按最近邻取样，配合 shader 的像素块量化
+	title_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var tsh := Shader.new()
 	tsh.code = TITLE_FX
 	title_mat = ShaderMaterial.new()
@@ -295,10 +295,10 @@ func _keycap(key: String, what: String) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", UI.px9("card9", 6, 6, 10, 3))
-	pc.add_child(UI.label(key, 12, UI.GOLD))
+	pc.add_theme_stylebox_override("panel", UI.px9("key9", 6, 6, 10, 3))
+	pc.add_child(UI.label(key, 12, Color(0.88, 0.89, 0.86)))
 	h.add_child(pc)
-	h.add_child(UI.label(what, 12, Color(0.86, 0.84, 0.78, 0.78)))
+	h.add_child(UI.label(what, 12, Color(0.84, 0.85, 0.83, 0.82)))
 	return h
 
 
@@ -318,12 +318,18 @@ func _menu_button(idx: int, text: String, sub: String, cb: Callable, disabled: b
 	row.offset_right = -18
 	row.add_theme_constant_override("separation", 16)
 	b.add_child(row)
-	var num := _spaced(UI.label("%02d" % (idx + 1), 12, Color(1, 1, 1, 0.35)), 1)
-	num.custom_minimum_size = Vector2(22, 0)
+	var num_pc := PanelContainer.new()
+	num_pc.custom_minimum_size = Vector2(30, 24)
+	num_pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	num_pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	num_pc.add_theme_stylebox_override("panel", UI.px9("btn9_d" if disabled else "key9", 5, 5, 6, 2))
+	var num := _spaced(UI.label("%02d" % (idx + 1), 12, Color(0.36, 0.38, 0.40) if disabled else Color(0.88, 0.89, 0.86)), 1)
+	num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	num.size_flags_vertical = Control.SIZE_FILL
-	row.add_child(num)
-	var l := UI.label(text, 25, UI.TEXT if not disabled else Color(1, 1, 1, 0.3))
+	num_pc.add_child(num)
+	row.add_child(num_pc)
+	var l := UI.label(text, 25, UI.TEXT if not disabled else Color(0.56, 0.58, 0.60, 0.42))
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.size_flags_vertical = Control.SIZE_FILL
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -332,7 +338,7 @@ func _menu_button(idx: int, text: String, sub: String, cb: Callable, disabled: b
 	sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	sl.size_flags_vertical = Control.SIZE_FILL
 	row.add_child(sl)
-	b.set_meta("parts", [row, num, l, sl])
+	b.set_meta("parts", [row, num, l, sl, num_pc])
 	b.set_meta("disabled", disabled)
 	b.mouse_entered.connect(func(): _select(idx, true))
 	if not disabled:
@@ -353,8 +359,9 @@ func _select(i: int, sfx: bool) -> void:
 		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		tw.tween_property(parts[0], "offset_left", 30.0 if on else 18.0, 0.16)
 		if not bb.get_meta("disabled"):
-			(parts[2] as Label).add_theme_color_override("font_color", Color(1, 0.93, 0.8) if on else UI.TEXT)
-			(parts[1] as Label).add_theme_color_override("font_color", UI.ACCENT if on else Color(1, 1, 1, 0.35))
+			(parts[2] as Label).add_theme_color_override("font_color", Color(0.95, 0.93, 0.88) if on else UI.TEXT)
+			(parts[1] as Label).add_theme_color_override("font_color", Color(0.08, 0.06, 0.04) if on else Color(0.88, 0.89, 0.86))
+			(parts[4] as PanelContainer).add_theme_stylebox_override("panel", UI.px9("btn9_main_n" if on else "key9", 5, 5, 6, 2))
 	var target := float(sel) * 58.0
 	if cur_tw:
 		cur_tw.kill()
@@ -372,13 +379,10 @@ var title_lang := ""
 const MENU_CFG := "user://menu.cfg"
 const TITLE_FX := """
 shader_type canvas_item;
-// 标题：金属原图按 6×6 像素块取样（像素化），带下方柔和投影
-uniform float block = 6.0;
+// 标题：HD2 战术平面平滑采样，带下方柔和投影
 void fragment() {
-	vec2 g = TEXTURE_PIXEL_SIZE * block;
-	vec2 quv = floor(UV / g) * g + g * 0.5;
-	vec4 c = texture(TEXTURE, quv);
-	vec2 px = TEXTURE_PIXEL_SIZE * vec2(6.0, 9.0);
+	vec4 c = texture(TEXTURE, UV);
+	vec2 px = TEXTURE_PIXEL_SIZE * vec2(5.0, 8.0);
 	float sh = texture(TEXTURE, UV - px).a;
 	vec4 shadow = vec4(0.0, 0.0, 0.0, sh * 0.45);
 	COLOR = mix(shadow, vec4(c.rgb, 1.0), c.a);
@@ -413,32 +417,40 @@ var cur_tw: Tween
 func _draw_hud() -> void:
 	var sz := hud.size
 	var bar := sz.y * 0.045
-	# 取景角标
+	# 工业灰黑光学取景角标 + 做旧橙黄校验刻痕
 	var m := 34.0
-	var arm := 26.0
-	var c := Color(1, 1, 1, 0.32)
+	var arm := 28.0
+	var c := Color(0.42, 0.45, 0.48, 0.62)
+	var oc := Color(0.78, 0.48, 0.16, 0.78)
 	for corner in [Vector2(m, bar + m * 0.6), Vector2(sz.x - m, bar + m * 0.6), Vector2(m, sz.y - bar - m * 0.6), Vector2(sz.x - m, sz.y - bar - m * 0.6)]:
 		var sx := 1.0 if corner.x < sz.x * 0.5 else -1.0
 		var sy := 1.0 if corner.y < sz.y * 0.5 else -1.0
-		hud.draw_line(corner, corner + Vector2(arm * sx, 0), c, 1.5)
-		hud.draw_line(corner, corner + Vector2(0, arm * sy), c, 1.5)
-	# 菜单分隔线 + 游标
+		hud.draw_line(corner, corner + Vector2(arm * sx, 0), c, 2.0)
+		hud.draw_line(corner, corner + Vector2(0, arm * sy), c, 2.0)
+		hud.draw_line(corner + Vector2(arm * sx * 0.55, sy * 4.0), corner + Vector2(arm * sx * 0.9, sy * 4.0), oc, 1.5)
+	# 菜单钢架分隔线 + 序号位底衬 + 游标
 	if menu_box == null or buttons.is_empty():
 		return
 	var o := menu_box.position
 	for k in buttons.size() + 1:
-		hud.draw_line(o + Vector2(0, k * 58.0), o + Vector2(420, k * 58.0), Color(1, 1, 1, 0.07 if k > 0 and k < buttons.size() else 0.14), 1.0)
+		var lc := Color(0.40, 0.43, 0.46, 0.42) if (k == 0 or k == buttons.size()) else Color(0.36, 0.39, 0.42, 0.16)
+		hud.draw_line(o + Vector2(0, k * 58.0), o + Vector2(420, k * 58.0), lc, 1.0)
+	for k in buttons.size():
+		var ry := o.y + k * 58.0
+		hud.draw_rect(Rect2(o.x, ry + 14.0, 3.0, 30.0), Color(0.42, 0.45, 0.48, 0.38))
 	if sel >= 0 and not buttons[sel].get_meta("disabled"):
 		var y := o.y + cur_y
 		var sk := 14.0
 		var pts := PackedVector2Array([Vector2(o.x, y + 1), Vector2(o.x + 420 + sk, y + 1), Vector2(o.x + 420, y + 57), Vector2(o.x, y + 57)])
-		var cols := PackedColorArray([Color(1, 0.69, 0.13, 0.26), Color(1, 0.69, 0.13, 0.0), Color(1, 0.69, 0.13, 0.0), Color(1, 0.69, 0.13, 0.2)])
+		var cols := PackedColorArray([Color(0.78, 0.48, 0.16, 0.30), Color(0.78, 0.48, 0.16, 0.04), Color(0.78, 0.48, 0.16, 0.03), Color(0.78, 0.48, 0.16, 0.22)])
 		hud.draw_polygon(pts, cols)
-		hud.draw_rect(Rect2(o.x, y + 1, 4, 56), UI.ACCENT)
-		# 右侧箭头
+		hud.draw_line(Vector2(o.x, y + 1), Vector2(o.x + 420 + sk, y + 1), Color(0.87, 0.59, 0.25, 0.72), 1.0)
+		hud.draw_rect(Rect2(o.x, y + 2, 5, 54), UI.ACCENT_HI)
+		# 右侧工业导向矢标
 		var ax := o.x + 432.0
 		var ay := y + 29.0
-		hud.draw_colored_polygon(PackedVector2Array([Vector2(ax, ay - 6), Vector2(ax + 7, ay), Vector2(ax, ay + 6)]), UI.ACCENT)
+		hud.draw_colored_polygon(PackedVector2Array([Vector2(ax, ay - 6), Vector2(ax + 7, ay), Vector2(ax, ay + 6)]), UI.ACCENT_HI)
+		hud.draw_rect(Rect2(ax - 6.0, ay - 2.0, 4.0, 4.0), UI.STEEL)
 
 
 ## ---------- 弹窗 ----------
@@ -616,7 +628,7 @@ func _build_settings(initial_tab := "video") -> void:
 			var on: bool = (k == key)
 			b.add_theme_stylebox_override("normal", UI.px9("nav9_on" if on else "nav9_n", 10, 10, 12, 6))
 			b.add_theme_stylebox_override("hover", UI.px9("nav9_on" if on else "nav9_h", 10, 10, 12, 6))
-			b.add_theme_color_override("font_color", UI.GOLD if on else UI.TEXT)
+			b.add_theme_color_override("font_color", UI.ACCENT_HI if on else UI.TEXT)
 	for td in tab_defs:
 		var key: String = td[0]
 		var b := Button.new()

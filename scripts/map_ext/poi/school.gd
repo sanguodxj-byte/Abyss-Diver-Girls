@@ -28,14 +28,14 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.canopy(raid, c + Vector3(0, 0, -2.4), Vector2(6.0, 3.0), 3.4, 0.0, Color(0.5, 0.46, 0.4))
 	A.stencil(raid.world, "SCHOOL 04", c + Vector3(0, 5.2, -4.72), Vector3.ZERO, 0.022, Color(0.85, 0.82, 0.72, 0.6), 48)
 	K.roof_kit(raid, c + Vector3(0, 0, -7.6), Vector2(17.0, 5.6), 6.4, BRICK)
-	# 东翼：三面围合的两间教室
-	K.wall_line(raid, c + Vector3(9.0, 0, 1.0), 11.0, 3.6, 90.0, [[-3.6, -0.4]], BRICK)
-	K.wall_line(raid, c + Vector3(9.0, 0, 6.6), 8.0, 3.4, 0.0, [[-3.2, 0.0]], BRICK.darkened(0.08))
+	# 东翼：三面围合的两间教室（门洞加宽至 3.8m+）
+	K.wall_line(raid, c + Vector3(9.0, 0, 1.0), 11.0, 3.6, 90.0, [[-4.0, -0.2]], BRICK)
+	K.wall_line(raid, c + Vector3(9.0, 0, 6.6), 8.0, 3.4, 0.0, [[-3.6, 0.2]], BRICK.darkened(0.08))
 	K.wall_line(raid, c + Vector3(5.2, 0, 6.6), 6.4, 3.4, 0.0, [], BRICK.darkened(0.08))
-	K.wall_line(raid, c + Vector3(9.0, 0, -1.6), 8.0, 3.6, 0.0, [[-2.6, 0.6]], BRICK)
+	K.wall_line(raid, c + Vector3(9.0, 0, -1.6), 8.0, 3.6, 0.0, [[-3.0, 0.8]], BRICK)
 	# 西翼：塌了一半的教室，只剩矮墙与讲台
-	K.wall_line(raid, c + Vector3(-9.0, 0, 1.0), 11.0, 2.2, 90.0, [[-3.8, -1.4], [1.2, 3.6]], BRICK.darkened(0.14))
-	K.wall_line(raid, c + Vector3(-9.0, 0, 6.6), 7.0, 1.8, 0.0, [[-2.4, 0.4]], BRICK.darkened(0.14))
+	K.wall_line(raid, c + Vector3(-9.0, 0, 1.0), 11.0, 2.2, 90.0, [[-4.4, -0.6], [1.0, 4.8]], BRICK.darkened(0.14))
+	K.wall_line(raid, c + Vector3(-9.0, 0, 6.6), 7.0, 1.8, 0.0, [[-2.8, 1.0]], BRICK.darkened(0.14))
 	# 课桌：教室里成排的桌椅
 	for room in 3:
 		var base: Vector3 = c + [Vector3(6.6, 0, 1.0), Vector3(11.4, 0, 1.0), Vector3(-9.0, 0, 2.0)][room]
@@ -50,9 +50,9 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.bevel_box(Vector3(0.5, 1.2, 0.1), 0.02), A.paint(Color(0.1, 0.13, 0.11), 0.1, 0.9), c + Vector3(6.6, 1.6, -1.5))
 	# 操场：白线、旗杆、篮球架
 	for i in 4:
-		A.add(raid.world, A.bevel_box(Vector3(9.0, 0.02, 0.12), 0.004), A.paint(Color(0.62, 0.62, 0.56), 0.0, 0.9, {"wear": 0.8}), c + Vector3(-1.0, 0.16, -1.0 + i * 2.4), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.bevel_box(Vector3(9.0, 0.02, 0.12), 0.004), A.paint(Color(0.62, 0.62, 0.56), 0.0, 0.9, {"wear": 0.8}), c + Vector3(-1.0, 0.155, -1.0 + i * 2.4), Vector3.ZERO, Vector3.ONE, false)
 	for i in 2:
-		A.add(raid.world, A.bevel_box(Vector3(0.12, 0.02, 7.4), 0.004), A.paint(Color(0.62, 0.62, 0.56), 0.0, 0.9, {"wear": 0.8}), c + Vector3(-5.4 + i * 9.0, 0.16, 1.6), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.bevel_box(Vector3(0.12, 0.02, 7.4), 0.004), A.paint(Color(0.62, 0.62, 0.56), 0.0, 0.9, {"wear": 0.8}), c + Vector3(-5.4 + i * 9.0, 0.165, 1.6), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.cyl(0.09, 11.0, 0.09, 8), A.metal(Color(0.55, 0.56, 0.54)), c + Vector3(-1.0, 5.5, -2.2))
 	A.add(raid.world, A.bevel_box(Vector3(1.5, 0.9, 0.04), 0.01), A.paint(Color(0.55, 0.2, 0.18), 0.1, 0.85), c + Vector3(-0.25, 9.6, -2.2), Vector3(0, 0, -6))
 	raid.blocks.append(raid._rect_for(c + Vector3(-1.0, 0, -2.2), Vector3(0.6, 1, 0.6)))

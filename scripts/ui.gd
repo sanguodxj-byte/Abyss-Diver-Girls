@@ -4,21 +4,58 @@ extends RefCounted
 
 const PixelTheme = preload("res://scripts/pixel_theme.gd")
 
-const BG := Color(0.13, 0.13, 0.13, 0.92)
-const BG2 := Color(0.2, 0.2, 0.2, 0.95)
-const LINE := Color(1, 1, 1, 0.08)
-const ACCENT := Color(0.72, 0.5, 0.09)
-const ACCENT_DIM := Color(0.72, 0.5, 0.09, 0.4)
-const GOLD := Color(0.95, 0.80, 0.35)
-const INFO := Color(0.74, 0.6, 0.34)
-const TEXT := Color(0.93, 0.93, 0.92)
-const MUTED := Color(0.62, 0.62, 0.62)
-const GOOD := Color(0.4, 1.0, 0.6)
-const BAD := Color(1.0, 0.38, 0.32)
-const HP_C := Color(0.95, 0.35, 0.3)
-const EN_C := Color(0.74, 0.56, 0.16)
+const BG := Color(0.082, 0.088, 0.094, 0.96)
+const BG2 := Color(0.118, 0.126, 0.134, 0.97)
+const LINE := Color(0.22, 0.24, 0.26, 0.94)
+const STEEL := Color(0.46, 0.49, 0.52)
+const STEEL_MID := Color(0.30, 0.33, 0.35)
+const ACCENT := Color(0.78, 0.48, 0.16)
+const ACCENT_HI := Color(0.87, 0.59, 0.25)
+const ACCENT_DIM := Color(0.78, 0.48, 0.16, 0.38)
+const GOLD := Color(0.84, 0.58, 0.22)
+const INFO := Color(0.58, 0.73, 0.78)
+const TEXT := Color(0.88, 0.88, 0.85)
+const MUTED := Color(0.56, 0.58, 0.58)
+const GOOD := Color(0.46, 0.76, 0.50)
+const BAD := Color(0.84, 0.33, 0.25)
+const HP_C := Color(0.84, 0.33, 0.25)
+const EN_C := Color(0.84, 0.58, 0.22)
 
 static var _theme: Theme
+
+
+class HazardStrip extends Control:
+	func _init(h := 8) -> void:
+		custom_minimum_size = Vector2(0, h)
+		clip_contents = true
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		load("res://scripts/ui.gd").draw_hazard(self, Rect2(Vector2.ZERO, size))
+
+
+static func draw_hazard(ci: CanvasItem, r: Rect2) -> void:
+	ci.draw_rect(r, Color(0.085, 0.092, 0.098, 0.96), true)
+	var stripe_w := 7.0
+	var period := 14.0
+	var skew := r.size.y
+	var idx := 0
+	var x := -skew - period
+	while x < r.size.x + period:
+		var wear := 0.88 if (idx % 3 == 0) else (0.95 if (idx % 2 == 0) else 0.78)
+		var y_col := Color(0.76 * wear, 0.46 * wear, 0.14 * wear, 0.90)
+		var x0 := r.position.x + x
+		var p := PackedVector2Array([
+			Vector2(clampf(x0 + skew, r.position.x, r.end.x), r.position.y),
+			Vector2(clampf(x0 + skew + stripe_w, r.position.x, r.end.x), r.position.y),
+			Vector2(clampf(x0 + stripe_w, r.position.x, r.end.x), r.end.y),
+			Vector2(clampf(x0, r.position.x, r.end.x), r.end.y),
+		])
+		ci.draw_colored_polygon(p, y_col)
+		x += period
+		idx += 1
+	ci.draw_line(r.position, Vector2(r.end.x, r.position.y), Color(STEEL.r, STEEL.g, STEEL.b, 0.42), 1.0, true)
+	ci.draw_line(Vector2(r.position.x, r.end.y), r.end, Color(0.24, 0.26, 0.27, 0.92), 1.0, true)
 
 
 static var _tex := {}
@@ -28,41 +65,19 @@ static func tex(name: String) -> Texture2D:
 	return _tex[name]
 
 
-## 加载 v0.8 工业像素组件贴图（res://assets/ui/px/<name>.png）
-static var _px_tex := {}
+## Flat HD2 StyleBox builder replacing all legacy pixel 9-patch textures
 static func px_tex(name: String) -> Texture2D:
-	if not _px_tex.has(name):
-		_px_tex[name] = load("res://assets/ui/px/%s.png" % name)
-	return _px_tex[name]
+	var path := "res://assets/ui/px/%s.png" % name
+	return load(path) if ResourceLoader.exists(path) else null
 
 
-## 工业像素九宫格 StyleBoxTexture（自动禁用滤波/平滑，贴合 HubKit 视觉）
-static func px9(name: String, mlr := 12, mtb := 12, plr := 10, ptb := 8, tint := Color(1, 1, 1)) -> StyleBoxTexture:
-	var sb := StyleBoxTexture.new()
-	sb.texture = px_tex(name)
-	sb.texture_margin_left = mlr
-	sb.texture_margin_right = mlr
-	sb.texture_margin_top = mtb
-	sb.texture_margin_bottom = mtb
-	sb.content_margin_left = plr
-	sb.content_margin_right = plr
-	sb.content_margin_top = ptb
-	sb.content_margin_bottom = ptb
-	sb.modulate_color = tint
-	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-	return sb
+static func px9(name: String, mlr := 12, mtb := 12, plr := 10, ptb := 8, tint := Color(1, 1, 1)) -> StyleBox:
+	return PixelTheme.px9(name, mlr, mtb, plr, ptb, tint)
 
 
-## 工业斜纹警戒条
-static func hazard_strip(h := 8) -> TextureRect:
-	var tr := TextureRect.new()
-	tr.texture = px_tex("hazard")
-	tr.stretch_mode = TextureRect.STRETCH_TILE
-	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	tr.custom_minimum_size = Vector2(0, h)
-	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return tr
+## Crisp 45-degree HD2 tactical hazard bar
+static func hazard_strip(h := 8) -> Control:
+	return HazardStrip.new(h)
 
 
 static func _is_en() -> bool:
@@ -81,30 +96,35 @@ static func _lt(zh: String, en := "") -> String:
 	return str(loc.call("t", zh, en)) if loc != null else zh
 
 
-## 铆钉铭牌标题栏（左琥珀竖条 + 标题 + 右侧附加文本/控件）
+## 铆钉铭牌标题栏（左琥珀竖条 + 工业灰黑金属片 + 标题 + 右侧附加文本）
 static func plate_header(title: String, sub := "", right := "", pad := 10) -> PanelContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", px9("plate9", 14, 14, pad, 6))
+	p.add_theme_stylebox_override("panel", px9("hdr_dark9", 14, 14, pad, 6))
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
 	p.add_child(hb)
 	var bar := ColorRect.new()
 	bar.color = ACCENT
-	bar.custom_minimum_size = Vector2(3, 14)
+	bar.custom_minimum_size = Vector2(4, 15)
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hb.add_child(bar)
-	hb.add_child(label(title, 12, Color(0.97, 0.94, 0.86)))
-	if sub != "" and _is_en():
+	var tag_st := ColorRect.new()
+	tag_st.color = STEEL
+	tag_st.custom_minimum_size = Vector2(3, 9)
+	tag_st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(tag_st)
+	hb.add_child(label(title, 14, TEXT))
+	if sub != "" and sub.to_upper() != title.to_upper():
 		hb.add_child(label(sub, 12, MUTED))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(sp)
 	if right != "":
-		hb.add_child(label(right, 12, ACCENT))
+		hb.add_child(label(right, 13, ACCENT_HI))
 	return p
 
 
-## 纯色直角工业样式（进度条/槽位等需要按比例变色时使用）
+## Flat geometric stylebox for dynamic progress bars & slots
 static func flat_bar(bg: Color, border := LINE, bw := 1, pad := 2) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
@@ -114,24 +134,13 @@ static func flat_bar(bg: Color, border := LINE, bw := 1, pad := 2) -> StyleBoxFl
 	sb.content_margin_right = pad
 	sb.content_margin_top = pad
 	sb.content_margin_bottom = pad
-	sb.anti_aliasing = false
+	sb.anti_aliasing = true
 	return sb
 
 
-## 贴图九宫格样式（旧贴图兼容）
-static func tex9(name: String, margin := 12, pad := 12, tint := Color(1, 1, 1)) -> StyleBoxTexture:
-	var sb := StyleBoxTexture.new()
-	sb.texture = tex(name)
-	sb.set_texture_margin_all(margin)
-	sb.content_margin_left = pad
-	sb.content_margin_right = pad
-	sb.content_margin_top = pad * 0.75
-	sb.content_margin_bottom = pad * 0.75
-	sb.modulate_color = tint
-	# 像素风：中间区域按整像素平铺，避免最近邻拉伸造成像素宽窄不一
-	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-	return sb
+## Flat HD2 compatibility wrapper replacing old nine-patch tex9
+static func tex9(name: String, margin := 12, pad := 12, tint := Color(1, 1, 1)) -> StyleBox:
+	return PixelTheme.px9(name, margin, margin, pad, maxi(4, int(round(pad * 0.75))), tint)
 
 
 ## 按底色语义挑选 v0.8 工业像素贴图（亮橙→主按钮，半透明浅色→凹槽底，其余→钢板面板）
@@ -156,20 +165,24 @@ static func label(text := "", size := 15, c := TEXT, outline := false) -> Label:
 	l.add_theme_font_size_override("font_size", PixelUI.snap(size))
 	l.add_theme_color_override("font_color", c)
 	if outline:
-		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-		l.add_theme_constant_override("outline_size", 5)
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.78))
+		l.add_theme_constant_override("outline_size", 3)
 	return l
 
 
-## 区块标题：左侧琥珀色竖条 + 文字 + 可选副标题
+## 区块标题：左侧琥珀色竖条 + 灰白铆钉标记 + 文字 + 可选副标题
 static func header(title: String, sub := "", size := 17) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	var bar := ColorRect.new()
 	bar.color = ACCENT
-	bar.custom_minimum_size = Vector2(3, 0)
+	bar.custom_minimum_size = Vector2(4, 0)
 	h.add_child(bar)
-	h.add_child(label(title, size, Color(1, 1, 1)))
+	var st := ColorRect.new()
+	st.color = STEEL
+	st.custom_minimum_size = Vector2(2, 0)
+	h.add_child(st)
+	h.add_child(label(title, size, TEXT))
 	if sub != "":
 		var s := label(sub, 12, MUTED)
 		s.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -184,14 +197,14 @@ static func panel(pad := 12, accent := true) -> PanelContainer:
 	return p
 
 
-## 键帽：[Q] 文字（贴图键帽，底部亮橙条）
+## 键帽：[Q] 工业灰黑阳极氧化金属键帽，浅灰白丝印字标
 static func keycap(key: String, size := 13) -> PanelContainer:
 	var p := PanelContainer.new()
-	var sb := tex9("key9", 7, 6)
+	var sb := tex9("key9", 6, 6)
 	sb.content_margin_top = 1
-	sb.content_margin_bottom = 5
+	sb.content_margin_bottom = 4
 	p.add_theme_stylebox_override("panel", sb)
-	var l := label(key, size, Color(1, 1, 1))
+	var l := label(key, size, Color(0.88, 0.89, 0.86))
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	p.add_child(l)
 	p.custom_minimum_size = Vector2(24, 0)
@@ -258,12 +271,12 @@ static func rarity_icon(rar: int, cat := "") -> Texture2D:
 class SegBar extends Control:
 	var value := 1.0
 	var max_value := 1.0
-	var color := Color(1, 0.8, 0.2)
+	var color := Color(0.82, 0.54, 0.20)
 	var segments := 20
 	var ghost := 1.0   ## 受伤后残影
 	var blink := false
 
-	func _init(c := Color(1, 0.8, 0.2), seg := 20, h := 12.0) -> void:
+	func _init(c := Color(0.82, 0.54, 0.20), seg := 20, h := 12.0) -> void:
 		color = c
 		segments = seg
 		custom_minimum_size = Vector2(200, h)
@@ -295,9 +308,11 @@ class SegBar extends Control:
 			var r := Rect2(x, 0, w, size.y)
 			var t0 := float(i) / segments
 			var t1 := float(i + 1) / segments
-			draw_rect(r, Color(1, 1, 1, 0.07))
+			draw_rect(r, Color(0.08, 0.085, 0.09, 0.85))
+			draw_rect(r, Color(0.36, 0.39, 0.40, 0.45), false, 1.0)
 			if f >= t1:
 				draw_rect(r, Color(color.r, color.g, color.b, a))
+				draw_rect(Rect2(x, 0, w, 1.5), Color(0.92, 0.93, 0.92, 0.25 * a))
 			elif f > t0:
 				var part: float = (f - t0) / (t1 - t0)
 				draw_rect(Rect2(x, 0, w * part, size.y), Color(color.r, color.g, color.b, a))
@@ -305,8 +320,8 @@ class SegBar extends Control:
 				var g0: float = max(f, t0)
 				var g1: float = min(ghost, t1)
 				if g1 > g0:
-					draw_rect(Rect2(x + (g0 - t0) / (t1 - t0) * w, 0, (g1 - g0) / (t1 - t0) * w, size.y), Color(1, 1, 1, 0.45))
-		draw_rect(Rect2(0, size.y - 1, size.x, 1), Color(color.r, color.g, color.b, 0.25))
+					draw_rect(Rect2(x + (g0 - t0) / (t1 - t0) * w, 0, (g1 - g0) / (t1 - t0) * w, size.y), Color(0.86, 0.88, 0.88, 0.55))
+		draw_rect(Rect2(0, size.y - 1, size.x, 1), Color(0.68, 0.71, 0.72, 0.38))
 
 
 ## 冷却遮罩方块（武器/技能卡片用）
@@ -364,12 +379,12 @@ class Radar extends Control:
 			return
 		var c := size * 0.5
 		var r: float = min(size.x, size.y) * 0.5 - 2.0
-		draw_circle(c, r, Color(0.035, 0.035, 0.04, 0.88))
+		draw_circle(c, r, Color(0.08, 0.088, 0.092, 0.92))
 		_draw_terrain(c, r)
 		for k in [0.33, 0.66]:
-			draw_arc(c, r * k, 0, TAU, 48, Color(0.74, 0.53, 0.13, 0.14), 1.0, false)
-		draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(0.74, 0.53, 0.13, 0.09))
-		draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(0.74, 0.53, 0.13, 0.09))
+			draw_arc(c, r * k, 0, TAU, 48, Color(0.78, 0.48, 0.16, 0.18), 1.0, true)
+		draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(0.72, 0.75, 0.76, 0.14), 1.0, true)
+		draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(0.72, 0.75, 0.76, 0.14), 1.0, true)
 		# 躯干朝向视界扇区
 		var fwd: Vector3 = -raid.mech.torso.global_transform.basis.z
 		var f := Vector2(fwd.x, fwd.z).normalized()
@@ -379,40 +394,40 @@ class Radar extends Control:
 		for i in 13:
 			var a := base_ang - 0.42 + 0.84 * (float(i) / 12.0)
 			fov_pts.append(c + Vector2(cos(a), sin(a)) * (r * 0.82))
-		draw_colored_polygon(fov_pts, Color(0.74, 0.53, 0.13, 0.09))
-		draw_line(c, fov_pts[1], Color(0.74, 0.53, 0.13, 0.24), 1.0)
-		draw_line(c, fov_pts[fov_pts.size() - 1], Color(0.74, 0.53, 0.13, 0.24), 1.0)
+		draw_colored_polygon(fov_pts, Color(0.78, 0.48, 0.16, 0.12))
+		draw_line(c, fov_pts[1], Color(0.84, 0.56, 0.22, 0.34), 1.0, true)
+		draw_line(c, fov_pts[fov_pts.size() - 1], Color(0.84, 0.56, 0.22, 0.34), 1.0, true)
 		# 扫描线
 		var t := Time.get_ticks_msec() * 0.0015
 		for i in 12:
 			var a := t - i * 0.04
-			draw_line(c, c + Vector2(cos(a), sin(a)) * r, Color(0.74, 0.53, 0.13, 0.11 * (1.0 - i / 12.0)), 2.0)
+			draw_line(c, c + Vector2(cos(a), sin(a)) * r, Color(0.82, 0.52, 0.18, 0.15 * (1.0 - i / 12.0)), 2.0, true)
 		var mp: Vector3 = raid.mech.global_position
-		# 重点遗迹 POI（范围内显示琥珀小菱形）
+		# 重点遗迹 POI（范围内显示做旧橙黄小菱形）
 		for pc: Vector3 in raid.poi_centers:
 			var p := _to_screen(pc - mp, r)
 			if p.length() < r - 5:
 				var q := c + p
-				draw_colored_polygon(PackedVector2Array([q + Vector2(0, -4), q + Vector2(4, 0), q + Vector2(0, 4), q + Vector2(-4, 0)]), Color(0.95, 0.72, 0.22, 0.85))
+				draw_colored_polygon(PackedVector2Array([q + Vector2(0, -4), q + Vector2(4, 0), q + Vector2(0, 4), q + Vector2(-4, 0)]), Color(0.84, 0.58, 0.22, 0.90))
 		# 容器
 		for b in raid.get_tree().get_nodes_in_group("lootboxes"):
 			if b.items.is_empty():
 				continue
 			var p := _to_screen(b.global_position - mp, r)
 			if p.length() < r - 3:
-				draw_rect(Rect2(c + p - Vector2(2, 2), Vector2(4, 4)), Color(0.74, 0.61, 0.28, 0.78))
+				draw_rect(Rect2(c + p - Vector2(2, 2), Vector2(4, 4)), Color(0.76, 0.62, 0.32, 0.82))
 		# 虫巢
 		for n in raid.get_tree().get_nodes_in_group("nests"):
 			var p := _to_screen(n.global_position - mp, r)
 			if p.length() < r - 4:
-				draw_circle(c + p, 4.5, Color(0.95, 0.35, 0.85, 0.9))
+				draw_circle(c + p, 4.5, Color(0.82, 0.36, 0.68, 0.9))
 		# 虫子
 		for b in raid.get_tree().get_nodes_in_group("bugs"):
 			if bool(b.data.get("boss", false)):
 				continue
 			var p := _to_screen(b.global_position - mp, r)
 			if p.length() < r - 2:
-				draw_circle(c + p, 2.4 if b.kind != "beetle" else 3.6, Color(1.0, 0.3, 0.25, 0.95))
+				draw_circle(c + p, 2.4 if b.kind != "beetle" else 3.6, Color(0.88, 0.34, 0.26, 0.95))
 		# 随行队友
 		if raid.factions != null and "allies" in raid.factions:
 			for al in raid.factions.allies:
@@ -421,7 +436,7 @@ class Radar extends Control:
 				var p := _to_screen(al.global_position - mp, r)
 				if p.length() > r - 7:
 					p = p.normalized() * (r - 7)
-				draw_circle(c + p, 4.0, Color(0.3, 0.88, 1.0, 0.95))
+				draw_circle(c + p, 4.0, Color(0.58, 0.78, 0.84, 0.95))
 				draw_arc(c + p, 5.5, 0, TAU, 12, Color(0, 0, 0, 0.75), 1.2, false)
 		# 战区首领（超出雷达范围时贴在边缘指示方向）
 		for b in raid.get_tree().get_nodes_in_group("boss"):
@@ -431,10 +446,10 @@ class Radar extends Control:
 			if p.length() > r - 8:
 				p = p.normalized() * (r - 8)
 			var q := c + p
-			var bcol := Color(1.0, 0.22, 0.32, 0.96)
-			draw_arc(q, 7.5, 0, TAU, 16, Color(1.0, 0.22, 0.32, 0.55), 1.5, false)
+			var bcol := Color(0.88, 0.28, 0.28, 0.96)
+			draw_arc(q, 7.5, 0, TAU, 16, Color(0.88, 0.28, 0.28, 0.55), 1.5, false)
 			draw_colored_polygon(PackedVector2Array([q + Vector2(0, -5.5), q + Vector2(5.5, 0), q + Vector2(0, 5.5), q + Vector2(-5.5, 0)]), bcol)
-			draw_circle(q, 2.0, Color(1.0, 0.9, 0.75, 0.95))
+			draw_circle(q, 2.0, Color(0.92, 0.86, 0.74, 0.95))
 		# 撤离点：超出范围就贴在边缘
 		var zs: Array = raid.extracts.duplicate()
 		if raid.transport_zone and raid.transport_zone.active:
@@ -454,23 +469,24 @@ class Radar extends Control:
 			if p.length() > r - 8:
 				p = p.normalized() * (r - 8)
 			var q := c + p
-			var wcol := Color(0.28, 0.92, 1.0, 0.96)
+			var wcol := Color(0.58, 0.78, 0.84, 0.96)
 			draw_arc(q, 5.5, 0, TAU, 16, Color(0, 0, 0, 0.8), 2.2, false)
 			draw_arc(q, 5.5, 0, TAU, 16, wcol, 1.5, false)
 			draw_circle(q, 2.0, wcol)
-		# 自己：朝向躯干方向的箭头
-		draw_colored_polygon(PackedVector2Array([c + f * 9, c - f * 5 + side * 6, c - f * 2, c - f * 5 - side * 6]), Color(1, 1, 1))
-		# 金属外圈 + 刻度（玩家方：黑灰 + 亮橙黄）
-		draw_arc(c, r + 1, 0, TAU, 72, Color(0.2, 0.21, 0.24), 8.0, false)
-		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.48, 0.5, 0.55), 1.2, false)
-		draw_arc(c, r - 3, 0, TAU, 72, Color(0, 0, 0, 0.8), 1.5, false)
+		# 自己：朝向躯干方向的工业浅灰方向箭头
+		draw_colored_polygon(PackedVector2Array([c + f * 9, c - f * 5 + side * 6, c - f * 2, c - f * 5 - side * 6]), Color(0.88, 0.89, 0.86))
+		# 外圈工业灰黑机加工罗盘表圈 + 做旧橙黄刻度弧
+		draw_arc(c, r + 1.0, 0, TAU, 72, Color(0.11, 0.12, 0.13, 0.96), 7.5, true)
+		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.34, 0.37, 0.39, 0.96), 1.6, true)
+		draw_arc(c, r - 3.0, 0, TAU, 72, Color(0.05, 0.055, 0.06, 0.90), 1.5, true)
 		for k in 36:
 			var a := k * TAU / 36.0
 			var dd := Vector2(cos(a), sin(a))
 			var big := k % 3 == 0
-			draw_line(c + dd * (r - (3.0 if big else 1.0)), c + dd * (r + 4), Color(0.72, 0.5, 0.09) if k % 9 == 0 else Color(0.75, 0.76, 0.8, 0.7), 2.0 if big else 1.0)
-		draw_arc(c, r + 1, -0.9, -0.3, 12, Color(0.72, 0.5, 0.09), 3.0, false)
-		draw_arc(c, r + 1, 2.2, 2.8, 12, Color(0.72, 0.5, 0.09), 3.0, false)
+			var tick_col := Color(0.78, 0.48, 0.16, 0.96) if k % 9 == 0 else Color(0.42, 0.45, 0.47, 0.78)
+			draw_line(c + dd * (r - (3.0 if big else 1.0)), c + dd * (r + 4.0), tick_col, 2.2 if big else 1.0, true)
+		draw_arc(c, r + 1.0, -0.95, -0.25, 14, Color(0.78, 0.48, 0.16, 0.94), 2.5, true)
+		draw_arc(c, r + 1.0, 2.15, 2.85, 14, Color(0.78, 0.48, 0.16, 0.94), 2.5, true)
 		var ff := PixelUI.pixel_font()
 		var loc := get_node_or_null("/root/Loc")
 		var is_e := loc != null and bool(loc.call("is_en"))
@@ -478,20 +494,20 @@ class Radar extends Control:
 		var s_txt := "S" if is_e else "南"
 		var e_txt := "E" if is_e else "东"
 		var w_txt := "W" if is_e else "西"
-		draw_string(ff, c + Vector2(-4 if is_e else -6, -r + 14), n_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.86, 0.65, 0.22, 0.88))
-		draw_string(ff, c + Vector2(-4 if is_e else -6, r - 5), s_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.76, 0.8, 0.45))
-		draw_string(ff, c + Vector2(r - (12 if is_e else 15), 4), e_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.76, 0.8, 0.45))
-		draw_string(ff, c + Vector2(-r + (5 if is_e else 4), 4), w_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.76, 0.8, 0.45))
+		draw_string(ff, c + Vector2(-4 if is_e else -6, -r + 14), n_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.86, 0.58, 0.24, 0.96))
+		draw_string(ff, c + Vector2(-4 if is_e else -6, r - 5), s_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.72, 0.75, 0.74, 0.72))
+		draw_string(ff, c + Vector2(r - (12 if is_e else 15), 4), e_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.72, 0.75, 0.74, 0.72))
+		draw_string(ff, c + Vector2(-r + (5 if is_e else 4), 4), w_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.72, 0.75, 0.74, 0.72))
 
 
 ## 大地图（M 打开）：战术终端双栏布局（左侧可缩放/平移地形图 + 坐标网格 + 智能避让标注 + 右侧战术态势与图例面板）
 class BigMap extends Control:
 	var raid
-	const AMBER := Color(0.72, 0.5, 0.09)
-	const GOLD := Color(0.96, 0.78, 0.32)
-	const CYAN := Color(0.32, 0.88, 1.0)
-	const BOSS_C := Color(1.0, 0.26, 0.36)
-	const NEST_C := Color(0.95, 0.35, 0.85)
+	const AMBER := Color(0.78, 0.48, 0.16)
+	const GOLD := Color(0.86, 0.59, 0.25)
+	const CYAN := Color(0.58, 0.76, 0.82)
+	const BOSS_C := Color(0.86, 0.32, 0.30)
+	const NEST_C := Color(0.82, 0.36, 0.68)
 	const LM_NAMES := {
 		"broken_bridge": "灰港断桥", "radio_mast": "旧城广播塔", "elevated_road": "高架残段", "central_terminus": "中央穹顶总站",
 		"gantry": "运河龙门吊", "blast_furnace": "一号钢厂高炉", "gas_holder": "煤气罐区", "converter_foundry": "二号转炉钢厂",
@@ -723,7 +739,7 @@ class BigMap extends Control:
 		var btex := "btn9_main_n" if active else ("btn9_h" if hov else "btn9_n")
 		draw_style_box(PixelTheme.px9(btex, 8, 8, 0, 0), r)
 		var tw := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-		var tc := Color(0.08, 0.06, 0.04) if active else (GOLD if hov else Color(0.92, 0.90, 0.84))
+		var tc := Color(0.08, 0.06, 0.04) if active else (GOLD if hov else Color(0.90, 0.91, 0.89))
 		draw_string(f, Vector2(r.get_center().x - tw * 0.5, r.position.y + r.size.y * 0.5 + 5.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tc)
 
 	func _draw() -> void:
@@ -731,8 +747,8 @@ class BigMap extends Control:
 			return
 		_clamp_pan()
 		var f := PixelUI.pixel_font()
-		# 全屏深色战术遮罩（压暗底层 HUD 与无线电窗，消除文字穿透重叠）
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.015, 0.018, 0.024, 0.92))
+		# 全屏深炭灰遮罩
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.045, 0.050, 0.054, 0.92))
 		var side_w := 252.0
 		var gap := 20.0
 		var map_side: float = minf(size.y - 132.0, size.x - side_w - gap - 108.0)
@@ -750,7 +766,7 @@ class BigMap extends Control:
 		draw_style_box(PixelTheme.px9("panel9", 16, 16, 0, 0), console_rect)
 		var hdr_rect := Rect2(console_rect.position + Vector2(8, 8), Vector2(console_rect.size.x - 16.0, 32.0))
 		draw_style_box(PixelTheme.px9("plate9", 14, 14, 0, 0), hdr_rect)
-		draw_texture_rect(load("res://assets/ui/px/hazard.png"), Rect2(console_rect.position + Vector2(8, 42), Vector2(console_rect.size.x - 16.0, 5.0)), true)
+		load("res://scripts/ui.gd").draw_hazard(self, Rect2(console_rect.position + Vector2(8, 42), Vector2(console_rect.size.x - 16.0, 5.0)))
 		# 地图视口凹槽外框
 		draw_style_box(PixelTheme.px9("inset9", 6, 6, 0, 0), rect.grow(8))
 
@@ -887,7 +903,7 @@ class BigMap extends Control:
 			draw_colored_polygon(dm_in, GOLD)
 			draw_circle(q, 1.8, Color(0.12, 0.09, 0.04))
 			placed.append(Rect2(q - Vector2(9, 9), Vector2(18, 18)))
-			_place_label(f, q, pname, 12, Color(0.98, 0.86, 0.50), rect, placed, 10.0, false, false, false)
+			_place_label(f, q, pname, 12, Color(0.89, 0.64, 0.30), rect, placed, 10.0, false, false, false)
 			hover_items.append({"pos": q, "r": 13.0, "title": ("Key Ruin · " if is_e else "重点遗迹 · ") + pname,
 				"sub": ("%s · High-Value Loot · Dist %dm" if is_e else "%s · 高价值物资区 · 距离 %dm") % [_grid_code(pc), int(pc.distance_to(mp))], "col": GOLD})
 
@@ -1105,8 +1121,9 @@ class Crosshair extends Control:
 	var bloom := 0.0
 	var spin := 0.0
 	var _init_done := false
-	const AMBER := Color(0.72, 0.5, 0.09)
-	const SHADOW := Color(0, 0, 0, 0.55)
+	const AMBER := Color(0.78, 0.48, 0.16)
+	const STEEL := Color(0.84, 0.86, 0.86, 0.95)
+	const SHADOW := Color(0, 0, 0, 0.58)
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1150,7 +1167,7 @@ class Crosshair extends Control:
 
 	func _draw() -> void:
 		var p := pos
-		var white := Color(0.95, 0.95, 0.92, 0.95)
+		var white := STEEL
 		var gap := 15.0 + bloom * 9.0
 		var arm := 7.0
 		# 四角括号
@@ -1168,9 +1185,9 @@ class Crosshair extends Control:
 		var R := gap + 12.0
 		for k in 3:
 			var a0 := spin + k * TAU / 3.0
-			draw_arc(p, R, a0, a0 + 0.7, 10, Color(1, 1, 1, 0.22), 1.5, false)
+			draw_arc(p, R, a0, a0 + 0.7, 10, Color(0.84, 0.86, 0.86, 0.24), 1.5, false)
 			var tip := p + Vector2(cos(a0), sin(a0)) * R
-			draw_line(tip, tip + Vector2(cos(a0), sin(a0)) * 4.0, Color(1, 1, 1, 0.35), 1.5, false)
+			draw_line(tip, tip + Vector2(cos(a0), sin(a0)) * 4.0, Color(0.84, 0.86, 0.86, 0.40), 1.5, false)
 		# 弹着点（躯干真实朝向）+ 牵引线
 		var off := pip - p
 		var aligned := off.length() < 6.0
@@ -1178,8 +1195,8 @@ class Crosshair extends Control:
 			var n := mini(int(off.length() / 7.0), 48)
 			for i in n:
 				if i % 2 == 0:
-					draw_line(p + off * (float(i) / n), p + off * (float(i + 1) / n), Color(AMBER.r, AMBER.g, AMBER.b, 0.55), 1.5, false)
-		var pc := AMBER if not aligned else Color(0.74, 0.61, 0.32)
+					draw_line(p + off * (float(i) / n), p + off * (float(i + 1) / n), Color(AMBER.r, AMBER.g, AMBER.b, 0.62), 1.5, false)
+		var pc := Color(0.87, 0.59, 0.25) if not aligned else Color(0.76, 0.58, 0.30)
 		draw_arc(pip, 5.5, 0, TAU, 20, SHADOW, 4.0, false)
 		draw_arc(pip, 5.5, 0, TAU, 20, pc, 2.0, false)
 		if aligned:

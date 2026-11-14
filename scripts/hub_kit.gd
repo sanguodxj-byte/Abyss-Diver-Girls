@@ -8,6 +8,7 @@ extends RefCounted
 ## 版式约定：外边距 12、栏间距 8、面板内边距 8、行距 6；字号只用 12 / 24（PixelUI 吸附）。
 
 const UI = preload("res://scripts/ui.gd")
+const GridPack = preload("res://scripts/grid_pack.gd")
 
 const M := 12          ## 屏幕外边距
 const GAP := 8         ## 栏间距
@@ -16,27 +17,29 @@ const TOP_H := 36      ## 顶部细状态栏
 const BOT_H := 48      ## 底部主导航栏
 const CELL := 48       ## 物品格边长（图标 16px ×2）
 
-## 塔科夫式色板：深灰底 · 橄榄灰描边 · 米白文字 · 琥珀强调
-const BG0 := Color(0.043, 0.045, 0.043, 0.96)    ## 面板底
-const BG1 := Color(0.075, 0.078, 0.072, 0.97)    ## 标题条 / 卡片底
-const BG2 := Color(0.115, 0.118, 0.108, 1.0)     ## 按钮底
-const BG3 := Color(0.16, 0.162, 0.145, 1.0)      ## 悬停
-const LINE := Color(0.25, 0.26, 0.225)           ## 描边
-const LINE2 := Color(0.4, 0.405, 0.35)           ## 亮描边
-const CREAM := Color(0.86, 0.84, 0.75)           ## 主文字
-const CREAM_DIM := Color(0.55, 0.54, 0.47)       ## 次文字
-const OLIVE := Color(0.32, 0.34, 0.24)
-const CELL_EMPTY := Color(0.055, 0.058, 0.054, 0.92)
-const CELL_LINE := Color(0.17, 0.175, 0.155)
-## 物品格底色（按稀有度，压暗的灰 / 绿 / 蓝 / 紫）
-const CELL_RAR := [Color(0.15, 0.152, 0.14), Color(0.11, 0.2, 0.12), Color(0.1, 0.14, 0.24), Color(0.2, 0.11, 0.24)]
-const OK_C := Color(0.45, 0.85, 0.4)
-const NG_C := Color(0.95, 0.35, 0.3)
+## Semi-sci-fi wasteland industrial hub palette: industrial grey-black + darker weathered ochre
+const BG0 := Color(0.056, 0.060, 0.066, 0.97)
+const BG1 := Color(0.082, 0.088, 0.094, 0.97)
+const BG2 := Color(0.118, 0.126, 0.134, 0.97)
+const BG3 := Color(0.165, 0.176, 0.186, 0.99)
+const LINE := Color(0.22, 0.24, 0.26)
+const LINE2 := Color(0.40, 0.43, 0.46)
+const STEEL := Color(0.38, 0.41, 0.44)
+const INK := Color(0.08, 0.09, 0.10)
+const CREAM := Color(0.88, 0.88, 0.85)
+const CREAM_DIM := Color(0.56, 0.58, 0.58)
+const OLIVE := Color(0.20, 0.22, 0.24)
+const CELL_EMPTY := Color(0.055, 0.060, 0.066, 0.94)
+const CELL_LINE := Color(0.20, 0.22, 0.24)
+const CELL_RAR := [Color(0.115, 0.124, 0.132), Color(0.105, 0.140, 0.112), Color(0.098, 0.130, 0.165), Color(0.175, 0.125, 0.072)]
+const OK_C := Color(0.46, 0.76, 0.50)
+const NG_C := Color(0.84, 0.33, 0.25)
 
-const AMBER := Color(0.72, 0.5, 0.09)
-const AMBER_DK := Color(0.42, 0.27, 0.04)
-const RULE := Color(1, 1, 1, 0.14)
-const DIM := Color(0.48, 0.5, 0.54)
+const AMBER := Color(0.78, 0.48, 0.16)
+const AMBER_HI := Color(0.87, 0.59, 0.25)
+const AMBER_DK := Color(0.52, 0.31, 0.10)
+const RULE := Color(0.42, 0.45, 0.48, 0.22)
+const DIM := Color(0.54, 0.56, 0.57)
 
 ## 主角团（顶栏阵列顺序）与黑市商人
 const CREW := ["nao", "rei", "kurumi", "lina", "mia"]
@@ -87,44 +90,13 @@ static func px9(name: String, mlr: int, mtb := -1, plr := -1, ptb := -1) -> Styl
 		plr = mlr
 	if ptb < 0:
 		ptb = plr
-	var key := "%s/%d/%d/%d/%d" % [name, mlr, mtb, plr, ptb]
-	if _px9.has(key):
-		return _px9[key]
-	var t := px_tex(name)
-	var sb: StyleBox
-	if t == null:
-		sb = flat(BG1, LINE, 1, plr)
-	else:
-		var st := StyleBoxTexture.new()
-		st.texture = t
-		st.texture_margin_left = mlr
-		st.texture_margin_right = mlr
-		st.texture_margin_top = mtb
-		st.texture_margin_bottom = mtb
-		st.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-		st.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-		sb = st
-	sb.content_margin_left = plr
-	sb.content_margin_right = plr
-	sb.content_margin_top = ptb
-	sb.content_margin_bottom = ptb
-	_px9[key] = sb
-	return sb
+	return UI.PixelTheme.px9(name, mlr, mtb, plr, ptb)
 
 
-## 警示黄黑条（横向平铺，高 10）
-static func hazard_strip(h := 10) -> TextureRect:
-	var tr := TextureRect.new()
-	tr.texture = px_tex("hazard")
-	tr.stretch_mode = TextureRect.STRETCH_TILE
-	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tr.custom_minimum_size = Vector2(0, h)
-	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return tr
+static func hazard_strip(h := 8) -> Control:
+	return UI.hazard_strip(h)
 
 
-## 像素图标（图集格，按 px 逻辑像素显示：16 格图标用 32 = 2 倍；8 格小图标用 16）
 static func icon_rect(tex: Texture2D, px := 32) -> TextureRect:
 	var tr := TextureRect.new()
 	tr.texture = tex
@@ -132,36 +104,103 @@ static func icon_rect(tex: Texture2D, px := 32) -> TextureRect:
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tr.custom_minimum_size = Vector2(px, px)
 	tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return tr
 
 
-## 8×8 小图标（顶栏状态、地图标记）
+## Crisp 32x32 flat anti-aliased vector small icons (status bar & map markers)
 static func small_icon(key: String) -> Texture2D:
-	var PXA = load("res://scripts/px_atlas.gd")
-	var ck := "@s_" + key
+	var ck := "@s32_" + key
 	if _pxt.has(ck):
-		return _pxt[ck]
-	var t: Texture2D = null
-	if PXA.SMALL.has(key) and px_tex("atlas8") != null:
-		var at := AtlasTexture.new()
-		at.atlas = px_tex("atlas8")
-		at.region = Rect2(int(PXA.SMALL[key]) * 8, 0, 8, 8)
-		at.filter_clip = true
-		t = at
-	_pxt[ck] = t
-	return t
+		var cached: Texture2D = _pxt[ck]
+		return cached
+	var sz := 32
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var ctr := Vector2(16.0, 16.0)
+	var icons_lib := load("res://scripts/item_icons.gd")
+	var col_y := AMBER_HI
+	var col_w := STEEL
+	var col_c := Color(0.58, 0.73, 0.78, 1.0)
+	var col_g := OK_C
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+			var dst := Color(0, 0, 0, 0)
+			match key:
+				"money":
+					var outer: float = absf((p - ctr).length() - 10.5) - 1.6
+					var inner: float = icons_lib._sd_hex(p, ctr, 5.0)
+					dst = icons_lib._blend(dst, col_y, minf(outer, inner))
+				"junk":
+					var hex_o: float = icons_lib._sd_hex(p, ctr, 10.5)
+					var r1: float = maxf(hex_o, -((p - ctr).length() - 4.0))
+					dst = icons_lib._blend(dst, col_w, r1)
+				"level":
+					var d1: float = icons_lib._sd_seg(p, Vector2(7, 21), Vector2(16, 11), 2.0)
+					var d2: float = icons_lib._sd_seg(p, Vector2(16, 11), Vector2(25, 21), 2.0)
+					var d3: float = icons_lib._sd_seg(p, Vector2(10, 26), Vector2(16, 19), 1.6)
+					var d4: float = icons_lib._sd_seg(p, Vector2(16, 19), Vector2(22, 26), 1.6)
+					dst = icons_lib._blend(dst, col_y, minf(minf(d1, d2), minf(d3, d4)))
+				"raid":
+					var ring: float = absf((p - ctr).length() - 9.0) - 1.5
+					var h1: float = icons_lib._sd_seg(p, Vector2(4, 16), Vector2(11, 16), 1.3)
+					var h2: float = icons_lib._sd_seg(p, Vector2(21, 16), Vector2(28, 16), 1.3)
+					var v1: float = icons_lib._sd_seg(p, Vector2(16, 4), Vector2(16, 11), 1.3)
+					var v2: float = icons_lib._sd_seg(p, Vector2(16, 21), Vector2(16, 28), 1.3)
+					var dot := (p - ctr).length() - 2.4
+					dst = icons_lib._blend(dst, col_w, minf(ring, minf(minf(h1, h2), minf(v1, v2))))
+					dst = icons_lib._blend(dst, col_y, dot)
+				"clock":
+					var ring: float = absf((p - ctr).length() - 10.5) - 1.6
+					var h1: float = icons_lib._sd_seg(p, ctr, Vector2(16, 9), 1.5)
+					var h2: float = icons_lib._sd_seg(p, ctr, Vector2(22, 18), 1.5)
+					dst = icons_lib._blend(dst, col_w, minf(ring, minf(h1, h2)))
+				"extract":
+					var dm := absf(p.x - 16.0) + absf(p.y - 16.0) - 10.0
+					var dm2 := absf(p.x - 16.0) + absf(p.y - 16.0) - 6.5
+					dst = icons_lib._blend(dst, col_g, maxf(dm, -dm2))
+					dst = icons_lib._blend(dst, col_g, (p - ctr).length() - 2.8)
+				"poi":
+					var dm := absf(p.x - 16.0) + absf(p.y - 16.0) - 10.0
+					dst = icons_lib._blend(dst, col_y, dm)
+				"ship":
+					var s1: float = icons_lib._sd_tri(p, Vector2(16, 5), Vector2(7, 25), Vector2(25, 25))
+					var s2: float = icons_lib._sd_tri(p, Vector2(16, 19), Vector2(11, 27), Vector2(21, 27))
+					dst = icons_lib._blend(dst, col_y, maxf(s1, -s2))
+				"lock":
+					var shackle: float = maxf(absf((p - Vector2(16, 12)).length() - 5.0) - 1.5, p.y - 15.0)
+					var body: float = icons_lib._sd_box(p, Vector2(16, 20), Vector2(7.0, 6.0))
+					dst = icons_lib._blend(dst, col_w, minf(shackle, body))
+				"quest":
+					var t1: float = icons_lib._sd_tri(p, Vector2(16, 4), Vector2(19, 16), Vector2(13, 16))
+					var t2: float = icons_lib._sd_tri(p, Vector2(16, 28), Vector2(13, 16), Vector2(19, 16))
+					var t3: float = icons_lib._sd_tri(p, Vector2(4, 16), Vector2(16, 13), Vector2(16, 19))
+					var t4: float = icons_lib._sd_tri(p, Vector2(28, 16), Vector2(16, 19), Vector2(16, 13))
+					dst = icons_lib._blend(dst, col_y, minf(minf(t1, t2), minf(t3, t4)))
+				"equip":
+					var box: float = icons_lib._sd_box(p, ctr, Vector2(9.5, 9.5))
+					var inb: float = icons_lib._sd_box(p, ctr, Vector2(6.0, 6.0))
+					dst = icons_lib._blend(dst, col_c, maxf(box, -inb))
+					dst = icons_lib._blend(dst, col_y, icons_lib._sd_box(p, ctr, Vector2(3.0, 3.0)))
+				_:
+					var hd: float = icons_lib._sd_hex(p, ctr, 9.0)
+					dst = icons_lib._blend(dst, col_y, hd)
+			img.set_pixel(x, y, dst)
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_pxt[ck] = tex
+	return tex
 
 
 # ---------------------------------------------------------------- 样式与主题
-## 平涂描边盒（像素风：直角、无抗锯齿）
 static func flat(bg: Color, border := LINE, bw := 1, pad := 8) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
 	sb.border_color = border
 	sb.set_border_width_all(bw)
-	sb.anti_aliasing = false
+	sb.anti_aliasing = true
 	sb.content_margin_left = pad
 	sb.content_margin_right = pad
 	sb.content_margin_top = maxi(2, pad - 2)
@@ -182,10 +221,10 @@ static func theme() -> Theme:
 	t.set_stylebox("hover_pressed", "Button", px9("btn9_p", 8, 8, 10, 8))
 	t.set_stylebox("disabled", "Button", px9("btn9_d", 8, 8, 10, 8))
 	t.set_color("font_color", "Button", CREAM)
-	t.set_color("font_hover_color", "Button", Color(1, 0.96, 0.86))
-	t.set_color("font_pressed_color", "Button", AMBER.lightened(0.25))
-	t.set_color("font_hover_pressed_color", "Button", AMBER.lightened(0.35))
-	t.set_color("font_disabled_color", "Button", Color(0.36, 0.36, 0.33))
+	t.set_color("font_hover_color", "Button", AMBER_HI)
+	t.set_color("font_pressed_color", "Button", AMBER)
+	t.set_color("font_hover_pressed_color", "Button", AMBER_HI)
+	t.set_color("font_disabled_color", "Button", Color(0.42, 0.44, 0.44))
 	t.set_stylebox("panel", "PanelContainer", px9("panel9", 16, 16, 12, 10))
 	t.set_stylebox("panel", "PopupMenu", px9("tip9", 6, 6, 8, 6))
 	t.set_stylebox("hover", "PopupMenu", px9("card9_on", 6, 6, 4, 2))
@@ -201,18 +240,18 @@ static func theme() -> Theme:
 	t.set_stylebox("focus", "Tree", StyleBoxEmpty.new())
 	t.set_stylebox("selected", "Tree", px9("card9_on", 6, 6, 2, 2))
 	t.set_stylebox("selected_focus", "Tree", px9("card9_on", 6, 6, 2, 2))
-	t.set_stylebox("hovered", "Tree", flat(Color(1, 1, 1, 0.05), Color(0, 0, 0, 0), 0, 2))
+	t.set_stylebox("hovered", "Tree", flat(Color(0.85, 0.88, 0.88, 0.06), Color(0, 0, 0, 0), 0, 2))
 	t.set_stylebox("cursor", "Tree", StyleBoxEmpty.new())
 	t.set_stylebox("cursor_unfocused", "Tree", StyleBoxEmpty.new())
 	t.set_color("font_color", "Tree", CREAM)
-	t.set_color("font_selected_color", "Tree", AMBER.lightened(0.3))
-	t.set_color("guide_color", "Tree", Color(1, 1, 1, 0.04))
-	t.set_color("relationship_line_color", "Tree", LINE)
+	t.set_color("font_selected_color", "Tree", AMBER_HI)
+	t.set_color("guide_color", "Tree", Color(0.8, 0.82, 0.82, 0.06))
+	t.set_color("relationship_line_color", "Tree", LINE2)
 	t.set_constant("draw_relationship_lines", "Tree", 1)
 	t.set_constant("v_separation", "Tree", 6)
 	t.set_constant("item_margin", "Tree", 14)
 	t.set_constant("inner_item_margin_left", "Tree", 4)
-	t.set_font_size("font_size", "Tree", 12)
+	t.set_font_size("font_size", "Tree", 13)
 	t.set_stylebox("panel", "ItemList", px9("inset9", 6, 6, 4, 4))
 	t.set_stylebox("selected", "ItemList", px9("card9_on", 6, 6, 2, 2))
 	t.set_stylebox("selected_focus", "ItemList", px9("card9_on", 6, 6, 2, 2))
@@ -233,6 +272,34 @@ static func frame(pad := 8) -> PanelContainer:
 	return p
 
 
+## 铆钉工业印记：做旧橙黄锁块 + 工业灰黑斜切角片与铆钉
+class HeaderStamp extends Control:
+	var compact := false
+
+	func _init(is_compact := false) -> void:
+		compact = is_compact
+		custom_minimum_size = Vector2(9, 11) if compact else Vector2(12, 14)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	func _draw() -> void:
+		var h := size.y
+		var w := size.x
+		var bw := 3.0 if compact else 4.0
+		draw_rect(Rect2(0.0, 1.0, bw, h - 2.0), AMBER)
+		var gx := bw + 2.0
+		var gw := w - gx
+		var pts := PackedVector2Array([
+			Vector2(gx, 1.0),
+			Vector2(gx + gw, 1.0),
+			Vector2(gx + gw, h - 4.0),
+			Vector2(gx + gw - 3.0, h - 1.0),
+			Vector2(gx, h - 1.0),
+		])
+		draw_colored_polygon(pts, Color(0.18, 0.20, 0.22) if not compact else Color(0.22, 0.24, 0.26))
+		draw_circle(Vector2(gx + gw * 0.5, h * 0.5), 1.1, Color(0.54, 0.57, 0.59) if not compact else Color(0.84, 0.86, 0.85))
+
+
 ## 带标题条的面板：返回 [面板, 内容 VBox, 标题条右侧 Label]
 static func tpanel(title: String, en := "", right := "", pad := 8) -> Array:
 	var p := TPanel.new()
@@ -241,26 +308,22 @@ static func tpanel(title: String, en := "", right := "", pad := 8) -> Array:
 	v.add_theme_constant_override("separation", 0)
 	p.add_child(v)
 	var head := PanelContainer.new()
-	head.add_theme_stylebox_override("panel", px9("plate9", 14, 6, 12, 4))
+	head.add_theme_stylebox_override("panel", px9("hdr_dark9", 14, 6, 12, 4))
 	v.add_child(head)
 	var hh := HBoxContainer.new()
 	hh.add_theme_constant_override("separation", 6)
 	head.add_child(hh)
-	var blk := ColorRect.new()
-	blk.color = AMBER
-	blk.custom_minimum_size = Vector2(2, 12)
-	blk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hh.add_child(blk)
+	hh.add_child(HeaderStamp.new(false))
 	var tl := UI.label(title, 12, CREAM)
 	hh.add_child(tl)
 	var el := UI.label(en.to_upper(), 12, CREAM_DIM)
-	el.visible = UI._is_en() and en != ""
+	el.visible = (not UI._is_en()) and en != "" and en.to_upper() != title.to_upper()
 	hh.add_child(el)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hh.add_child(sp)
-	var rl := UI.label(right, 12, CREAM_DIM)
+	var rl := UI.label(right, 12, Color(0.76, 0.77, 0.74))
 	hh.add_child(rl)
 	var m := MarginContainer.new()
 	m.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -285,31 +348,27 @@ static func card(on := false, pad := 8) -> PanelContainer:
 	return p
 
 
-## 小标签（等级、稀有度、状态）
+## 小标签：amber = 做旧橙黄警戒牌，false = 工业灰黑金属铭牌
 static func tag(text: String, amber := true) -> PanelContainer:
 	var p := PanelContainer.new()
-	var sb := flat(AMBER if amber else Color(0.2, 0.205, 0.185), Color(0, 0, 0, 0), 0, 4)
+	var sb := flat(AMBER if amber else Color(0.18, 0.20, 0.22, 0.98), Color(0.36, 0.39, 0.42) if not amber else AMBER_DK, 1, 5)
 	sb.content_margin_top = 0
-	sb.content_margin_bottom = 0
+	sb.content_margin_bottom = 1
 	p.add_theme_stylebox_override("panel", sb)
-	var l := UI.label(text, 12, Color(0.08, 0.05, 0.02) if amber else CREAM)
+	var l := UI.label(text, 12, INK if amber else Color(0.84, 0.85, 0.83))
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	p.add_child(l)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return p
 
 
-## 分区小标题：小琥珀方块 + 标题 + 大写英文副标 + 细线，右侧可放计数文字（返回 [行, 右侧 Label]）
+## 分区小标题：工业印记 + 标题 + 大写英文副标 + 细线，右侧可放计数文字（返回 [行, 右侧 Label]）
 static func section(title: String, en := "", right := "") -> Array:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
-	var blk := ColorRect.new()
-	blk.color = AMBER
-	blk.custom_minimum_size = Vector2(4, 4)
-	blk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(blk)
+	h.add_child(HeaderStamp.new(true))
 	h.add_child(UI.label(title, 12, CREAM))
-	if en != "" and UI._is_en():
+	if en != "" and (not UI._is_en()) and en.to_upper() != title.to_upper():
 		h.add_child(UI.label(en.to_upper(), 12, CREAM_DIM))
 	var r := Rule.new()
 	r.solid = true
@@ -399,7 +458,7 @@ static func primary(text: String, h := 32) -> Button:
 	b.add_theme_color_override("font_color", Color(0.08, 0.05, 0.02))
 	b.add_theme_color_override("font_hover_color", Color(0.05, 0.03, 0.0))
 	b.add_theme_color_override("font_pressed_color", Color(0.05, 0.03, 0.0))
-	b.add_theme_color_override("font_disabled_color", Color(0.5, 0.42, 0.28))
+	b.add_theme_color_override("font_disabled_color", Color(0.50, 0.42, 0.30))
 	return b
 
 
@@ -511,24 +570,27 @@ class Rule extends Control:
 	var solid := false
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(8, 2)
+		custom_minimum_size = Vector2(8, 4)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _draw() -> void:
 		if solid:
-			draw_rect(Rect2(0, 0, size.x, 1), Color(0.25, 0.26, 0.225))
+			draw_rect(Rect2(0, 1.5, size.x, 1.0), Color(0.28, 0.31, 0.33, 0.88))
+			draw_rect(Rect2(0, 0.0, 2.0, 4.0), Color(0.46, 0.49, 0.52, 0.88))
+			if size.x > 16.0:
+				draw_rect(Rect2(size.x - 2.0, 0.0, 2.0, 4.0), Color(0.46, 0.49, 0.52, 0.88))
 			return
 		var x := 0.0
 		while x < size.x:
-			draw_rect(Rect2(x, 0, 2, 2), color)
-			x += 4.0
+			draw_rect(Rect2(x, 1.0, 3, 1.5), color)
+			x += 6.0
 
 
 ## 等级刻度：max 个方块，前 level 个点亮
 class Pips extends Control:
 	var level := 0
 	var max_level := 5
-	var on_c := Color(0.72, 0.5, 0.09)
+	var on_c := AMBER_HI
 
 	func _init(mx := 5) -> void:
 		max_level = mx
@@ -543,14 +605,19 @@ class Pips extends Control:
 	func _draw() -> void:
 		for i in max_level:
 			var r := Rect2(i * 10, 0, 8, 8)
-			draw_rect(r, Color(0, 0, 0, 0.7))
-			draw_rect(r.grow(-2), on_c if i < level else Color(1, 1, 1, 0.12))
+			draw_rect(r, Color(0.055, 0.060, 0.066, 0.94))
+			draw_rect(r, Color(0.36, 0.39, 0.41, 0.88), false, 1.0)
+			if i < level:
+				draw_rect(r.grow(-2), on_c)
+				draw_rect(Rect2(r.position + Vector2(2, 2), Vector2(4, 1)), Color(0.95, 0.92, 0.84, 0.40))
+			else:
+				draw_rect(r.grow(-2), Color(0.32, 0.35, 0.37, 0.22))
 
 
-## 像素进度条（经验）
+## 工业机械仪表进度条
 class PixBar extends Control:
 	var frac := 0.0
-	var color := Color(0.72, 0.5, 0.09)
+	var color := AMBER
 
 	func _init(h := 8) -> void:
 		custom_minimum_size = Vector2(40, h)
@@ -562,27 +629,27 @@ class PixBar extends Control:
 		queue_redraw()
 
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.75))
-		var inner := Rect2(Vector2(2, 2), size - Vector2(4, 4))
-		draw_rect(inner, Color(1, 1, 1, 0.08))
-		var w := floorf(inner.size.x * frac / 2.0) * 2.0
-		draw_rect(Rect2(inner.position, Vector2(w, inner.size.y)), color)
-		var x := inner.position.x + 8.0
-		while x < inner.end.x:
-			draw_rect(Rect2(x, inner.position.y, 2, inner.size.y), Color(0, 0, 0, 0.35))
-			x += 10.0
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.075, 0.082, 0.088, 0.95))
+		var inner := Rect2(Vector2(1.5, 1.5), size - Vector2(3, 3))
+		draw_rect(inner, Color(0.78, 0.80, 0.81, 0.07))
+		var w: float = inner.size.x * frac
+		if w > 0.5:
+			draw_rect(Rect2(inner.position, Vector2(w, inner.size.y)), color)
+			draw_rect(Rect2(inner.position, Vector2(w, 1.2)), Color(0.92, 0.93, 0.92, 0.30))
+		for q in [0.25, 0.5, 0.75]:
+			var tx: float = inner.position.x + inner.size.x * q
+			draw_line(Vector2(tx, 1.0), Vector2(tx, size.y - 1.0), Color(0.05, 0.055, 0.06, 0.65), 1.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.42, 0.45, 0.47, 0.92), false, 1.0)
 
 
-## 像素头像框：底色 + 头像（最近邻）+ 九宫格框；state: "n" 普通 / "on" 选中 / "lead" 主角
+## 角色头像框：保持像素头像 TEXTURE_FILTER_NEAREST，外框采用废土工业灰白边框与做旧橙黄角标
 class Avatar extends Control:
 	var char_id := ""
 	var tex: Texture2D
 	var state := "n"
 	var dim := false
-	var _frames := {}
 
 	func _init(px := 48, id := "", st := "n") -> void:
-		## px 为头像内容边长（逻辑像素，40 / 96 / 128 与贴图像素格对齐）；框体额外占 6px 一圈
 		custom_minimum_size = Vector2(px + 12, px + 12)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -601,29 +668,29 @@ class Avatar extends Control:
 		state = st
 		queue_redraw()
 
-	func _frame() -> StyleBoxTexture:
-		var n := "avf9" if state == "n" else ("avf9_on" if state == "on" else "avf9_lead")
-		if not _frames.has(n):
-			var sb := StyleBoxTexture.new()
-			sb.texture = load("res://assets/ui/%s.png" % n)
-			sb.set_texture_margin_all(8)
-			sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-			sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
-			_frames[n] = sb
-		return _frames[n]
-
 	func _draw() -> void:
-		var r := Rect2(Vector2(6, 6), size - Vector2(12, 12))
+		var outer := Rect2(Vector2.ZERO, size)
+		var r := Rect2(Vector2(5, 5), size - Vector2(10, 10))
 		var tint: Color = load("res://scripts/hub_kit.gd").TINT.get(char_id, Color(0.3, 0.3, 0.32))
-		draw_rect(r, tint.darkened(0.55))
-		# 底色上的像素斜纹
+		draw_rect(outer, Color(0.085, 0.092, 0.098, 0.97))
+		draw_rect(r, tint.darkened(0.62))
 		var y := r.position.y
 		while y < r.end.y:
-			draw_rect(Rect2(r.position.x, y, r.size.x, 2), Color(tint.r, tint.g, tint.b, 0.18))
-			y += 6.0
+			draw_rect(Rect2(r.position.x, y, r.size.x, 1.0), Color(tint.r, tint.g, tint.b, 0.14))
+			y += 4.0
 		if tex:
 			draw_texture_rect(tex, r, false, Color(1, 1, 1, 0.45 if dim else 1.0))
-		draw_style_box(_frame(), Rect2(Vector2.ZERO, size))
+		var is_hi: bool = state == "on" or state == "lead"
+		var bcol: Color = AMBER if is_hi else Color(0.36, 0.39, 0.41, 0.94)
+		draw_rect(r.grow(1.0), bcol, false, 1.5 if is_hi else 1.0)
+		var arm: float = minf(10.0, size.x * 0.18)
+		var ccol: Color = AMBER_HI if state == "lead" else (AMBER if state == "on" else Color(0.48, 0.51, 0.54, 0.88))
+		var bw: float = 2.0 if is_hi else 1.4
+		for pt in [Vector2(1, 1), Vector2(size.x - 1, 1), Vector2(1, size.y - 1), Vector2(size.x - 1, size.y - 1)]:
+			var sx: float = 1.0 if pt.x < size.x * 0.5 else -1.0
+			var sy: float = 1.0 if pt.y < size.y * 0.5 else -1.0
+			draw_line(pt, pt + Vector2(arm * sx, 0), ccol, bw)
+			draw_line(pt, pt + Vector2(0, arm * sy), ccol, bw)
 
 
 # ---------------------------------------------------------------- 物品格
@@ -635,29 +702,48 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 		if state == 1:
 			ci.draw_style_box(px9("cell9_hover", 8), r)
 		return
-	var gd = Engine.get_main_loop().root.get_node("GameData")
+	var gd: Node = Engine.get_main_loop().root.get_node("GameData")
 	var id := str(e.get("id", ""))
 	var it: Dictionary = gd.item(id)
 	var rar := clampi(int(it.get("rar", 0)), 0, 3)
 	ci.draw_style_box(px9("cell9_r%d" % rar, 6), r)
+	var gsz: Vector2i = e["grid_size"] if e.has("grid_size") and e["grid_size"] is Vector2i else gd.item_grid_size(id)
+	var show_grid: bool = not bool(e.get("compact", false)) and (gsz.x > 1 or gsz.y > 1) and (r.size.x >= 72.0 or r.size.y >= 72.0)
+	if show_grid:
+		var cw_g: float = r.size.x / float(gsz.x)
+		var ch_g: float = r.size.y / float(gsz.y)
+		for gx: int in range(1, gsz.x):
+			var lx: float = r.position.x + cw_g * float(gx)
+			ci.draw_line(Vector2(lx, r.position.y + 3.0), Vector2(lx, r.end.y - 3.0), Color(1, 1, 1, 0.06), 1.0)
+		for gy: int in range(1, gsz.y):
+			var ly: float = r.position.y + ch_g * float(gy)
+			ci.draw_line(Vector2(r.position.x + 3.0, ly), Vector2(r.end.x - 3.0, ly), Color(1, 1, 1, 0.06), 1.0)
 	var tex: Texture2D = load("res://scripts/item_icons.gd").icon(id)
 	if tex:
-		var side := minf(r.size.x, r.size.y)
-		var sc := 2 if side < 72.0 else maxi(2, int(floor((side - 24.0) / 16.0)))
-		var isz := Vector2(16 * sc, 16 * sc)
-		var ip := (r.position + (r.size - isz) * 0.5).floor()
-		ip = Vector2(floorf(ip.x / 2.0) * 2.0, floorf(ip.y / 2.0) * 2.0)
+		var pad_x: float = clampf(r.size.x * 0.06, 3.0, 8.0)
+		var pad_y: float = clampf(r.size.y * 0.06, 3.0, 8.0)
+		var avail := Vector2(maxf(8.0, r.size.x - pad_x * 2.0), maxf(8.0, r.size.y - pad_y * 2.0))
+		var tw: float = maxf(1.0, float(tex.get_width()))
+		var th: float = maxf(1.0, float(tex.get_height()))
+		var sc_f: float = minf(avail.x / tw, avail.y / th)
+		var isz := Vector2(tw * sc_f, th * sc_f)
+		var ip := r.position + (r.size - isz) * 0.5
 		ci.draw_texture_rect(tex, Rect2(ip, isz), false, Color(1, 1, 1, 0.45 if e.get("dim", false) else 1.0))
+	if show_grid:
+		var sz_txt := "%d×%d" % [gsz.x, gsz.y]
+		var ta := r.position.y + 2.0 + font.get_ascent(11)
+		ci.draw_string(font, Vector2(r.position.x + 6.0, ta + 1.0), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0, 0, 0, 0.85))
+		ci.draw_string(font, Vector2(r.position.x + 5.0, ta), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0.78, 0.80, 0.81, 0.92))
 	var by := r.end.y - 3 - font.get_descent(12)
 	if e.has("price"):
 		var pt := "¥%s" % _money_text(int(e.price))
-		var pc := Color(0.74, 0.59, 0.29) if not e.get("bad", false) else Color(1.0, 0.55, 0.48)
+		var pc := AMBER_HI if not e.get("bad", false) else NG_C
 		ci.draw_string(font, Vector2(r.position.x + 4, by + 1), pt, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, Color(0, 0, 0, 0.85))
 		ci.draw_string(font, Vector2(r.position.x + 3, by), pt, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, pc)
 	elif int(e.get("count", 1)) > 1:
 		var ct := str(int(e.count))
 		ci.draw_string(font, Vector2(r.position.x + 3, by + 1), ct, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, Color(0, 0, 0, 0.85))
-		ci.draw_string(font, Vector2(r.position.x + 2, by), ct, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, Color(1, 1, 1))
+		ci.draw_string(font, Vector2(r.position.x + 2, by), ct, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 7, 12, CREAM)
 	if e.get("dim", false):
 		ci.draw_rect(r.grow(-2), Color(0, 0, 0, 0.35))
 	if e.get("bad", false):
@@ -666,9 +752,17 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 		ci.draw_style_box(px9("cell9_sel", 8), r)
 	elif state == 1:
 		ci.draw_style_box(px9("cell9_hover", 8), r)
+	if state == 1 or state == 2:
+		var ccol: Color = AMBER_HI if state == 2 else STEEL
+		var arm: float = minf(8.0, minf(r.size.x, r.size.y) * 0.24)
+		for pt in [r.position + Vector2(1, 1), Vector2(r.end.x - 1, r.position.y + 1), Vector2(r.position.x + 1, r.end.y - 1), r.end - Vector2(1, 1)]:
+			var sx: float = 1.0 if pt.x < r.get_center().x else -1.0
+			var sy: float = 1.0 if pt.y < r.get_center().y else -1.0
+			ci.draw_line(pt, pt + Vector2(arm * sx, 0), ccol, 1.6)
+			ci.draw_line(pt, pt + Vector2(0, arm * sy), ccol, 1.6)
 
 
-## 等大正方格物品网格（塔科夫式仓库）：列数随宽度自适应，空位也画出格子；
+## 物品网格（支持 1×1 与语义多格 gw × gh，按列排布，空位也画出格子）；
 ## 单击选中（item_selected）、双击（item_activated）、右键（item_context）、悬停浮窗（tip_fn）、拖放（drag_kind / accept_drop / on_drop）。
 class ItemGrid extends Control:
 	signal item_selected(index: int)
@@ -680,20 +774,25 @@ class ItemGrid extends Control:
 	var selected := -1
 	var hover := -1
 	var cols := 1
+	var fixed_cols := 0
 	var min_rows := 1
+	var cap_rows := 0
 	var tip_fn: Callable
 	var drag_kind := ""
 	var accept_drop: Callable
 	var on_drop: Callable
 	var empty_text := ""
 	var _ox := 0.0
+	var _rects: Array = []
+	var _cell_map := PackedInt32Array()
+	var _rows_used := 0
 
 	func _init(cell_px := 48) -> void:
 		cell = cell_px
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		custom_minimum_size = Vector2(cell, cell)
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	func set_entries(arr: Array) -> void:
 		entries = arr
@@ -721,16 +820,35 @@ class ItemGrid extends Control:
 			hover = -1
 			queue_redraw()
 
+	func _entry_size(e: Dictionary) -> Vector2i:
+		if e.has("grid_size") and e["grid_size"] is Vector2i:
+			return e["grid_size"]
+		var loop := Engine.get_main_loop()
+		var gd: Node = loop.root.get_node_or_null("GameData") if loop != null else null
+		return gd.item_grid_size(str(e.get("id", ""))) if gd != null else Vector2i(1, 1)
+
 	func _relayout() -> void:
-		var c := maxi(1, int(floor(size.x / cell)))
-		if size.x < 1.0:
-			c = maxi(1, int(floor(custom_minimum_size.x / cell)))
-		cols = c
-		_ox = floor((size.x - cols * cell) * 0.5) if size.x > 0 else 0.0
-		var rows := maxi(min_rows, int(ceil(float(entries.size()) / cols)))
-		var h := float(rows * cell)
-		if absf(custom_minimum_size.y - h) > 0.5:
-			custom_minimum_size.y = h
+		if fixed_cols > 0:
+			cols = fixed_cols
+		else:
+			var c := maxi(1, int(floor(size.x / cell)))
+			if size.x < 1.0:
+				c = maxi(1, int(floor(custom_minimum_size.x / cell)))
+			cols = c
+		_ox = maxf(0.0, floorf((size.x - float(cols * cell)) * 0.5)) if size.x > 0.0 else 0.0
+		var sizes: Array = []
+		for e_v in entries:
+			var e: Dictionary = e_v
+			sizes.append(_entry_size(e))
+		var pk: Dictionary = GridPack.pack(sizes, cols, 0)
+		_rects = pk.get("placements", [])
+		_rows_used = int(pk.get("rows_used", 0))
+		_cell_map = pk.get("cell_to_idx", PackedInt32Array())
+		var rows: int = maxi(min_rows, maxi(cap_rows, _rows_used))
+		var h: float = float(rows * cell)
+		var min_w: float = float(fixed_cols * cell) if fixed_cols > 0 else custom_minimum_size.x
+		if absf(custom_minimum_size.y - h) > 0.5 or absf(custom_minimum_size.x - min_w) > 0.5:
+			custom_minimum_size = Vector2(min_w, h)
 		queue_redraw()
 
 	func index_at(p: Vector2) -> int:
@@ -738,27 +856,46 @@ class ItemGrid extends Control:
 		var r := int(floor(p.y / cell))
 		if c < 0 or c >= cols or r < 0:
 			return -1
-		var i := r * cols + c
-		return i if i < entries.size() else -1
+		var idx_pos: int = r * cols + c
+		if idx_pos < 0 or idx_pos >= _cell_map.size():
+			return -1
+		return int(_cell_map[idx_pos])
 
 	func _cell_rect(i: int) -> Rect2:
-		return Rect2(_ox + (i % cols) * cell, floor(i / cols) * cell, cell, cell)
+		if i >= 0 and i < _rects.size():
+			var rc: Rect2i = _rects[i]
+			if rc.position.x >= 0:
+				return Rect2(_ox + float(rc.position.x * cell), float(rc.position.y * cell), float(rc.size.x * cell), float(rc.size.y * cell))
+		return Rect2(_ox + float((i % cols) * cell), float(int(i / cols) * cell), float(cell), float(cell))
 
 	func _draw() -> void:
 		var font := get_theme_default_font()
-		var rows := maxi(int(ceil(size.y / cell)), int(ceil(float(entries.size()) / cols)))
-		var total := rows * cols
-		# 网格外框（凹槽内衬）
-		draw_rect(Rect2(_ox, 0, cols * cell, rows * cell), Color(0.02, 0.022, 0.02, 0.9))
-		for i in total:
-			var e: Dictionary = entries[i] if i < entries.size() else {}
-			var st := 2 if i == selected else (1 if i == hover else 0)
-			var r := _cell_rect(i)
-			r = Rect2(r.position + Vector2(1, 1), r.size - Vector2(1, 1)) if not e.is_empty() else r
-			load("res://scripts/hub_kit.gd").draw_cell(self, r, e, font, st)
-		draw_rect(Rect2(_ox, 0, cols * cell, rows * cell), Color(0.03, 0.03, 0.035), false, 1.0)
+		var rows: int = maxi(min_rows, maxi(cap_rows, _rows_used))
+		if cap_rows <= 0:
+			rows = maxi(rows, int(ceil(size.y / float(cell))))
+		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), Color(0.06, 0.065, 0.07, 0.92))
+		var empty_e: Dictionary = {}
+		for gy: int in rows:
+			for gx: int in cols:
+				var idx_pos: int = gy * cols + gx
+				var occ_idx: int = int(_cell_map[idx_pos]) if idx_pos >= 0 and idx_pos < _cell_map.size() else -1
+				if occ_idx < 0:
+					var cr := Rect2(_ox + float(gx * cell), float(gy * cell), float(cell), float(cell))
+					load("res://scripts/hub_kit.gd").draw_cell(self, cr, empty_e, font, 0)
+		for i: int in entries.size():
+			if i >= _rects.size():
+				continue
+			var rc: Rect2i = _rects[i]
+			if rc.position.x < 0:
+				continue
+			var r := Rect2(_ox + float(rc.position.x * cell) + 1.0, float(rc.position.y * cell) + 1.0, float(rc.size.x * cell) - 1.0, float(rc.size.y * cell) - 1.0)
+			var st: int = 2 if i == selected else (1 if i == hover else 0)
+			load("res://scripts/hub_kit.gd").draw_cell(self, r, entries[i], font, st)
+			if cap_rows > 0 and rc.position.y + rc.size.y > cap_rows:
+				draw_rect(r.grow(-2), Color(0.85, 0.15, 0.15, 0.25))
+		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), LINE, false, 1.0)
 		if entries.is_empty() and empty_text != "":
-			draw_string(font, Vector2(_ox + 8, cell * 0.5 + 4), empty_text, HORIZONTAL_ALIGNMENT_LEFT, cols * cell - 16, 12, Color(0.55, 0.54, 0.47))
+			draw_string(font, Vector2(_ox + 8, cell * 0.5 + 4), empty_text, HORIZONTAL_ALIGNMENT_LEFT, float(cols * cell - 16), 12, CREAM_DIM)
 
 	func _gui_input(ev: InputEvent) -> void:
 		if ev is InputEventMouseMotion:
@@ -803,12 +940,15 @@ class ItemGrid extends Control:
 		if i < 0:
 			return null
 		var e: Dictionary = entries[i]
+		var gsz: Vector2i = _entry_size(e)
 		var pv := TextureRect.new()
 		pv.texture = load("res://scripts/item_icons.gd").icon(str(e.id))
-		pv.custom_minimum_size = Vector2(32, 32)
-		pv.size = Vector2(32, 32)
+		var psz := Vector2(clampf(28.0 * float(gsz.x), 32.0, 120.0), clampf(28.0 * float(gsz.y), 32.0, 96.0))
+		pv.custom_minimum_size = psz
+		pv.size = psz
 		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		set_drag_preview(pv)
 		return {"kind": drag_kind, "id": str(e.id), "index": i}
 
@@ -829,9 +969,13 @@ class IconCell extends Control:
 	func _init(px := 48) -> void:
 		custom_minimum_size = Vector2(px, px)
 		mouse_filter = Control.MOUSE_FILTER_PASS
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+
+	func set_box_size(sz: Vector2) -> void:
+		custom_minimum_size = sz
+		queue_redraw()
 
 	func set_entry(e: Dictionary) -> void:
 		entry = e
@@ -842,7 +986,9 @@ class IconCell extends Control:
 		if entry.is_empty():
 			draw_style_box(load("res://scripts/hub_kit.gd").px9("slot9_empty", 6), r)
 			return
-		load("res://scripts/hub_kit.gd").draw_cell(self, r, entry, get_theme_default_font(), 2 if hl else 0)
+		var ce: Dictionary = entry.duplicate()
+		ce["compact"] = true
+		load("res://scripts/hub_kit.gd").draw_cell(self, r, ce, get_theme_default_font(), 2 if hl else 0)
 
 	func _get_tooltip(_at: Vector2) -> String:
 		return "1" if tip_fn.is_valid() and not entry.is_empty() else ""
@@ -865,7 +1011,7 @@ class DeployButton extends Button:
 		focus_mode = Control.FOCUS_NONE
 		custom_minimum_size = Vector2(112, 112)
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 			add_theme_stylebox_override(st, StyleBoxEmpty.new())
 		var v := VBoxContainer.new()
@@ -877,13 +1023,13 @@ class DeployButton extends Button:
 		var K = load("res://scripts/hub_kit.gd")
 		var tex: Texture2D = load("res://scripts/item_icons.gd").ui_icon(icon_key) if icon_key != "" else null
 		if tex:
-			icon_rect = K.icon_rect(tex, 40)
+			icon_rect = K.icon_rect(tex, 42)
 			icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			v.add_child(icon_rect)
 		var is_e: bool = UI._is_en()
 		cn_lbl = Label.new()
 		cn_lbl.text = en_text if (is_e and en_text != "") else cn
-		cn_lbl.add_theme_font_size_override("font_size", 12)
+		cn_lbl.add_theme_font_size_override("font_size", 14)
 		cn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		v.add_child(cn_lbl)
@@ -920,43 +1066,65 @@ class DeployButton extends Button:
 			draw_rect(Rect2(c.x - w, c.y + y, w * 2.0, 2.0), col)
 			y += 2.0
 
-	## 像素虚线圆环：沿圆周交替画短弧，段长与间隔各占一份
 	func _dashed_ring(c: Vector2, r: float, col: Color) -> void:
-		var n := 48
+		var n := 36
 		for i in range(0, n, 2):
-			draw_arc(c, r - 1.0, TAU * i / n, TAU * (i + 1) / n, 3, col, 2.0, false)
+			draw_arc(c, r - 1.0, TAU * i / n, TAU * (i + 1) / n, 4, col, 2.0, true)
 
 	func _draw() -> void:
 		var c := size * 0.5
-		var r: float = minf(size.x, size.y) * 0.5 - 2.0
+		var r: float = minf(size.x, size.y) * 0.5 - 3.0
 		var on := button_pressed
-		var fill: Color = BG2
+		# 1. 重型工业灰黑机加工外法兰盘 + 8 颗沉头铆钉
+		var bezel := PackedVector2Array()
+		var n_oct := 16
+		for i in n_oct:
+			var ang := TAU * float(i) / float(n_oct) + PI / 16.0
+			bezel.append(c + Vector2(cos(ang), sin(ang)) * r)
+		var bezel_col := Color(0.20, 0.22, 0.24, 0.98) if not (_hot or on) else Color(0.28, 0.30, 0.33, 0.99)
+		draw_colored_polygon(bezel, bezel_col)
+		bezel.append(bezel[0])
+		draw_polyline(bezel, Color(0.08, 0.09, 0.10, 0.96), 2.0, true)
+		# 2. 中环：做旧橙黄/炭黑径向警示刻度环
+		var mid_r := r - 4.5
+		draw_circle(c, mid_r, Color(0.09, 0.10, 0.11, 0.98))
+		var segs := 24
+		for i in segs:
+			var a0 := TAU * float(i) / float(segs)
+			var a1 := TAU * float(i + 0.58) / float(segs)
+			var wc := AMBER_HI if (on or _hot) else AMBER
+			if i % 3 == 0:
+				wc = wc.darkened(0.14)
+			draw_arc(c, mid_r - 2.6, a0, a1, 4, wc, 4.0, true)
+		# 3. 中心机械舱门内盘
+		var core_r := r - 10.5
+		var fill: Color = Color(0.095, 0.102, 0.110, 0.98)
 		if button_down:
-			fill = BG0
+			fill = Color(0.10, 0.105, 0.11, 0.98)
 		elif _hot:
-			fill = BG3
-		# 外圈：选中实线琥珀，常态与悬停为橙黄虚线
-		if on:
-			_disc(c, r, AMBER)
-			_disc(c, r - 2.0, fill)
-			_disc(c, r - 5.0, AMBER_DK)
-			_disc(c, r - 7.0, fill)
-		else:
-			_disc(c, r, LINE2 if _hot else LINE)
-			_disc(c, r - 2.0, fill)
-			_dashed_ring(c, r, AMBER.lightened(0.2) if _hot else AMBER)
-		# 四个方向的短齿，像素感与页签描边呼应
+			fill = Color(0.24, 0.18, 0.11, 0.98)
+		elif on:
+			fill = Color(0.26, 0.19, 0.105, 0.98)
+		draw_circle(c, core_r, fill)
+		draw_arc(c, core_r, 0, TAU, 48, AMBER_HI if (on or _hot) else STEEL, 2.0, true)
+		draw_arc(c, core_r - 3.5, PI * 0.15, PI * 0.85, 16, Color(STEEL.r, STEEL.g, STEEL.b, 0.25), 1.0, true)
+		draw_arc(c, core_r - 3.5, -PI * 0.85, -PI * 0.15, 16, Color(STEEL.r, STEEL.g, STEEL.b, 0.40), 1.0, true)
+		# 4. 法兰盘四向锁定槽口与 8 颗铆钉
+		for k in 8:
+			var a := TAU * float(k) / 8.0 + PI / 8.0
+			var rp := c + Vector2(cos(a), sin(a)) * (r - 2.4)
+			draw_circle(rp, 2.0, Color(0.08, 0.09, 0.10, 0.96))
+			draw_circle(rp, 1.1, Color(0.52, 0.55, 0.58, 0.92))
 		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
 			var d := Vector2(cos(a), sin(a))
-			var t := c + d * (r - 1.0)
-			draw_rect(Rect2(t.x - 3, t.y - 3, 6, 6), Color(0.04, 0.04, 0.05))
+			draw_line(c + d * (core_r - 2.0), c + d * (r + 1.5), AMBER_HI if (on or _hot) else STEEL, 3.0, true)
 
 	func _tint() -> void:
 		var on := button_pressed
-		cn_lbl.add_theme_color_override("font_color", AMBER if on else CREAM)
-		en_lbl.add_theme_color_override("font_color", AMBER_DK if on else CREAM_DIM)
+		cn_lbl.add_theme_color_override("font_color", AMBER_HI if on else CREAM)
+		en_lbl.add_theme_color_override("font_color", AMBER if on else CREAM_DIM)
 		if icon_rect:
-			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.8, 0.8, 0.76)
+			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.88, 0.90, 0.89)
 		queue_redraw()
 
 
@@ -972,7 +1140,7 @@ class NavButton extends Button:
 		toggle_mode = true
 		focus_mode = Control.FOCUS_NONE
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		_styles(false)
 		button_down.connect(func(): _styles(true))
 		button_up.connect(func(): _styles(false))
@@ -995,14 +1163,14 @@ class NavButton extends Button:
 		var is_e: bool = UI._is_en()
 		cn_lbl = Label.new()
 		cn_lbl.text = en_text if (is_e and en_text != "") else cn
-		cn_lbl.add_theme_font_size_override("font_size", 12)
+		cn_lbl.add_theme_font_size_override("font_size", 14)
 		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cn_lbl.name = "CN"
 		v.add_child(cn_lbl)
 		en_lbl = Label.new()
 		en_lbl.text = en_text
 		en_lbl.visible = false
-		en_lbl.add_theme_font_size_override("font_size", 12)
+		en_lbl.add_theme_font_size_override("font_size", 11)
 		en_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		en_lbl.name = "EN"
 		v.add_child(en_lbl)
@@ -1018,7 +1186,7 @@ class NavButton extends Button:
 
 	func _tint() -> void:
 		var on := button_pressed
-		cn_lbl.add_theme_color_override("font_color", Color(0.74, 0.58, 0.28) if on else Color(0.86, 0.84, 0.75))
-		en_lbl.add_theme_color_override("font_color", Color(0.75, 0.55, 0.2) if on else Color(0.45, 0.44, 0.39))
+		cn_lbl.add_theme_color_override("font_color", AMBER_HI if on else CREAM)
+		en_lbl.add_theme_color_override("font_color", AMBER if on else CREAM_DIM)
 		if icon_rect:
-			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.78, 0.78, 0.74)
+			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.86, 0.88, 0.88)

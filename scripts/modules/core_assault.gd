@@ -63,7 +63,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	for sy in [-1.0, 1.0]:
 		K.bb(root, Vector3(0.96, 0.06, 0.08), M_DARK, Vector3(0, 0.55 + sy * 0.39, 0.66), Vector3.ZERO, 0.01)
 	for sx in [-1.0, 1.0]:
-		K.bb(root, Vector3(0.06, 0.84, 0.08), M_DARK, Vector3(sx * 0.46, 0.55, 0.66), Vector3.ZERO, 0.01)
+		K.bb(root, Vector3(0.06, 0.72, 0.08), M_DARK, Vector3(sx * 0.46, 0.55, 0.66), Vector3.ZERO, 0.01)
 	K.cy(root, 0.012, 0.9, M_DARK, Vector3(-0.55, 1.5, 0.55))
 	if lights:
 		var spot := SpotLight3D.new()

@@ -104,7 +104,7 @@ static func build(root: Node3D) -> Dictionary:
 	for sx in [-1.0, 1.0]:
 		A.add(sh, A.cyl(0.07, 0.2, 0.07, 14), DARK, Vector3(sx * (W * 0.5 + 0.32), 0.0, 0.0), Vector3(0, 0, 90))
 		A.add(sh, A.cyl(0.045, 0.22, 0.045, 12), A.chrome(), Vector3(sx * (W * 0.5 + 0.32), 0.0, 0.0), Vector3(0, 0, 90))
-	A.stencil(sh, "ARMOR SHUTTER  ·  遮蔽装甲  3-A", Vector3(-W * 0.25, 0.05, 0.172), Vector3.ZERO, 0.0035, Color(0.9, 0.86, 0.75, 0.7))
+	A.stencil(sh, "ARMOR SHUTTER  ·  遮蔽装甲  3-A", Vector3(-W * 0.25, 0.05, 0.192), Vector3.ZERO, 0.0035, Color(0.9, 0.86, 0.75, 0.7))
 	# 窗墙其余部分：左右与上方墙板（分格 + 铆钉 + 通风格栅）
 	var wall_l := -3.2
 	var wall_r := 4.8

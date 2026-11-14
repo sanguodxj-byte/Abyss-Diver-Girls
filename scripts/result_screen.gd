@@ -27,7 +27,7 @@ func setup(r: Dictionary) -> void:
 	var skills: Array = r.get("skill_summary", []) if typeof(r.get("skill_summary")) == TYPE_ARRAY else []
 
 	var dim := ColorRect.new()
-	dim.color = Color(0.015, 0.018, 0.025, 0.84)
+	dim.color = Color(0.022, 0.022, 0.024, 0.86)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)

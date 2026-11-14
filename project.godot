@@ -33,14 +33,14 @@ pointing/emulate_mouse_from_touch=true
 
 timers/tooltip_delay_sec=0.05
 
-theme/custom_font="res://assets/fonts/fusion-pixel-12px-zh_hans.ttf"
+theme/custom_font="res://assets/fonts/hd2_ui_sc.ttf"
 
 [physics]
 
 3d/physics_engine="Jolt Physics"
 
 [rendering]
-textures/canvas_textures/default_texture_filter=0
+textures/canvas_textures/default_texture_filter=2
 anti_aliasing/quality/msaa_3d=2
 anti_aliasing/quality/screen_space_aa=0
 anti_aliasing/screen_space_roughness_limiter/enabled=true

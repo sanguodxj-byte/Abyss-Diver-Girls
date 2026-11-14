@@ -47,7 +47,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.canopy(raid, c + Vector3(0, 0, -1.8), Vector2(10.0, 5.0), 4.0, 0.0, Color(0.4, 0.4, 0.37))
 	A.add(raid.world, A.bevel_box(Vector3(10.4, 0.3, 5.4), 0.05), A.paint(Color(0.34, 0.34, 0.31), 0.5, 0.6, {"wear": 0.5, "rust": 0.6, "panel_scale": 1.4}), c + Vector3(0, 4.16, -1.8), Vector3.ZERO, Vector3.ONE, false)
 	for sz in [-1.0, 1.0]:
-		A.add(raid.world, A.bevel_box(Vector3(10.4, 0.34, 0.36), 0.02), A.hazard(), c + Vector3(0, 4.18, -1.8 + sz * 2.52), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.bevel_box(Vector3(10.46, 0.34, 0.36), 0.02), A.hazard(), c + Vector3(0, 4.18, -1.8 + sz * 2.52), Vector3.ZERO, Vector3.ONE, false)
 	# 沙袋工事与阶梯式泽西防撞隔离墩（带钢吊耳，零 MeshInstance3D 子节点）
 	for p in [Vector3(-9.2, 0, 4.2), Vector3(8.8, 0, 3.6)]:
 		_sandbags(raid, c + p, r.randf_range(-18, 18))

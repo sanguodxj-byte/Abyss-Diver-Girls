@@ -33,20 +33,20 @@ func _draw() -> void:
 		if p.length() < r - 4:
 			var q := c + p
 			var pts := PackedVector2Array([q + Vector2(0, -5.5), q + Vector2(5.5, 0), q + Vector2(0, 5.5), q + Vector2(-5.5, 0)])
-			draw_colored_polygon(pts, Color(1.0, 0.45, 0.1, 0.95))
+			draw_colored_polygon(pts, Color(0.84, 0.44, 0.18, 0.95))
 			pts.append(pts[0])
-			draw_polyline(pts, Color(1, 1, 1, 0.9), 1.0)
+			draw_polyline(pts, Color(0.86, 0.88, 0.88, 0.9), 1.0)
 	for n in get_tree().get_nodes_in_group("allies") + get_tree().get_nodes_in_group("coop_players"):
 		if n == raid.mech or n.dead or n.net_done: continue
 		var p := Vector2(n.global_position.x - mp.x, n.global_position.z - mp.z) / rng_m * r
 		if p.length() < r - 4:
 			var q := c + p
-			draw_colored_polygon(PackedVector2Array([q + Vector2(0, -5), q + Vector2(4.5, 4), q + Vector2(-4.5, 4)]), Color(0.35, 0.9, 1.0, 0.95))
+			draw_colored_polygon(PackedVector2Array([q + Vector2(0, -5), q + Vector2(4.5, 4), q + Vector2(-4.5, 4)]), Color(0.58, 0.78, 0.84, 0.95))
 	if raid.world_link:
 		for g in raid.world_link.gate_list():
 			var gp: Vector3 = g.center
 			var p := Vector2(gp.x - mp.x, gp.z - mp.z) / rng_m * r
-			var col := Color(0.35, 0.85, 1.0, 0.95) if g.open else Color(0.6, 0.6, 0.65, 0.6)
+			var col := Color(0.58, 0.78, 0.84, 0.95) if g.open else Color(0.58, 0.61, 0.62, 0.6)
 			if p.length() > r - 7:
 				p = p.normalized() * (r - 7)
 			var q := c + p

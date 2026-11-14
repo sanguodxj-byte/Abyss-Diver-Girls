@@ -104,7 +104,7 @@ static func _broken_bridge(raid, p: Vector3, rot: float) -> void:
 		for gz in [-2.8, 2.8]:
 			A.add(deck, A.bevel_box(Vector3(11.2, 0.58, 0.46), 0.03), M_GIRDER, Vector3(0, -0.62, gz))
 		for pz in [-4.35, 4.35]:
-			A.add(deck, A.bevel_box(Vector3(11.0, 0.66, 0.32), 0.04), A.concrete(Color(0.5, 0.49, 0.45), false), Vector3(0, 0.64, pz))
+			A.add(deck, A.bevel_box(Vector3(10.94, 0.66, 0.32), 0.04), A.concrete(Color(0.5, 0.49, 0.45), false), Vector3(0, 0.64, pz))
 			A.add(deck, A.bevel_box(Vector3(10.8, 0.07, 0.09), 0.01), A.metal(STEEL), Vector3(0, 1.08, pz), Vector3.ZERO, Vector3.ONE, false)
 		# T型盖梁桥墩与承台
 		A.add(n, A.bevel_box(Vector3(3.6, 0.65, 4.2), 0.08), M_DARK, Vector3(sgn * 8.0, 0.32, 0))
@@ -186,11 +186,11 @@ static func _elevated_road(raid, p: Vector3, rot: float) -> void:
 		for ld in 3:
 			A.add(span, A.bevel_box(Vector3(2.0, 0.02, 0.16), 0.004), A.paint(Color(0.68, 0.65, 0.54), 0.0, 0.9, {"wear": 0.8}), Vector3(-3.8 + ld * 3.8, 0.48, 0), Vector3.ZERO, Vector3.ONE, false)
 		for gz in [-3.1, 3.1]:
-			A.add(span, A.bevel_box(Vector3(w_sp, 0.62, 0.48), 0.03), M_GIRDER, Vector3(0, -0.68, gz))
+			A.add(span, A.bevel_box(Vector3(w_sp - 0.08, 0.62, 0.48), 0.03), M_GIRDER, Vector3(0, -0.68, gz))
 		for pz in [-4.8, 4.8]:
 			if i == 2 and pz < 0.0:
 				continue
-			A.add(span, A.bevel_box(Vector3(w_sp, 0.72, 0.34), 0.04), A.concrete(Color(0.48, 0.47, 0.43), false), Vector3(0, 0.70, pz))
+			A.add(span, A.bevel_box(Vector3(w_sp - 0.06, 0.72, 0.34), 0.04), A.concrete(Color(0.48, 0.47, 0.43), false), Vector3(0, 0.70, pz))
 		A.add(n, A.bevel_box(Vector3(2.8, 0.55, 3.2), 0.06), M_DARK, Vector3(x, 0.28, 0))
 		A.add(n, A.bevel_box(Vector3(2.0, 5.8, 2.4), 0.1), A.concrete(Color(0.4, 0.39, 0.36), false), Vector3(x, 3.15, 0))
 		A.add(n, A.bevel_box(Vector3(2.5, 0.95, 9.2), 0.08), M_DARK, Vector3(x, 6.35, 0))
@@ -447,7 +447,7 @@ static func _observation_tower(raid, p: Vector3, rot: float) -> void:
 	A.add(n, A.torus(4.36, 4.46, 42), M, Vector3(0, 12.88, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
 	# 圆形瞭望室 + 环形观察窗 + 锥形飞檐顶盖
 	A.add(n, A.cyl(1.65, 1.5, 1.75, 36), A.paint(Color(0.5, 0.48, 0.42), 0.3, 0.6, {"wear": 0.5, "dust": 0.5}), Vector3(0, 13.1, 0))
-	A.add(n, A.cyl(1.68, 0.68, 1.68, 36), A.glass(Color(0.32, 0.5, 0.56)), Vector3(0, 13.45, 0))
+	A.add(n, A.cyl(1.74, 0.68, 1.74, 36), A.glass(Color(0.32, 0.5, 0.56)), Vector3(0, 13.45, 0))
 	A.add(n, A.cyl(0.45, 0.65, 2.05, 36), M, Vector3(0, 14.15, 0))
 	A.add(n, A.cyl(0.08, 5.0, 0.05, 14), M, Vector3(0, 16.8, 0))
 	K.steps(raid, p + Vector3(0.8, 0, 1.8).rotated(Vector3.UP, deg_to_rad(rot)), 26, 0.44, 0.3, 1.2, rot + 180.0)
@@ -632,8 +632,8 @@ static func _coolant_channel(raid, p: Vector3, rot: float) -> void:
 			A.add(n, A.bevel_box(Vector3(0.8, 2.4, lz), 0.08), M, Vector3(sx, 1.2, cz))
 			K.blocker(raid, wp, Vector3(0.8, 2.4, lz), rot)
 			raid.blocks.append(raid._rect_for(wp, Vector3(0.9, 1, lz)))
-	A.add(n, A.bevel_box(Vector3(6.4, 0.3, 60.0), 0.05), A.concrete(Color(0.28, 0.27, 0.25), false), Vector3(0, 0.15, 0))
-	A.add(n, A.bevel_box(Vector3(7.6, 0.24, 18.0), 0.05), A.concrete(Color(0.32, 0.31, 0.29), false), Vector3(0, 0.12, 9.0))
+	A.add(n, A.bevel_box(Vector3(6.0, 0.26, 59.8), 0.05), A.concrete(Color(0.28, 0.27, 0.25), false), Vector3(0, 0.14, 0))
+	A.add(n, A.bevel_box(Vector3(7.4, 0.22, 17.8), 0.05), A.concrete(Color(0.32, 0.31, 0.29), false), Vector3(0, 0.19, 9.0))
 	for i in 6:
 		var zc := -26.0 + i * 10.0
 		var rx: float = raid.rng.randf_range(-1.2, 1.2)

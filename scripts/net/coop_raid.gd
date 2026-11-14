@@ -69,13 +69,16 @@ func setup(r, config: Dictionary) -> void:
 			m.setup(saved.get("loadout", profile.loadout), saved.get("cargo", profile.cargo))
 			units[id] = m
 		var m = units[id]
-		m.position = _spawn_position(drop, ids.find(id))
+		var slot_idx := ids.find(id)
+		m.position = _spawn_position(drop, slot_idx)
 		m.net_peer = id
 		m.add_to_group("coop_players")
+		var ring_col: Color = m.PLAYER_RING_COLORS[slot_idx % m.PLAYER_RING_COLORS.size()]
+		m.set_player_ring_color(ring_col)
 		m.died.connect(func(reason): finish_player(id, false, reason))
 		m.message.connect(func(t): Net.tell(id, t) if Net.is_host() else null)
 		contexts[id] = {"box": null, "progress": 0.0, "target": null, "status": "行动中", "result": {}, "start": profile.cargo.duplicate()}
-		_label_player(m, str(profile.name), id)
+		_label_player(m, str(profile.name), id, ring_col)
 		if not saved.is_empty():
 			_apply_player(m, saved, true)
 			contexts[id].start = saved.get("start", contexts[id].start)
@@ -141,7 +144,7 @@ func _notice(t: String) -> void:
 	if is_instance_valid(raid) and is_instance_valid(raid.hud):
 		raid.hud.msg(t)
 
-func _label_player(m, nickname: String, id: int) -> void:
+func _label_player(m, nickname: String, id: int, ring_col := Color(0.28, 0.88, 1.0)) -> void:
 	var label := Label3D.new()
 	label.text = ("★ " if id == 1 else "") + nickname
 	label.position.y = 5.6
@@ -149,7 +152,7 @@ func _label_player(m, nickname: String, id: int) -> void:
 	label.no_depth_test = true
 	label.font_size = 32
 	label.pixel_size = 0.016
-	label.modulate = Color(0.4, 0.85, 1.0)
+	label.modulate = ring_col.lightened(0.22)
 	m.add_child(label)
 
 func release() -> void:
@@ -197,7 +200,7 @@ func _client_input(delta: float) -> void:
 	var fire := 0
 	if not blocked and not raid.hud.map_open() and not raid.hud.is_touch_busy():
 		if Input.is_action_pressed("fire_left") or m.joy_aim.length() >= 0.28: fire |= 1
-		if Input.is_action_pressed("fire_right") or m.joy_aim.length() >= 0.28: fire |= 2
+		if Input.is_action_pressed("fire_right"): fire |= 2
 	_input_t -= delta
 	if _input_t <= 0:
 		_input_t = 1.0 / 30.0
@@ -550,10 +553,15 @@ func apply_entities(created: Array, removed: Array) -> void:
 				raid.open_box = null
 				raid.hud.close_loot()
 				raid.mech.input_locked = raid.mech.net_done
-			if n.is_in_group("bugs") and is_instance_valid(n.visual):
-				raid.explode_fx(n.position, 1.0, Color(0.4, 0.5, 0.1))
-			n.get_parent().remove_child(n)
-			n.queue_free()
+			if n.is_in_group("bugs"):
+				if is_instance_valid(n.visual):
+					raid.explode_fx(n.position, 1.0, Color(0.4, 0.5, 0.1))
+				n._die()
+			elif n.is_in_group("npc_mechs"):
+				n.die("destroyed")
+			else:
+				n.get_parent().remove_child(n)
+				n.queue_free()
 		entities.erase(id)
 		_entity_state.erase(id)
 	for d in created:
@@ -702,6 +710,8 @@ func _interpolate(delta: float) -> void:
 				n.set_physics_process(false)
 				n.vis_anchor.visible = true
 				n._vis_sync()
+				n.flash_t = maxf(0.0, n.flash_t - delta)
+				n._update_flash()
 				if not n.dying: n._animate(delta, n.move_amt)
 
 func _pose_mech(m, d: Dictionary, delta: float) -> void:

@@ -656,61 +656,225 @@ static func soft_dot() -> Texture2D:
 	return t
 
 
-## 烟雾团
+## 体积感卷云烟团（256px 域扭曲 FBM + 内置明暗自阴影，彻底告别圆形棉球）
 static func smoke_tex() -> Texture2D:
 	if _tex_cache.has("smoke"):
 		return _tex_cache["smoke"]
-	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
-	var n := FastNoiseLite.new()
-	n.frequency = 0.08
-	for y in 64:
-		for x in 64:
-			var d := Vector2(x - 32, y - 32).length() / 32.0
-			var a: float = clamp(1.0 - d, 0.0, 1.0)
-			a = a * a * (0.6 + 0.4 * n.get_noise_2d(x, y))
-			img.set_pixel(x, y, Color(1, 1, 1, clamp(a, 0.0, 1.0)))
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var nz := FastNoiseLite.new()
+	nz.seed = 19
+	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nz.frequency = 0.024
+	nz.fractal_octaves = 4
+	nz.fractal_gain = 0.52
+	var nw := FastNoiseLite.new()
+	nw.seed = 53
+	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nw.frequency = 0.016
+	nw.fractal_octaves = 3
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
+			var wx := nw.get_noise_2d(float(x), float(y)) * 18.0
+			var wy := nw.get_noise_2d(float(x) + 113.0, float(y) + 71.0) * 18.0
+			var n0 := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
+			var n1 := nz.get_noise_2d(float(x) * 2.1 - wy * 0.6, float(y) * 2.1 + wx * 0.6) * 0.5 + 0.5
+			var d := p.length()
+			# 外廓被噪声侵蚀出凹凸云瓣，绝非几何正圆
+			var edge_w := d + (0.5 - n0) * 0.34 + (0.5 - n1) * 0.14
+			var mask := smoothstep(0.96, 0.30, edge_w)
+			var core := smoothstep(0.84, 0.18, edge_w)
+			var wisp := clampf(mask * (0.48 + 0.68 * n0 + 0.20 * n1), 0.0, 1.0)
+			var a := clampf(mix_f(wisp, core * 0.94, 0.45), 0.0, 1.0)
+			# 轻微斜上方受光 + 下缘冷暗自阴影，增强立体烟团体积感
+			var upper_lit := clampf(0.5 - p.y * 0.42 - p.x * 0.18 + (n0 - 0.5) * 0.36, 0.0, 1.0)
+			var shade := clampf(0.68 + upper_lit * 0.32 + n1 * 0.06, 0.64, 1.02)
+			img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 0.97, a))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
 	_tex_cache["smoke"] = t
 	return t
 
 
-## 地面光圈/阴影斑
+static func mix_f(a: float, b: float, t: float) -> float:
+	return a + (b - a) * t
+
+
+## 风切颗粒扬尘贴图（256px 破碎絮状沙尘，适合脚步、冲刺尾流、落点尘环与着弹扬土）
+static func dust_tex() -> Texture2D:
+	if _tex_cache.has("dust_vfx"):
+		return _tex_cache["dust_vfx"]
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var nz := FastNoiseLite.new()
+	nz.seed = 83
+	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nz.frequency = 0.028
+	nz.fractal_octaves = 4
+	nz.fractal_gain = 0.56
+	var nw := FastNoiseLite.new()
+	nw.seed = 127
+	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nw.frequency = 0.015
+	nw.fractal_octaves = 3
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
+			var q := Vector2(p.x * 0.92, p.y * 1.12)
+			var wx := nw.get_noise_2d(float(x) * 0.8, float(y) * 1.2) * 22.0
+			var wy := nw.get_noise_2d(float(x) * 0.8 + 61.0, float(y) * 1.2 + 97.0) * 16.0
+			var n0 := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
+			var n1 := nz.get_noise_2d(float(x) * 2.4 + wy, float(y) * 2.4 - wx) * 0.5 + 0.5
+			var d := q.length() + (0.5 - n0) * 0.40 + (0.5 - n1) * 0.16
+			var radial := smoothstep(0.95, 0.22, d)
+			var grain := smoothstep(0.24, 0.82, n0 * 0.65 + n1 * 0.35)
+			var a := clampf(radial * (0.34 + grain * 0.66) * 0.88, 0.0, 1.0)
+			var shade := clampf(0.80 + n0 * 0.16 + (0.5 - q.y) * 0.08, 0.74, 1.0)
+			img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 0.96, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
+	_tex_cache["dust_vfx"] = t
+	return t
+
+
+## 地面战术光圈贴图（锐利外圈 + 细内刻度环 + 柔和光晕，mipmap 抗锯齿）
 static func ring_tex() -> Texture2D:
 	if _tex_cache.has("ring"):
 		return _tex_cache["ring"]
-	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.78, 0.86, 0.92, 1.0])
-	g.colors = PackedColorArray([Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.14), Color(1, 1, 1, 1), Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)])
-	var t := GradientTexture2D.new()
-	t.gradient = g
-	t.fill = GradientTexture2D.FILL_RADIAL
-	t.fill_from = Vector2(0.5, 0.5)
-	t.fill_to = Vector2(1.0, 0.5)
-	t.width = 256
-	t.height = 256
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var r := Vector2(float(x) - half, float(y) - half).length() / (float(sz) * 0.5)
+			var main_band := smoothstep(0.84, 0.87, r) * (1.0 - smoothstep(0.90, 0.93, r))
+			var inner_tick := smoothstep(0.74, 0.755, r) * (1.0 - smoothstep(0.77, 0.785, r)) * 0.38
+			var outer_halo := smoothstep(0.66, 0.86, r) * (1.0 - smoothstep(0.90, 0.98, r)) * 0.18
+			var fill_in := (1.0 - smoothstep(0.84, 0.90, r)) * 0.05
+			var a := clampf(main_band + inner_tick + outer_halo + fill_in, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
 	_tex_cache["ring"] = t
 	return t
 
 
-## 柔和烟团贴图（白色、极软边，用于大团飘烟）
+## 柔和薄雾 / 飘烟贴图（256px 不规则域扭曲云斑，无圆盘感）
 static func cloud_tex() -> Texture2D:
 	if _tex_cache.has("cloud"):
 		return _tex_cache["cloud"]
-	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
 	var nz := FastNoiseLite.new()
 	nz.seed = 7
-	nz.frequency = 0.035
+	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nz.frequency = 0.020
 	nz.fractal_octaves = 4
-	for y in 128:
-		for x in 128:
-			var d := Vector2(x - 63.5, y - 63.5).length() / 64.0
-			var fall: float = clamp(1.0 - d, 0.0, 1.0)
-			fall = fall * fall * (3.0 - 2.0 * fall)
-			var n: float = nz.get_noise_2d(x, y) * 0.5 + 0.5
-			img.set_pixel(x, y, Color(1, 1, 1, clamp(fall * (0.35 + n * 0.9), 0.0, 1.0)))
+	var nw := FastNoiseLite.new()
+	nw.seed = 29
+	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nw.frequency = 0.014
+	nw.fractal_octaves = 3
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
+			var wx := nw.get_noise_2d(float(x), float(y)) * 24.0
+			var wy := nw.get_noise_2d(float(x) + 89.0, float(y) + 43.0) * 24.0
+			var n := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
+			var d := p.length() + (0.5 - n) * 0.42
+			var fall := smoothstep(0.98, 0.16, d)
+			var a := clampf(fall * smoothstep(0.24, 0.78, n), 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
 	_tex_cache["cloud"] = t
+	return t
+
+
+## 爆炸弹坑与放射性焦痕贴图（中心碳化坑洞 + 碎土环唇 + 不规则放射状烟炱喷射纹）
+static func scorch_tex() -> Texture2D:
+	if _tex_cache.has("scorch"):
+		return _tex_cache["scorch"]
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var nz := FastNoiseLite.new()
+	nz.seed = 211
+	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nz.frequency = 0.032
+	nz.fractal_octaves = 4
+	var nr := FastNoiseLite.new()
+	nr.seed = 307
+	nr.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	nr.frequency = 0.055
+	nr.fractal_octaves = 3
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
+			var ang := atan2(p.y, p.x)
+			var n0 := nz.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+			var n1 := nr.get_noise_2d(float(x) * 1.4, float(y) * 1.4) * 0.5 + 0.5
+			# 放射状爆轰烟炱条纹
+			var ray_samp := nz.get_noise_2d(cos(ang) * 44.0 + 128.0, sin(ang) * 44.0 + 128.0) * 0.5 + 0.5
+			var ray_fine := nr.get_noise_2d(cos(ang) * 96.0 + 64.0, sin(ang) * 96.0 + 64.0) * 0.5 + 0.5
+			var rays := smoothstep(0.32, 0.78, ray_samp * 0.65 + ray_fine * 0.35)
+			var r := p.length() + (0.5 - n0) * 0.14
+			var pit := smoothstep(0.38, 0.10, r + (n1 - 0.5) * 0.06)
+			var rim := smoothstep(0.24, 0.36, r) * (1.0 - smoothstep(0.38, 0.54, r))
+			var outer_soot := smoothstep(0.86, 0.30, r) * (0.28 + 0.72 * rays) * (0.45 + 0.55 * n0)
+			var streak := smoothstep(1.00, 0.42, r) * rays * smoothstep(0.36, 0.72, n1) * 0.68
+			var a := clampf(maxf(pit * 0.94, maxf(rim * 0.72, maxf(outer_soot * 0.78, streak))), 0.0, 1.0)
+			# 中心黑炭 -> 翻起灰褐碎土唇缘 -> 深褐烟炱射线
+			var col_pit := Color(0.035, 0.032, 0.03)
+			var col_rim := Color(0.24, 0.20, 0.16)
+			var col_soot := Color(0.08, 0.075, 0.07)
+			var rgb := col_soot.lerp(col_rim, rim * 0.82).lerp(col_pit, pit)
+			rgb *= 0.85 + 0.30 * n1
+			img.set_pixel(x, y, Color(rgb.r, rgb.g, rgb.b, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
+	_tex_cache["scorch"] = t
+	return t
+
+
+## 有机污渍 / 油渍 / 苔藓斑贴图（不规则域扭曲边界 + 微弱干燥潮汐边缘，替代纯黑圆点）
+static func grime_stain_tex() -> Texture2D:
+	if _tex_cache.has("grime_stain"):
+		return _tex_cache["grime_stain"]
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var nz := FastNoiseLite.new()
+	nz.seed = 401
+	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nz.frequency = 0.026
+	nz.fractal_octaves = 4
+	var nw := FastNoiseLite.new()
+	nw.seed = 433
+	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	nw.frequency = 0.015
+	nw.fractal_octaves = 3
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
+			var wx := nw.get_noise_2d(float(x), float(y)) * 28.0
+			var wy := nw.get_noise_2d(float(x) + 47.0, float(y) + 93.0) * 28.0
+			var n := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
+			var n2 := nz.get_noise_2d(float(x) * 2.2 - wy * 0.4, float(y) * 2.2 + wx * 0.4) * 0.5 + 0.5
+			var d := p.length() + (0.5 - n) * 0.46 + (0.5 - n2) * 0.18
+			var shape := smoothstep(0.94, 0.34, d)
+			var rim := smoothstep(0.46, 0.72, d) * (1.0 - smoothstep(0.76, 0.94, d))
+			var interior := 0.42 + 0.58 * smoothstep(0.22, 0.80, n * 0.65 + n2 * 0.35)
+			var a := clampf(shape * maxf(interior, rim * 0.85), 0.0, 1.0)
+			var v := clampf(0.82 + n2 * 0.18 - rim * 0.14, 0.65, 1.0)
+			img.set_pixel(x, y, Color(v, v, v, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
+	_tex_cache["grime_stain"] = t
 	return t
 
 
@@ -725,9 +889,30 @@ static func blob_tex() -> Texture2D:
 	t.fill = GradientTexture2D.FILL_RADIAL
 	t.fill_from = Vector2(0.5, 0.5)
 	t.fill_to = Vector2(1.0, 0.5)
-	t.width = 64
-	t.height = 64
+	t.width = 128
+	t.height = 128
 	_tex_cache["blob"] = t
+	return t
+
+
+## 玩家机甲脚下战术定位圆环贴图（内孔透明避免遮挡足部，外圈双环清晰锐利）
+static func player_ring_tex() -> Texture2D:
+	if _tex_cache.has("player_ring"):
+		return _tex_cache["player_ring"]
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var c := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var r := Vector2(float(x) - c, float(y) - c).length() / (float(sz) * 0.5)
+			var main_band := smoothstep(0.67, 0.72, r) * (1.0 - smoothstep(0.84, 0.90, r))
+			var inner_tick := smoothstep(0.57, 0.59, r) * (1.0 - smoothstep(0.61, 0.63, r)) * 0.35
+			var outer_halo := smoothstep(0.82, 0.88, r) * (1.0 - smoothstep(0.92, 0.98, r)) * 0.28
+			var a := clampf(main_band * 0.95 + inner_tick + outer_halo, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
+	_tex_cache["player_ring"] = t
 	return t
 
 
@@ -1188,6 +1373,7 @@ uniform sampler2D sector_tex : filter_linear, repeat_disable;
 uniform float zone_half = 180.0;
 uniform float zone_on = 0.0;
 uniform float sector_on = 0.0;
+uniform float wet_amt = 0.0;
 varying vec3 wp;
 
 vec2 h2(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
@@ -1212,13 +1398,20 @@ void fragment(){
 	float mid = texture(n_low, p * 0.021 + 0.37).r;
 	float hi = texture(n_hi, p * 0.095).r;
 	float hi2 = texture(n_hi, p * 0.42 + 0.2).r;
+	float fw = clamp(1.0 - length(fwidth(p)) * 0.42, 0.0, 1.0);
+	float hi2_aa = mix(0.5, hi2, fw);
 
-	// 双尺度非周期旋转采样，兼顾近景颗粒锐度与高空俯拍零重复感
-	vec2 uv_near = p * 0.27;
-	vec2 uv_far = rot2(p * 0.072 + vec2(11.3, 7.9));
-	vec3 s_col = mix(texture(soil_a, uv_near).rgb, texture(soil_a, uv_far).rgb, 0.44) * 1.50;
-	vec3 g_col = mix(texture(grav_a, p * 0.31).rgb, texture(grav_a, rot2(p * 0.088)).rgb, 0.42) * 1.54;
-	vec3 c_col = mix(texture(conc_a, p * 0.22).rgb, texture(conc_a, rot2(p * 0.065)).rgb, 0.38) * 1.50;
+	// 兼容中景无接缝双旋转随机混合，兼具近景粒度锐度与高空零重复瓦片感
+	vec2 uv_a = p * 0.25;
+	vec2 uv_b = rot2(p * 0.17 + vec2(7.3, 11.9));
+	float m_blend = smoothstep(0.28, 0.72, med2);
+	vec2 uv_ga = p * 0.28;
+	vec2 uv_gb = rot2(p * 0.19 + vec2(3.7, 5.1));
+	vec2 uv_ca = p * 0.21;
+	vec2 uv_cb = rot2(p * 0.14 + vec2(9.1, 2.3));
+	vec3 s_col = mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.50;
+	vec3 g_col = mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.54;
+	vec3 c_col = mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.50;
 
 	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.28, 0.72, low + (hi - 0.5) * 0.32)) * s_col;
 
@@ -1229,10 +1422,10 @@ void fragment(){
 	col = mix(col, mud * s_col * 0.92, mudm);
 	col *= 1.0 - crack_mud * 0.34;
 
-	// 荒草苔斑：融入壤土碎屑底纹
+	// 荒草苔斑：融入壤土碎屑底纹（远距导数抗锯齿抑制高空摩尔纹噪点）
 	float gm = smoothstep(0.44, 0.72, 1.0 - mid + (low - 0.5) * 0.42 + (hi - 0.5) * 0.22) * (1.0 - mudm);
-	vec3 gcol = mix(grass, grass2, hi2) * mix(vec3(1.0), s_col, 0.58);
-	col = mix(col, gcol, gm * 0.82 * smoothstep(0.22, 0.68, hi2 + 0.12));
+	vec3 gcol = mix(grass, grass2, hi2_aa) * mix(vec3(1.0), s_col, 0.58);
+	col = mix(col, gcol, gm * 0.82 * smoothstep(0.22, 0.68, hi2_aa + 0.12));
 
 	// 散落自然碎石斑块
 	float grav_patch = smoothstep(0.58, 0.78, hi * 0.65 + (1.0 - low) * 0.35) * (1.0 - gm * 0.75);
@@ -1257,11 +1450,10 @@ void fragment(){
 	float pm = smoothstep(0.32, 0.86, zt.r + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22 + (hi - 0.5) * 0.16) * (1.0 - mudm * 0.42);
 	col = mix(col, pave, pm);
 
-	vec3 gr = mix(vec3(0.21, 0.26, 0.13), vec3(0.35, 0.36, 0.19), hi2) * mix(vec3(1.0), s_col, 0.62) * (0.85 + low * 0.30);
+	vec3 gr = mix(vec3(0.21, 0.26, 0.13), vec3(0.35, 0.36, 0.19), hi2_aa) * mix(vec3(1.0), s_col, 0.62) * (0.85 + low * 0.30);
 	float gmm = smoothstep(0.22, 0.82, zt.g + (low - 0.5) * 0.24 + (mid - 0.5) * 0.36 + (hi - 0.5) * 0.20);
 	col = mix(col, gr, gmm);
 
-	float fw = clamp(1.0 - length(fwidth(p)) * 0.45, 0.0, 1.0);
 	float furrow = 0.5 + 0.5 * sin((p.x * 0.35 + p.y * 0.94) * 2.1 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4) * fw;
 	vec3 soil = mix(vec3(0.24, 0.19, 0.13), vec3(0.34, 0.27, 0.18), smoothstep(0.2, 0.8, mix(mid, furrow, 0.36))) * s_col;
 	float smm = smoothstep(0.24, 0.82, zt.b + (low - 0.5) * 0.28 + (mid - 0.5) * 0.24 + (hi - 0.5) * 0.18);
@@ -1276,34 +1468,55 @@ void fragment(){
 	float zone_cov = clamp(pm + gmm * 0.88 + smm * 0.88 + am * 0.88, 0.0, 0.94);
 	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.65, 0.84, mid) * (1.0 - crack_mud * 0.85);
 	col = mix(col, col * 0.74, wet_film * 0.42);
+	float road_v = 0.0;
+	float bldg_contact = 0.0;
 	if (abs(sector_on) > 0.5) {
 		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
 		float s_in = 0.0;
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
-			s_in = smoothstep(0.20, 0.80, texture(sector_tex, s_uv).r + (low - 0.5) * 0.16);
+			vec3 sec = texture(sector_tex, s_uv).rgb;
+			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
+			road_v = sec.g * smoothstep(0.25, 0.80, 0.55 + (low - 0.5) * 0.35 + (mid - 0.5) * 0.30) * (1.0 - pm * 0.48);
+			bldg_contact = sec.b * smoothstep(0.18, 0.78, 0.65 + (low - 0.5) * 0.25);
 		}
+		col = mix(col, grv * 0.90, road_v * 0.74);
+		col = mix(col, mix(dirt_b, mud, 0.42) * s_col * 0.82, bldg_contact * 0.55);
 		vec3 out_mul = (sector_on > 0.0) ? vec3(0.76, 0.78, 0.82) : vec3(0.28, 0.25, 0.32);
 		col = mix(col * out_mul, col, s_in);
 	}
+	float w_amt = clamp(wet_amt, 0.0, 1.0);
+	float basin = (1.0 - low) * 0.44 + med2 * 0.36 + mid * 0.20 + (hi - 0.5) * 0.08;
+	float puddle = w_amt * smoothstep(0.51, 0.67, basin) * (1.0 - crack_mud * 0.65);
+	float wet_rim = w_amt * smoothstep(0.41, 0.53, basin) * (1.0 - puddle);
+	col = mix(col, col * 0.68, wet_rim * 0.38);
+	col = mix(col, col * 0.78, w_amt * 0.22 * (1.0 - puddle));
+	col = mix(col, col * 0.42 + vec3(0.06, 0.075, 0.095), puddle * 0.78);
 	ALBEDO = col;
+
+	// 按地表类型融合真实壤土颗粒、碎石道砟与混凝土法线贴图，结合表面导数与法线方差防远景闪烁
+	vec3 ns = mix(texture(soil_n, uv_a).rgb, texture(soil_n, uv_b).rgb, m_blend);
+	vec3 ng = mix(texture(grav_n, uv_ga).rgb, texture(grav_n, uv_gb).rgb, m_blend);
+	vec3 nc = mix(texture(conc_n, uv_ca).rgb, texture(conc_n, uv_cb).rgb, m_blend);
+	vec3 n_macro = texture(n_nrm, p * 0.065).rgb;
+	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45 + road_v * 0.60, 0.0, 1.0));
+	n_det = mix(n_det, nc, pm);
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.45, 0.86, fw) + (n_macro * 2.0 - 1.0) * 0.48 + vec3(0.0, 0.0, 0.56));
+	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.94));
+	vec3 dn = dFdx(n_comb) + dFdy(n_comb);
+	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.22);
 	float r_base = mix(0.93, 0.78, mudm * (1.0 - zone_cov));
 	r_base = mix(r_base, 0.84, pm * (1.0 - seam));
 	r_base = mix(r_base, 0.91, am);
-	ROUGHNESS = mix(r_base, 0.56, wet_film);
-	SPECULAR = mix(0.32, 0.48, pm * 0.35 + wet_film * 0.35);
-	AO = clamp(1.0 - crack_mud * 0.58 - pm * seam * 0.42 - am * rut * 0.18, 0.30, 1.0);
-	AO_LIGHT_AFFECT = 0.55;
-	CLEARCOAT = 0.0;
-
-	// 按地表类型融合真实壤土颗粒、碎石道砟与混凝土法线贴图
-	vec3 ns = mix(texture(soil_n, uv_near).rgb, texture(soil_n, uv_far).rgb, 0.35);
-	vec3 ng = texture(grav_n, p * 0.31).rgb;
-	vec3 nc = texture(conc_n, p * 0.22).rgb;
-	vec3 n_macro = texture(n_nrm, p * 0.065).rgb;
-	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45, 0.0, 1.0));
-	n_det = mix(n_det, nc, pm);
-	NORMAL_MAP = normalize((n_det * 2.0 - 1.0) * mix(0.48, 0.85, fw) + (n_macro * 2.0 - 1.0) * 0.52 + vec3(0.0, 0.0, 0.52)) * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = mix(0.76, 1.12, fw) + crack_mud * 1.25 + pm * seam * 1.05 + am * 0.30;
+	r_base = mix(r_base, mix(0.64, 0.50, wet_film), max(wet_film, max(w_amt * 0.55, wet_rim * 0.75)));
+	r_base = sqrt(clamp(r_base * r_base + r_var, 0.04, 1.0));
+	ROUGHNESS = mix(r_base, 0.10, puddle * 0.94);
+	SPECULAR = mix(0.32, 0.56, pm * 0.28 + wet_film * 0.30 + puddle * 0.85);
+	AO = clamp(1.0 - crack_mud * 0.58 - pm * seam * 0.42 - am * rut * 0.18 - road_v * 0.14 - bldg_contact * 0.46, 0.24, 1.0);
+	AO_LIGHT_AFFECT = 0.58;
+	CLEARCOAT = puddle * 0.65;
+	CLEARCOAT_ROUGHNESS = 0.08;
+	NORMAL_MAP = n_comb * 0.5 + 0.5;
+	NORMAL_MAP_DEPTH = (mix(0.76, 1.12, fw) + crack_mud * 1.25 + pm * seam * 1.05 + am * 0.30) * (1.0 - puddle * 0.88);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1317,6 +1530,7 @@ void fragment(){
 	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
 	m.set_shader_parameter("conc_a", world_tex("concrete_a.png"))
 	m.set_shader_parameter("conc_n", world_tex("concrete_n.png"))
+	m.set_shader_parameter("wet_amt", 0.0)
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
 	return m
@@ -1329,19 +1543,27 @@ static func decal_mat(tex: Texture2D, c: Color, additive := false) -> StandardMa
 		return _mat_cache[key]
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.albedo_texture = tex
 	m.albedo_color = c
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if additive:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	m.render_priority = -1
+		m.render_priority = 0
+	elif tex == blob_tex():
+		m.render_priority = -3
+	elif tex == cloud_tex():
+		m.render_priority = -2
+	else:
+		m.render_priority = -1
 	_mat_cache[key] = m
 	return m
 
 
-static func particle_mat(tex: Texture2D, additive := true) -> StandardMaterial3D:
-	var key := "pm%s%s" % [tex.get_instance_id(), additive]
+static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) -> StandardMaterial3D:
+	var pd: float = prox_fade if prox_fade >= 0.0 else (0.18 if additive else 0.26)
+	var key := "pm%s%s%.2f" % [tex.get_instance_id(), additive, pd]
 	if _mat_cache.has(key):
 		return _mat_cache[key]
 	var m := StandardMaterial3D.new()
@@ -1350,6 +1572,9 @@ static func particle_mat(tex: Texture2D, additive := true) -> StandardMaterial3D
 	m.vertex_color_use_as_albedo = true
 	m.albedo_texture = tex
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true
+	m.proximity_fade_enabled = true
+	m.proximity_fade_distance = pd
 	if additive:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -1357,17 +1582,44 @@ static func particle_mat(tex: Texture2D, additive := true) -> StandardMaterial3D
 	return m
 
 
-## 受击闪白叠加层
-static func flash_overlay() -> StandardMaterial3D:
-	if _mat_cache.has("flash"):
-		return _mat_cache["flash"]
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(1, 1, 1, 0.75)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_mat_cache["flash"] = m
+static func _is_cloud_tex(tex: Texture2D) -> bool:
+	return tex == smoke_tex() or tex == dust_tex() or tex == cloud_tex()
+
+
+## 受击热冲击叠加层：双面 Fresnel 轮廓受击脉冲 + 钨钢余烬着色，量化 5 档避免每帧新建材质
+static func hit_flash_overlay(intensity := 1.0) -> ShaderMaterial:
+	var q := clampi(int(ceil(clampf(intensity, 0.0, 1.0) * 5.0)), 1, 5)
+	var key := "hit_flash_%d" % q
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh: Shader = _mat_cache.get("_hit_flash_sh")
+	if sh == null:
+		sh = Shader.new()
+		sh.code = """
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform float intensity = 1.0;
+void fragment() {
+	float ndv = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 1.55);
+	float hot = rim * 1.15 + 0.28;
+	vec3 ember = vec3(1.0, 0.48, 0.14);
+	vec3 tungsten = vec3(1.0, 0.88, 0.68);
+	ALBEDO = mix(ember, tungsten, clamp(rim * 1.1, 0.0, 1.0)) * hot * intensity;
+	ALPHA = clamp(hot * intensity, 0.0, 1.0);
+}
+"""
+		_mat_cache["_hit_flash_sh"] = sh
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("intensity", float(q) / 5.0)
+	_mat_cache[key] = m
 	return m
+
+
+## 兼容旧调用的受击叠加层入口
+static func flash_overlay() -> Material:
+	return hit_flash_overlay(1.0)
 
 
 # ======================================================================
@@ -1390,6 +1642,241 @@ static func add(parent: Node3D, mesh: Mesh, m: Material, pos := Vector3.ZERO, ro
 static func ground_decal(parent: Node3D, tex: Texture2D, c: Color, size: float, pos: Vector3, additive := false) -> MeshInstance3D:
 	var mi := add(parent, quad(size, size), decal_mat(tex, c, additive), pos, Vector3.ZERO, Vector3.ONE, false)
 	return mi
+
+
+## 地面特效着色器（按视线方向前拉 depth_pull，确保在地面铺装 / 人行道 / 首领战区台面上方可见且无视差偏移，仍被高墙与机体上半身遮挡）
+static func ground_vfx_shader(additive := false) -> Shader:
+	var key := "_gvfx_sh_%s" % ("add" if additive else "mix")
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	var blend_mode := "blend_add" if additive else "blend_mix"
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform, %s;
+uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_disable;
+uniform vec4 col : source_color = vec4(1.0);
+uniform float depth_pull = 0.44;
+void vertex() {
+	vec3 vp = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
+	VERTEX = vp - normalize(vp) * pull;
+}
+void fragment() {
+	vec4 t = texture(tex, UV);
+	ALBEDO = col.rgb * t.rgb;
+	ALPHA = col.a * t.a;
+}
+""" % blend_mode
+	_mat_cache[key] = sh
+	return sh
+
+
+static func ground_vfx_mat(tex: Texture2D, c: Color, additive := false, depth_pull := 0.44, unique := false, priority := -1) -> ShaderMaterial:
+	var prio: int = priority if priority >= 0 else (4 if additive else 2)
+	if not unique:
+		var key := "gvfx|%d|%s|%s|%.2f|%d" % [tex.get_instance_id(), c, additive, depth_pull, prio]
+		if _mat_cache.has(key):
+			return _mat_cache[key]
+		var m := ShaderMaterial.new()
+		m.shader = ground_vfx_shader(additive)
+		m.render_priority = prio
+		m.set_shader_parameter("tex", tex)
+		m.set_shader_parameter("col", c)
+		m.set_shader_parameter("depth_pull", depth_pull)
+		_mat_cache[key] = m
+		return m
+	var m := ShaderMaterial.new()
+	m.shader = ground_vfx_shader(additive)
+	m.render_priority = prio
+	m.set_shader_parameter("tex", tex)
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("depth_pull", depth_pull)
+	return m
+
+
+static func ground_vfx_solid_mat(tex: Texture2D, c: Color, depth_pull := 0.34, priority := 1) -> ShaderMaterial:
+	return ground_vfx_mat(tex, c, false, depth_pull, false, priority)
+
+
+static func ground_vfx(parent: Node3D, tex: Texture2D, c: Color, size: float, pos: Vector3, additive := false, depth_pull := 0.44, unique := false, priority := -1) -> MeshInstance3D:
+	return add(parent, quad(size, size), ground_vfx_mat(tex, c, additive, depth_pull, unique, priority), pos, Vector3.ZERO, Vector3.ONE, false)
+
+
+static func _tactical_ring_shader() -> Shader:
+	var key := "_tac_ring_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform, blend_mix;
+uniform vec4 col : source_color = vec4(1.0, 0.30, 0.20, 1.0);
+uniform float fill_alpha = 0.22;
+uniform float progress = 0.0;
+uniform float alpha_mul = 1.0;
+uniform float depth_pull = 0.44;
+uniform float ticks = 24.0;
+void vertex() {
+	vec3 vp = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
+	VERTEX = vp - normalize(vp) * pull;
+}
+void fragment() {
+	vec2 p = UV * 2.0 - 1.0;
+	float r = length(p);
+	float aa = max(fwidth(r), 0.004);
+	float in_disc = 1.0 - smoothstep(0.955 - aa, 0.965 + aa, r);
+	float outer_ring = 1.0 - smoothstep(0.022 - aa, 0.022 + aa, abs(r - 0.935));
+	float inner_ring = (1.0 - smoothstep(0.007 - aa, 0.007 + aa, abs(r - 0.875))) * 0.65;
+	float ang = atan(p.y, p.x);
+	float tick_band = (1.0 - smoothstep(0.018 - aa, 0.018 + aa, abs(r - 0.905))) * smoothstep(0.28, 0.42, abs(fract(ang * 0.15915494 * ticks - TIME * 0.18) - 0.5));
+	float prog = clamp(progress, 0.0, 1.0);
+	float pr = prog * 0.935;
+	float prog_fill = (1.0 - smoothstep(pr - aa * 2.0, pr + aa * 2.0, r)) * smoothstep(0.01, 0.05, prog);
+	float prog_edge = (1.0 - smoothstep(0.014 - aa, 0.014 + aa, abs(r - pr))) * smoothstep(0.02, 0.08, prog) * (1.0 - smoothstep(0.96, 1.0, prog));
+	float base_fill = in_disc * mix(0.25, 1.0, pow(clamp(r / 0.935, 0.0, 1.0), 1.8)) * fill_alpha;
+	float total_fill = clamp(base_fill + prog_fill * fill_alpha * 1.15, 0.0, 0.72);
+	float rim = clamp(outer_ring + tick_band * 0.45 + inner_ring * 0.40 + prog_edge * 0.95, 0.0, 1.0);
+	vec3 rgb = mix(col.rgb * 0.88, col.rgb * 1.45 + vec3(0.08), clamp(outer_ring + prog_edge, 0.0, 1.0));
+	float a = max(total_fill, rim * 0.92) * col.a * alpha_mul * (1.0 - smoothstep(0.965, 0.995, r));
+	ALBEDO = rgb;
+	ALPHA = clamp(a, 0.0, 1.0);
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func tactical_ring_mat(c: Color, fill_alpha := 0.22, ticks := 24.0, depth_pull := 0.44, priority := 3) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _tactical_ring_shader()
+	m.render_priority = priority
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("fill_alpha", fill_alpha)
+	m.set_shader_parameter("progress", 0.0)
+	m.set_shader_parameter("alpha_mul", 1.0)
+	m.set_shader_parameter("ticks", ticks)
+	m.set_shader_parameter("depth_pull", depth_pull)
+	return m
+
+
+static func _tactical_lane_shader() -> Shader:
+	var key := "_tac_lane_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform, blend_mix;
+uniform vec4 col : source_color = vec4(1.0, 0.35, 0.18, 1.0);
+uniform float aspect = 3.0;
+uniform float progress = 0.0;
+uniform float alpha_mul = 1.0;
+uniform float chevron_dir = -1.0;
+uniform float depth_pull = 0.44;
+void vertex() {
+	vec3 vp = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
+	VERTEX = vp - normalize(vp) * pull;
+}
+void fragment() {
+	vec2 u = vec2((UV.x - 0.5) * 2.0, UV.y);
+	float ax = abs(u.x);
+	float aa_x = max(fwidth(ax), 0.004);
+	float edge_w = 0.055;
+	float side_rail = (1.0 - smoothstep(edge_w - aa_x, edge_w + aa_x, abs(ax - 0.91))) * step(u.y, 0.992) * step(0.008, u.y);
+	float end_w = edge_w / max(aspect, 0.25);
+	float aa_y = max(fwidth(u.y), 0.002);
+	float end_cap = max(1.0 - smoothstep(end_w - aa_y, end_w + aa_y, abs(u.y - 0.03)),
+	                    1.0 - smoothstep(end_w - aa_y, end_w + aa_y, abs(u.y - 0.97))) * (1.0 - smoothstep(0.91, 0.95, ax));
+	float fwd = (chevron_dir < 0.0) ? (1.0 - u.y) : u.y;
+	float ph = fract(fwd * max(aspect * 1.1, 1.0) + ax * 0.55 - TIME * 1.45);
+	float chev = (1.0 - smoothstep(0.10, 0.18, abs(ph - 0.5))) * (1.0 - smoothstep(0.84, 0.91, ax)) * smoothstep(0.02, 0.08, u.y) * smoothstep(0.98, 0.92, u.y);
+	float prog = clamp(progress, 0.0, 1.0);
+	float sweep = (1.0 - smoothstep(prog - aa_y * 2.0, prog + aa_y * 2.0, fwd)) * smoothstep(0.01, 0.05, prog);
+	float sweep_line = (1.0 - smoothstep(end_w * 0.8 - aa_y, end_w * 0.8 + aa_y, abs(fwd - prog))) * smoothstep(0.02, 0.08, prog) * (1.0 - smoothstep(0.96, 1.0, prog));
+	float body = (1.0 - smoothstep(0.92 - aa_x, 0.94 + aa_x, ax)) * smoothstep(0.01, 0.03, u.y) * (1.0 - smoothstep(0.97, 0.99, u.y));
+	float fill = body * (0.16 + 0.14 * (ax * ax) + sweep * 0.24 + chev * 0.34);
+	float rim = clamp(side_rail + end_cap * 0.85 + sweep_line * 0.95, 0.0, 1.0);
+	vec3 rgb = mix(col.rgb * 0.90, col.rgb * 1.48 + vec3(0.10), clamp(rim + chev * 0.45, 0.0, 1.0));
+	float a = max(fill, rim * 0.92) * col.a * alpha_mul;
+	ALBEDO = rgb;
+	ALPHA = clamp(a, 0.0, 1.0);
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func tactical_lane_mat(c: Color, aspect := 3.0, chevron_dir := -1.0, depth_pull := 0.44, priority := 3) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _tactical_lane_shader()
+	m.render_priority = priority
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("aspect", aspect)
+	m.set_shader_parameter("progress", 0.0)
+	m.set_shader_parameter("alpha_mul", 1.0)
+	m.set_shader_parameter("chevron_dir", chevron_dir)
+	m.set_shader_parameter("depth_pull", depth_pull)
+	return m
+
+
+static func _acid_pool_shader() -> Shader:
+	var key := "_acid_pool_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform, blend_mix;
+uniform vec4 col : source_color = vec4(0.32, 0.92, 0.24, 0.90);
+uniform float alpha_mul = 1.0;
+uniform float seed = 0.0;
+uniform float depth_pull = 0.44;
+void vertex() {
+	vec3 vp = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
+	VERTEX = vp - normalize(vp) * pull;
+}
+void fragment() {
+	vec2 p = UV * 2.0 - 1.0;
+	float ang = atan(p.y, p.x);
+	float warp = sin(ang * 3.0 + seed * 6.28) * 0.08 + sin(ang * 5.0 - seed * 11.3) * 0.055 + sin(p.x * 5.2 + p.y * 4.7 + seed * 4.1) * 0.045;
+	float r = length(p) + warp;
+	float aa = max(fwidth(r), 0.006);
+	float mask = 1.0 - smoothstep(0.84 - aa, 0.87 + aa, r);
+	float meniscus = (1.0 - smoothstep(0.032 - aa, 0.032 + aa, abs(r - 0.835))) * mask;
+	float v1 = sin(p.x * 8.5 + cos(p.y * 7.2 + TIME * 1.3 + seed * 5.0));
+	float v2 = cos(p.y * 9.0 - sin(p.x * 7.8 - TIME * 1.1 + seed * 3.0));
+	float veins = smoothstep(0.45, 0.95, 0.5 + 0.5 * v1 * v2);
+	vec2 cell = p * 5.2 + vec2(seed * 3.1, TIME * 0.35);
+	vec2 cf = fract(cell) - 0.5;
+	float cid = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
+	float bphase = fract(TIME * (0.45 + cid * 0.4) + cid * 7.0);
+	float brad = 0.10 + bphase * 0.16;
+	float bubble = (1.0 - smoothstep(brad - 0.05, brad + 0.04, length(cf))) * (1.0 - bphase) * smoothstep(0.55, 0.85, cid) * smoothstep(0.84, 0.45, r);
+	vec3 base_c = col.rgb * vec3(0.32, 0.52, 0.28);
+	vec3 bright_c = col.rgb * vec3(1.35, 1.55, 0.95) + vec3(0.06, 0.12, 0.02);
+	vec3 rgb = mix(base_c, bright_c, clamp(veins * 0.55 + meniscus * 0.95 + bubble * 0.90, 0.0, 1.0));
+	float a = mask * mix(0.58, 0.94, clamp(meniscus + bubble * 0.7 + veins * 0.25, 0.0, 1.0)) * col.a * alpha_mul;
+	ALBEDO = rgb;
+	ALPHA = clamp(a, 0.0, 1.0);
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func acid_pool_mat(c: Color, seed := 0.0, depth_pull := 0.44, priority := 2) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _acid_pool_shader()
+	m.render_priority = priority
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("alpha_mul", 1.0)
+	m.set_shader_parameter("seed", seed)
+	m.set_shader_parameter("depth_pull", depth_pull)
+	return m
 
 
 ## 一次性爆发粒子，播完自动销毁。
@@ -1425,12 +1912,13 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	var o := opts.duplicate()
 	o.erase("dir")
 	var key := "%d|%s" % [parent.get_instance_id(), o]
+	var flat_val: float = float(opts.get("flat", 0.0))
 	var pool: Array = _burst_pool.get(key, [])
 	while not pool.is_empty():
 		var q = pool.pop_back()
 		if is_instance_valid(q) and q.is_inside_tree() and q.get_parent() == parent:
 			q.visible = true
-			q.flatness = 0.0
+			q.flatness = flat_val
 			q.direction = opts.get("dir", Vector3.UP)
 			q.global_position = pos
 			q.restart()
@@ -1442,9 +1930,11 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.lifetime = opts.get("life", 0.5)
 	p.local_coords = false
+	p.flatness = flat_val
 	var tex: Texture2D = opts.get("tex", soft_dot())
 	var add: bool = opts.get("additive", true)
 	var sz: float = opts.get("size", 0.3)
+	var prox: float = float(opts.get("soft_depth", -1.0))
 	if opts.has("mesh"):
 		p.mesh = opts["mesh"]
 		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY, bool(opts.get("align_y", false)))
@@ -1452,11 +1942,18 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 		p.angular_velocity_min = opts.get("ang_min", -360.0)
 		p.angular_velocity_max = opts.get("ang_max", 360.0)
 	else:
-		p.mesh = _burst_res_get("q%d|%s|%s" % [tex.get_instance_id(), add, sz], func():
+		p.mesh = _burst_res_get("q%d|%s|%s|%.2f" % [tex.get_instance_id(), add, sz, prox], func():
 			var qm := QuadMesh.new()
 			qm.size = Vector2.ONE * sz
-			qm.material = particle_mat(tex, add)
+			qm.material = particle_mat(tex, add, prox)
 			return qm)
+		var is_cloud: bool = _is_cloud_tex(tex)
+		if is_cloud or opts.has("angle_min") or opts.has("angle_max"):
+			p.angle_min = float(opts.get("angle_min", -180.0))
+			p.angle_max = float(opts.get("angle_max", 180.0))
+		if is_cloud or opts.has("ang_min") or opts.has("ang_max"):
+			p.angular_velocity_min = float(opts.get("ang_min", -28.0))
+			p.angular_velocity_max = float(opts.get("ang_max", 28.0))
 	p.direction = opts.get("dir", Vector3.UP)
 	p.spread = opts.get("spread", 180.0)
 	p.initial_velocity_min = opts.get("vmin", 3.0)
@@ -1468,17 +1965,27 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	p.scale_amount_max = opts.get("smax", 1.2)
 	var g0: float = opts.get("grow0", 1.0)
 	var g1: float = opts.get("grow1", 0.0)
-	p.scale_amount_curve = _burst_res_get("c%s|%s" % [g0, g1], func():
+	var has_gm: bool = opts.has("grow_mid")
+	var gm_val: float = float(opts.get("grow_mid", (g0 + g1) * 0.5))
+	var gmp: float = clampf(float(opts.get("grow_mid_pos", 0.28)), 0.05, 0.95)
+	p.scale_amount_curve = _burst_res_get("c%s|%s|%s|%s|%s" % [g0, g1, has_gm, gm_val, gmp], func():
 		var curve := Curve.new()
 		curve.add_point(Vector2(0, g0))
+		if has_gm:
+			curve.add_point(Vector2(gmp, gm_val))
 		curve.add_point(Vector2(1, g1))
 		return curve)
 	var c0: Color = opts.get("c0", Color(1, 0.8, 0.4))
 	var c1: Color = opts.get("c1", Color(c0.r, c0.g * 0.4, 0.0, 0.0))
-	p.color_ramp = _burst_res_get("g%s|%s" % [c0, c1], func():
+	var has_cm: bool = opts.has("cmid")
+	var cm_val: Color = opts.get("cmid", c0)
+	var cmp: float = clampf(float(opts.get("cmid_pos", 0.28)), 0.05, 0.95)
+	p.color_ramp = _burst_res_get("g%s|%s|%s|%s|%s" % [c0, c1, has_cm, cm_val, cmp], func():
 		var g := Gradient.new()
 		g.set_color(0, c0)
 		g.set_color(1, c1)
+		if has_cm:
+			g.add_point(cmp, cm_val)
 		return g)
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	p.emission_sphere_radius = opts.get("radius", 0.1)
@@ -1497,6 +2004,11 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.lifetime = opts.get("life", 1.0)
 	p.local_coords = opts.get("local", false)
+	p.explosiveness = float(opts.get("explosive", 0.0))
+	p.flatness = float(opts.get("flat", 0.0))
+	var tex: Texture2D = opts.get("tex", soft_dot())
+	var add: bool = bool(opts.get("additive", true))
+	var prox: float = float(opts.get("soft_depth", -1.0))
 	if opts.has("mesh"):
 		p.mesh = opts["mesh"]
 		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ROTATE_Y, true)
@@ -1505,24 +2017,36 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 	else:
 		var qm := QuadMesh.new()
 		qm.size = Vector2.ONE * opts.get("size", 0.5)
-		qm.material = particle_mat(opts.get("tex", soft_dot()), opts.get("additive", true))
+		qm.material = particle_mat(tex, add, prox)
 		p.mesh = qm
+		var is_cloud: bool = _is_cloud_tex(tex)
+		if is_cloud or opts.has("angle_min") or opts.has("angle_max"):
+			p.angle_min = float(opts.get("angle_min", -180.0))
+			p.angle_max = float(opts.get("angle_max", 180.0))
+		if is_cloud or opts.has("ang_min") or opts.has("ang_max"):
+			p.angular_velocity_min = float(opts.get("ang_min", -28.0))
+			p.angular_velocity_max = float(opts.get("ang_max", 28.0))
 	p.direction = opts.get("dir", Vector3.UP)
 	p.spread = opts.get("spread", 15.0)
 	p.initial_velocity_min = opts.get("vmin", 1.0)
 	p.initial_velocity_max = opts.get("vmax", 2.0)
 	p.gravity = opts.get("gravity", Vector3(0, 1, 0))
+	if opts.has("damp"):
+		p.damping_min = float(opts["damp"])
+		p.damping_max = float(opts["damp"])
 	p.scale_amount_min = opts.get("smin", 0.6)
 	p.scale_amount_max = opts.get("smax", 1.2)
 	var curve := Curve.new()
 	curve.add_point(Vector2(0, opts.get("grow0", 0.5)))
+	if opts.has("grow_mid"):
+		curve.add_point(Vector2(clampf(float(opts.get("grow_mid_pos", 0.3)), 0.05, 0.95), float(opts["grow_mid"])))
 	curve.add_point(Vector2(1, opts.get("grow1", 1.0)))
 	p.scale_amount_curve = curve
 	var g := Gradient.new()
 	g.set_color(0, opts.get("c0", Color(1, 0.7, 0.3)))
 	g.set_color(1, opts.get("c1", Color(0.3, 0.1, 0.0, 0.0)))
 	if opts.has("cmid"):
-		g.add_point(0.3, opts.cmid)
+		g.add_point(clampf(float(opts.get("cmid_pos", 0.3)), 0.05, 0.95), opts.cmid)
 	p.color_ramp = g
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE if not opts.has("box") else CPUParticles3D.EMISSION_SHAPE_BOX
 	p.emission_sphere_radius = opts.get("radius", 0.2)

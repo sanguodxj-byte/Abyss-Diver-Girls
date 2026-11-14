@@ -39,7 +39,8 @@ func _build_visual() -> void:
 	visual = Node3D.new()
 	add_child(visual)
 	var s: float = data.scale
-	ART.ground_decal(self, ART.blob_tex(), Color(1, 1, 1, 0.8), BossModels.decal_size(kind) * s, Vector3(0, 0.03, 0))
+	var sd := ART.ground_vfx(self, ART.blob_tex(), Color(1, 1, 1, 0.8), BossModels.decal_size(kind) * s, Vector3(0, 0.03, 0), false, 0.34, false, 1)
+	sd.set_meta("no_flash", true)
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
@@ -133,10 +134,11 @@ func _ground_burst(radius: float, c: Color) -> void:
 func _ground_ring(p: Vector3, radius: float, c: Color) -> void:
 	if raid == null:
 		return
-	var ring := ART.ground_decal(raid.fx, ART.ring_tex(), Color(c.r, c.g, c.b, 0.8), radius * 0.5, Vector3(p.x, 0.07, p.z), true)
+	var rc := Color(c.r, c.g, c.b, 0.8)
+	var ring := ART.ground_vfx(raid.fx, ART.ring_tex(), rc, radius * 0.5, Vector3(p.x, 0.07, p.z), true, 0.44, true, 4)
 	var tw := ring.create_tween()
 	tw.tween_property(ring, "scale", Vector3.ONE * 4.0, 0.6)
-	tw.parallel().tween_property(ring, "transparency", 1.0, 0.7)
+	tw.parallel().tween_property(ring.material_override, "shader_parameter/col", Color(rc.r, rc.g, rc.b, 0.0), 0.7)
 	tw.tween_callback(ring.queue_free)
 
 
@@ -376,9 +378,46 @@ func _on_killed() -> void:
 		raid.shake = maxf(raid.shake, 1.0)
 		raid.explode_fx(p + Vector3(0, 1.0, 0), 7.0, Color(1.0, 0.5, 0.2))
 	_loot()
+	_spawn_boss_extra_drop(global_position)
 	if raid:
 		raid.on_bug_killed(self)
 	_die()
+
+
+func _spawn_boss_extra_drop(p: Vector3) -> void:
+	if raid == null or not raid.has_method("_place_box"):
+		return
+	var r: RandomNumberGenerator = raid.rng
+	var items: Array = []
+	var high_mods: Array = []
+	var all_mods: Array = []
+	var starter := GameData.STARTER.values()
+	for mid in GameData.MODULES:
+		if mid in starter:
+			continue
+		var md: Dictionary = GameData.MODULES[mid]
+		all_mods.append(mid)
+		if int(md.get("price", 0)) >= 650:
+			high_mods.append(mid)
+	var mod_pool: Array = high_mods if not high_mods.is_empty() else all_mods
+	if not mod_pool.is_empty():
+		items.append(str(mod_pool[r.randi() % mod_pool.size()]))
+	var trophies := ["gold", "gen_crystal", "credit_l"]
+	items.append(str(trophies[r.randi() % trophies.size()]))
+	var extras := ["bug_crystal", "gen_crystal", "credit_l", "repair_kit", "circuit", "gold"]
+	var extra_n := 2 + (r.randi() % 2)
+	for _i in extra_n:
+		items.append(str(extras[r.randi() % extras.size()]))
+	var raw := Vector3(p.x + 2.0, 0.0, p.z + 1.4)
+	var bp: Vector3 = raid.dry_spot(raw, 2.0) if raid.has_method("dry_spot") else raw
+	if raid.has_method("_blocked") and raid._blocked(bp, 1.4, false):
+		bp = Vector3(p.x, 0.0, p.z)
+	var box = raid._place_box("safe", Vector3(bp.x, 0.0, bp.z), items)
+	if box:
+		box.set_meta("boss_extra_drop", true)
+		box.title = Loc.t("%s · 首领秘藏" % title, "%s · Boss Vault" % title)
+	ART.burst(raid.fx, Vector3(bp.x, 0.8, bp.z), {"amount": 22, "life": 0.9, "size": 0.22, "vmin": 3.0, "vmax": 8.0,
+		"spread": 110.0, "gravity": Vector3(0, -10, 0), "c0": Color(1.0, 0.88, 0.35), "c1": Color(1.0, 0.45, 0.08, 0.0), "grow0": 1.0, "grow1": 0.2})
 
 
 func _die() -> void:
@@ -419,7 +458,9 @@ func _die() -> void:
 			var dm: StandardMaterial3D = mat.duplicate()
 			m.material_override = dm
 			tw.tween_property(dm, "emission_energy_multiplier", 0.0, 2.4)
-	var t2 := create_tween()
-	t2.tween_interval(10.0)
-	t2.tween_property(self, "position:y", position.y - 2.2 * sc, 3.0)
-	t2.tween_callback(queue_free)
+	tw.finished.connect(func():
+		for m in find_children("*", "MeshInstance3D", true, false):
+			if m is MeshInstance3D and not (m.mesh is PlaneMesh):
+				m.visibility_range_end = 90.0
+				m.visibility_range_end_margin = 5.0
+		_finalize_corpse())

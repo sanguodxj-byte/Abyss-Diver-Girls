@@ -93,12 +93,12 @@ static func _central_terminus(raid, p: Vector3, rot: float) -> void:
 		A.add(n, A.bevel_box(Vector3(0.22, 0.04, 24.0), 0.01), M_HAZ, Vector3(sx * 6.9, 0.19, 0.6), Vector3.ZERO, Vector3.ONE, false)
 		# 双股铁轨与碎石道砟枕木
 		var tx := sx * 3.1
-		A.add(n, A.bevel_box(Vector3(2.2, 0.06, 23.8), 0.02), M_BALLAST, Vector3(tx, 0.09, 0.6), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(2.2, 0.06, 23.8), 0.02), M_BALLAST, Vector3(tx, 0.115, 0.6), Vector3.ZERO, Vector3.ONE, false)
 		for rx: float in [-0.58, 0.58]:
-			A.add(n, A.bevel_box(Vector3(0.09, 0.08, 23.6), 0.01), A.metal(STEEL), Vector3(tx + rx, 0.14, 0.6), Vector3.ZERO, Vector3.ONE, false)
+			A.add(n, A.bevel_box(Vector3(0.09, 0.08, 23.6), 0.01), A.metal(STEEL), Vector3(tx + rx, 0.195, 0.6), Vector3.ZERO, Vector3.ONE, false)
 		for si in 14:
 			var sz := -10.4 + si * 1.68
-			A.add(n, A.bevel_box(Vector3(1.65, 0.05, 0.22), 0.01), M_CDK, Vector3(tx, 0.11, sz), Vector3.ZERO, Vector3.ONE, false)
+			A.add(n, A.bevel_box(Vector3(1.65, 0.05, 0.22), 0.01), M_CDK, Vector3(tx, 0.148, sz), Vector3.ZERO, Vector3.ONE, false)
 	# 两侧各 5 根铆接箱型钢立柱 + 大跨度三铰钢桁拱肋（净高 13.6m，跨度 20.8m）
 	for zi in 5:
 		var zc := -9.6 + zi * 5.0
@@ -259,7 +259,7 @@ static func _missile_silo(raid, p: Vector3, rot: float) -> void:
 	# 硬化抗核爆钢筋混凝土发射坪 + 柏油抗烧蚀导流区
 	A.add(n, A.bevel_box(Vector3(24.4, 0.16, 25.6), 0.05), M_CON, Vector3(0, 0.08, 0.4), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.bevel_box(Vector3(16.8, 0.05, 14.0), 0.02), A.asphalt(Color(0.22, 0.22, 0.23)), Vector3(0, 0.17, 4.4), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(n, "SILO-04", Vector3(0, 0.20, 8.8), Vector3(-90, 0, 0), 0.045, Color(0.86, 0.80, 0.58, 0.58))
+	A.stencil(n, "SILO-04", Vector3(0, 0.212, 8.8), Vector3(-90, 0, 0), 0.045, Color(0.86, 0.80, 0.58, 0.58))
 	# 发射井口圆环装甲座圈（置于 z = -7.4m，前场 z = -1..+12m 完全敞开）
 	var sc := Vector3(0, 0.0, -7.4)
 	A.add(n, A.cyl(5.2, 0.56, 5.8, 16), M_CDK, sc + Vector3(0, 0.28, 0))
@@ -337,7 +337,7 @@ static func _spillway_dam(raid, p: Vector3, rot: float) -> void:
 		for ri in 4:
 			var ry := -2.1 + ri * 1.4
 			A.add(gate, A.bevel_box(Vector3(6.7, 0.28, 0.72), 0.02), M_RST, Vector3(0, ry, 0.16))
-		A.add(gate, A.bevel_box(Vector3(6.6, 0.42, 0.56), 0.02), M_HAZ, Vector3(0, 2.65, 0.05))
+		A.add(gate, A.bevel_box(Vector3(6.52, 0.42, 0.56), 0.02), M_HAZ, Vector3(0, 2.65, 0.05))
 		for ax: float in [-2.6, 2.6]:
 			A.add(n, A.bevel_box(Vector3(0.36, 0.42, 4.4), 0.02), M_RST, Vector3(gx + ax, 7.6, -9.0), Vector3(-16, 0, 0))
 	# 坝顶交通廊桥、压型钢板卷扬启闭机房与混凝土调度控制室（总高 18.6m）
@@ -466,7 +466,8 @@ static func _geothermal_vault(raid, p: Vector3, rot: float) -> void:
 	A.add(n, A.bevel_box(Vector3(23.6, 0.16, 25.0), 0.05), M_CON, Vector3(0, 0.08, 0.6), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.cyl(9.2, 0.08, 9.6, 12), M_DECK, Vector3(0, 0.16, 4.4), Vector3.ZERO, Vector3.ONE, false)
 	for ri in 6:
-		A.add(n, A.bevel_box(Vector3(0.32, 0.03, 17.6), 0.01), M_ST, Vector3(0, 0.205, 4.4), Vector3(0, ri * 30.0, 0), Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.32, 0.03, 17.6), 0.01), M_ST, Vector3(0, 0.205 + ri * 0.004, 4.4), Vector3(0, ri * 30.0, 0), Vector3.ONE, false)
+	A.add(n, A.cyl(0.85, 0.05, 0.92, 12), M_DARK, Vector3(0, 0.235, 4.4), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.torus(8.6, 9.1, 24), M_HAZ, Vector3(0, 0.19, 4.4), Vector3.ZERO, Vector3(1, 0.35, 1), false)
 	# 后部主反应堆压力安全壳穹顶（置于 z = -8.0m，直径 11.2m，高 13.8m）
 	var vc := Vector3(0, 0, -8.0)

@@ -85,7 +85,7 @@ static func _arcade_shop(raid, p: Vector3, sz: Vector3, rot: float) -> void:
 			for sd in [-1.0, 1.0]:
 				raid._ibox(sb, Vector3(0.92, 1.04, 0.08), 0.01, M_WIN, Vector3(bx, wy, sd * (hz + 0.03)), Vector3.ZERO, Vector3.ONE, false)
 				raid._ibox(sb, Vector3(1.06, 0.09, 0.16), 0.01, M_TRIM, Vector3(bx, wy - 0.56, sd * (hz + 0.06)), Vector3.ZERO, Vector3.ONE, false)
-	raid._ibox(sb, Vector3(sz.x - 0.22, 0.10, sz.z - 0.22), 0.02, A.tar_roof(Color(0.24, 0.25, 0.27)), Vector3(0, hy + 0.05, 0), Vector3.ZERO, Vector3.ONE, false)
+	raid._ibox(sb, Vector3(sz.x - 0.22, 0.10, sz.z - 0.22), 0.02, A.tar_roof(Color(0.24, 0.25, 0.27)), Vector3(0, hy + 0.19, 0), Vector3.ZERO, Vector3.ONE, false)
 	raid._ibox(sb, Vector3(sz.x + 0.26, 0.24, sz.z + 0.26), 0.02, M_TRIM, Vector3(0, hy + 0.10, 0))
 	raid._ibox(sb, Vector3(sz.x * 0.52, 0.62, 0.30), 0.02, M_DARK, Vector3(0, hy + 0.44, hz - 0.14))
 	raid._ibox(sb, Vector3(1.45, 0.78, 1.05), 0.03, M_STEEL, Vector3(-hx * 0.35, hy + 0.45, -hz * 0.25))
@@ -159,15 +159,15 @@ static func _courtyard_blk(raid, p: Vector3, sz: Vector3, rot: float) -> void:
 	raid._ibox(sb, Vector3(maxf(0.8, sz.x - 0.28), 0.06, maxf(0.8, wing_d - 0.16)), 0.01, M_ROOF, Vector3(0, hy + 0.17, -hz + wing_d * 0.5), Vector3.ZERO, Vector3.ONE, false)
 	var mid_span_z := maxf(0.8, sz.z - wing_d * 2.0)
 	for sx_s in [-1.0, 1.0]:
-		raid._ibox(sb, Vector3(wing_d, sz.y, mid_span_z + 0.1), 0.02, M_WALL, Vector3(sx_s * (hx - wing_d * 0.5), 0, 0))
-		raid._ibox(sb, Vector3(wing_d + 0.18, 0.20, mid_span_z + 0.18), 0.02, M_TRIM, Vector3(sx_s * (hx - wing_d * 0.5), hy + 0.06, 0))
-		raid._ibox(sb, Vector3(maxf(0.8, wing_d - 0.16), 0.06, maxf(0.8, mid_span_z)), 0.01, M_ROOF, Vector3(sx_s * (hx - wing_d * 0.5), hy + 0.17, 0), Vector3.ZERO, Vector3.ONE, false)
+		raid._ibox(sb, Vector3(wing_d, sz.y, mid_span_z - 0.02), 0.02, M_WALL, Vector3(sx_s * (hx - wing_d * 0.5), 0, 0))
+		raid._ibox(sb, Vector3(wing_d + 0.18, 0.20, maxf(0.6, mid_span_z - 0.44)), 0.02, M_TRIM, Vector3(sx_s * (hx - wing_d * 0.5), hy + 0.06, 0))
+		raid._ibox(sb, Vector3(maxf(0.8, wing_d - 0.16), 0.06, maxf(0.6, mid_span_z - 0.48)), 0.01, M_ROOF, Vector3(sx_s * (hx - wing_d * 0.5), hy + 0.17, 0), Vector3.ZERO, Vector3.ONE, false)
 	var gate_w := clampf(sz.x * 0.24, 2.0, 3.0)
 	var side_fx := maxf(1.2, (sz.x - gate_w) * 0.5)
 	for sx_f in [-1.0, 1.0]:
 		raid._ibox(sb, Vector3(side_fx, sz.y, wing_d), 0.02, M_WALL, Vector3(sx_f * (hx - side_fx * 0.5), 0, hz - wing_d * 0.5))
 	var lintel_h := maxf(1.2, sz.y - 2.6)
-	raid._ibox(sb, Vector3(gate_w + 0.2, lintel_h, wing_d), 0.02, M_WALL, Vector3(0, hy - lintel_h * 0.5, hz - wing_d * 0.5))
+	raid._ibox(sb, Vector3(gate_w - 0.02, lintel_h - 0.02, wing_d - 0.04), 0.02, M_WALL, Vector3(0, hy - lintel_h * 0.5 - 0.01, hz - wing_d * 0.5))
 	raid._ibox(sb, Vector3(gate_w, 2.5, wing_d * 0.85), 0.01, A.paint(Color(0.03, 0.03, 0.035), 0.1, 0.9), Vector3(0, -hy + 1.25, hz - wing_d * 0.5), Vector3.ZERO, Vector3.ONE, false)
 	raid._ibox(sb, Vector3(sz.x + 0.22, 0.20, wing_d + 0.22), 0.02, M_TRIM, Vector3(0, hy + 0.06, hz - wing_d * 0.5))
 	# 外立面规则窗列
@@ -341,7 +341,7 @@ static func _tenement(raid, p: Vector3, sz: Vector3, rot: float) -> void:
 			raid._ibox(sb, Vector3(0.92, 0.88, 0.08), 0.01, M_WIN, Vector3(dx, fy + 0.25, -hz - 0.03), Vector3.ZERO, Vector3.ONE, false)
 	# 女儿墙与屋顶高架圆柱水箱
 	raid._ibox(sb, Vector3(sz.x + 0.20, 0.26, sz.z + 0.20), 0.02, M_DARK, Vector3(0, hy + 0.12, 0))
-	raid._ibox(sb, Vector3(sz.x - 0.24, 0.06, sz.z - 0.24), 0.02, A.tar_roof(Color(0.25, 0.26, 0.28)), Vector3(0, hy + 0.24, 0), Vector3.ZERO, Vector3.ONE, false)
+	raid._ibox(sb, Vector3(sz.x - 0.24, 0.06, sz.z - 0.24), 0.02, A.tar_roof(Color(0.25, 0.26, 0.28)), Vector3(0, hy + 0.255, 0), Vector3.ZERO, Vector3.ONE, false)
 	raid._imesh(sb, A.cyl(0.72, 1.35, 0.72, 14), M_STEEL, Vector3(hx * 0.45, hy + 1.15, -hz * 0.20))
 	for lx in [-0.45, 0.45]:
 		raid._ibox(sb, Vector3(0.08, 0.65, 0.75), 0.01, M_STEEL, Vector3(hx * 0.45 + lx, hy + 0.45, -hz * 0.20), Vector3.ZERO, Vector3.ONE, false)
@@ -442,7 +442,7 @@ static func _cold_store(raid, p: Vector3, sz: Vector3, rot: float) -> void:
 	raid._ibox(sb, Vector3(sz.x + 0.20, 0.28, sz.z + 0.20), 0.02, M_TRIM, Vector3(0, hy - 0.10, 0))
 	for sx_c in [-1.0, 1.0]:
 		for sz_c in [-1.0, 1.0]:
-			raid._ibox(sb, Vector3(0.32, sz.y, 0.32), 0.02, M_TRIM, Vector3(sx_c * (hx - 0.06), 0, sz_c * (hz - 0.06)))
+			raid._ibox(sb, Vector3(0.32, sz.y - 0.28, 0.32), 0.02, M_TRIM, Vector3(sx_c * (hx - 0.06), 0.04, sz_c * (hz - 0.06)))
 	# 双冷链气密装卸门封口（橡胶门封垫 + 0.72m 内敛月台）
 	var n_docks := 2 if sz.x >= 8.5 else 1
 	for d_i in n_docks:
@@ -593,7 +593,7 @@ static func add_backdrop(kind: String, bs: Basis, p0: Vector3, sx: float, sz: fl
 			for sd_z in [-1.0, 1.0]:
 				hull_brick.append(Transform3D(bs.scaled_local(Vector3(sx, h, wd)), p0 + bs * Vector3(0.0, h * 0.5, sd_z * (sz * 0.5 - wd * 0.5))))
 			for sd_x in [-1.0, 1.0]:
-				hull_brick.append(Transform3D(bs.scaled_local(Vector3(wd, h, maxf(1.0, sz - wd * 1.8))), p0 + bs * Vector3(sd_x * (sx * 0.5 - wd * 0.5), h * 0.5, 0.0)))
+				hull_brick.append(Transform3D(bs.scaled_local(Vector3(wd, h, maxf(1.0, sz - wd * 2.02))), p0 + bs * Vector3(sd_x * (sx * 0.5 - wd * 0.5), h * 0.5, 0.0)))
 		"foundry":
 			hull_brick.append(Transform3D(bs.scaled_local(Vector3(sx, h, sz)), p0 + Vector3(0.0, h * 0.5, 0.0)))
 			var s_bs := bs * Basis(Vector3.UP, PI * 0.5)

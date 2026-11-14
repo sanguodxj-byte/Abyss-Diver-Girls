@@ -34,6 +34,8 @@ static func equipment_error(lo: Dictionary, cargo: Array, data: Node, stats := {
 	if stats.is_empty(): stats = data.compute_stats(lo)
 	if data.weight_of(cargo) > float(stats.cargo) + 0.001:
 		return UI._lt("出击货舱超出容量", "Deploy cargo exceeds capacity")
+	if not data.can_pack_cargo(cargo, float(stats.cargo)):
+		return UI._lt("出击货舱格位不足", "Deploy cargo grid full")
 	return ""
 
 static func valid_input(move: Vector2, aim: Vector3) -> bool:

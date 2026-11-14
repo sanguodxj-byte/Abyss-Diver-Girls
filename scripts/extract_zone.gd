@@ -27,8 +27,8 @@ func setup(t: String, c: Color, req: float, transport := false) -> void:
 	need = req
 	is_transport = transport
 	add_to_group("extracts")
-	A.ground_decal(self, A.ring_tex(), Color(c.r, c.g, c.b, 0.48), radius * 2.0, Vector3(0, 0.05, 0), true)
-	ring = A.add(self, A.torus(radius - 0.12, radius, 48), A.emit(c, 2.2), Vector3(0, 0.08, 0), Vector3.ZERO, Vector3(1, 0.15, 1), false)
+	A.ground_vfx(self, A.ring_tex(), Color(c.r, c.g, c.b, 0.48), radius * 2.0, Vector3(0, 0.115, 0), true, 0.44, false, 3)
+	ring = A.add(self, A.torus(radius - 0.12, radius, 48), A.emit(c, 2.2), Vector3(0, 0.145, 0), Vector3.ZERO, Vector3(1, 0.15, 1), false)
 	# 光柱：自下而上渐隐
 	var g := Gradient.new()
 	g.offsets = PackedFloat32Array([0.0, 0.15, 1.0])
@@ -97,8 +97,8 @@ func setup(t: String, c: Color, req: float, transport := false) -> void:
 		var m_stb := A.emit(c, 3.2)
 		m_stb.albedo_color = c.darkened(0.4)
 		for hx_s in [-1.15, 1.15]:
-			A.add(self, A.bevel_box(Vector3(0.36, 0.04, 2.80), 0.01), M_HAZ, Vector3(hx_s, 0.025, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(self, A.bevel_box(Vector3(2.30, 0.04, 0.36), 0.01), M_HAZ, Vector3(0, 0.026, 0), Vector3.ZERO, Vector3.ONE, false)
+			A.add(self, A.bevel_box(Vector3(0.36, 0.04, 2.80), 0.01), M_HAZ, Vector3(hx_s, 0.115, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(self, A.bevel_box(Vector3(1.98, 0.036, 0.36), 0.01), M_HAZ, Vector3(0, 0.112, 0), Vector3.ZERO, Vector3.ONE, false)
 		for ca in [45.0, 135.0, 225.0, 315.0]:
 			var cr := deg_to_rad(ca)
 			var pr := radius + 0.35
