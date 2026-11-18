@@ -301,6 +301,7 @@ func _build_backlog() -> void:
 	_backlog.visible = false
 	_backlog.mouse_filter = Control.MOUSE_FILTER_STOP
 	_stage.add_child(_backlog)
+	UI.bind_fit_panel(_backlog)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	_backlog.add_child(v)

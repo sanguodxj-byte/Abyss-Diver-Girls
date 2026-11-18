@@ -6,10 +6,12 @@ signal launch_requested(config: Dictionary)
 signal session_lost(reason: String)
 signal result_received(result: Dictionary)
 signal personal_result_received(result: Dictionary)
+signal lobby_reset
 
 const Protocol = preload("res://scripts/net/protocol.gd")
 const DEFAULT_PORT := Protocol.PORT
 var state := "offline" # offline / connecting / lobby / loading / raid / results
+var dedicated := false
 var players := {}
 var room_map := "greyport"
 var world_seed := 1
@@ -37,6 +39,8 @@ var _snapshot_parts := {}
 var _snapshot_serial := -1
 var local_result := {}
 var _command_tokens := {}
+var _auto_launch_at := -1
+var _results_deadline := -1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -63,6 +67,19 @@ func is_host() -> bool:
 func is_client() -> bool:
 	return active() and not multiplayer.is_server()
 
+func is_dedicated_server() -> bool:
+	return dedicated and is_host()
+
+func is_dedicated_client() -> bool:
+	return dedicated and is_client()
+
+func leader_id() -> int:
+	if not dedicated:
+		return 1
+	var ids: Array = players.keys()
+	ids.sort()
+	return int(ids[0]) if not ids.is_empty() else 0
+
 func local_id() -> int:
 	return multiplayer.get_unique_id() if active() else 1
 
@@ -76,21 +93,28 @@ func _can_send(id: int) -> bool:
 
 func fingerprint() -> String:
 	if _fingerprint == "":
-		var paths: Array[String] = []
-		_collect_files("res://scripts", paths)
-		_collect_files("res://data", paths)
-		paths.sort()
 		var ctx := HashingContext.new()
 		ctx.start(HashingContext.HASH_SHA256)
-		ctx.update(str(Engine.get_version_info().get("string", "")).to_utf8_buffer())
+		ctx.update(("v%d" % Protocol.VERSION).to_utf8_buffer())
+		var map_keys := GameData.MAPS.keys()
+		map_keys.sort()
+		ctx.update(var_to_bytes(map_keys))
+		var mod_keys := GameData.MODULES.keys()
+		mod_keys.sort()
+		ctx.update(var_to_bytes(mod_keys))
+		var item_keys := GameData.ITEMS.keys()
+		item_keys.sort()
+		ctx.update(var_to_bytes(item_keys))
+		var enemy_keys := GameData.ENEMIES.keys()
+		enemy_keys.sort()
+		ctx.update(var_to_bytes(enemy_keys))
+		var paths: Array[String] = []
+		_collect_files("res://data", paths)
+		paths.sort()
 		for path in paths:
-			ctx.update(path.to_utf8_buffer())
-			ctx.update(FileAccess.get_file_as_bytes(path))
-			if path.ends_with(".remap"):
-				var remap := ConfigFile.new()
-				if remap.load(path) == OK:
-					var target := str(remap.get_value("remap", "path", ""))
-					if target != "" and FileAccess.file_exists(target): ctx.update(FileAccess.get_file_as_bytes(target))
+			if path.ends_with(".json"):
+				ctx.update(path.to_utf8_buffer())
+				ctx.update(FileAccess.get_file_as_bytes(path))
 		_fingerprint = ctx.finish().hex_encode()
 	return _fingerprint
 
@@ -123,6 +147,9 @@ func host(nickname: String, listen_port := DEFAULT_PORT, password := "") -> Erro
 		_peer = null
 		return err
 	multiplayer.multiplayer_peer = _peer
+	dedicated = false
+	_auto_launch_at = -1
+	_results_deadline = -1
 	display_name = Protocol.player_name(nickname)
 	port = listen_port
 	_password = password
@@ -131,6 +158,32 @@ func host(nickname: String, listen_port := DEFAULT_PORT, password := "") -> Erro
 	players = {1: {"name": display_name, "ready": false}}
 	last_error = ""
 	_preferences()
+	changed.emit()
+	return OK
+
+func host_dedicated(listen_port := DEFAULT_PORT, password := "", initial_map := "greyport") -> Error:
+	if active():
+		return ERR_ALREADY_IN_USE
+	if listen_port < 1024 or listen_port > 65535 or password.length() > 64:
+		last_error = Loc.t("端口须为 1024–65535，口令最多 64 字", "Port must be 1024–65535; passcode max 64 chars")
+		return ERR_INVALID_PARAMETER
+	_peer = ENetMultiplayerPeer.new()
+	var err := _peer.create_server(listen_port, Protocol.MAX_PLAYERS, 3)
+	if err != OK:
+		last_error = Loc.t("无法监听端口 %d，端口可能已被占用", "Cannot bind UDP port %d — port may be in use") % listen_port
+		_peer = null
+		return err
+	multiplayer.multiplayer_peer = _peer
+	dedicated = true
+	_auto_launch_at = -1
+	_results_deadline = -1
+	display_name = "DedicatedServer"
+	port = listen_port
+	_password = password
+	state = "lobby"
+	room_map = initial_map if GameData.MAPS.has(initial_map) else "greyport"
+	players = {}
+	last_error = ""
 	changed.emit()
 	return OK
 
@@ -187,6 +240,7 @@ func _hello(version: int, build: String, nickname: String, password: String) -> 
 		_disconnect_later(id)
 		return
 	players[id] = {"name": Protocol.player_name(nickname), "ready": false}
+	_auto_launch_at = -1
 	_invalidate_ready()
 	_broadcast_room()
 
@@ -214,11 +268,28 @@ func _peer_disconnected(id: int) -> void:
 	_returning.erase(id)
 	if is_instance_valid(controller):
 		controller.disconnected(id)
+	if dedicated and players.is_empty() and state != "lobby":
+		_reset_dedicated_lobby()
+		return
 	if state == "lobby":
+		_auto_launch_at = -1
 		_invalidate_ready()
 	_broadcast_room.call_deferred()
 	_try_release()
 	_try_return()
+
+func _reset_dedicated_lobby() -> void:
+	state = "lobby"
+	_loaded.clear()
+	_returning.clear()
+	_pending.clear()
+	results.clear()
+	_auto_launch_at = -1
+	_results_deadline = -1
+	controller = null
+	roster.clear()
+	lobby_reset.emit()
+	_broadcast_room.call_deferred()
 
 func leave(reason := "") -> void:
 	var was_active := active()
@@ -227,6 +298,9 @@ func leave(reason := "") -> void:
 	_peer = null
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	state = "offline"
+	dedicated = false
+	_auto_launch_at = -1
+	_results_deadline = -1
 	players.clear()
 	roster.clear()
 	_pending.clear()
@@ -248,12 +322,28 @@ func leave(reason := "") -> void:
 		session_lost.emit(reason)
 
 func select_map(id: String) -> void:
-	if not is_host() or state != "lobby" or not GameData.MAPS.has(id):
+	if state != "lobby" or not GameData.MAPS.has(id):
+		return
+	if is_dedicated_client() and local_id() == leader_id():
+		_select_map_request.rpc_id(1, id)
+		return
+	if not is_host():
 		return
 	if room_map != id:
 		room_map = id
+		_auto_launch_at = -1
 		_invalidate_ready()
 		_broadcast_room()
+
+@rpc("any_peer", "call_remote", "reliable")
+func _select_map_request(id: String) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if is_dedicated_server() and state == "lobby" and sender == leader_id() and GameData.MAPS.has(id) and _allow(sender, "map", 200):
+		if room_map != id:
+			room_map = id
+			_auto_launch_at = -1
+			_invalidate_ready()
+			_broadcast_room()
 
 func _invalidate_ready() -> void:
 	for id in players:
@@ -290,10 +380,24 @@ func _set_ready(id: int, value: bool, lo: Dictionary, cargo: Array, growth := {}
 	players[id].loadout = lo.duplicate(true)
 	players[id].cargo = cargo.duplicate()
 	players[id].growth = profile
+	if is_dedicated_server():
+		_auto_launch_at = (Time.get_ticks_msec() + 1500) if can_launch() else -1
 	_broadcast_room()
 
 func can_launch() -> bool:
-	if not is_host() or state != "lobby" or players.size() < 2:
+	if state != "lobby":
+		return false
+	if is_dedicated_client():
+		if local_id() != leader_id() or players.size() < 1:
+			return false
+		for p in players.values():
+			if not p.ready:
+				return false
+		return true
+	if not is_host():
+		return false
+	var min_p := 1 if dedicated else 2
+	if players.size() < min_p:
 		return false
 	for p in players.values():
 		if not p.ready:
@@ -301,8 +405,13 @@ func can_launch() -> bool:
 	return true
 
 func launch() -> void:
+	if is_dedicated_client():
+		if can_launch():
+			_launch_request.rpc_id(1)
+		return
 	if not can_launch():
 		return
+	_auto_launch_at = -1
 	roster = players.duplicate(true)
 	results.clear()
 	local_result.clear()
@@ -310,6 +419,12 @@ func launch() -> void:
 	mission += 1
 	world_seed = randi() & 0x3fffffff
 	_begin({"mission": mission, "map": room_map, "roster": roster, "transit": {}, "seed": world_seed})
+
+@rpc("any_peer", "call_remote", "reliable")
+func _launch_request() -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if is_dedicated_server() and sender == leader_id() and can_launch():
+		launch()
 
 func _begin(config: Dictionary) -> void:
 	state = "loading"
@@ -515,6 +630,7 @@ func complete(all_results: Dictionary) -> void:
 		return
 	results = all_results.duplicate(true)
 	state = "results"
+	_results_deadline = (Time.get_ticks_msec() + 15000) if dedicated else -1
 	for id in players:
 		if results.has(id):
 			if id == 1:
@@ -566,6 +682,9 @@ func _try_return() -> void:
 	for id in players:
 		if not _returning.has(id):
 			return
+	_reset_dedicated_lobby() if dedicated else _return_listen_lobby()
+
+func _return_listen_lobby() -> void:
 	state = "lobby"
 	_invalidate_ready()
 	controller = null
@@ -577,14 +696,15 @@ func _broadcast_room() -> void:
 	for id in players:
 		public[id] = {"name": players[id].name, "ready": players[id].ready}
 	for id in players:
-		if id != 1 and _can_send(id): _room.rpc_id(id, public, room_map, state)
+		if id != 1 and _can_send(id): _room.rpc_id(id, public, room_map, state, dedicated)
 	changed.emit()
 
 @rpc("authority", "call_remote", "reliable")
-func _room(members: Dictionary, map_name: String, room_state: String) -> void:
+func _room(members: Dictionary, map_name: String, room_state: String, is_dedicated := false) -> void:
 	players = members
 	room_map = map_name
 	state = room_state
+	dedicated = is_dedicated
 	_last_heard = Time.get_ticks_msec()
 	changed.emit()
 
@@ -602,6 +722,23 @@ func _process(_delta: float) -> void:
 	if not active():
 		return
 	var now := Time.get_ticks_msec()
+	if is_dedicated_server():
+		for id in _pending.keys():
+			if now > int(_pending[id]):
+				_pending.erase(id)
+				if _peer != null and id in multiplayer.get_peers():
+					_peer.disconnect_peer(id)
+		if state == "lobby" and _auto_launch_at > 0 and now >= _auto_launch_at:
+			_auto_launch_at = -1
+			if can_launch():
+				launch()
+		elif state == "loading" and now > _deadline:
+			for id in players.keys():
+				if not _loaded.has(id) and _peer != null and id in multiplayer.get_peers():
+					_peer.disconnect_peer(id)
+		elif state == "results" and _results_deadline > 0 and now >= _results_deadline:
+			_reset_dedicated_lobby()
+		return
 	if state in ["connecting", "loading"] and now > _deadline:
 		leave(Loc.t("连接或战区加载超时，请重新组队", "Connection or sector loading timed out. Please regroup."))
 		return

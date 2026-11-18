@@ -9,6 +9,10 @@ const GridPack = preload("res://scripts/grid_pack.gd")
 const CARGO_COLS := 6
 
 const SAVE_FILE := "salvage_save.json"
+## 存档位数：每个位一个独立 JSON，主菜单选位进入；行动中的自动存档只写当前位。
+const SAVE_SLOT_COUNT := 3
+## 当前存档位（1 起）。主菜单选位/载入时切换，跨启动保留在 SLOT_CFG。
+const SLOT_CFG := "user://active_slot.txt"
 ## 需要迁移存档的旧数据目录名（与当前数据目录同在 app_userdata 下）。
 ## 正常启动时当前目录没有存档而旧目录有，就复制一份过来，旧文件保留。
 const LEGACY_DATA_DIRS := ["潜渊少女 Abyss Diver Girls", "残骸打捞团 Salvage Crew"]
@@ -18,6 +22,7 @@ const TEST_SAVE_DIR := "user://test_saves"
 const TEST_SAVE_STALE := 6 * 3600
 
 var save_path := "user://" + SAVE_FILE
+var slot := 1
 var test_mode := false
 var _closing := false
 
@@ -26,8 +31,8 @@ const _ZH_SLOT_NAMES := {"core": "躯干", "legs": "底盘", "arm_l": "左臂武
 var SLOT_NAMES := _ZH_SLOT_NAMES.duplicate()
 const STD_RANGE := 10.0
 const RANGE_M_SCALE := 3.0
-const RARITY_COLORS := [Color(0.68, 0.70, 0.72), Color(0.52, 0.73, 0.48), Color(0.46, 0.66, 0.82), Color(0.86, 0.58, 0.22)]
-const _ZH_RARITY_NAMES := ["普通", "优良", "稀有", "传说"]
+const RARITY_COLORS := [Color(0.68, 0.70, 0.72), Color(0.52, 0.73, 0.48), Color(0.46, 0.66, 0.82), Color(0.86, 0.58, 0.22), Color(0.74, 0.44, 0.92)]
+const _ZH_RARITY_NAMES := ["普通", "优良", "稀有", "传说", "原型"]
 var RARITY_NAMES := _ZH_RARITY_NAMES.duplicate()
 const _ZH_CAT_NAMES := {"food": "食物", "misc": "杂物", "use": "消耗品", "money": "货币", "module": "机甲模块"}
 var CAT_NAMES := _ZH_CAT_NAMES.duplicate()
@@ -35,15 +40,76 @@ var CAT_NAMES := _ZH_CAT_NAMES.duplicate()
 ## 普通物品。w = 重量(kg)，v = 价值(信用点)，rar = 稀有度
 var ITEMS := {}
 
-## 弹匣：每种武器的弹容量 / 换弹时间 / HUD 子弹贴图。
+## 武器类型（现实枪械分类）与射击资源：
+##   mode = ammo  —— 实弹武器：消耗弹匣，打空自动换弹，不耗能量
+##   mode = energy—— 激光/轨道：不占弹匣，每发直接消耗能量
+##   mode = melee —— 近战工程臂：不占弹匣，每击消耗少量能量（液压/燃气伺服）
 ## fire_loop = true 的武器按住扳机时播放持续循环的 wpn_<weapon>_loop，而不是每发一次 wpn_<weapon>_fire
+## sfx = 每发开火音效（缺省按 weapon 命名约定）；tex = HUD 子弹贴图
 var AMMO := {
-	"mg": {"mag": 36, "reload": 1.8, "tex": "ammo_mg"},
-	"shotgun": {"mag": 6, "reload": 2.2, "tex": "ammo_shell"},
-	"flamer": {"mag": 60, "reload": 2.4, "tex": "ammo_fuel", "fire_loop": true},
-	"laser": {"mag": 6, "reload": 2.0, "tex": "ammo_cell"},
-	"sniper": {"mag": 5, "reload": 2.4, "tex": "ammo_mg"},
+	"mg": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"autocannon": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"cannon": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"shotgun": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"sniper": {"mode": "ammo", "mag": 5, "reload": 2.4, "tex": "ammo_mg", "sfx": "wpn_railgun_fire"},
+	"launcher": {"mode": "ammo", "mag": 10, "reload": 2.6, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"flamer": {"mode": "ammo", "mag": 60, "reload": 2.4, "tex": "ammo_fuel", "fire_loop": true},
+	"laser": {"mode": "energy", "mag": 0, "reload": 0.0, "tex": "ammo_cell", "sfx": "wpn_laser_fire"},
+	"melee": {"mode": "melee", "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
 }
+
+## 武器的射击资源模式：ammo（实弹弹匣）/ energy（激光耗能）/ melee（近战少量耗能）
+func weapon_mode(weapon: String) -> String:
+	return str(AMMO.get(weapon, {}).get("mode", "ammo"))
+
+
+func weapon_uses_ammo(weapon: String) -> bool:
+	return weapon_mode(weapon) == "ammo"
+
+
+## 距离衰减：near = 满伤距离（米），far = 衰减到 min 的距离，min = 最低伤害倍率。
+## 弹丸不再按射程消失，只在超出 near 后线性衰减；狙击最缓，霰弹最陡。
+const WEAPON_FALLOFF := {
+	"sniper": {"near": 1.20, "far": 3.20, "min": 0.88},
+	"laser": {"near": 1.00, "far": 2.60, "min": 0.82},
+	"cannon": {"near": 0.80, "far": 2.60, "min": 0.70},
+	"launcher": {"near": 0.80, "far": 2.60, "min": 0.78},
+	"autocannon": {"near": 0.60, "far": 2.20, "min": 0.55},
+	"mg": {"near": 0.50, "far": 2.00, "min": 0.50},
+	"flamer": {"near": 0.40, "far": 1.30, "min": 0.18},
+	"shotgun": {"near": 0.35, "far": 1.00, "min": 0.10},
+	"melee": {"near": 1.00, "far": 1.20, "min": 1.00},
+}
+
+
+## 当前武器的距离衰减参数（米 / 倍率）；缺省按机枪
+func weapon_falloff(m: Dictionary) -> Dictionary:
+	var w := str(m.get("weapon", "mg"))
+	var f: Dictionary = WEAPON_FALLOFF.get(w, WEAPON_FALLOFF["mg"])
+	var r := maxf(weapon_range_m(m), 1.0)
+	return {"near": r * float(f.near), "far": r * float(f.far), "min": float(f.min)}
+
+
+## 武器类型显示名（现实枪械分类）
+func weapon_type_name(weapon: String) -> String:
+	match weapon:
+		"mg": return Loc.t("机枪", "Machine Gun")
+		"autocannon": return Loc.t("自动炮", "Autocannon")
+		"cannon": return Loc.t("坦克炮 / 榴弹炮", "Cannon / Artillery")
+		"shotgun": return Loc.t("霰弹枪", "Shotgun")
+		"sniper": return Loc.t("狙击 / 反器材", "Sniper / AMR")
+		"launcher": return Loc.t("火箭 / 导弹", "Rocket / Missile")
+		"flamer": return Loc.t("火焰喷射器", "Flamethrower")
+		"laser": return Loc.t("激光 / 能量武器", "Laser / Energy")
+		"melee": return Loc.t("近战工程臂", "Melee Engineering Arm")
+	return weapon
+
+
+## 每发开火消耗的能量：实弹武器为 0，激光按 cost，近战按 cost（默认 0.3）
+func shot_energy_cost(m: Dictionary) -> float:
+	if weapon_mode(str(m.get("weapon", ""))) == "ammo":
+		return 0.0
+	return maxf(0.0, float(m.get("cost", 0.3)))
 
 ## 技能：Space=底盘机动，F=背部挂载。icon 对应 assets/ui/ic_<icon>.png
 var SKILLS := {
@@ -145,6 +211,9 @@ const _ZH_QUALITY_NAMES := ["流畅", "高", "极致"]
 var QUALITY_NAMES := _ZH_QUALITY_NAMES.duplicate()
 var quality := 1
 var render_style := 0  # 0 写实 1 三渲二
+var view_mode := 0     # 0 第三人称 1 第一人称
+var mouse_sens := 1.0  # 鼠标视角灵敏度倍率（0.2 ~ 2.5）
+var _cfg_save_t: Timer
 var map_id := "greyport"  ## 出击战区
 var extracts_ok := 0
 ## 遭遇过的敌人种类（跨行动累计，随存档保存）
@@ -167,6 +236,11 @@ var _zh_base := {}
 
 func _ready() -> void:
 	_init_save_path()
+	_cfg_save_t = Timer.new()
+	_cfg_save_t.one_shot = true
+	_cfg_save_t.wait_time = 0.35
+	_cfg_save_t.timeout.connect(save_game)
+	add_child(_cfg_save_t)
 	_merge_content()
 	for id in MODULES:
 		_module_item(id)
@@ -236,6 +310,7 @@ func _setup_input() -> void:
 	_key("use_fuel", [KEY_1])
 	_key("use_repair", [KEY_2])
 	_key("call_transport", [KEY_T])
+	_key("toggle_view", [KEY_F5])
 	_key("pause", [KEY_ESCAPE])
 	_mouse("fire_left", MOUSE_BUTTON_LEFT)
 	_mouse("fire_right", MOUSE_BUTTON_RIGHT)
@@ -438,7 +513,7 @@ func module_skill_info(id: String) -> Dictionary:
 
 
 # ---------- 机甲数值 ----------
-## f(stats: Dictionary, loadout: Dictionary) -> void：在 compute_stats 算完模块数值后原地修改结果（驾驶员天赋、设施加成等）
+## f(stats: Dictionary, loadout: Dictionary) -> void：在 compute_stats 算完模块数值后原地修改结果（驾驶员等级、设施加成等）
 var _stat_hooks: Array = []
 
 func add_stat_hook(f: Callable) -> void:
@@ -544,7 +619,7 @@ func _weighted(pool: Dictionary, rng: RandomNumberGenerator) -> String:
 
 func _random_module(rng: RandomNumberGenerator) -> String:
 	var weights := {}
-	var rw := [10.0, 5.0, 2.0, 0.6]
+	var rw := [10.0, 5.0, 2.0, 0.6, 0.15]
 	for id in MODULES:
 		weights[id] = rw[int(MODULES[id].rar)]
 	return _weighted(weights, rng)
@@ -747,7 +822,7 @@ func _bump_quests(types: Array, target_value: String) -> void:
 				continue
 			var tgt := str(q.get("target", ""))
 			if tgt != "any" and tgt != target_value:
-				if not (tgt == "broodmother" and target_value in ["grey_brood", "dust_matriarch", "harbor_reaper", "dune_devourer", "prism_archon", "terminus_warden", "silo_warhead", "spillway_leviathan"]) and not (tgt == "king_beetle" and target_value in ["iron_warden", "slag_colossus", "gorge_tyrant", "foundry_dreadnought", "excavator_titan", "drydock_behemoth"]) and not (tgt == "abyss_queen" and target_value in ["abyss_harbinger", "core_overlord"]):
+				if not (tgt == "broodmother" and target_value in ["grey_brood", "dust_matriarch", "harbor_reaper", "dune_devourer", "prism_archon", "terminus_warden", "silo_warhead", "spillway_leviathan"]) and not (tgt == "king_beetle" and target_value in ["iron_warden", "slag_colossus", "gorge_tyrant", "foundry_dreadnought", "excavator_titan", "drydock_behemoth", "citadel_behemoth", "sky_carrier"]) and not (tgt == "abyss_queen" and target_value in ["abyss_harbinger", "core_overlord", "citadel_behemoth", "sky_carrier"]):
 					continue
 			var cur := quest_progress_of(m, i)
 			if cur >= int(q.count):
@@ -776,6 +851,8 @@ func new_game() -> void:
 	raids = 0
 	extracts_ok = 0
 	seen_enemies = []
+	if OS.has_feature("mobile"):
+		quality = 0
 	quests = {}
 	quest_state = {}
 	quest_progress = {}
@@ -784,18 +861,38 @@ func new_game() -> void:
 		_sections[k][1].call({})
 	save_game()
 
-func save_game() -> void:
-	if _closing:
-		return
+## 存档载荷：顶层进度字段 + meta（当前存档位、保存时刻、驾驶员名）+ 各分区
+func _payload() -> Dictionary:
 	var sec: Dictionary = _sections_data.duplicate()
 	for k in _sections:
 		sec[k] = _sections[k][0].call()
-	var f := FileAccess.open(save_path, FileAccess.WRITE)
+	var prog: Dictionary = sec.get("progress", {}) if typeof(sec.get("progress", {})) == TYPE_DICTIONARY else {}
+	return {"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
+		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "view_mode": view_mode, "mouse_sens": mouse_sens, "map_id": map_id,
+		"seen_enemies": seen_enemies, "sections": sec,
+		"meta": {"slot": slot, "saved_at": Time.get_unix_time_from_system(), "name": str(prog.get("player_name", ""))}}
+
+func schedule_save() -> void:
+	if _closing or _cfg_save_t == null:
+		return
+	_cfg_save_t.start()
+
+func save_game() -> void:
+	if _closing:
+		return
+	_write_payload(save_path, _payload())
+
+## 把当前进度复制写到指定存档位；不改变当前活动位，后续自动存档仍写活动位
+func save_to_slot(i: int) -> void:
+	if _closing or i < 1 or i > SAVE_SLOT_COUNT:
+		return
+	_write_payload(slot_path(i), _payload())
+
+func _write_payload(path: String, payload: Dictionary) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify({"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
-		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "map_id": map_id,
-		"seen_enemies": seen_enemies, "sections": sec}))
+	f.store_string(JSON.stringify(payload))
 
 func load_game() -> bool:
 	if not FileAccess.file_exists(save_path):
@@ -829,8 +926,10 @@ func load_game() -> bool:
 		var cur_id := _migrate_item_id(str(loadout.get(slot_k, STARTER[slot_k])))
 		loadout[slot_k] = cur_id if MODULES.has(cur_id) else STARTER[slot_k]
 	raids = int(d.get("raids", 0))
-	quality = int(d.get("quality", 1))
+	quality = int(d.get("quality", 0 if OS.has_feature("mobile") else 1))
 	render_style = int(d.get("render_style", 0))
+	view_mode = clampi(int(d.get("view_mode", 0)), 0, 1)
+	mouse_sens = clampf(float(d.get("mouse_sens", 1.0)), 0.2, 2.5)
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
 	seen_enemies = Array(d.get("seen_enemies", []))
@@ -901,8 +1000,61 @@ func _init_save_path() -> void:
 		if FileAccess.file_exists(save_path):
 			DirAccess.remove_absolute(save_path)
 	else:
-		save_path = "user://" + SAVE_FILE
+		# 跨启动保留的当前存档位；缺省 1
+		slot = clampi(int(FileAccess.get_file_as_string(SLOT_CFG).strip_edges()) if FileAccess.file_exists(SLOT_CFG) else 1, 1, SAVE_SLOT_COUNT)
+		# 旧的单文件存档只迁到 1 号位一次：1 号位不存在而单文件存在时复制，旧文件保留
+		var legacy := "user://" + SAVE_FILE
+		if not FileAccess.file_exists(slot_path(1)) and FileAccess.file_exists(legacy):
+			DirAccess.copy_absolute(legacy, slot_path(1))
 		migrate_legacy_save(OS.get_user_data_dir(), LEGACY_DATA_DIRS)
+		save_path = slot_path(slot)
+
+## 第 i 存档位的存档文件路径；测试运行统一指到按进程号隔离的临时存档，真实存档不被读写
+func slot_path(i: int) -> String:
+	if test_mode:
+		return save_path
+	return "user://save_slot_%d.json" % clampi(i, 1, SAVE_SLOT_COUNT)
+
+## 切换当前活动存档位并持久化；活动位接收行动中的全部自动存档
+func set_slot(i: int) -> void:
+	slot = clampi(i, 1, SAVE_SLOT_COUNT)
+	save_path = slot_path(slot)
+	if not test_mode:
+		var f := FileAccess.open(SLOT_CFG, FileAccess.WRITE)
+		if f != null:
+			f.store_string(str(slot))
+
+## 读某个存档位的概要（只解析文件，不改内存状态）；位上没有存档时 exists 为 false
+func slot_info(i: int) -> Dictionary:
+	var p := slot_path(i)
+	if not FileAccess.file_exists(p):
+		return {"exists": false, "slot": i}
+	var d = JSON.parse_string(FileAccess.get_file_as_string(p))
+	if typeof(d) != TYPE_DICTIONARY:
+		return {"exists": false, "slot": i}
+	var meta: Dictionary = d.get("meta", {}) if typeof(d.get("meta", {})) == TYPE_DICTIONARY else {}
+	var prog: Dictionary = (d.get("sections", {}) as Dictionary).get("progress", {}) if typeof((d.get("sections", {}) as Dictionary).get("progress", {})) == TYPE_DICTIONARY else {}
+	var at: int = int(meta.get("saved_at", 0)) if int(meta.get("saved_at", 0)) > 0 else int(FileAccess.get_modified_time(p))
+	return {"exists": true, "slot": i,
+		"name": str(meta.get("name", prog.get("player_name", ""))),
+		"money": int(d.get("money", 0)),
+		"raids": int(d.get("raids", 0)),
+		"extracts_ok": int(d.get("extracts_ok", 0)),
+		"saved_at": at}
+
+## 任意存档位上有存档（主菜单「载入游戏」的可用性）
+func has_any_save() -> bool:
+	for i in range(1, SAVE_SLOT_COUNT + 1):
+		if FileAccess.file_exists(slot_path(i)):
+			return true
+	return false
+
+## unix 时间 → 短格式（MM-dd HH:mm）
+static func fmt_save_time(unix: int) -> String:
+	if unix <= 0:
+		return ""
+	var s := Time.get_datetime_string_from_unix_time(unix, false)
+	return s.substr(5, 11).replace("T", " ") if s.length() >= 16 else s
 
 ## 当前数据目录 cur_dir 里没有存档、某个旧目录（与 cur_dir 同级）里有时，复制过来；旧文件保留。返回复制来源，没复制时返回空串。
 static func migrate_legacy_save(cur_dir: String, legacy_names: Array) -> String:
@@ -1044,25 +1196,52 @@ static func list_scripts(dir: String) -> Array:
 ## 按画质档位调整战场环境的重型后处理（GPU 开销大头）。
 ## 流畅：关体积雾 / SSIL，保留基础 SSAO，阴影 2048、硬阴影；高：体积雾 + SSAO，关 SSIL，阴影 4096；极致：全开，阴影 8192。
 func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void:
+	var mob := OS.has_feature("mobile")
+	var mobile_renderer := RenderingServer.get_current_rendering_method() == "mobile"
 	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	if mob or mobile_renderer:
+		env.volumetric_fog_enabled = false
+		env.ssr_enabled = false
+		env.ssil_enabled = false
+		env.ssao_enabled = false
+		env.glow_enabled = quality >= 2
+		RenderingServer.directional_shadow_atlas_set_size(1024 if quality == 0 else 2048, true)
+		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD if quality == 0 else RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
+		RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+		if sun:
+			sun.light_angular_distance = 0.0
+			sun.shadow_blur = 0.0 if quality == 0 else 0.25
+			sun.directional_shadow_blend_splits = false
+			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if quality == 0 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+			sun.directional_shadow_max_distance = 44.0 if quality == 0 else (56.0 if quality == 1 else 68.0)
+		return
 	match quality:
 		0:
 			env.volumetric_fog_enabled = false
+			env.ssr_enabled = false
 			env.ssil_enabled = false
-			env.ssao_enabled = not compat
-			env.ssao_intensity = 2.0
+			env.ssao_enabled = not compat and not mobile_renderer
+			env.ssao_intensity = 1.65
 			env.glow_enabled = true
-			RenderingServer.directional_shadow_atlas_set_size(2048, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			RenderingServer.directional_shadow_atlas_set_size(4096, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
-				sun.light_angular_distance = 0.0
-				sun.directional_shadow_max_distance = 55.0
+				sun.light_angular_distance = 0.15
+				sun.directional_shadow_max_distance = 68.0
 		1:
+			env.ssr_enabled = not compat and not mobile_renderer
+			env.ssr_max_steps = 48
 			env.ssil_enabled = false
+			env.ssao_enabled = not compat and not mobile_renderer
+			env.ssao_intensity = 1.85
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 		_:
-			env.ssil_enabled = not compat
+			env.ssr_enabled = not compat and not mobile_renderer
+			env.ssr_max_steps = 64
+			env.ssil_enabled = not compat and not mobile_renderer
+			env.ssao_enabled = not compat and not mobile_renderer
+			env.ssao_intensity = 1.85
 			RenderingServer.directional_shadow_atlas_set_size(8192, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
 
@@ -1072,6 +1251,23 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 func apply_quality(vp: Viewport = null) -> void:
 	if vp == null:
 		vp = get_tree().root
+	if OS.has_feature("mobile"):
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		vp.use_taa = false
+		vp.msaa_3d = Viewport.MSAA_DISABLED if quality <= 1 else Viewport.MSAA_2X
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		var win_h := float(maxi(720, DisplayServer.window_get_size().y))
+		match quality:
+			0:
+				vp.scaling_3d_scale = clampf(minf(0.75, 720.0 / win_h), 0.62, 0.75)
+				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_2X
+			1:
+				vp.scaling_3d_scale = clampf(minf(0.88, 900.0 / win_h), 0.75, 0.88)
+				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+			_:
+				vp.scaling_3d_scale = 1.0
+				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+		return
 	# 使用硬件 MSAA 保持贴图与几何锐度，关闭会涂抹地面的 FXAA
 	match quality:
 		0:

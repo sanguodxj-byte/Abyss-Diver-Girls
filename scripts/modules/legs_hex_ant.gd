@@ -69,31 +69,40 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.cy(leg, 0.15, 0.24, M_DARK, Vector3(0, 0, 0.04), Vector3.ZERO, 0.16, 14)
 		K.actuator(leg, Vector3(0, 0.01, 0.12), 0.11, 0.24)
 
-		# 股节（双钢管 + 轻质背板 + 黄铜封口液压缸）
-		var up := K.bone(leg, H, KN)
+		# 股节枢轴（双钢管 + 轻质背板 + 黄铜封口液压缸）
+		var fm := K.node(leg, H, Vector3.ZERO, "Femur")
+		var up := K.bone(fm, H, KN)
 		var l1 := H.distance_to(KN)
 		for bx in [-0.065, 0.065]:
 			K.cy(up, 0.032, l1 * 0.92, M_FRAME, Vector3(bx, -l1 * 0.5, 0.0), Vector3.ZERO, -1.0, 10)
 		K.plate(up, K.trap(0.18, 0.24, l1 * 0.80, 0.03), 0.09, M_LEG, Vector3(0, -l1 * 0.48, 0.06), Vector3.ZERO, 0.02)
-		K.piston(leg, Vector3(0, -0.10, 0.12), Vector3(0, 0.14, 0.58), 0.024)
+		K.piston(fm, Vector3(0, -0.10, 0.12), Vector3(0, 0.14, 0.58), 0.024)
 
-		# 膝节转鼓 + 胫节双钢管与橡胶防滑圆足
-		K.actuator(leg, KN, 0.115, 0.24)
-		var lo := K.bone(leg, KN, FT)
+		# 膝节转鼓 + 胫节枢轴双钢管与橡胶防滑圆足
+		K.actuator(fm, KN, 0.115, 0.24)
+		var kj := K.node(fm, KN, Vector3.ZERO, "Knee")
+		var lo := K.bone(kj, Vector3.ZERO, FT - KN)
 		var l2 := KN.distance_to(FT)
 		for bx in [-0.055, 0.055]:
 			K.cy(lo, 0.030, l2 * 0.92, M_FRAME, Vector3(bx, -l2 * 0.48, 0.0), Vector3.ZERO, -1.0, 10)
 		for rt in [0.32, 0.68]:
 			K.bb(lo, Vector3(0.15, 0.05, 0.10), M_GUN, Vector3(0, -l2 * rt, 0.0), Vector3.ZERO, 0.01)
 		K.plate(lo, K.trap(0.14, 0.22, l2 * 0.72, 0.03), 0.08, M_LEG2, Vector3(0, -l2 * 0.40, 0.07), Vector3.ZERO, 0.018)
-		K.piston(leg, KN + Vector3(0, -0.08, -0.08), KN + (FT - KN) * 0.56 + Vector3(0, 0, -0.06), 0.024)
+		K.piston(kj, Vector3(0, -0.08, -0.08), (FT - KN) * 0.56 + Vector3(0, 0, -0.06), 0.024)
 
-		var pad := K.node(leg, FT + Vector3(0, 0.02, 0))
+		var aj := K.node(kj, FT - KN, Vector3.ZERO, "Ankle")
+		var pad := K.node(aj, Vector3(0, 0.02, 0))
 		K.cy(pad, 0.095, 0.08, M_GUN, Vector3(0, 0.05, 0), Vector3.ZERO, 0.12, 12)
 		K.cy(pad, 0.145, 0.045, A.rubber(), Vector3(0, -0.035, 0), Vector3.ZERO, 0.16, 14)
 		for ca in [-35.0, 35.0]:
 			var cl := K.node(pad, Vector3.ZERO, Vector3(0, ca, 0))
 			K.bb(cl, Vector3(0.055, 0.04, 0.11), M_DARK, Vector3(0, -0.015, 0.14), Vector3(12, 0, 0), 0.008)
+		leg.set_meta("femur", fm)
+		leg.set_meta("knee", kj)
+		leg.set_meta("ankle", aj)
+		leg.set_meta("KN", KN)
+		leg.set_meta("AN", FT)
+		leg.set_meta("base_yaw", leg.rotation.y)
 		leg_parts.append(leg)
 
 	K.socket(root, "core", Vector3(0, hip + 0.54, 0), Vector3.UP)

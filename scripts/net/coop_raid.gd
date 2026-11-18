@@ -24,7 +24,6 @@ var _gate_t := 0.0
 var _gate := ""
 var _world_state := {}
 var _hud_proxy
-var _status: Label
 var _geometry := 0
 
 class RemoteHud extends RefCounted:
@@ -48,11 +47,12 @@ func setup(r, config: Dictionary) -> void:
 	_hud_proxy = RemoteHud.new()
 	_hud_proxy.owner = self
 	var local := Net.local_id()
-	units[local] = raid.mech
 	var ids: Array = Net.roster.keys()
 	ids.sort()
-	var drop: Vector3 = raid.mech.position
+	var drop: Vector3 = raid.server_drop if Net.is_dedicated_server() else raid.mech.position
 	drop.y = 0.3
+	if not Net.is_dedicated_server():
+		units[local] = raid.mech
 	var zones: Array = []
 	for zone in raid.extracts: zones.append([zone.position, zone.title])
 	_geometry = hash([raid.map_id, raid.blocks, zones])
@@ -60,7 +60,7 @@ func setup(r, config: Dictionary) -> void:
 	for id in ids:
 		var profile: Dictionary = Net.roster[id]
 		var saved: Dictionary = config.get("transit", {}).get("players", {}).get(id, {})
-		if id != local:
+		if Net.is_dedicated_server() or id != local:
 			var m = load("res://scripts/mech.gd").new()
 			m.raid = raid
 			m.net_peer = id
@@ -89,11 +89,14 @@ func setup(r, config: Dictionary) -> void:
 			m.collision_layer = 0
 			m.collision_mask = 0
 	applying = false
+	if Net.is_dedicated_server() and not ids.is_empty():
+		raid.mech = units[ids[0]]
 	if not config.get("transit", {}).is_empty():
 		raid.time = config.transit.time
 		raid.kills = config.transit.kills
 		raid.visited_maps = config.transit.visited
-		raid.start_cargo = contexts[local].start.duplicate()
+		if not Net.is_dedicated_server() and contexts.has(local):
+			raid.start_cargo = contexts[local].start.duplicate()
 	raid.world_link.set_process(false)
 	if Net.is_client():
 		# Geometry is generated identically; simulation nodes are recreated from server descriptors.
@@ -110,15 +113,6 @@ func setup(r, config: Dictionary) -> void:
 		raid.factions.process_mode = Node.PROCESS_MODE_DISABLED
 	else:
 		Events.any.connect(_shared_event)
-	_status = Label.new()
-	_status.position = Vector2(18, 146)
-	_status.add_theme_font_size_override("font_size", 12)
-	_status.add_theme_color_override("font_color", Color(0.5, 0.9, 1.0))
-	_status.add_theme_color_override("font_shadow_color", Color.BLACK)
-	_status.add_theme_constant_override("shadow_offset_x", 2)
-	_status.add_theme_constant_override("shadow_offset_y", 2)
-	_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	raid.hud.add_child(_status)
 	Net.notice.connect(_notice)
 	raid.process_mode = Node.PROCESS_MODE_DISABLED
 
@@ -135,6 +129,8 @@ func _spawn_position(drop: Vector3, slot: int) -> Vector3:
 
 func _exit_tree() -> void:
 	if Net.controller == self: Net.controller = null
+	if is_instance_valid(raid) and is_instance_valid(raid.hud) and raid.hud.has_method("set_coop_status"):
+		raid.hud.set_coop_status("", false)
 	units.clear()
 	contexts.clear()
 	entities.clear()
@@ -169,24 +165,32 @@ func release() -> void:
 func _process(delta: float) -> void:
 	if not is_instance_valid(raid):
 		return
+	var hud = raid.hud
+	var has_coop_ui: bool = (not Net.is_dedicated_server()) and is_instance_valid(hud) and hud.has_method("set_coop_status")
 	if Net.state == "loading":
-		_status.text = Loc.t("等待小队完成战区加载…", "Waiting for squad to finish sector loading...")
+		if has_coop_ui:
+			hud.set_coop_status(Loc.t("等待小队完成战区加载…", "Waiting for squad to finish sector loading..."), false)
 		return
 	if Net.state != "raid":
+		if has_coop_ui:
+			hud.set_coop_status("", false)
 		return
 	if Net.is_client() and Net.snapshot_age_ms() > 2500:
-		_status.text = Loc.t("网络中断，正在等待房主恢复…", "Connection interrupted — waiting for host...")
+		if has_coop_ui:
+			hud.set_coop_status(Loc.t("▲ 网络中断，正在等待房主恢复…", "▲ Connection interrupted — waiting for host..."), true)
 		return
-	_status.text = Loc.t("合作小队 %d/4  ·  %s\n", "Co-op Squad %d/4  ·  %s\n") % [Net.players.size(), Loc.t("房主", "Host") if Net.is_host() else "%d ms" % Net.ping_ms]
-	for id in units:
-		var m = units[id]
-		_status.text += "%s  %d%%  %s\n" % [Net.roster[id].name, maxi(0, int(m.hp / maxf(m.max_hp, 1) * 100)), Loc.t(str(contexts[id].status))]
+	if has_coop_ui:
+		var lines := [Loc.t("合作小队 %d/4  ·  %s", "Co-op Squad %d/4  ·  %s") % [Net.players.size(), Loc.t("房主", "Host") if Net.is_host() else "%d ms" % Net.ping_ms]]
+		for id in units:
+			var m = units[id]
+			lines.append("%s  %d%%  %s" % [Net.roster[id].name, maxi(0, int(m.hp / maxf(m.max_hp, 1) * 100)), Loc.t(str(contexts[id].status))])
+		hud.set_coop_status("\n".join(lines), false)
 	if Net.is_host():
 		_tick_players(delta)
 		_tick_gate(delta)
 		_send_t -= delta
 		if _send_t <= 0:
-			_send_t = 1.0 / 15.0
+			_send_t = (1.0 / 14.0) if Net.is_dedicated_server() else (1.0 / 15.0)
 			_sync_entities()
 			_send_snapshot()
 	else:
@@ -198,9 +202,12 @@ func _client_input(delta: float) -> void:
 	var blocked: bool = m.input_locked or m.dead or m.net_done or raid.dropping or raid.hud.pause_panel.visible or raid.hud.settings_panel.visible or Story.flow.is_playing()
 	var move: Vector3 = m.move_vec() if not blocked else Vector3.ZERO
 	var fire := 0
-	if not blocked and not raid.hud.map_open() and not raid.hud.is_touch_busy():
-		if Input.is_action_pressed("fire_left") or m.joy_aim.length() >= 0.28: fire |= 1
-		if Input.is_action_pressed("fire_right"): fire |= 2
+	if not blocked and not raid.hud.map_open():
+		var hud_busy: bool = raid.hud.is_touch_busy()
+		var t_fire: bool = (raid.hud.has_method("is_touch_firing") and raid.hud.is_touch_firing()) or m.joy_aim.length() >= 0.48
+		var t_aim: bool = raid.hud.has_method("is_touch_aiming") and raid.hud.is_touch_aiming()
+		if ((not hud_busy) and Input.is_action_pressed("fire_left")) or t_fire: fire |= 1
+		if ((not hud_busy) and Input.is_action_pressed("fire_right")) or t_aim: fire |= 2
 	_input_t -= delta
 	if _input_t <= 0:
 		_input_t = 1.0 / 30.0
@@ -219,7 +226,7 @@ func accept_input(id: int, seq: int, move: Vector2, aim: Vector3, fire: int, loc
 	var m = units[id]
 	m.net_move = move.limit_length(1.0)
 	m.net_fire = fire & 3
-	m.aim_point = Vector3(aim.x, 1.8, aim.z)
+	m.aim_point = Vector3(aim.x, clampf(aim.y, -20.0, 95.0), aim.z)
 	m.input_locked = locked or contexts[id].box != null or m.net_done
 
 func _tick_players(delta: float) -> void:
@@ -269,12 +276,17 @@ func _tick_players(delta: float) -> void:
 			if ctx.progress >= zone.need:
 				Net.player_event(id, "extract_completed", [zone.title, zone.is_transport])
 				finish_player(id, true, Loc.t("成功撤离（%s）", "Extracted (%s)") % zone.title)
-		if id == 1:
-			if ctx.box == null and raid.open_box != null:
-				raid.open_box = null
-				raid.hud.close_loot()
-			raid.extract_target = ctx.target
-			raid.extract_progress = ctx.progress
+			if not Net.is_dedicated_server() and id == 1:
+				if ctx.box == null and raid.open_box != null:
+					raid.open_box = null
+					raid.hud.close_loot()
+				raid.extract_target = ctx.target
+				raid.extract_progress = ctx.progress
+	if Net.is_dedicated_server() and (not is_instance_valid(raid.mech) or raid.mech.dead or raid.mech.net_done):
+		for id in units:
+			if is_instance_valid(units[id]) and not units[id].dead and not units[id].net_done:
+				raid.mech = units[id]
+				break
 
 func finish_player(id: int, success: bool, reason: String) -> void:
 	if not Net.is_host() or not units.has(id) or not contexts.has(id) or not contexts[id].result.is_empty():
@@ -309,11 +321,11 @@ func disconnected(id: int) -> void:
 	finish_player(id, false, "驾驶员掉线，机甲与货物遗失")
 
 func view_position() -> Vector3:
-	if raid.mech.net_done or raid.mech.dead:
+	if not is_instance_valid(raid.mech) or raid.mech.net_done or raid.mech.dead:
 		for id in units:
-			if not units[id].net_done and not units[id].dead:
+			if is_instance_valid(units[id]) and not units[id].net_done and not units[id].dead:
 				return units[id].global_position
-	return raid.mech.global_position
+	return raid.mech.global_position if is_instance_valid(raid.mech) else raid.server_drop
 
 func _tick_gate(delta: float) -> void:
 	var edge := ""
@@ -483,17 +495,26 @@ func _sync_entities() -> void:
 			Net.entities.rpc(Net.mission, created.slice(i, i + 24), [])
 		if not removed.is_empty(): Net.entities.rpc(Net.mission, [], removed)
 
+func _qvec3(v: Vector3) -> Vector3:
+	return Vector3(snappedf(v.x, 0.02), snappedf(v.y, 0.02), snappedf(v.z, 0.02))
+
+func _near_any_player(pos: Vector3, max_d2: float) -> bool:
+	for m in units.values():
+		if is_instance_valid(m) and not m.net_done and pos.distance_squared_to(m.position) <= max_d2:
+			return true
+	return false
+
 func _player_state(m) -> Dictionary:
-	var d := {"position": m.position, "velocity": m.velocity, "torso": m.torso.rotation.y, "legs": m.legs.rotation.y,
+	var d := {"position": _qvec3(m.position), "velocity": _qvec3(m.velocity), "torso": snappedf(m.torso.rotation.y, 0.01), "legs": snappedf(m.legs.rotation.y, 0.01),
 		"loadout": m.loadout.duplicate(), "cargo": m.cargo.duplicate(), "stats": m.stats.duplicate(), "done": m.net_done}
 	for f in PLAYER_FIELDS: d[f] = m.get(f)
 	return d
 
 func _send_snapshot() -> void:
 	_serial += 1
-	var data := {"players": {}, "entities": {}, "time": raid.time, "kills": raid.kills, "dropping": raid.dropping,
-		"transport": raid.transport_state, "transport_t": raid.transport_t}
-	if is_instance_valid(raid.transport_zone): data.transport_pos = raid.transport_zone.position
+	var data := {"players": {}, "entities": {}, "time": snappedf(raid.time, 0.05), "kills": raid.kills, "dropping": raid.dropping,
+		"transport": raid.transport_state, "transport_t": snappedf(raid.transport_t, 0.05)}
+	if is_instance_valid(raid.transport_zone): data.transport_pos = _qvec3(raid.transport_zone.position)
 	for id in units:
 		var d := _player_state(units[id])
 		d.erase("cargo")
@@ -504,7 +525,11 @@ func _send_snapshot() -> void:
 	for id in entities:
 		var n = entities[id]
 		if not is_instance_valid(n) or n.is_in_group("lootboxes") or n.is_in_group("coop_devices"): continue
-		var d := {"position": n.position, "rotation": n.rotation}
+		if n.is_in_group("bugs"):
+			var is_boss: bool = ("data" in n) and n.data.get("boss", false) == true
+			if n.get("awake") != true and n.get("dying") != true and not is_boss and not _near_any_player(n.position, 68.0 * 68.0):
+				continue
+		var d := {"position": _qvec3(n.position), "rotation": _qvec3(n.rotation)}
 		if n.is_in_group("bugs"):
 			for f in BUG_FIELDS:
 				if f in n: d[f] = n.get(f)

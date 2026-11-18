@@ -73,11 +73,7 @@ static func growth_profile(raw: Dictionary) -> Dictionary:
 			if not entry is Dictionary: continue
 			var level = entry.get("level", 1)
 			if not (level is int or level is float): continue
-			var p := {"level": clampi(int(level), 1, 12), "talents": []}
-			var talents = entry.get("talents", [])
-			if talents is Array:
-				for talent in tables.PILOTS[id].get("talents", []):
-					if talent.id in talents and p.level >= int(talent.level): p.talents.append(talent.id)
+			var p := {"level": clampi(int(level), 1, 12)}
 			out.pilots[id] = p
 	var meal = raw.get("meal", 0)
 	if meal is int or meal is float: out.meal = clampi(int(meal), 0, 5)

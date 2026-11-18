@@ -72,11 +72,14 @@ func _items_modules() -> void:
 				p("模块 %s 缺少字段 %s" % [id, k])
 		match str(m.slot):
 			"arm":
-				for k in ["weapon", "dmg", "rate", "cost", "range"]:
+				for k in ["weapon", "dmg", "rate", "range"]:
 					if not m.has(k):
 						p("武器模块 %s 缺少字段 %s" % [id, k])
-				if m.has("weapon") and not GameData.AMMO.has(m.weapon):
-					p("武器模块 %s 的 weapon「%s」在 AMMO 里没有弹匣" % [id, m.weapon])
+				if m.has("weapon"):
+					if not GameData.AMMO.has(m.weapon):
+						p("武器模块 %s 的 weapon「%s」在 AMMO 里没有弹匣" % [id, m.weapon])
+					elif not GameData.weapon_uses_ammo(str(m.weapon)) and not m.has("cost"):
+						p("非实弹武器模块 %s 缺少每发能耗 cost" % id)
 			"legs":
 				for k in ["speed", "load", "type"]:
 					if not m.has(k):

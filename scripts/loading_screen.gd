@@ -93,6 +93,7 @@ func _build_ui() -> void:
 	body_panel.offset_bottom = 268
 	body_panel.modulate.a = 0.0
 	root.add_child(body_panel)
+	UI.bind_fit_panel(body_panel)
 
 	var main_v := VBoxContainer.new()
 	main_v.add_theme_constant_override("separation", 10)

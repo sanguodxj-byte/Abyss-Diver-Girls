@@ -28,16 +28,17 @@ func run() -> void:
 	var hp0: float = bug.hp
 	var l_ammo0: int = int(m.ammo.get("arm_l", 0))
 	var r_ammo0: int = int(m.ammo.get("arm_r", 0))
+	var energy0: float = m.energy
 	Input.action_press("fire_left")
 	await wait(1.5)
 	Input.action_release("fire_left")
 	var hp1: float = bug.hp
 	var l_ammo1: int = int(m.ammo.get("arm_l", 0))
 	var r_ammo1: int = int(m.ammo.get("arm_r", 0))
-	results["alt_fire"] = [hp0, hp1, l_ammo0 - l_ammo1, r_ammo0 - r_ammo1]
+	results["alt_fire"] = [hp0, hp1, l_ammo0 - l_ammo1, r_ammo0 - r_ammo1, energy0 - m.energy]
 	bug.queue_free()
 	await wait(0.2)
-	if not check(hp1 < hp0 and l_ammo1 < l_ammo0 and r_ammo1 < r_ammo0, "左键交替射击未同时触发左右臂并造成伤害：%s" % [results["alt_fire"]]):
+	if not check(hp1 < hp0 and r_ammo1 < r_ammo0 and m.energy < energy0, "左键交替射击未同时触发左右臂并造成伤害（激光耗能、火焰耗弹）：%s" % [results["alt_fire"]]):
 		return
 	var z0: float = raid.cam_zoom
 	Input.action_press("fire_right")

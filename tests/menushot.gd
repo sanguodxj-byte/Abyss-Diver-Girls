@@ -5,6 +5,11 @@ const START := "menu"
 func run() -> void:
 	await wait(4.0)
 	await shot("menushot_menu.png")
+	main.menu._open_slots("load")
+	await frames(4)
+	await shot("menushot_slots.png")
+	main.menu._close_slots()
+	await frames(2)
 	for child in main.menu.get_children():
 		if child is VBoxContainer:
 			child.visible = false

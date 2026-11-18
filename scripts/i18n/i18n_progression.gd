@@ -72,30 +72,12 @@ const RESEARCH_EN := {
 const PILOTS_EN := {
 	"nao": {
 		"name": "Nao",
-		"talents": {
-			"t_nao_rig": {"name": "Load-Bearing Truss", "effect": "Load +8"},
-			"t_nao_cache": {"name": "Hidden Stash Compartments", "effect": "Cargo +4"},
-			"t_nao_stride": {"name": "Light-Footed Stride", "effect": "Speed +0.35"},
-			"t_nao_field": {"name": "Field Emergency Patch", "effect": "HP +18 · Drain -0.004"},
-		},
 	},
 	"rei": {
 		"name": "Rei",
-		"talents": {
-			"t_rei_cap": {"name": "Pulse Capacitor Bank", "effect": "Max Energy +15"},
-			"t_rei_step": {"name": "Silent Step", "effect": "Speed +0.3"},
-			"t_rei_cool": {"name": "Cryo Conduit", "effect": "Drain -0.008"},
-			"t_rei_focus": {"name": "Long-Range Sighting", "effect": "Max Energy +20 · HP +10"},
-		},
 	},
 	"kurumi": {
 		"name": "Kurumi",
-		"talents": {
-			"t_kur_plate": {"name": "Reinforced Subframe", "effect": "HP +25"},
-			"t_kur_heat": {"name": "Heat-Resistant Plating", "effect": "Armor +4%"},
-			"t_kur_charge": {"name": "Breach Thrusters", "effect": "Speed +0.3"},
-			"t_kur_hold": {"name": "Last Stand", "effect": "HP +30 · Armor +2%"},
-		},
 	},
 }
 

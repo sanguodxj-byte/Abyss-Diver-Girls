@@ -155,56 +155,45 @@ u = np.ones((H, 1)) * np.linspace(0.0, 1.0, W, endpoint=False)[None, :]
 
 
 # ==============================================================================
-# 1. 轧制重工钢板 (steel_plate_a / steel_plate_n)
+# 1. 轧制重工钢板底纹 (steel_plate_a / steel_plate_n)
+# 连续无缝热轧氧化皮、拉丝微纹理与轻微擦痕，供全尺寸机械部件、枪管、装甲与钢结构通用三平面采样
 # ==============================================================================
 n_lo = fnoise(H, W, 2.4, seed=101)
-n_mid = fnoise(H, W, 1.5, seed=102)
-n_roll = fnoise(H, W, 1.3, seed=103, ax=6.5, ay=0.6)  # 热轧拉丝横向纹理
-n_pit = fnoise(H, W, 0.85, seed=104)
+n_mid = fnoise(H, W, 1.55, seed=102)
+n_roll = fnoise(H, W, 1.35, seed=103, ax=6.0, ay=0.65)
+n_brush = fnoise(H, W, 1.05, seed=106, ax=9.0, ay=0.45)
+n_pit = fnoise(H, W, 0.88, seed=104)
+mill_scale = ss(0.36, 0.74, blur(n_mid, 1.4) * 0.65 + n_lo * 0.35)
+scuff = ss(0.78, 0.94, fnoise(H, W, 1.15, seed=105, ax=4.2, ay=0.85))
 
-# 错缝焊接钢板分块（4 行 × 2 列错位）
-rows = 4.0
-ry = v * rows
-row_idx = np.floor(ry)
-ru = np.mod(u * 2.0 + np.mod(row_idx, 2.0) * 0.5, 1.0)
-rv = np.mod(ry, 1.0)
-
-seam_h = 1.0 - ss(0.008, 0.024, np.minimum(rv, 1.0 - rv))
-seam_v = 1.0 - ss(0.006, 0.018, np.minimum(ru, 1.0 - ru))
-seam = np.maximum(seam_h, seam_v)
-
-# 板边铆钉阵列
-riv_u = np.mod(ru * 14.0, 1.0) - 0.5
-riv_dy_top = (rv - 0.055) * rows * 3.5
-riv_dy_bot = (rv - 0.945) * rows * 3.5
-riv_dx = riv_u * 1.35
-riv_d = np.minimum(
-    np.sqrt(riv_dx * riv_dx + riv_dy_top * riv_dy_top),
-    np.sqrt(riv_dx * riv_dx + riv_dy_bot * riv_dy_bot),
-)
-rivet = np.clip(1.0 - (riv_d / 0.24) ** 2, 0.0, 1.0) * ss(0.08, 0.16, np.minimum(ru, 1.0 - ru))
-rivet_ao = ss(0.20, 0.34, riv_d)
-rivet_ring = (1.0 - rivet_ao) * (1.0 - rivet)
-
-# 每块钢板轻微明暗差
-plate_hash = np.sin((row_idx * 37.0 + np.floor(u * 2.0 + np.mod(row_idx, 2.0) * 0.5) * 91.0)) * 0.5 + 0.5
-scuff = ss(0.76, 0.92, fnoise(H, W, 1.1, seed=105, ax=4.0, ay=0.8))
-
-steel_val = (
+steel_val = np.clip(
     0.82
-    + (n_lo - 0.5) * 0.11
-    + (n_roll - 0.5) * 0.07
-    + (n_pit - 0.5) * 0.04
-    + (plate_hash - 0.5) * 0.045
-    + scuff * 0.05
-    - seam * 0.36
-    - rivet_ring * 0.18
-    + rivet * 0.06
+    + (n_lo - 0.5) * 0.085
+    + (n_mid - 0.5) * 0.055
+    + (n_roll - 0.5) * 0.050
+    + (n_brush - 0.5) * 0.032
+    + (n_pit - 0.5) * 0.028
+    - (mill_scale - 0.5) * 0.045
+    + scuff * 0.038,
+    0.70,
+    0.93,
 )
-steel_rgb = np.dstack([steel_val * 0.99, steel_val * 1.00, steel_val * 1.015])
-steel_h = n_lo * 0.25 + n_roll * 0.22 + n_pit * 0.10 - seam * 0.55 + rivet * 0.42 - ss(0.72, 0.90, n_pit) * 0.08
+steel_rgb = np.dstack([
+    steel_val * (0.992 - (mill_scale - 0.5) * 0.012),
+    steel_val * 1.000,
+    steel_val * (1.012 + (mill_scale - 0.5) * 0.014),
+])
+steel_h = (
+    n_lo * 0.28
+    + n_mid * 0.18
+    + n_roll * 0.22
+    + n_brush * 0.12
+    + n_pit * 0.08
+    - mill_scale * 0.10
+    - ss(0.76, 0.93, n_pit) * 0.06
+)
 save_rgb("steel_plate_a.png", steel_rgb)
-save_rgb("steel_plate_n.png", normal_from_height(steel_h, 3.2))
+save_rgb("steel_plate_n.png", normal_from_height(steel_h, 2.2))
 
 
 # ==============================================================================
@@ -219,45 +208,45 @@ c_streak = fnoise(H, W, 1.8, seed=205, ax=0.35, ay=4.5)  # 雨水垂向水渍
 boards = 6.0
 bv = np.mod(v * boards + (c_lo - 0.5) * 0.025, 1.0)
 b_idx = np.floor(v * boards)
-b_seam = 1.0 - ss(0.010, 0.036, np.minimum(bv, 1.0 - bv))
+b_seam = 1.0 - ss(0.010, 0.034, np.minimum(bv, 1.0 - bv))
 b_tone = np.sin(b_idx * 53.7) * 0.5 + 0.5
 
-# 对拉螺杆孔（每两层模板一排圆锥凹孔 + 下方锈水流痕）
+# 对拉螺杆浅封堵印与微弱水痕（保持低对比度，兼容墙面立面与场坪双旋转采样）
 tu = np.mod(u * 4.0 + np.mod(np.floor(v * 4.0), 2.0) * 0.5, 1.0) - 0.5
 tv = np.mod(v * 4.0, 1.0) - 0.5
 td = np.sqrt((tu * 4.0) ** 2 + (tv * 4.0) ** 2)
-tie_hole = np.clip(1.0 - (td / 0.16) ** 2, 0.0, 1.0)
-tie_drip = np.exp(-((tu * 22.0) ** 2)) * ss(0.0, 0.04, tv) * (1.0 - ss(0.04, 0.36, tv))
+tie_hole = np.clip(1.0 - (td / 0.14) ** 2, 0.0, 1.0)
+tie_drip = np.exp(-((tu * 22.0) ** 2)) * ss(0.0, 0.04, tv) * (1.0 - ss(0.04, 0.32, tv))
 
-# 风化剥落斑驳与微孔隙（去除网状 Voronoi 裂纹，改为自然砂浆风化斑）
+# 砂浆风化斑驳与微孔隙
 c_spall = ss(0.62, 0.86, blur(c_mid, 1.5) * 0.6 + c_agg * 0.4)
 micro_pit = ss(0.76, 0.94, c_agg)
 
 conc_val = (
     0.84
     + (c_lo - 0.5) * 0.15
-    + (c_grain - 0.5) * 0.075
-    + (c_agg - 0.5) * 0.09
-    + (b_tone - 0.5) * 0.055
-    - (c_streak - 0.5) * 0.12
-    - b_seam * 0.14
-    - tie_hole * 0.38
-    - tie_drip * 0.15
-    - c_spall * 0.08
-    - micro_pit * 0.07
+    + (c_grain - 0.5) * 0.070
+    + (c_agg - 0.5) * 0.085
+    + (b_tone - 0.5) * 0.042
+    - (c_streak - 0.5) * 0.11
+    - b_seam * 0.065
+    - tie_hole * 0.11
+    - tie_drip * 0.055
+    - c_spall * 0.075
+    - micro_pit * 0.06
 )
 conc_rgb = np.dstack([
-    conc_val + tie_drip * 0.03,
+    conc_val + tie_drip * 0.015,
     conc_val * 0.995,
-    conc_val * 0.98 - tie_drip * 0.04,
+    conc_val * 0.982 - tie_drip * 0.02,
 ])
 conc_h = (
-    c_lo * 0.32 + c_grain * 0.22 + c_agg * 0.24
-    - b_seam * 0.25 - tie_hole * 0.65 - c_spall * 0.14
-    - micro_pit * 0.20
+    c_lo * 0.32 + c_grain * 0.20 + c_agg * 0.24
+    - b_seam * 0.12 - tie_hole * 0.22 - c_spall * 0.12
+    - micro_pit * 0.16
 )
 save_rgb("concrete_a.png", conc_rgb)
-save_rgb("concrete_n.png", normal_from_height(conc_h, 4.0))
+save_rgb("concrete_n.png", normal_from_height(conc_h, 3.6))
 
 
 # ==============================================================================
@@ -882,7 +871,152 @@ cl_rgb = np.dstack([
 ])
 save_rgba("sky_clouds.png", cl_rgb, np.clip(cl_alpha, 0.0, 1.0))
 
+
+# ==============================================================================
+# 15. 360度球面无缝等距柱状全景天空盒贴图 (skybox_clouds_pano.png / skybox_horizon_pano.png, 2048x1024 RGB)
+# 在三维单位球面上采样周期性 3D FFT 分形场，严格消除经度接缝与天顶/天底极点缩聚畸变
+# ==============================================================================
+def fnoise3(n=144, beta=2.4, lo=0.0, seed=1, ax=1.0, ay=1.0, az=1.0):
+    """三维周期性 1/f^(beta/2) 分形噪声体，返回 (n, n, n) 范围 0..1。"""
+    rng3 = np.random.default_rng(seed)
+    wn = rng3.standard_normal((n, n, n)).astype(np.float32)
+    fz = np.fft.fftfreq(n)[:, None, None] / az
+    fy = np.fft.fftfreq(n)[None, :, None] / ay
+    fx = np.fft.fftfreq(n)[None, None, :] / ax
+    f = np.sqrt(fx * fx + fy * fy + fz * fz)
+    f[0, 0, 0] = 1.0
+    amp = 1.0 / np.power(f, beta / 2.0)
+    if lo > 0.0:
+        amp *= 1.0 - np.exp(-((f / lo) ** 2))
+    amp[0, 0, 0] = 0.0
+    vol = np.real(np.fft.ifftn(np.fft.fftn(wn) * amp)).astype(np.float32)
+    vol -= vol.min()
+    mx = vol.max()
+    return vol / mx if mx > 1e-8 else np.zeros((n, n, n), dtype=np.float32)
+
+
+def sample_vol3(vol, px, py, pz):
+    """三维周期三线性插值采样，坐标单位为体素索引。"""
+    n = vol.shape[0]
+    x = np.mod(px, n)
+    y = np.mod(py, n)
+    z = np.mod(pz, n)
+    x0 = np.floor(x).astype(np.int32)
+    y0 = np.floor(y).astype(np.int32)
+    z0 = np.floor(z).astype(np.int32)
+    x1 = (x0 + 1) % n
+    y1 = (y0 + 1) % n
+    z1 = (z0 + 1) % n
+    tx = (x - x0).astype(np.float32)
+    ty = (y - y0).astype(np.float32)
+    tz = (z - z0).astype(np.float32)
+    c000 = vol[z0, y0, x0]
+    c100 = vol[z0, y0, x1]
+    c010 = vol[z0, y1, x0]
+    c110 = vol[z0, y1, x1]
+    c001 = vol[z1, y0, x0]
+    c101 = vol[z1, y0, x1]
+    c011 = vol[z1, y1, x0]
+    c111 = vol[z1, y1, x1]
+    c00 = c000 * (1.0 - tx) + c100 * tx
+    c10 = c010 * (1.0 - tx) + c110 * tx
+    c01 = c001 * (1.0 - tx) + c101 * tx
+    c11 = c011 * (1.0 - tx) + c111 * tx
+    c0 = c00 * (1.0 - ty) + c10 * ty
+    c1 = c01 * (1.0 - ty) + c11 * ty
+    return c0 * (1.0 - tz) + c1 * tz
+
+
+PH, PW = 1024, 2048
+pv = (np.arange(PH, dtype=np.float32) + 0.5) / PH
+pu = (np.arange(PW, dtype=np.float32) + 0.5) / PW
+theta = pv[:, None] * np.pi          # 0 (天顶 +Y) .. pi (天底 -Y)
+phi = (pu[None, :] - 0.5) * 2.0 * np.pi  # -pi .. +pi，与 atan(d.x, d.z) 严格对齐
+sin_t = np.sin(theta)
+dx = sin_t * np.cos(phi)
+dy = np.broadcast_to(np.cos(theta), (PH, PW)).copy()
+dz = sin_t * np.sin(phi)
+
+# 15a. skybox_clouds_pano.png: R=主积云/层积云密度, G=高空卷云/次层流云密度, B=云体垂直受光梯度与厚度
+N3 = 144
+v_warp_x = fnoise3(N3, beta=3.0, seed=1501)
+v_warp_z = fnoise3(N3, beta=3.0, seed=1502)
+v_cum_lo = fnoise3(N3, beta=2.8, seed=1503, ax=1.35, ay=0.72, az=1.35)
+v_cum_hi = fnoise3(N3, beta=1.75, seed=1504, ax=1.15, ay=0.85, az=1.15)
+v_cirrus = fnoise3(N3, beta=2.1, seed=1505, ax=2.4, ay=0.55, az=1.6)
+
+# 球面展平投影半径随仰角温和拉伸，地平线云带层次绵密且天顶连续无极点畸变
+proj_scale = 34.0 / (0.38 + 0.62 * np.abs(dy))
+sx = dx * proj_scale + 72.0
+sy3 = dy * 28.0 + 72.0
+sz = dz * proj_scale + 72.0
+
+wx = (sample_vol3(v_warp_x, sx * 0.45, sy3 * 0.45, sz * 0.45) - 0.5) * 9.5
+wz = (sample_vol3(v_warp_z, sx * 0.45 + 31.0, sy3 * 0.45 + 17.0, sz * 0.45 + 53.0) - 0.5) * 9.5
+
+c_lo = sample_vol3(v_cum_lo, sx + wx, sy3, sz + wz)
+c_hi = sample_vol3(v_cum_hi, sx * 2.15 + wx * 0.6, sy3 * 2.15, sz * 2.15 + wz * 0.6)
+c_lo_up = sample_vol3(v_cum_lo, sx + wx, sy3 + 2.4, sz + wz)
+
+# 主云团密度 (R)：地平线略上方积云最厚，向天顶自然疏朗过渡，下半球平滑衰减
+upper_mask = ss(-0.04, 0.09, dy) * (1.0 - 0.22 * ss(0.55, 0.98, dy))
+cum_raw = c_lo * 0.66 + c_hi * 0.34
+ch_r = np.clip(ss(0.34, 0.80, cum_raw) * upper_mask, 0.0, 1.0)
+
+# 次层流云与高空纤缕卷云 (G)
+sx2 = dx * (42.0 / (0.45 + 0.55 * np.abs(dy))) + 37.0
+sz2 = dz * (42.0 / (0.45 + 0.55 * np.abs(dy))) + 89.0
+cir_a = sample_vol3(v_cirrus, sx2 + wx * 0.4, sy3 * 0.8 + 19.0, sz2 - wz * 0.4)
+cir_b = sample_vol3(v_cum_hi, sx2 * 1.7, sy3 * 1.4 + 41.0, sz2 * 1.7)
+cir_mask = ss(-0.02, 0.14, dy)
+ch_g = np.clip(ss(0.38, 0.82, cir_a * 0.70 + cir_b * 0.30) * cir_mask, 0.0, 1.0)
+
+# 云顶垂直受光浮雕梯度 (B)：上采样差值编码云朵顶部亮面与底部暗部体积厚度
+vert_grad = np.clip(0.52 + (c_lo - c_lo_up) * 3.2 + (c_hi - 0.5) * 0.35, 0.0, 1.0)
+ch_b = np.clip(vert_grad * 0.78 + (1.0 - ss(0.45, 0.86, c_lo)) * 0.22, 0.0, 1.0)
+
+save_rgb("skybox_clouds_pano.png", np.dstack([ch_r, ch_g, ch_b]))
+
+# 15b. skybox_horizon_pano.png: R=360度远山/台地轮廓与岩面浮雕, G=远景废土工业天际线剪影, B=深渊地下岩穹与发光菌脉
+az_mtn1 = fnoise(1, PW, beta=2.4, seed=1510)[0][None, :]
+az_mtn2 = fnoise(1, PW, beta=1.6, seed=1511)[0][None, :]
+az_mesa = fnoise(1, PW, beta=2.1, seed=1512)[0][None, :]
+# 远山高度轮廓（仰角 dy 约 -0.04 .. +0.14）
+ridge_far_h = 0.012 + np.power(az_mtn1, 1.45) * 0.105 + (az_mtn2 - 0.5) * 0.028
+ridge_mesa_h = 0.005 + ss(0.32, 0.68, az_mesa) * 0.068 + (az_mtn2 - 0.5) * 0.012
+ridge_h = np.maximum(ridge_far_h, ridge_mesa_h * 0.92)
+rock_tex = sample_vol3(v_cum_hi, dx * 55.0 + 14.0, dy * 65.0 + 30.0, dz * 55.0 + 22.0)
+ridge_mask = ss(ridge_h + 0.008, ridge_h - 0.006, dy) * ss(-0.18, -0.03, dy)
+ridge_relief = np.clip(0.35 + (ridge_h - dy) * 4.2 + (rock_tex - 0.5) * 0.42, 0.0, 1.0)
+hz_r = np.clip(ridge_mask * (0.45 + 0.55 * ridge_relief), 0.0, 1.0)
+
+# 远景工业废墟/断桥/高塔天际线剪影 (G)：按方位角成簇分布，避免单调一字排开
+ind_cluster = ss(0.46, 0.72, fnoise(1, PW, beta=2.6, seed=1515)[0])[None, :]
+# 离散高低错落的工业塔架与残垣宽度分箱
+cols_coarse = np.floor(pu * 180.0).astype(np.int32)
+cols_fine = np.floor(pu * 520.0).astype(np.int32)
+rng_ind = np.random.default_rng(1516)
+h_table_c = rng_ind.random(180).astype(np.float32)
+h_table_f = rng_ind.random(520).astype(np.float32)
+block_h = (np.power(h_table_c[cols_coarse], 2.2) * 0.065 + np.power(h_table_f[cols_fine], 5.5) * 0.085)[None, :]
+ind_h = block_h * ind_cluster + 0.004 * az_mtn2
+ind_mask = ss(ind_h + 0.003, ind_h - 0.003, dy) * ss(-0.14, -0.02, dy)
+hz_g = np.clip(ind_mask * (0.55 + 0.45 * (rock_tex * 0.6 + 0.4)), 0.0, 1.0)
+
+# 地下深渊岩穹与生物发光裂隙 (B)：球面钟乳岩层肌理 + 锐利分形裂隙网
+v_cav_a = fnoise3(N3, beta=2.5, seed=1520, ax=1.2, ay=1.5, az=1.2)
+v_cav_b = fnoise3(N3, beta=1.8, seed=1521, ax=1.6, ay=1.2, az=1.6)
+cav_s1 = sample_vol3(v_cav_a, dx * 38.0 + wx * 0.5 + 40.0, dy * 34.0 + 40.0, dz * 38.0 + wz * 0.5 + 40.0)
+cav_s2 = sample_vol3(v_cav_b, dx * 76.0 + 18.0, dy * 64.0 + 18.0, dz * 76.0 + 18.0)
+# 裂隙发光脉络：取 |cav_s1 - 0.5| 极小值带形成蜿蜒生物菌脉，打包在高亮区 (>0.75)
+vein = ss(0.032, 0.003, np.abs(cav_s1 - 0.50)) * ss(0.42, 0.72, cav_s2) * ss(-0.05, 0.20, dy)
+strata = np.clip(cav_s1 * 0.55 + cav_s2 * 0.45, 0.0, 1.0) * 0.70
+hz_b = np.clip(strata + vein * 0.55, 0.0, 1.0)
+
+save_rgb("skybox_horizon_pano.png", np.dstack([hz_r, hz_g, hz_b]))
+
 print("Generated world & foliage textures in:", os.path.abspath(OUT))
 for fn in sorted(os.listdir(OUT)):
     if fn.endswith(".png"):
         print(" -", fn)
+

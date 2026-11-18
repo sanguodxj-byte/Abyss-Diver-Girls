@@ -6,8 +6,7 @@ extends RefCounted
 ##             "stat": 每级叠加的机体数值、 "effect": [每级效果文字（与 stat 的数值一致）]}。
 ## RESEARCH    研究节点：{"name", "lab": 需要的研究室等级, "needs": [前置研究 id], "cost": {"money", "items"},
 ##             "stat": 完成后叠加的机体数值, "shop": [完成后上架的物品 id], "effect": 效果文字}。
-## PILOTS      驾驶员：{"name", "level_stat": 每升一级叠加的机体数值,
-##             "talents": [{"id", "name", "level": 解锁等级, "points": 消耗天赋点, "stat", "effect"}]}。
+## PILOTS      驾驶员：{"name", "level_stat": 每升一级叠加的机体数值}。
 ## CREW        船员：{"name", "stat": 每级好感叠加的机体数值, "levels": [Lv.1..Lv.5 的累计效果文字], "preferred": 偏爱赠礼物品 id}。
 ## CHAPTERS    主线章节（数组顺序即航程顺序）：{"id", "title", "map", "flag": 完成时写入剧情的 flag,
 ##             "requires": 前置 flag, "complete_on": extract 撤离成功 / boss 击破指定敌人, "boss": 敌人 id}。
@@ -160,32 +159,14 @@ const PILOTS := {
 	"nao": {
 		"name": "奈绪",
 		"level_stat": {"cargo": 1.0, "load": 1.5},
-		"talents": [
-			{"id": "t_nao_rig", "name": "载重桁架", "level": 2, "points": 1, "stat": {"load": 8.0}, "effect": "承重 +8"},
-			{"id": "t_nao_cache", "name": "暗格储物", "level": 3, "points": 1, "stat": {"cargo": 4.0}, "effect": "货舱 +4"},
-			{"id": "t_nao_stride", "name": "轻装疾行", "level": 4, "points": 1, "stat": {"speed": 0.35}, "effect": "速度 +0.35"},
-			{"id": "t_nao_field", "name": "野战抢修", "level": 6, "points": 2, "stat": {"hp": 18.0, "drain": -0.004}, "effect": "结构 +18 · 耗能 -0.004"},
-		],
 	},
 	"rei": {
 		"name": "零",
 		"level_stat": {"energy": 5.0, "drain": -0.003},
-		"talents": [
-			{"id": "t_rei_cap", "name": "脉冲储能电容", "level": 2, "points": 1, "stat": {"energy": 15.0}, "effect": "能源上限 +15"},
-			{"id": "t_rei_step", "name": "静默步态", "level": 3, "points": 1, "stat": {"speed": 0.3}, "effect": "速度 +0.3"},
-			{"id": "t_rei_cool", "name": "低温回路", "level": 4, "points": 1, "stat": {"drain": -0.008}, "effect": "耗能 -0.008"},
-			{"id": "t_rei_focus", "name": "长距瞄准", "level": 6, "points": 2, "stat": {"energy": 20.0, "hp": 10.0}, "effect": "能源上限 +20 · 结构 +10"},
-		],
 	},
 	"kurumi": {
 		"name": "胡桃",
 		"level_stat": {"hp": 7.0, "armor": 0.008},
-		"talents": [
-			{"id": "t_kur_plate", "name": "重装骨架", "level": 2, "points": 1, "stat": {"hp": 25.0}, "effect": "结构 +25"},
-			{"id": "t_kur_heat", "name": "耐热装甲", "level": 3, "points": 1, "stat": {"armor": 0.04}, "effect": "护甲 +4%"},
-			{"id": "t_kur_charge", "name": "突破推进", "level": 4, "points": 1, "stat": {"speed": 0.3}, "effect": "速度 +0.3"},
-			{"id": "t_kur_hold", "name": "死守", "level": 6, "points": 2, "stat": {"hp": 30.0, "armor": 0.02}, "effect": "结构 +30 · 护甲 +2%"},
-		],
 	},
 }
 

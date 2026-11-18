@@ -166,10 +166,14 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 		_refract(blocked)
 	amt *= _weak_scale(from)
 	amt = maxf(amt, 1.0)
+	var prev_hp := hp
 	hp -= amt
+	if raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit") and not bool(data.get("boss", false)):
+		raid.hud.notify_enemy_hit(self, prev_hp, hp, float(data.get("hp", 30.0)))
 	_aggro_on_hit()
-	flash_t = FLASH_DUR
-	_update_flash()
+	if not bool(data.get("boss", false)):
+		flash_t = FLASH_DUR
+		_update_flash()
 	var push := clampf(amt / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
 	_apply_hit_jolt(from, push)
 	if interrupt > 0.0 and act == "wind":
@@ -843,10 +847,10 @@ func _pulse() -> void:
 	if raid == null:
 		return
 	_sfx("pulse")
-	var rc := Color(0.45, 1.0, 0.75, 0.9)
-	var ring := ART.ground_vfx(raid.fx, ART.ring_tex(), rc, pulse_r * 0.5, Vector3(global_position.x, 0.06, global_position.z), true, 0.44, true, 4)
+	var rc := Color(0.45, 0.95, 0.75, 0.68)
+	var ring := ART.ground_vfx(raid.fx, ART.shockwave_tex(), rc, pulse_r * 0.58, Vector3(global_position.x, 0.06, global_position.z), false, 0.44, true, 4)
 	var tw := ring.create_tween()
-	tw.tween_property(ring, "scale", Vector3.ONE * 4.0, 0.35)
+	tw.tween_property(ring, "scale", Vector3.ONE * 3.5, 0.35)
 	tw.parallel().tween_property(ring.material_override, "shader_parameter/col", Color(rc.r, rc.g, rc.b, 0.0), 0.4)
 	tw.tween_callback(ring.queue_free)
 	for b in get_tree().get_nodes_in_group("bugs"):
@@ -866,13 +870,20 @@ static func shield_ally(raid, b, heal: float, shield: float) -> void:
 	var old = b.get_meta("shield_fx") if b.has_meta("shield_fx") else null
 	if old != null and is_instance_valid(old):
 		old.queue_free()
-	var mi: MeshInstance3D = ART.add(b, ART.sphere(float(b.data.radius) * 1.5, -1, 16), ART.emit(Color(0.4, 1.0, 0.8), 1.1), Vector3(0, 0.9 * float(b.data.scale), 0),
-		Vector3.ZERO, Vector3.ONE, false)
+	var smat := ART.reactive_arc_mat(Color(0.38, 0.96, 0.78, 0.85))
+	smat.set_shader_parameter("surge", 0.55)
+	var mi := MeshInstance3D.new()
+	mi.mesh = ART.reactive_arc_mesh(maxf(0.55, float(b.data.radius) * 1.25), maxf(0.85, float(b.data.scale) * 1.15), 3, 10)
+	mi.material_override = smat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = Vector3(0, 0.85 * float(b.data.scale), 0)
+	b.add_child(mi)
 	mi.set_meta("shield", true)
 	b.set_meta("shield_fx", mi)
 	var tw := mi.create_tween()
-	tw.tween_interval(3.2)
-	tw.tween_property(mi, "transparency", 1.0, 0.6)
+	tw.tween_property(smat, "shader_parameter/surge", 0.12, 0.45)
+	tw.tween_interval(2.75)
+	tw.tween_property(smat, "shader_parameter/fade", 0.0, 0.6)
 	tw.tween_callback(mi.queue_free)
 
 
@@ -953,14 +964,26 @@ func _animate_impl(delta: float, mv: float) -> void:
 	var liftk := 0.42 if ai in ["lancer", "burrower"] else (0.34 if ai != "flyer" else 0.08)
 	var k := clampf(16.0 * delta, 0.0, 1.0)
 	for hip in legs:
-		var ph: float = anim_t * cad + float(hip.get_meta("phase"))
-		var side: float = float(hip.get_meta("side"))
-		var sy: float = float(hip.get_meta("base_y")) - sin(ph) * swing * amt * side
-		var lz: float = maxf(0.0, cos(ph)) * liftk * amt * side
-		if act == "wind" and ai in ["shell", "juggernaut"]:
-			lz += 0.1 * side
+		var ph: float = anim_t * cad + float(hip.get_meta("phase", 0.0))
+		var side: float = float(hip.get_meta("side", 1.0))
+		var s_ph := sin(ph)
+		var c_ph := cos(ph)
+		var sy: float = float(hip.get_meta("base_y", hip.rotation.y)) - s_ph * swing * amt * side
+		var lz: float = (pow(c_ph, 0.82) * liftk if c_ph > 0.0 else c_ph * 0.08) * amt * side
+		var kz: float = ((-0.48 * c_ph + 0.28 * s_ph * c_ph) * liftk if c_ph > 0.0 else -c_ph * 0.15) * amt * side
+		if act == "wind":
+			lz += 0.15 * side
+			kz -= 0.25 * side
+		elif act in ["strike", "stomp", "claw"]:
+			lz -= 0.12 * side
+			kz += 0.20 * side
 		hip.rotation.y = lerp_angle(hip.rotation.y, sy, k)
 		hip.rotation.z = lerp(hip.rotation.z, lz, k)
+		if hip.has_meta("knee"):
+			var kj: Node3D = hip.get_meta("knee")
+			if is_instance_valid(kj):
+				kj.rotation.z = lerp(kj.rotation.z, kz, k)
+				kj.rotation.x = lerp(kj.rotation.x, c_ph * 0.14 * amt, k)
 	var body: Node3D = visual.get_node("Body")
 	hit_v += (-hit_tilt * 160.0 - hit_v * 13.0) * delta
 	hit_tilt += hit_v * delta

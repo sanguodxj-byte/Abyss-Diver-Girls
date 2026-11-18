@@ -67,44 +67,33 @@ const LAKES := [
 	[430, 210, 11.0], [437, 214, 8.5],                                                                                                                     # 裂谷北矿坑积水
 	[-430, -800, 60], [-370, -790, 50], [-480, -760, 40], [-400, -845, 45], [-330, -762, 30],                                                              # 北郊水库
 ]
-## 道路：kind = hwy 外环高速 / art 主干道（都过河架桥） / dirt 跨区土路
+## 道路：kind = hwy 外环高速 / art 主干道（都过河架桥）
 const ROADS := [
 	{"name": "南北大道", "kind": "art", "w": 13.0, "pts": [[-80, -900], [-78, -760], [-88, -640], [-96, -560], [-92, -480], [-84, -400], [-72, -320], [-62, -250],
 		[-58, -180], [-48, -110], [-30, -30], [-24, 40], [-20, 110], [-20, 180], [-22, 250], [-24, 330], [-16, 420], [0, 500], [24, 580], [50, 700], [70, 880]]},
 	{"name": "东西大道", "kind": "art", "w": 13.0, "pts": [[-640, -70], [-480, -58], [-340, -44], [-240, -36], [-180, -34], [-110, -34], [-30, -30], [30, -38],
-		[74, -46], [120, -44], [180, -40], [260, -48], [360, -58], [450, -50], [540, -36], [560, -110]]},
-	{"name": "外环高速", "kind": "hwy", "w": 16.0, "pts": [[560, -110], [530, -220], [540, -380], [470, -560], [320, -640], [120, -652], [-100, -648], [-262, -622],
-		[-300, -480], [-282, -300], [-264, -120], [-262, 60], [-272, 240], [-282, 420], [-252, 600], [-100, 642], [120, 634], [300, 642], [480, 652], [630, 604]]},
-	{"name": "西南斜街", "kind": "art", "w": 11.0, "pts": [[-262, 252], [-200, 194], [-150, 142], [-108, 98], [-70, 52], [-46, 6], [-30, -30]]},
-	{"name": "工矿公路", "kind": "art", "w": 11.0, "pts": [[388, -512], [404, -432], [412, -372], [408, -288], [404, -202], [390, -126], [380, -52], [384, 0], [388, 48], [380, 120], [372, 180], [380, 240], [376, 310], [380, 420]]},
-	{"name": "港湾西路", "kind": "art", "w": 9.5, "pts": [[98, -310], [172, -297], [248, -292], [332, -304], [408, -288], [486, -296]]},
-	{"name": "峡谷矿道", "kind": "dirt", "w": 9.0, "pts": [[172, 320], [240, 300], [280, 250], [340, 230], [420, 250], [450, 320], [420, 370], [380, 420], [350, 450],
-		[350, 490], [370, 548], [390, 620], [420, 760]]},
-	{"name": "平原东西路", "kind": "dirt", "w": 10.0, "pts": [[-640, 352], [-420, 346], [-280, 342], [-180, 342], [-100, 340], [-24, 336], [60, 338], [120, 330], [172, 320]]},
-	{"name": "平原南路", "kind": "dirt", "w": 8.0, "pts": [[-272, 388], [-188, 374], [-140, 384], [-110, 410], [-60, 426], [-18, 430], [40, 425], [100, 415], [150, 425],
-		[180, 420], [230, 402], [300, 380], [380, 420]]},
-	{"name": "缆车站支路", "kind": "dirt", "w": 7.0, "pts": [[450, 320], [490, 360], [548, 360], [600, 380], [640, 372]]},
+		[74, -46], [120, -44], [180, -40], [260, -48], [360, -58], [450, -50], [518, -46], [552, -64], [560, -96], [554, -136]]},
+	{"name": "外环高速", "kind": "hwy", "w": 16.0, "pts": [[554, -136], [538, -216], [540, -380], [470, -560], [320, -640], [120, -652], [-100, -648], [-262, -622],
+		[-300, -480], [-282, -300], [-264, -120], [-262, 60], [-272, 240], [-282, 420], [-252, 600], [-100, 642], [120, 634], [280, 640], [403, 640]]},
+	{"name": "西南斜街", "kind": "art", "w": 11.0, "pts": [[-273.3, 262.5], [-200, 194], [-150, 142], [-108, 98], [-74, 58], [-48, 36], [-25, 28]]},
+	{"name": "工矿公路", "kind": "art", "w": 11.0, "pts": [[388, -512], [404, -432], [412, -372], [408, -288], [404, -202], [390, -126], [380, -52], [384, 0], [388, 48], [380, 120], [372, 180], [380, 240], [382, 310], [384, 382], [388, 442], [388, 498], [384, 556], [403, 640], [420, 760]]},
+	{"name": "港湾西路", "kind": "art", "w": 9.5, "pts": [[84, -366], [118, -322], [172, -297], [248, -292], [332, -304], [408, -288], [486, -296], [535, -296]]},
 	{"name": "赤湖环湖路", "kind": "art", "w": 10.0, "closed": true, "pts": [[98, -392], [84, -366], [58, -354], [28, -352], [-4, -364], [-26, -382],
 		[-36, -408], [-28, -436], [-4, -452], [28, -458], [64, -465], [96, -452], [108, -422]]},
 	{"name": "赤湖西南路", "kind": "art", "w": 9.0, "pts": [[-4, -364], [-38, -330], [-78, -280], [-110, -230], [-130, -172], [-140, -120], [-152, -70], [-160, -34]]},
 	{"name": "湖东路", "kind": "art", "w": 9.0, "pts": [[98, -392], [148, -396], [202, -394], [262, -380], [360, -370], [480, -378], [540, -380]]},
-	{"name": "北岭林道", "kind": "dirt", "w": 7.0, "pts": [[-290, -526], [-188, -510], [-120, -525], [-40, -510], [40, -530], [120, -510], [188, -520], [300, -540], [420, -560]]},
-	{"name": "东南土路", "kind": "dirt", "w": 8.0, "pts": [[100, 150], [130, 170], [172, 166], [200, 124], [230, 96], [262, 66], [290, 56]]},
-	{"name": "农场南北路", "kind": "dirt", "w": 8.0, "pts": [[100, 150], [98, 190], [80, 250], [70, 320], [86, 390], [100, 415]]},
-	{"name": "平原西北路", "kind": "dirt", "w": 7.0, "pts": [[-24, 336], [-62, 296], [-105, 236], [-156, 148]]},
-	{"name": "渣池路", "kind": "dirt", "w": 7.0, "pts": [[442, 56], [452, 102], [456, 145], [444, 195], [420, 250]]},
 ]
 ## 滨河路：沿灰港河右岸（灰港段西岸、运河段南岸）偏移生成，从赤湖出水口到河口
 const RIVERSIDE := {"name": "滨河路", "river": 1, "off": 22.0, "w": 10.0, "from_z": -360.0, "to_x": 600.0}
 ## 铁路：每条是一串控制点
 const RAILS := [
 	[[-640, -300], [-470, -245], [-320, -196], [-200, -158], [-90, -128], [20, -112], [120, -104], [200, -100], [300, -100], [420, -100], [540, -100], [580, -108]],
-	[[330, -100], [372, -60], [410, 0], [426, 60], [430, 140], [420, 200], [405, 250], [400, 300]],
+	[[392, -100], [412, -78], [416, -34], [424, 16], [428, 72], [430, 140], [420, 200], [406, 248], [402, 294]],
 	[[256, -100], [286, -114], [360, -114], [434, -114], [464, -100]],
 	[[240, -100], [282, -132], [360, -132], [438, -132], [480, -100]],
 	[[224, -100], [278, -150], [360, -150], [442, -150], [496, -100]],
 	[[136, -103], [164, -88], [230, -88], [296, -88], [324, -100]],
-	[[300, -100], [326, -138], [330, -210], [336, -286], [356, -356], [436, -356]],
+	[[300, -100], [326, -138], [330, -210], [338, -282], [362, -334], [434, -334]],
 ]
 ## 山脊巨石线
 const RIDGES := [
@@ -566,6 +555,35 @@ static func smooth(ctrl: Array, step := 4.0, closed := false) -> PackedVector2Ar
 	return out
 
 
+## 向心 Catmull-Rom 转三次贝塞尔采样（α = 0.5）：消除均匀参数化在不等距控制点处的曲率突变
+static func smooth_bezier(ctrl: Array, step := 2.4, closed := false) -> PackedVector2Array:
+	var p := PackedVector2Array()
+	for c in ctrl:
+		p.append(Vector2(float(c[0]), float(c[1])))
+	var n := p.size()
+	if n < 2:
+		return p
+	var out := PackedVector2Array()
+	var segs := n if closed else n - 1
+	for i in segs:
+		var p1 := p[i]
+		var p2 := p[(i + 1) % n]
+		var p0 := p[(i - 1 + n) % n] if closed else (p[i - 1] if i > 0 else 2.0 * p1 - p2)
+		var p3 := p[(i + 2) % n] if closed else (p[i + 2] if i + 2 < n else 2.0 * p2 - p1)
+		var d01 := maxf(0.01, sqrt(p1.distance_to(p0)))
+		var d12 := maxf(0.01, sqrt(p2.distance_to(p1)))
+		var d23 := maxf(0.01, sqrt(p3.distance_to(p2)))
+		var b1 := p1 + ((p1 - p0) / d01 - (p2 - p0) / (d01 + d12) + (p2 - p1) / d12) * (d12 / 3.0)
+		var b2 := p2 - ((p2 - p1) / d12 - (p3 - p1) / (d12 + d23) + (p3 - p2) / d23) * (d12 / 3.0)
+		var m := maxi(1, ceili(p1.distance_to(p2) / maxf(step, 0.25)))
+		for k in m:
+			var u := float(k) / float(m)
+			var v := 1.0 - u
+			out.append((v * v * v) * p1 + (3.0 * v * v * u) * b1 + (3.0 * v * u * u) * b2 + (u * u * u) * p2)
+	out.append(p[0] if closed else p[n - 1])
+	return out
+
+
 static func dense(pts: PackedVector2Array, step: float) -> PackedVector2Array:
 	var out := PackedVector2Array()
 	if pts.size() < 2:
@@ -790,7 +808,7 @@ static func features() -> Dictionary:
 		lakes.append(Vector3(l[0], l[1], l[2]))
 	var roads: Array = []
 	for r: Dictionary in ROADS:
-		roads.append({"name": r.name, "pts": smooth(r.pts, 3.0, bool(r.get("closed", false))), "w": float(r.w), "dirt": str(r.kind) == "dirt",
+		roads.append({"name": r.name, "pts": smooth_bezier(r.pts, 2.4, bool(r.get("closed", false))), "w": float(r.w), "dirt": str(r.kind) == "dirt",
 			"kind": str(r.kind), "bridge": str(r.kind) != "dirt"})
 	# 滨河路：灰港河右岸偏移
 	var rv: PackedVector2Array = rivers[RIVERSIDE.river].pts
@@ -801,10 +819,15 @@ static func features() -> Dictionary:
 		if rv[i].y < float(RIVERSIDE.from_z) or rv[i].x > float(RIVERSIDE.to_x):
 			continue
 		side.append(q)
-	var sd := PackedVector2Array()
+	var sd_ctrl: Array = []
 	for i in range(0, side.size(), 3):
-		sd.append(side[i])
-	roads.append({"name": RIVERSIDE.name, "pts": dense(sd, 3.0), "w": float(RIVERSIDE.w), "dirt": false, "kind": "art", "bridge": true})
+		sd_ctrl.append([side[i].x, side[i].y])
+	if side.size() >= 2 and (side.size() - 1) % 3 != 0:
+		var last_s := side[side.size() - 1]
+		if Vector2(float(sd_ctrl[sd_ctrl.size() - 1][0]), float(sd_ctrl[sd_ctrl.size() - 1][1])).distance_to(last_s) > 1.5:
+			sd_ctrl.append([last_s.x, last_s.y])
+	var side_pts := smooth_bezier(sd_ctrl, 2.0) if sd_ctrl.size() >= 3 else dense(side, 2.0)
+	roads.append({"name": RIVERSIDE.name, "pts": side_pts, "w": float(RIVERSIDE.w), "dirt": false, "kind": "art", "bridge": true})
 	var rails: Array = []
 	for line: Array in RAILS:
 		rails.append(smooth(line, 6.0) if line.size() > 2 else dense(PackedVector2Array([Vector2(line[0][0], line[0][1]), Vector2(line[1][0], line[1][1])]), 6.0))
@@ -885,10 +908,12 @@ static func nb_seed(i: int, j: int) -> Vector2:
 	return Vector2((i + 0.5) * NB + (h2(i, j, 21) - 0.5) * 36.0, (j + 0.5) * NB + (h2(i, j, 22) - 0.5) * 36.0)
 
 
-## 相邻两个街区之间的边界路：col 城区支路 / track 田间土路 / "" 没有路（相邻同向城区街区约四分之一直接合并成连续格网）
+## 相邻两个街区之间的边界路：col 城区支路 / "" 没有路（相邻同向城区街区约四分之一直接合并成连续格网；已移除田间机耕土路）
 static func col_kind(a: Vector2i, b: Vector2i) -> String:
 	var na := nb_info(a)
 	var nb2 := nb_info(b)
+	if (na.kind == "yard" and nb2.kind == "yard") or (na.kind == "yard" and nb2.kind == "rural") or (nb2.kind == "yard" and na.kind == "rural"):
+		return ""
 	var lo := a if (a.x < b.x or (a.x == b.x and a.y < b.y)) else b
 	var hi := b if lo == a else a
 	var r := h2(lo.x * 7 + hi.x * 3, lo.y * 13 + hi.y * 5, 31)
@@ -898,9 +923,7 @@ static func col_kind(a: Vector2i, b: Vector2i) -> String:
 		return "col" if r < 0.76 else ""
 	if ua or ub:
 		return "col"
-	if r > 0.42 or na.ch in NO_COLLECTOR or nb2.ch in NO_COLLECTOR:
-		return ""
-	return "track"
+	return ""
 
 
 ## 街区多边形按边内缩：有支路的边让出半个路宽 + 人行道，没有路的边只留窄缝
@@ -914,10 +937,8 @@ static func nb_inner(nb: Dictionary) -> PackedVector2Array:
 	for i in m:
 		var o = nb.labels[i]
 		var d := 2.2
-		if o != null:
-			match col_kind(nb.k, o):
-				"col": d = 8.2
-				"track": d = 6.0
+		if o != null and col_kind(nb.k, o) == "col":
+			d = 8.2
 		var a := poly[i]
 		var e := (poly[(i + 1) % m] - a).normalized()
 		var n := Vector2(-e.y, e.x) if ccw else Vector2(e.y, -e.x)
@@ -1021,6 +1042,8 @@ static func nb_info(k: Vector2i) -> Dictionary:
 			ang = (h2(k.x, k.y, 26) - 0.5) * 0.08          # 厂区、港区、编组站顺着东西向铁路与岸线规整排布
 		if ch == "M":
 			kind = "mil"
+		elif ch == "Y":
+			kind = "yard"
 		for rc: Dictionary in RADIAL:
 			if ch == "D" and (in_convex(poly, Vector2(rc.c[0], rc.c[1])) or s.distance_to(Vector2(rc.c[0], rc.c[1])) < 68.0):
 				kind = "radial"
@@ -1322,6 +1345,11 @@ static func _rect_layout(rect: Rect2, id: String, t: Vector2i) -> Dictionary:
 	for r: PackedVector2Array in f.rails + local_feat.rails:
 		if _poly_hits(r, big):
 			rails.append(r)
+	var rg_rail := SegGrid.new()
+	rg_rail.cell = 20.0
+	rg_rail.reach = 18.0
+	for ri in rails.size():
+		rg_rail.add_poly(rails[ri], 2.0, ri)
 	var ridges: Array = []
 	for r: PackedVector2Array in f.ridges + local_feat.ridges:
 		if _poly_hits(r, big):
@@ -1329,12 +1357,14 @@ static func _rect_layout(rect: Rect2, id: String, t: Vector2i) -> Dictionary:
 	L.rivers = rivers
 	L.lakes = lakes
 	L.rails = rails
+	L.rail_grid = rg_rail
 	L.ridges = ridges
 	# ---- 道路
 	var roads: Array = []
 	for r: Dictionary in f.roads + local_feat.roads:
 		for run: PackedVector2Array in _clip_rect(r.pts, big):
 			roads.append({"pts": run, "w": r.w, "dirt": r.dirt, "kind": r.kind, "bridge": r.bridge, "name": r.get("name", "")})
+	var surf_layout := (id == "" or is_surface(id))
 	var nbs := _tile_nbs(rect.grow(NB * 1.5))
 	var col_done := {}
 	var blocks: Array = []
@@ -1342,36 +1372,37 @@ static func _rect_layout(rect: Rect2, id: String, t: Vector2i) -> Dictionary:
 	var parks: Array = []
 	for k: Vector2i in nbs:
 		var nb := nb_info(k)
-		# 支路：街区边界（每对相邻街区只生成一次）
+		# 支路：街区边界（每对相邻街区只生成一次，仅限地表战区/城市群瓦片）
 		var poly: PackedVector2Array = nb.poly
-		for i in poly.size():
-			var o = nb.labels[i]
-			if o == null:
-				continue
-			var key := [k, o] if (k.x < o.x or (k.x == o.x and k.y < o.y)) else [o, k]
-			var ks := str(key)
-			if col_done.has(ks):
-				continue
-			col_done[ks] = true
-			var a := poly[i]
-			var b := poly[(i + 1) % poly.size()]
-			if not big.grow(10).intersects(Rect2(a, Vector2.ZERO).expand(b)):
-				continue
-			var kind := col_kind(k, o)
-			if kind == "":
-				continue
-			var w := 9.0 if kind == "col" else 6.0
-			var dirt := kind == "track"
-			var pts := dense(PackedVector2Array([a, b]), 3.0)
-			for j in pts.size():
-				pts[j] += Vector2(_nr.get_noise_2d(pts[j].x, pts[j].y), _nr.get_noise_2d(pts[j].x - 333.0, pts[j].y + 777.0)) * 2.4
-			var bridge := h2(k.x * 3 + o.x, k.y * 5 + o.y, 32) < 0.5
-			for run in _filter_road(L, pts, kind, w, clears, bridge):
-				for r2 in _clip_rect(run, big):
-					roads.append({"pts": r2, "w": w, "dirt": dirt, "kind": kind, "bridge": bridge})
+		if surf_layout:
+			for i in poly.size():
+				var o = nb.labels[i]
+				if o == null:
+					continue
+				var key := [k, o] if (k.x < o.x or (k.x == o.x and k.y < o.y)) else [o, k]
+				var ks := str(key)
+				if col_done.has(ks):
+					continue
+				col_done[ks] = true
+				var a := poly[i]
+				var b := poly[(i + 1) % poly.size()]
+				if not big.grow(10).intersects(Rect2(a, Vector2.ZERO).expand(b)):
+					continue
+				var kind := col_kind(k, o)
+				if kind == "":
+					continue
+				var w := 9.0 if kind == "col" else 6.0
+				var dirt := kind == "track"
+				var pts := dense(PackedVector2Array([a, b]), 3.0)
+				for j in pts.size():
+					pts[j] += Vector2(_nr.get_noise_2d(pts[j].x, pts[j].y), _nr.get_noise_2d(pts[j].x - 333.0, pts[j].y + 777.0)) * 2.4
+				var bridge := h2(k.x * 3 + o.x, k.y * 5 + o.y, 32) < 0.5
+				for run in _filter_road(L, pts, kind, w, clears, bridge):
+					for r2 in _clip_rect(run, big):
+						roads.append({"pts": r2, "w": w, "dirt": dirt, "kind": kind, "bridge": bridge})
 		# 街区内部
 		match str(nb.kind):
-			"grid", "mil":
+			"grid", "mil", "yard":
 				_grid_streets(L, nb, roads, blocks, clears)
 			"radial":
 				_radial_blocks(L, nb, blocks)
@@ -1380,8 +1411,9 @@ static func _rect_layout(rect: Rect2, id: String, t: Vector2i) -> Dictionary:
 					fields.append_array(_make_fields(L, poly, nb.ang, k))
 				elif nb.ch == "P":
 					parks.append(centroid(poly))
-	for rc: Dictionary in RADIAL:
-		_radial_streets(L, rc, roads, clears)
+	if surf_layout:
+		for rc: Dictionary in RADIAL:
+			_radial_streets(L, rc, roads, clears)
 	# 道路收口与空间索引
 	roads = _link_roads(L, roads, clears)
 	var rg := SegGrid.new()
@@ -1505,11 +1537,11 @@ static func zone_layout(id: String) -> Dictionary:
 	}
 	var roads: Array = []
 	for r: Dictionary in L.roads:
-		roads.append({"pts": _shift(r.pts, -o), "w": r.w, "dirt": r.dirt, "kind": r.kind, "bridge": r.bridge, "caps": r.get("caps", [false, false])})
+		roads.append({"pts": _shift(r.pts, -o), "w": r.w, "w0": float(r.get("w0", r.w)), "w1": float(r.get("w1", r.w)), "dirt": r.dirt, "kind": r.kind, "bridge": r.bridge, "caps": r.get("caps", [false, false])})
 	Z.roads = roads
 	var rivers: Array = []
 	for r: Dictionary in L.rivers:
-		rivers.append({"pts": _shift(_clip_one(r.pts, L.rect.grow(5.0)), -o), "w": r.w, "dry": r.dry, "name": r.get("name", "")})
+		rivers.append({"pts": _shift(_clip_one(r.pts, L.rect.grow(CLIP_PAD)), -o), "w": r.w, "dry": r.dry, "name": r.get("name", "")})
 	Z.rivers = rivers
 	var lakes: Array = []
 	for l: Vector3 in L.lakes:
@@ -1517,7 +1549,7 @@ static func zone_layout(id: String) -> Dictionary:
 	Z.lakes = lakes
 	var rails: Array = []
 	for r: PackedVector2Array in L.rails:
-		for run in _clip_rect(r, L.rect.grow(3.0)):
+		for run in _clip_rect(r, L.rect.grow(CLIP_PAD)):
 			rails.append(_shift(run, -o))
 	Z.rails = rails
 	var ridges: Array = []
@@ -1603,7 +1635,7 @@ static func _local_features(id: String) -> Dictionary:
 		out.lakes.append(Vector3(l[0] + o.x, l[1] + o.y, l[2]))
 	for cv: Array in md.get("curves", []):
 		var closed := cv.size() > 3 and bool(cv[3])
-		out.roads.append({"name": "", "pts": smooth(_offset_ctrl(cv[2], o), 3.0, closed), "w": float(cv[0]), "dirt": bool(cv[1]),
+		out.roads.append({"name": "", "pts": smooth_bezier(_offset_ctrl(cv[2], o), 2.4, closed), "w": float(cv[0]), "dirt": bool(cv[1]),
 			"kind": "dirt" if bool(cv[1]) else "art", "bridge": not bool(cv[1])})
 	for line: Array in md.get("rails", []):
 		out.rails.append(dense(PackedVector2Array(_offset_ctrl(line, o).map(func(q): return Vector2(q[0], q[1]))), 6.0))
@@ -1656,17 +1688,24 @@ static func _clip_rect(pts: PackedVector2Array, r: Rect2) -> Array:
 	return out
 
 
-## 裁切道路到矩形内；只有仍保持原端点的那一头才保留断头圆帽标记
+## 裁切道路到矩形内；只有仍保持原端点的那一头才保留断头圆帽标记及渐变端宽
 static func _clip_road(r: Dictionary, rect: Rect2) -> Array:
 	var pts: PackedVector2Array = r.pts
 	if pts.size() < 2:
 		return []
 	var c0: Array = r.get("caps", [false, false])
+	var w_def := float(r.w)
+	var w0_orig := float(r.get("w0", w_def))
+	var w1_orig := float(r.get("w1", w_def))
 	var out: Array = []
 	for run: PackedVector2Array in _clip_rect(pts, rect):
+		if _poly_len(run) < 6.0:
+			continue
 		var nr := r.duplicate()
 		nr.pts = run
 		nr.caps = [bool(c0[0]) and run[0].is_equal_approx(pts[0]), bool(c0[1]) and run[run.size() - 1].is_equal_approx(pts[pts.size() - 1])]
+		nr.w0 = w0_orig if run[0].is_equal_approx(pts[0]) else w_def
+		nr.w1 = w1_orig if run[run.size() - 1].is_equal_approx(pts[pts.size() - 1]) else w_def
 		out.append(nr)
 	return out
 
@@ -1696,15 +1735,16 @@ static func _tile_nbs(r: Rect2) -> Array:
 	return out
 
 
-static func _near_urban(L: Dictionary, p: Vector2, rad: float) -> bool:
+static func _near_non_yard_urban(L: Dictionary, p: Vector2, rad: float) -> bool:
 	for d: Vector2 in [Vector2(rad, 0.0), Vector2(-rad, 0.0), Vector2(0.0, rad), Vector2(0.0, -rad)]:
-		if dist_at(L, p + d) in URBAN:
+		if dist_at(L, p + d) in "DRIHM":
 			return true
 	return false
 
 
-## 道路采样点过滤：按道路类型去掉落在水面、悬崖、遗迹院落里的部分，返回保留的连续段
+## 道路采样点过滤：按道路类型去掉落在水面、悬崖、铁轨冲突区、遗迹院落里的部分，返回保留的连续段
 static func _filter_road(L: Dictionary, pts: PackedVector2Array, kind: String, w: float, clears: Array, bridge := false) -> Array:
+	var rg_rail: SegGrid = L.get("rail_grid", null)
 	var keep := PackedByteArray()
 	keep.resize(pts.size())
 	for i in pts.size():
@@ -1713,20 +1753,50 @@ static func _filter_road(L: Dictionary, pts: PackedVector2Array, kind: String, w
 		var ch := dist_at(L, p)
 		match kind:
 			"loc":
-				ok = ch in URBAN and ch != "M"
+				ok = ch in URBAN and ch != "M" and ch != "Y"
 			"col":
-				ok = not (ch in NO_COLLECTOR) and (ch in URBAN or ch == "P" or _near_urban(L, p, 8.0) or (bridge and water_dist(p, false) < w * 0.5 + 8.0))
+				ok = not (ch in NO_COLLECTOR) and ch != "Y" and (ch in "DRIHM" or ch == "P" or _near_non_yard_urban(L, p, 8.0) or (bridge and water_dist(p, false) < w * 0.5 + 8.0))
 			"track":
-				ok = not (ch in NO_COLLECTOR) and ch != "M"
+				ok = not (ch in NO_COLLECTOR) and ch != "M" and ch != "Y"
+		if ok and rg_rail != null:
+			if kind == "loc" or kind == "track":
+				if rg_rail.edge_dist(p) < w * 0.5 + 3.6:
+					ok = false
+			elif kind == "col":
+				var si := rg_rail.nearest(p, w * 0.5 + 7.5)
+				if si >= 0:
+					var td := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+					var rdir := (rg_rail.b[si] - rg_rail.a[si]).normalized()
+					if td == Vector2.ZERO or absf(td.dot(rdir)) >= 0.45:
+						ok = false
+					else:
+						var base_tag: int = rg_rail.tag[si]
+						var multi_rail := false
+						var c0 := Vector2i(floori(p.x / rg_rail.cell), floori(p.y / rg_rail.cell))
+						for dz_r in range(-1, 2):
+							for dx_r in range(-1, 2):
+								var lst = rg_rail.grid.get(Vector2i(c0.x + dx_r, c0.y + dz_r))
+								if lst == null:
+									continue
+								for ri2: int in lst:
+									if rg_rail.tag[ri2] != base_tag and seg_dist(p, rg_rail.a[ri2], rg_rail.b[ri2]) < 14.0:
+										multi_rail = true
+										break
+								if multi_rail:
+									break
+							if multi_rail:
+								break
+						if multi_rail:
+							ok = false
 		if ok:
 			var wd := water_dist(p, false)
-			if wd < w * 0.5 + 1.0:
-				# 干河床允许土路 / 支路涉过；有水的地方只有允许架桥的支路能过（之后由 raid 在河道交点建桥）
+			if wd < w * 0.5 + 2.0:
+				# 有水河道只有允许架桥的大角交支路能过；干河床禁止局部格网路，支路与土路只准大角度横穿（禁沿河槽纵向伴行）
 				var wet := water_dist(p, true) < w * 0.5 + 1.0
 				if wet:
 					ok = kind == "col" and bridge and _lake_free(p, w * 0.5 + 2.0) and features().art.edge_dist(p) > 18.0 and _cross_angle_ok(pts, i)
 				else:
-					ok = kind != "loc"
+					ok = kind != "loc" and _dry_cross_ok(pts, i)
 		if ok:
 			for cz: Vector3 in clears:
 				if p.distance_to(Vector2(cz.x, cz.y)) < cz.z - 2.0 + w * 0.5:
@@ -1759,6 +1829,17 @@ static func _cross_angle_ok(pts: PackedVector2Array, i: int) -> bool:
 	return absf(d.cross(rd)) > 0.82
 
 
+## 干河床穿越检查：只准大于 ~40° 横穿，严禁沿干河床纵向伴行
+static func _dry_cross_ok(pts: PackedVector2Array, i: int) -> bool:
+	var g: SegGrid = features().water
+	var si := g.nearest(pts[i], 30.0)
+	if si < 0:
+		return false
+	var rd: Vector2 = (g.b[si] - g.a[si]).normalized()
+	var d := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+	return d != Vector2.ZERO and absf(d.cross(rd)) > 0.65
+
+
 static func _lake_free(p: Vector2, pad: float) -> bool:
 	for l: Vector3 in features().lakes:
 		if lake_dist(l, p) < pad:
@@ -1772,76 +1853,328 @@ static func _lake_free(p: Vector2, pad: float) -> bool:
 ##   · 顺着走向（或左右偏一点）LINK_REACH 米内能碰到别的路：接过去（中途遇到有水的河湖、遗迹院落、悬崖就放弃）；
 ##   · 都不是：断头路，caps 记下（渲染时画圆头，人行道绕过去）。一头断开且很短、或两头都断开且不长的残段直接去掉。
 ## 去掉残段后别的路可能变成断头，所以多轮迭代直到稳定。
-const LINK_REACH := {"loc": 14.0, "col": 18.0, "track": 24.0, "art": 18.0, "hwy": 18.0, "dirt": 24.0}
-const STUB_MIN := 96.0       ## 一头断开的程序化支路短于这个就去掉
-const ORPHAN_MIN := 220.0    ## 两头都断开的孤立程序化残段一律去掉
-const TAIL_MAX := 88.0       ## 穿过路口后又伸出这么短一截断头尾巴的，齐根裁回到路口
+const LINK_REACH := {"loc": 20.0, "col": 24.0, "track": 26.0, "art": 18.0, "hwy": 18.0, "dirt": 26.0}
+const STUB_MIN_BY_KIND := {"loc": 145.0, "col": 135.0, "track": 145.0}
+const ORPHAN_MIN := 420.0    ## 两头都断开的孤立程序化残段一律去掉
+const TAIL_MAX := 92.0       ## 穿过路口后又伸出这么短一截断头尾巴的，齐根裁回到路口
+
+
+## 点 p 沿切线 td（单位向量）是否落在 g 中某条道路/铁轨的伴行带宽内
+static func _parallel_hit(g: SegGrid, p: Vector2, td: Vector2, pad: float, min_dot: float) -> bool:
+	var lst = g.grid.get(Vector2i(floori(p.x / g.cell), floori(p.y / g.cell)))
+	if lst == null:
+		return false
+	for i: int in lst:
+		if seg_dist(p, g.a[i], g.b[i]) - g.hw[i] < pad:
+			if min_dot < 0.0:
+				return true
+			var sd := (g.b[i] - g.a[i]).normalized()
+			if sd != Vector2.ZERO and absf(td.dot(sd)) > min_dot:
+				return true
+	return false
+
+
+## 沿折线剥除满足 drop_fn(p, td) 的伴行段，只保留足够长的连续段
+static func _strip_parallel_runs(r: Dictionary, pts: PackedVector2Array, drop_fn: Callable, min_len: float) -> Array:
+	var out: Array = []
+	var run := PackedVector2Array()
+	for k in pts.size():
+		var p := pts[k]
+		var td := (pts[mini(k + 1, pts.size() - 1)] - pts[maxi(k - 1, 0)]).normalized()
+		if bool(drop_fn.call(p, td)):
+			if run.size() >= 4 and _poly_len(run) >= min_len:
+				var nr := r.duplicate()
+				nr.pts = run
+				out.append(nr)
+			run = PackedVector2Array()
+		else:
+			run.append(p)
+	if run.size() >= 4 and _poly_len(run) >= min_len:
+		var nr := r.duplicate()
+		nr.pts = run
+		out.append(nr)
+	return out
+
+
+## 在没有第三条路介入的 Voronoi 顶点处，将同级共线的程序化道路首尾焊成一条，消除端点互爬穿模
+static func _merge_collinear_proc_roads(roads: Array) -> Array:
+	var cur: Array = roads.duplicate()
+	for _pass in 8:
+		var g := SegGrid.new()
+		g.cell = 16.0
+		g.reach = 10.0
+		for i in cur.size():
+			g.add_poly(cur[i].pts, float(cur[i].w) * 0.5, i)
+		var merged_any := false
+		var dead := PackedByteArray()
+		dead.resize(cur.size())
+		var nxt: Array = []
+		for i in cur.size():
+			if dead[i] == 1:
+				continue
+			var ri: Dictionary = cur[i]
+			var ki := str(ri.kind)
+			var pts_i: PackedVector2Array = ri.pts
+			var ring_i := pts_i.size() > 8 and pts_i[0].distance_to(pts_i[pts_i.size() - 1]) < float(ri.w) * 0.5
+			if not (ki in ["loc", "col", "track"]) or pts_i.size() < 2 or ring_i:
+				nxt.append(ri)
+				continue
+			var joined := false
+			for j in range(i + 1, cur.size()):
+				if dead[j] == 1:
+					continue
+				var rj: Dictionary = cur[j]
+				if str(rj.kind) != ki or absf(float(ri.w) - float(rj.w)) > 0.05 or bool(ri.dirt) != bool(rj.dirt):
+					continue
+				var pts_j: PackedVector2Array = rj.pts
+				var ring_j := pts_j.size() > 8 and pts_j[0].distance_to(pts_j[pts_j.size() - 1]) < float(rj.w) * 0.5
+				if pts_j.size() < 2 or ring_j:
+					continue
+				var best_ei := -1
+				var best_ej := -1
+				var best_d := 2.4
+				for ei in 2:
+					var pi: Vector2 = pts_i[0] if ei == 0 else pts_i[pts_i.size() - 1]
+					for ej in 2:
+						var pj: Vector2 = pts_j[0] if ej == 0 else pts_j[pts_j.size() - 1]
+						var d := pi.distance_to(pj)
+						if d < best_d:
+							best_d = d
+							best_ei = ei
+							best_ej = ej
+				if best_ei < 0:
+					continue
+				var pi: Vector2 = pts_i[0] if best_ei == 0 else pts_i[pts_i.size() - 1]
+				var qi: Vector2 = pts_i[mini(2, pts_i.size() - 1)] if best_ei == 0 else pts_i[maxi(pts_i.size() - 3, 0)]
+				var pj: Vector2 = pts_j[0] if best_ej == 0 else pts_j[pts_j.size() - 1]
+				var qj: Vector2 = pts_j[mini(2, pts_j.size() - 1)] if best_ej == 0 else pts_j[maxi(pts_j.size() - 3, 0)]
+				var t_arr := (pi - qi).normalized()
+				var t_dep := (qj - pj).normalized()
+				if t_arr == Vector2.ZERO or t_dep == Vector2.ZERO or t_arr.dot(t_dep) <= 0.80:
+					continue
+				var jp := (pi + pj) * 0.5
+				var third_near := false
+				var lst = g.grid.get(Vector2i(floori(jp.x / g.cell), floori(jp.y / g.cell)))
+				if lst != null:
+					for si: int in lst:
+						if g.tag[si] != i and g.tag[si] != j and seg_dist(jp, g.a[si], g.b[si]) - g.hw[si] < 2.0:
+							third_near = true
+							break
+				if third_near:
+					continue
+				var a_pts := pts_i.duplicate()
+				if best_ei == 0:
+					a_pts.reverse()
+				var b_pts := pts_j.duplicate()
+				if best_ej == 1:
+					b_pts.reverse()
+				if not a_pts.is_empty() and not b_pts.is_empty() and a_pts[a_pts.size() - 1].distance_to(b_pts[0]) < 0.5:
+					b_pts = b_pts.slice(1)
+				a_pts.append_array(b_pts)
+				var nr := ri.duplicate()
+				nr.pts = a_pts
+				nr.bridge = bool(ri.bridge) or bool(rj.bridge)
+				nxt.append(nr)
+				dead[i] = 1
+				dead[j] = 1
+				joined = true
+				merged_any = true
+				break
+			if not joined:
+				nxt.append(ri)
+		cur = nxt
+		if not merged_any:
+			break
+	return cur
+
+
+## 按连通分量清理土路/旷野中的孤立超短程序化铺装残块（与主干道/外框无任何铺装连通、且总铺装长 < 64m，瓦片与战区窗口边界绝对对称）
+static func _prune_isolated_paved(roads: Array, inner: Rect2) -> Array:
+	var paved_idx: Array = []
+	for i in roads.size():
+		if not bool(roads[i].dirt):
+			paved_idx.append(i)
+	if paved_idx.is_empty():
+		return roads
+	var g := SegGrid.new()
+	g.cell = 16.0
+	g.reach = 10.0
+	for i: int in paved_idx:
+		g.add_poly(roads[i].pts, float(roads[i].w) * 0.5, i)
+	var adj := {}
+	for i: int in paved_idx:
+		adj[i] = {}
+	for i: int in paved_idx:
+		var pts: PackedVector2Array = roads[i].pts
+		var hwi := float(roads[i].w) * 0.5
+		if pts.size() < 2:
+			continue
+		var total_s := _poly_len(pts)
+		var samples: Array = [pts[0], pts[pts.size() - 1]]
+		var step_s := 4.0
+		var s := step_s
+		var cur_acc := 0.0
+		for k in pts.size() - 1:
+			var a := pts[k]
+			var b := pts[k + 1]
+			var seg := a.distance_to(b)
+			while cur_acc + seg >= s and s < total_s:
+				samples.append(a.lerp(b, (s - cur_acc) / maxf(seg, 0.001)))
+				s += step_s
+			cur_acc += seg
+		for q: Vector2 in samples:
+			var lst = g.grid.get(Vector2i(floori(q.x / g.cell), floori(q.y / g.cell)))
+			if lst == null:
+				continue
+			for si: int in lst:
+				var j: int = g.tag[si]
+				if j == i:
+					continue
+				if seg_dist(q, g.a[si], g.b[si]) <= g.hw[si] + hwi + 0.8:
+					adj[i][j] = true
+					adj[j][i] = true
+	var drop := {}
+	var seen := {}
+	for i: int in paved_idx:
+		if seen.has(i):
+			continue
+		var comp: Array = []
+		var q_bfs: Array = [i]
+		seen[i] = true
+		var has_preset := false
+		var crosses := false
+		var tot_len := 0.0
+		while not q_bfs.is_empty():
+			var u: int = q_bfs.pop_back()
+			comp.append(u)
+			var ru: Dictionary = roads[u]
+			var pts_u: PackedVector2Array = ru.pts
+			tot_len += _poly_len(pts_u)
+			if not (str(ru.kind) in ["loc", "col", "track"]):
+				has_preset = true
+			if pts_u.size() >= 2 and (not inner.has_point(pts_u[0]) or not inner.has_point(pts_u[pts_u.size() - 1])):
+				crosses = true
+			for v: int in adj[u]:
+				if not seen.has(v):
+					seen[v] = true
+					q_bfs.append(v)
+		if not has_preset and not crosses and tot_len < 175.0:
+			for u: int in comp:
+				drop[u] = true
+	if drop.is_empty():
+		return roads
+	var out: Array = []
+	for i in roads.size():
+		if not drop.has(i):
+			out.append(roads[i])
+	return out
 
 
 static func _link_roads(L: Dictionary, roads: Array, clears: Array) -> Array:
 	var inner: Rect2 = (L.rect as Rect2).grow(CLIP_PAD - 4.0)
-	# 先去掉紧贴主干道 / 支路平行伴行的次级道路（两者之间塞不下建筑，只会挤出细长人行道或碎三角岛）
-	var gm := SegGrid.new()
-	gm.cell = 16.0
-	gm.reach = 15.0
-	for i in roads.size():
-		if float(roads[i].w) >= 9.0:
-			gm.add_poly(roads[i].pts, float(roads[i].w) * 0.5, i)
-	var g_art := SegGrid.new()
-	g_art.cell = 16.0
-	g_art.reach = 16.0
-	for i in roads.size():
-		if float(roads[i].w) >= 11.0:
-			g_art.add_poly(roads[i].pts, float(roads[i].w) * 0.5, i)
-	var pre: Array = []
+	var presets: Array = []
+	var cols: Array = []
+	var locs: Array = []
+	var tracks: Array = []
 	for r: Dictionary in roads:
-		var kd := str(r.kind)
-		if kd != "loc" and kd != "col":
-			pre.append(r)
-			continue
-		var ref_g: SegGrid = gm if kd == "loc" else g_art
-		var pad_d := 8.5 if kd == "loc" else 7.5
-		var pts: PackedVector2Array = _relax_road_kinks(L, r.pts, float(r.w) * 0.5, clears) if kd == "col" else r.pts
+		match str(r.kind):
+			"col":
+				cols.append(r)
+			"loc":
+				locs.append(r)
+			"track":
+				tracks.append(r)
+			_:
+				presets.append(r)
+	# 同层级按长度降序过滤，保证长路优先保留、两侧瓦片结果对称
+	var sort_len_desc := func(a: Dictionary, b: Dictionary) -> bool:
+		return _poly_len(a.pts) > _poly_len(b.pts)
+	cols.sort_custom(sort_len_desc)
+	locs.sort_custom(sort_len_desc)
+	tracks.sort_custom(sort_len_desc)
+	var g_rail := SegGrid.new()
+	g_rail.cell = 20.0
+	g_rail.reach = 22.0
+	for ri in (L.get("rails", []) as Array).size():
+		g_rail.add_poly(L.rails[ri], 2.0, ri)
+	var g_paved_preset := SegGrid.new()
+	g_paved_preset.cell = 16.0
+	g_paved_preset.reach = 28.0
+	var g_dirt_preset := SegGrid.new()
+	g_dirt_preset.cell = 16.0
+	g_dirt_preset.reach = 22.0
+	for i in presets.size():
+		var pr: Dictionary = presets[i]
+		if bool(pr.dirt):
+			g_dirt_preset.add_poly(pr.pts, float(pr.w) * 0.5, i)
+		else:
+			g_paved_preset.add_poly(pr.pts, float(pr.w) * 0.5, i)
+	var g_col := SegGrid.new()
+	g_col.cell = 16.0
+	g_col.reach = 22.0
+	var g_loc := SegGrid.new()
+	g_loc.cell = 16.0
+	g_loc.reach = 22.0
+	var g_track := SegGrid.new()
+	g_track.cell = 16.0
+	g_track.reach = 22.0
+	var accepted: Array = presets.duplicate()
+	for r: Dictionary in cols:
 		var hw := float(r.w) * 0.5
-		var run := PackedVector2Array()
-		for k in pts.size():
-			var p := pts[k]
-			var td := (pts[mini(k + 1, pts.size() - 1)] - pts[maxi(k - 1, 0)]).normalized()
-			var si := ref_g.nearest(p, hw + pad_d)
-			if si >= 0 and absf(td.dot((ref_g.b[si] - ref_g.a[si]).normalized())) > 0.78:
-				if run.size() >= 3:
-					var nr := r.duplicate()
-					nr.pts = run
-					pre.append(nr)
-				run = PackedVector2Array()
-			else:
-				run.append(p)
-		if run.size() >= 3:
-			var nr := r.duplicate()
-			nr.pts = run
-			pre.append(nr)
-	roads = pre
-	for r: Dictionary in roads:
-		if str(r.kind) == "track":
-			r.pts = _relax_road_kinks(L, r.pts, float(r.w) * 0.5, clears)
+		var pts := _relax_road_kinks(L, r.pts, hw, clears)
+		for nr: Dictionary in _strip_parallel_runs(r, pts, func(p: Vector2, td: Vector2) -> bool:
+			return _parallel_hit(g_paved_preset, p, td, hw + 18.5, 0.64) \
+				or _parallel_hit(g_col, p, td, hw + 11.5, 0.68) \
+				or _parallel_hit(g_rail, p, td, hw + 7.5, 0.45), 20.0):
+			g_col.add_poly(nr.pts, hw, accepted.size())
+			accepted.append(nr)
+	for r: Dictionary in locs:
+		var hw := float(r.w) * 0.5
+		for nr: Dictionary in _strip_parallel_runs(r, r.pts, func(p: Vector2, td: Vector2) -> bool:
+			return _parallel_hit(g_paved_preset, p, td, hw + 14.0, 0.66) \
+				or _parallel_hit(g_col, p, td, hw + 9.5, 0.68) \
+				or _parallel_hit(g_loc, p, td, hw + 7.5, 0.68) \
+				or _parallel_hit(g_rail, p, td, hw + 3.6, -1.0), 18.0):
+			g_loc.add_poly(nr.pts, hw, accepted.size())
+			accepted.append(nr)
+	for r: Dictionary in tracks:
+		var hw := float(r.w) * 0.5
+		var pts := _relax_road_kinks(L, r.pts, hw, clears)
+		for nr: Dictionary in _strip_parallel_runs(r, pts, func(p: Vector2, td: Vector2) -> bool:
+			return _parallel_hit(g_paved_preset, p, td, hw + 10.0, 0.62) \
+				or _parallel_hit(g_dirt_preset, p, td, hw + 10.0, 0.62) \
+				or _parallel_hit(g_col, p, td, hw + 10.0, 0.62) \
+				or _parallel_hit(g_loc, p, td, hw + 10.0, 0.62) \
+				or _parallel_hit(g_track, p, td, hw + 8.5, 0.68) \
+				or _parallel_hit(g_rail, p, td, hw + 4.0, -1.0), 24.0):
+			g_track.add_poly(nr.pts, hw, accepted.size())
+			accepted.append(nr)
+	roads = _merge_collinear_proc_roads(accepted)
 	for it in 6:
-		var g := SegGrid.new()
-		g.cell = 16.0
-		g.reach = 12.0
+		var g_all := SegGrid.new()
+		g_all.cell = 16.0
+		g_all.reach = 12.0
+		var g_paved := SegGrid.new()
+		g_paved.cell = 16.0
+		g_paved.reach = 12.0
 		for i in roads.size():
-			g.add_poly(roads[i].pts, float(roads[i].w) * 0.5, i)
+			var hw_i := float(roads[i].w) * 0.5
+			g_all.add_poly(roads[i].pts, hw_i, i)
+			if not bool(roads[i].dirt):
+				g_paved.add_poly(roads[i].pts, hw_i, i)
 		var keep: Array = []
 		var removed := false
 		for i in roads.size():
 			var r: Dictionary = roads[i]
 			var pts: PackedVector2Array = r.pts
 			var caps := [false, false]
+			var g_target: SegGrid = g_all if bool(r.dirt) else g_paved
 			# 首尾相接的环（放射旧城的环路）
 			var ring := pts.size() > 8 and pts[0].distance_to(pts[pts.size() - 1]) < float(r.w) * 0.5
 			if not ring:
 				for e in 2:
 					var old_n := pts.size()
-					var res: Array = _link_end(L, g, i, r, pts, e, inner, clears)
+					var res: Array = _link_end(L, g_target, i, r, pts, e, inner, clears)
 					pts = res[0]
 					caps[e] = res[1]
 					if pts.size() < old_n:
@@ -1850,20 +2183,53 @@ static func _link_roads(L: Dictionary, roads: Array, clears: Array) -> Array:
 			r.caps = caps
 			var dead := (1 if caps[0] else 0) + (1 if caps[1] else 0)
 			var ln := _poly_len(pts)
+			var is_proc := str(r.kind) in ["loc", "col", "track"]
+			if pts.size() < 2 or (is_proc and ln < 18.0):
+				removed = true
+				continue
 			var has_bridge := false
 			if bool(r.bridge):
 				for p2: Vector2 in pts:
 					if water_dist(p2, true) < 2.0:
 						has_bridge = true
 						break
-			var is_proc := str(r.kind) in ["loc", "col", "track"]
-			if is_proc and ((has_bridge and dead >= 1) or (not has_bridge and ((dead == 2 and ln < ORPHAN_MIN) or (dead == 1 and ln < STUB_MIN)))):
+			var stub_min: float = float(STUB_MIN_BY_KIND.get(str(r.kind), 135.0))
+			if is_proc and ((has_bridge and dead >= 1) or (not has_bridge and ((dead == 2 and ln < ORPHAN_MIN) or (dead == 1 and ln < stub_min)))):
 				removed = true
 				continue
 			keep.append(r)
 		roads = keep
 		if not removed:
 			break
+	var pruned := _prune_isolated_paved(roads, inner)
+	if pruned.size() < roads.size():
+		roads = pruned
+		var g2_all := SegGrid.new()
+		g2_all.cell = 16.0
+		g2_all.reach = 12.0
+		var g2_paved := SegGrid.new()
+		g2_paved.cell = 16.0
+		g2_paved.reach = 12.0
+		for i in roads.size():
+			var hw2 := float(roads[i].w) * 0.5
+			g2_all.add_poly(roads[i].pts, hw2, i)
+			if not bool(roads[i].dirt):
+				g2_paved.add_poly(roads[i].pts, hw2, i)
+		for i in roads.size():
+			var r: Dictionary = roads[i]
+			var pts: PackedVector2Array = r.pts
+			var g2_target: SegGrid = g2_all if bool(r.dirt) else g2_paved
+			var ring := pts.size() > 8 and pts[0].distance_to(pts[pts.size() - 1]) < float(r.w) * 0.5
+			if not ring:
+				var caps := [false, false]
+				for e in 2:
+					var res: Array = _link_end(L, g2_target, i, r, pts, e, inner, clears)
+					pts = res[0]
+					caps[e] = res[1]
+				r.pts = pts
+				r.caps = caps
+	roads = _weld_corner_roads(L, roads, inner, clears)
+	roads = _smooth_all_road_corners(L, roads, inner, clears)
 	return roads
 
 
@@ -1891,14 +2257,116 @@ static func _seg_inside(g: SegGrid, p: Vector2, skip: int, depth: float) -> int:
 	return bi
 
 
-## 接路途中不能穿过的地方：有水的河湖、遗迹 / 地标 / 撤离点清空圈、悬崖
+## 接路途中不能穿过的地方：有水的河湖、铁路冲突带、遗迹 / 地标 / 撤离点清空圈、悬崖
 static func _link_blocked(L: Dictionary, x: Vector2, hw: float, clears: Array) -> bool:
 	if water_dist(x, true) < hw + 1.0:
+		return true
+	if L.has("rail_grid") and (L.rail_grid as SegGrid).edge_dist(x) < hw + 2.2:
 		return true
 	for cz: Vector3 in clears:
 		if x.distance_to(Vector2(cz.x, cz.y)) < cz.z - 2.0 + hw:
 			return true
 	return dist_at(L, x) == "K"
+
+
+## 从端点往回剥离小角度压在别的路面上重叠的残段，防止人行道切出长水泥尖刺
+static func _peel_parallel_overlap(g: SegGrid, i: int, pts: PackedVector2Array, e: int, hw: float) -> PackedVector2Array:
+	var n := pts.size()
+	if n < 3:
+		return PackedVector2Array()
+	var peeled := 0.0
+	if e == 0:
+		var k := 0
+		while k < n - 2 and peeled < 36.0 and _seg_inside(g, pts[k], i, -hw * 0.65) >= 0:
+			peeled += pts[k].distance_to(pts[k + 1])
+			k += 1
+		var out := pts.slice(k)
+		return out if out.size() >= 2 and _poly_len(out) >= 18.0 else PackedVector2Array()
+	else:
+		var k := n - 1
+		while k > 1 and peeled < 36.0 and _seg_inside(g, pts[k], i, -hw * 0.65) >= 0:
+			peeled += pts[k].distance_to(pts[k - 1])
+			k -= 1
+		var out := pts.slice(0, k + 1)
+		return out if out.size() >= 2 and _poly_len(out) >= 18.0 else PackedVector2Array()
+
+
+static func _ray_seg_hit(p: Vector2, dir: Vector2, a: Vector2, b: Vector2, max_dist: float) -> Variant:
+	var ab := b - a
+	if ab.length_squared() < 1e-6 or dir.length_squared() < 1e-6:
+		return null
+	var hit = Geometry2D.line_intersects_line(p, dir, a, ab)
+	if hit == null:
+		return null
+	var hv: Vector2 = hit
+	var u := clampf((hv - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	var cp := a + ab * u
+	if hv.distance_to(cp) > 0.9:
+		return null
+	if absf((cp - p).dot(dir)) > max_dist:
+		return null
+	return cp
+
+
+static func _trim_overshoot_at_road(g: SegGrid, pts: PackedVector2Array, e: int, target_tag: int, max_walk: float) -> PackedVector2Array:
+	var n := pts.size()
+	if n < 3:
+		return PackedVector2Array()
+	var acc := 0.0
+	if e == 0:
+		for k in range(0, n - 1):
+			var a := pts[k]
+			var b := pts[k + 1]
+			var seg := a.distance_to(b)
+			if acc > max_walk:
+				break
+			var mid := (a + b) * 0.5
+			var c0 := Vector2i(floori(mid.x / g.cell), floori(mid.y / g.cell))
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var lst = g.grid.get(Vector2i(c0.x + dx, c0.y + dz))
+					if lst == null:
+						continue
+					for si: int in lst:
+						if g.tag[si] != target_tag:
+							continue
+						var xing = Geometry2D.segment_intersects_segment(a, b, g.a[si], g.b[si])
+						if xing != null:
+							var xp: Vector2 = xing
+							var out := pts.slice(k + 1)
+							var out2 := PackedVector2Array([xp])
+							out2.append_array(out)
+							if out2.size() >= 2 and _poly_len(out2) >= 12.0:
+								return out2
+							return PackedVector2Array()
+			acc += seg
+	else:
+		for k in range(n - 1, 0, -1):
+			var a := pts[k]
+			var b := pts[k - 1]
+			var seg := a.distance_to(b)
+			if acc > max_walk:
+				break
+			var mid := (a + b) * 0.5
+			var c0 := Vector2i(floori(mid.x / g.cell), floori(mid.y / g.cell))
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var lst = g.grid.get(Vector2i(c0.x + dx, c0.y + dz))
+					if lst == null:
+						continue
+					for si: int in lst:
+						if g.tag[si] != target_tag:
+							continue
+						var xing = Geometry2D.segment_intersects_segment(a, b, g.a[si], g.b[si])
+						if xing != null:
+							var xp: Vector2 = xing
+							var out := pts.slice(0, k)
+							out.append(xp)
+							if out.size() >= 2 and _poly_len(out) >= 12.0:
+								return out
+							return PackedVector2Array()
+			acc += seg
+	return PackedVector2Array()
 
 
 ## 处理一端（e = 0 起点 / 1 终点）：返回 [新折线, 是否断头]
@@ -1914,14 +2382,29 @@ static func _link_end(L: Dictionary, g: SegGrid, i: int, r: Dictionary, pts: Pac
 	if t == Vector2.ZERO:
 		return [pts, false]
 	var hw := float(r.w) * 0.5
-	# 1. 已经压在别的路面上（或两路面边缘已搭接）：补到对方中心线
+	# 1. 已经压在别的路面上（或两路面边缘已搭接）：沿来向射线精确交到对方中心线（零折角），若已越过对方中心线冒出半截则精准裁回中心线
 	var s := _seg_inside(g, p, i, -hw * 0.85)
 	if s >= 0:
-		var c := Geometry2D.get_closest_point_to_segment(p, g.a[s], g.b[s])
-		if p.distance_to(c) > 0.6 and (c - p).normalized().dot(t) > -0.15 and not _link_blocked(L, c, hw, clears):
-			return [_extend(pts, e, dense(PackedVector2Array([p, c]), 3.0).slice(1)), false]
-		return [pts, false]
-	# 2. 顺着走向往前找别的路（直行优先，小角度微调；严禁以 < 42° 锐角斜插并入别的路）
+		var seg_dir := (g.b[s] - g.a[s]).normalized()
+		if absf(t.dot(seg_dir)) >= 0.74:
+			if str(r.kind) in ["loc", "col", "track"]:
+				return [_peel_parallel_overlap(g, i, pts, e, hw), true]
+			return [pts, false]
+		if minf(p.distance_to(g.a[s]), p.distance_to(g.b[s])) < 0.8:
+			return [pts, false]
+		var hit_v = _ray_seg_hit(p, t, g.a[s], g.b[s], g.hw[s] + hw + 4.5)
+		var c: Vector2 = hit_v if hit_v != null else Geometry2D.get_closest_point_to_segment(p, g.a[s], g.b[s])
+		var proj := (c - p).dot(t)
+		var edge_d := p.distance_to(c) - g.hw[s]
+		if proj < -0.35 and str(r.kind) in ["loc", "col", "track"]:
+			var trimmed := _trim_overshoot_at_road(g, pts, e, g.tag[s], g.hw[s] + hw + 6.0)
+			if not trimmed.is_empty():
+				return [trimmed, false]
+		if p.distance_to(c) > 0.45 and proj > -0.10 and (c - p).normalized().dot(t) > 0.20 and not _link_blocked(L, c, hw, clears):
+			return [_extend(pts, e, dense(PackedVector2Array([p, c]), 2.5).slice(1)), false]
+		if edge_d <= -0.35:
+			return [pts, false]
+	# 2. 顺着走向往前找别的路（直行优先，射线交点一步直连到对方中心线，严禁垂直投影制造 Z 形折角）
 	var reach: float = LINK_REACH.get(str(r.kind), 10.0)
 	for ang: float in [0.0, 0.14, -0.14, 0.28, -0.28, 0.42, -0.42]:
 		var dv := t.rotated(ang)
@@ -1932,7 +2415,12 @@ static func _link_end(L: Dictionary, g: SegGrid, i: int, r: Dictionary, pts: Pac
 				break
 			var s2 := _seg_inside(g, x, i, 1.0)
 			if s2 >= 0 and absf(dv.dot((g.b[s2] - g.a[s2]).normalized())) < 0.74:
-				var add := dense(PackedVector2Array([p, x]), 3.0)
+				var hit2 = _ray_seg_hit(p, dv, g.a[s2], g.b[s2], reach + g.hw[s2] + 3.0)
+				if hit2 != null:
+					var h2p: Vector2 = hit2
+					if (h2p - p).dot(dv) > 0.45 and not _link_blocked(L, h2p, hw, clears):
+						return [_extend(pts, e, dense(PackedVector2Array([p, h2p]), 2.5).slice(1)), false]
+				var add := dense(PackedVector2Array([p, x]), 2.5)
 				add = add.slice(1)
 				var c2 := Geometry2D.get_closest_point_to_segment(x, g.a[s2], g.b[s2])
 				if x.distance_to(c2) > 0.6 and (c2 - x).normalized().dot(dv) > 0.15:
@@ -1949,15 +2437,635 @@ static func _relax_road_kinks(L: Dictionary, pts: PackedVector2Array, hw: float,
 	if n < 5:
 		return pts
 	var cur := pts.duplicate()
-	for _pass in 2:
+	for _pass in 4:
 		var nxt := cur.duplicate()
 		for k in range(1, n - 1):
 			var mid := (cur[k - 1] + cur[k + 1]) * 0.5
-			var cand := cur[k].lerp(mid, 0.45)
+			var cand := cur[k].lerp(mid, 0.48)
 			if water_dist(cand, true) >= hw + 2.0 and not _link_blocked(L, cand, hw, clears):
 				nxt[k] = cand
 		cur = nxt
 	return cur
+
+
+static func _clean_dup_pts(pts: PackedVector2Array, min_d := 0.25) -> PackedVector2Array:
+	if pts.size() < 2:
+		return pts
+	var out := PackedVector2Array([pts[0]])
+	for i in range(1, pts.size() - 1):
+		if out[out.size() - 1].distance_to(pts[i]) >= min_d:
+			out.append(pts[i])
+	var last := pts[pts.size() - 1]
+	if out.size() >= 2 and out[out.size() - 1].distance_to(last) < min_d:
+		out[out.size() - 1] = last
+	elif out[out.size() - 1].distance_to(last) >= 1e-4:
+		out.append(last)
+	return out
+
+
+static func _poly_s_arr(pts: PackedVector2Array) -> PackedFloat32Array:
+	var n := pts.size()
+	var s := PackedFloat32Array()
+	s.resize(n)
+	if n == 0:
+		return s
+	s[0] = 0.0
+	for k in n - 1:
+		s[k + 1] = s[k] + pts[k].distance_to(pts[k + 1])
+	return s
+
+
+static func _sample_poly_at_s(pts: PackedVector2Array, s_arr: PackedFloat32Array, target_s: float) -> Array:
+	var n := pts.size()
+	var total := s_arr[n - 1]
+	var s := clampf(target_s, 0.0, total)
+	for k in n - 1:
+		if s <= s_arr[k + 1] + 1e-5 or k == n - 2:
+			var seg := pts[k].distance_to(pts[k + 1])
+			var t := (pts[k + 1] - pts[k]) / maxf(seg, 1e-4)
+			var u := clampf((s - s_arr[k]) / maxf(seg, 1e-4), 0.0, 1.0)
+			return [pts[k].lerp(pts[k + 1], u), k, t]
+	var t_end := (pts[n - 1] - pts[n - 2]).normalized()
+	return [pts[n - 1], n - 2, t_end]
+
+
+static func _eval_cubic_bezier(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, step := 0.60, force_even := false) -> PackedVector2Array:
+	var l_est := (p0.distance_to(p1) + p1.distance_to(p2) + p2.distance_to(p3) + p0.distance_to(p3)) * 0.5
+	var t0_dir := (p1 - p0).normalized()
+	var t1_dir := (p3 - p2).normalized()
+	var turn := acos(clampf(t0_dir.dot(t1_dir), -1.0, 1.0)) if (t0_dir != Vector2.ZERO and t1_dir != Vector2.ZERO) else 0.0
+	var n_len := ceili(l_est / maxf(step, 0.20))
+	var n_ang := ceili(turn / deg_to_rad(3.2))
+	var n_seg := clampi(maxi(6, maxi(n_len, n_ang)), 6, 64)
+	if force_even and (n_seg % 2) == 1:
+		n_seg += 1
+	var out := PackedVector2Array()
+	out.resize(n_seg + 1)
+	for i in n_seg + 1:
+		var u := float(i) / float(n_seg)
+		var v := 1.0 - u
+		out[i] = (v * v * v) * p0 + (3.0 * v * v * u) * p1 + (3.0 * v * u * u) * p2 + (u * u * u) * p3
+	return out
+
+
+static func _make_corner_bezier(a: Vector2, t_a: Vector2, b: Vector2, t_b: Vector2, step := 0.60, force_even := false) -> PackedVector2Array:
+	var chord := a.distance_to(b)
+	if chord < 0.35:
+		return PackedVector2Array([a, b])
+	var cos_th := clampf(t_a.dot(t_b), -0.96, 1.0)
+	var theta := acos(cos_th)
+	var cos_h := cos(theta * 0.5)
+	var k_arc := (4.0 * cos_h) / (3.0 * maxf(0.18, 1.0 + cos_h))
+	var h_def := (chord / 3.0) * minf(1.15, 2.0 / maxf(0.5, 1.0 + cos_h))
+	var hA := h_def
+	var hB := h_def
+	if theta >= 0.08 and absf(t_a.cross(t_b)) >= 0.08:
+		var v_hit = Geometry2D.line_intersects_line(a, t_a, b, -t_b)
+		if v_hit != null:
+			var v: Vector2 = v_hit
+			var dA := (v - a).dot(t_a)
+			var dB := (b - v).dot(t_b)
+			if dA > 0.22 * chord and dA < 2.2 * chord and dB > 0.22 * chord and dB < 2.2 * chord:
+				hA = dA * k_arc
+				hB = dB * k_arc
+	return _eval_cubic_bezier(a, a + t_a * hA, b - t_b * hB, b, step, force_even)
+
+
+static func _arc_ok(L: Dictionary, pts: PackedVector2Array, hw: float, bridge: bool, clears: Array) -> bool:
+	for q: Vector2 in pts:
+		if _link_blocked(L, q, hw, clears):
+			return false
+		if not bridge and water_dist(q, false) < hw + 1.2:
+			return false
+	return true
+
+
+static func _fillet_closed_ring(verts: PackedVector2Array, radius: float, step := 0.70) -> PackedVector2Array:
+	var n := verts.size()
+	if n < 3:
+		return verts
+	var out := PackedVector2Array()
+	for i in n:
+		var prev := verts[(i - 1 + n) % n]
+		var curr := verts[i]
+		var nxt := verts[(i + 1) % n]
+		var la := prev.distance_to(curr)
+		var lb := curr.distance_to(nxt)
+		if la < 0.5 or lb < 0.5:
+			out.append(curr)
+			continue
+		var u_in := (curr - prev) / la
+		var u_out := (nxt - curr) / lb
+		var theta := acos(clampf(u_in.dot(u_out), -0.96, 1.0))
+		if theta < deg_to_rad(2.5):
+			out.append(curr)
+			continue
+		var d := minf(radius * tan(theta * 0.5), minf(la, lb) * 0.40)
+		var a := curr - u_in * d
+		var b := curr + u_out * d
+		var arc := _make_corner_bezier(a, u_in, b, u_out, step, false)
+		for pt: Vector2 in arc:
+			if out.is_empty() or out[out.size() - 1].distance_to(pt) > 0.08:
+				out.append(pt)
+	if out.size() >= 2 and out[0].distance_to(out[out.size() - 1]) > 0.05:
+		out.append(out[0])
+	return out
+
+
+static func _end_tangent_in(pts: PackedVector2Array, e: int) -> Vector2:
+	var n := pts.size()
+	if n < 2:
+		return Vector2.ZERO
+	var p_end := pts[0] if e == 0 else pts[n - 1]
+	var acc := 0.0
+	var ref := p_end
+	if e == 0:
+		for k in range(0, n - 1):
+			acc += pts[k].distance_to(pts[k + 1])
+			ref = pts[k + 1]
+			if acc >= 4.5:
+				break
+	else:
+		for k in range(n - 1, 0, -1):
+			acc += pts[k].distance_to(pts[k - 1])
+			ref = pts[k - 1]
+			if acc >= 4.5:
+				break
+	return (p_end - ref).normalized()
+
+
+static func _self_interior_near(pts: PackedVector2Array, e: int, jp: Vector2, hw: float) -> bool:
+	var n := pts.size()
+	if n < 4:
+		return false
+	var skip_dist := maxf(14.0, hw * 3.0)
+	var acc := 0.0
+	if e == 0:
+		for k in range(0, n - 1):
+			var seg := pts[k].distance_to(pts[k + 1])
+			if acc >= skip_dist and seg_dist(jp, pts[k], pts[k + 1]) - hw < 2.6:
+				return true
+			acc += seg
+	else:
+		for k in range(n - 1, 0, -1):
+			var seg := pts[k].distance_to(pts[k - 1])
+			if acc >= skip_dist and seg_dist(jp, pts[k - 1], pts[k]) - hw < 2.6:
+				return true
+			acc += seg
+	return false
+
+
+static func _trim_past_vertex_back(pts: PackedVector2Array, v: Vector2, t_arr: Vector2, max_back: float) -> PackedVector2Array:
+	var n := pts.size()
+	if n < 2:
+		return pts
+	var acc := 0.0
+	var keep := n - 1
+	while keep > 0 and acc < max_back:
+		if (pts[keep] - v).dot(t_arr) <= -0.25:
+			break
+		acc += pts[keep].distance_to(pts[keep - 1])
+		keep -= 1
+	var out := pts.slice(0, keep + 1)
+	if out.is_empty():
+		out.append(pts[0])
+	if out[out.size() - 1].distance_to(v) > 0.15:
+		out.append(v)
+	return _clean_dup_pts(out, 0.20)
+
+
+static func _trim_past_vertex_fwd(pts: PackedVector2Array, v: Vector2, t_dep: Vector2, max_fwd: float) -> PackedVector2Array:
+	var n := pts.size()
+	if n < 2:
+		return pts
+	var acc := 0.0
+	var start := 0
+	while start < n - 1 and acc < max_fwd:
+		if (pts[start] - v).dot(t_dep) >= 0.25:
+			break
+		acc += pts[start].distance_to(pts[start + 1])
+		start += 1
+	var out := PackedVector2Array([v])
+	for k in range(start, n):
+		if out[out.size() - 1].distance_to(pts[k]) > 0.15:
+			out.append(pts[k])
+	return _clean_dup_pts(out, 0.20)
+
+
+static func _weld_corner_roads(L: Dictionary, roads: Array, inner: Rect2, clears: Array) -> Array:
+	const KIND_PRI := {"track": 0, "loc": 1, "col": 2, "art": 3, "hwy": 4}
+	var cur: Array = roads.duplicate()
+	for _pass in 8:
+		var g := SegGrid.new()
+		g.cell = 16.0
+		g.reach = 12.0
+		for i in cur.size():
+			g.add_poly(cur[i].pts, float(cur[i].w) * 0.5, i)
+		var cands: Array = []
+		for i in cur.size():
+			var ri: Dictionary = cur[i]
+			var pts_i: PackedVector2Array = ri.pts
+			var wi := float(ri.w)
+			var ring_i := pts_i.size() > 8 and pts_i[0].distance_to(pts_i[pts_i.size() - 1]) < wi * 0.5
+			if pts_i.size() < 2 or ring_i:
+				continue
+			for j in range(i + 1, cur.size()):
+				var rj: Dictionary = cur[j]
+				if bool(ri.dirt) != bool(rj.dirt):
+					continue
+				var pts_j: PackedVector2Array = rj.pts
+				var wj := float(rj.w)
+				var ring_j := pts_j.size() > 8 and pts_j[0].distance_to(pts_j[pts_j.size() - 1]) < wj * 0.5
+				if pts_j.size() < 2 or ring_j:
+					continue
+				var reach_d := maxf(wi, wj) * 0.5 + 2.6
+				var best_d := reach_d
+				var best_ei := -1
+				var best_ej := -1
+				for ei in 2:
+					var pi: Vector2 = pts_i[0] if ei == 0 else pts_i[pts_i.size() - 1]
+					var wei := float(ri.get("w0", wi)) if ei == 0 else float(ri.get("w1", wi))
+					if absf(wei - wi) > 0.05:
+						continue
+					for ej in 2:
+						var pj: Vector2 = pts_j[0] if ej == 0 else pts_j[pts_j.size() - 1]
+						var wej := float(rj.get("w0", wj)) if ej == 0 else float(rj.get("w1", wj))
+						if absf(wej - wj) > 0.05:
+							continue
+						var d := pi.distance_to(pj)
+						if d < best_d:
+							best_d = d
+							best_ei = ei
+							best_ej = ej
+				if best_ei < 0:
+					continue
+				var pi: Vector2 = pts_i[0] if best_ei == 0 else pts_i[pts_i.size() - 1]
+				var pj: Vector2 = pts_j[0] if best_ej == 0 else pts_j[pts_j.size() - 1]
+				var jp := (pi + pj) * 0.5
+				if not inner.has_point(jp):
+					continue
+				var t_arr := _end_tangent_in(pts_i, best_ei)
+				var t_dep := -_end_tangent_in(pts_j, best_ej)
+				if t_arr == Vector2.ZERO or t_dep == Vector2.ZERO or t_arr.dot(t_dep) < -0.65:
+					continue
+				var blocked3 := _self_interior_near(pts_i, best_ei, jp, wi * 0.5) or _self_interior_near(pts_j, best_ej, jp, wj * 0.5)
+				if not blocked3:
+					var c0 := Vector2i(floori(jp.x / g.cell), floori(jp.y / g.cell))
+					for dz in range(-1, 2):
+						for dx in range(-1, 2):
+							var lst = g.grid.get(Vector2i(c0.x + dx, c0.y + dz))
+							if lst == null:
+								continue
+							for si: int in lst:
+								var tg := g.tag[si]
+								if tg != i and tg != j:
+									var md := minf(seg_dist(jp, g.a[si], g.b[si]), minf(seg_dist(pi, g.a[si], g.b[si]), seg_dist(pj, g.a[si], g.b[si])))
+									if md - g.hw[si] < 2.8:
+										blocked3 = true
+										break
+							if blocked3:
+								break
+						if blocked3:
+							break
+				if not blocked3:
+					cands.append([snappedf(best_d, 0.05), snappedf(jp.x, 0.1), snappedf(jp.y, 0.1), i, best_ei, j, best_ej])
+		if cands.is_empty():
+			break
+		cands.sort_custom(func(a: Array, b: Array) -> bool:
+			if a[0] != b[0]:
+				return a[0] < b[0]
+			if a[1] != b[1]:
+				return a[1] < b[1]
+			return a[2] < b[2]
+		)
+		var touched := PackedByteArray()
+		touched.resize(cur.size())
+		var dead := PackedByteArray()
+		dead.resize(cur.size())
+		var added: Array = []
+		var changed := false
+		for cd: Array in cands:
+			var i: int = cd[3]
+			var ei: int = cd[4]
+			var j: int = cd[5]
+			var ej: int = cd[6]
+			if touched[i] == 1 or touched[j] == 1:
+				continue
+			var ri: Dictionary = cur[i]
+			var rj: Dictionary = cur[j]
+			var wi := float(ri.w)
+			var wj := float(rj.w)
+			var a_pts: PackedVector2Array = ri.pts.duplicate()
+			var caps_i: Array = ri.get("caps", [false, false])
+			var cap_a0: bool = bool(caps_i[1]) if ei == 0 else bool(caps_i[0])
+			var w_a0: float = float(ri.get("w1", wi)) if ei == 0 else float(ri.get("w0", wi))
+			if ei == 0:
+				a_pts.reverse()
+			var b_pts: PackedVector2Array = rj.pts.duplicate()
+			var caps_j: Array = rj.get("caps", [false, false])
+			var cap_b1: bool = bool(caps_j[0]) if ej == 1 else bool(caps_j[1])
+			var w_b1: float = float(rj.get("w0", wj)) if ej == 1 else float(rj.get("w1", wj))
+			if ej == 1:
+				b_pts.reverse()
+			var pi := a_pts[a_pts.size() - 1]
+			var pj := b_pts[0]
+			var jp := (pi + pj) * 0.5
+			var t_arr := _end_tangent_in(a_pts, 1)
+			var t_dep := -_end_tangent_in(b_pts, 0)
+			var v := jp
+			var max_w := maxf(wi, wj)
+			if absf(t_arr.cross(t_dep)) >= 0.15:
+				var vh = Geometry2D.line_intersects_line(pi, t_arr, pj, -t_dep)
+				if vh != null:
+					var vp: Vector2 = vh
+					if vp.distance_to(jp) <= max_w * 1.6 and (vp - pi).dot(t_arr) > -max_w and (pj - vp).dot(t_dep) > -max_w and not _link_blocked(L, vp, max_w * 0.5, clears):
+						v = vp
+			var a_base := _trim_past_vertex_back(a_pts, v, t_arr, max_w * 1.8)
+			var b_base := _trim_past_vertex_fwd(b_pts, v, t_dep, max_w * 1.8)
+			var bridge := bool(ri.bridge) or bool(rj.bridge)
+			var keep_arcs: Array = []
+			keep_arcs.append_array(ri.get("_keep_arcs", []))
+			keep_arcs.append_array(rj.get("_keep_arcs", []))
+			if absf(wi - wj) <= 0.6:
+				var stitched := a_base.duplicate()
+				stitched.append_array(b_base.slice(1))
+				stitched = _clean_dup_pts(stitched, 0.25)
+				if stitched.size() < 2:
+					continue
+				var ki := str(ri.kind)
+				var kj := str(rj.kind)
+				var k_best := ki if int(KIND_PRI.get(ki, 0)) >= int(KIND_PRI.get(kj, 0)) else kj
+				var nr := ri.duplicate()
+				nr.pts = stitched
+				nr.w = max_w
+				nr.w0 = w_a0
+				nr.w1 = w_b1
+				nr.kind = k_best
+				nr.bridge = bridge
+				nr.caps = [cap_a0, cap_b1]
+				if not keep_arcs.is_empty():
+					nr._keep_arcs = keep_arcs
+				if str(nr.get("name", "")) == "" and str(rj.get("name", "")) != "":
+					nr.name = rj.name
+				added.append(nr)
+				dead[i] = 1
+				dead[j] = 1
+				touched[i] = 1
+				touched[j] = 1
+				changed = true
+			else:
+				var sa := _poly_s_arr(a_base)
+				var sb := _poly_s_arr(b_base)
+				var la := sa[sa.size() - 1]
+				var lb := sb[sb.size() - 1]
+				var min_arm := minf(la * 0.42, lb * 0.42)
+				if min_arm < 2.2:
+					continue
+				var theta := acos(clampf(t_arr.dot(t_dep), -0.95, 1.0))
+				var r_t := maxf(max_w * 1.15, 9.0)
+				var d_base := clampf(r_t * tan(theta * 0.5), 4.5, minf(min_arm, 22.0)) if theta >= 0.20 else minf(7.0, min_arm)
+				var arc := PackedVector2Array()
+				var d_used := 0.0
+				var samp_a := []
+				var samp_b := []
+				for sc: float in [1.0, 0.65, 0.40, 0.22]:
+					var dt := d_base * sc
+					if dt < 1.8:
+						continue
+					var sa_res := _sample_poly_at_s(a_base, sa, la - dt)
+					var sb_res := _sample_poly_at_s(b_base, sb, dt)
+					var cand_arc := _make_corner_bezier(sa_res[0], sa_res[2], sb_res[0], sb_res[2], 0.60, true)
+					if _arc_ok(L, cand_arc, max_w * 0.5, bridge, clears):
+						arc = cand_arc
+						d_used = dt
+						samp_a = sa_res
+						samp_b = sb_res
+						break
+				if arc.size() < 3:
+					continue
+				var mid_idx := (arc.size() - 1) / 2
+				var m_pt := arc[mid_idx]
+				var segA: int = samp_a[1]
+				var new_a := a_base.slice(0, segA + 1)
+				for k in range(0, mid_idx + 1):
+					if new_a.is_empty() or new_a[new_a.size() - 1].distance_to(arc[k]) > 0.08:
+						new_a.append(arc[k])
+				if new_a[new_a.size() - 1].distance_to(m_pt) > 0.04:
+					new_a.append(m_pt)
+				else:
+					new_a[new_a.size() - 1] = m_pt
+				var segB: int = samp_b[1]
+				var new_b := PackedVector2Array()
+				for k in range(mid_idx, arc.size()):
+					if new_b.is_empty() or new_b[new_b.size() - 1].distance_to(arc[k]) > 0.08:
+						new_b.append(arc[k])
+				for k in range(segB + 1, b_base.size()):
+					if new_b[new_b.size() - 1].distance_to(b_base[k]) > 0.08:
+						new_b.append(b_base[k])
+				var w_mid := 0.5 * (wi + wj)
+				var ka := keep_arcs.duplicate()
+				ka.append([m_pt, maxf(d_used, 5.0) + 1.5])
+				var nr_a := ri.duplicate()
+				nr_a.pts = new_a
+				nr_a.w0 = w_a0
+				nr_a.w1 = w_mid
+				nr_a.caps = [cap_a0, false]
+				nr_a._keep_arcs = ka
+				var nr_b := rj.duplicate()
+				nr_b.pts = new_b
+				nr_b.w0 = w_mid
+				nr_b.w1 = w_b1
+				nr_b.caps = [false, cap_b1]
+				nr_b._keep_arcs = ka
+				cur[i] = nr_a
+				cur[j] = nr_b
+				touched[i] = 1
+				touched[j] = 1
+				changed = true
+		var nxt: Array = []
+		for i in cur.size():
+			if dead[i] == 0:
+				nxt.append(cur[i])
+		nxt.append_array(added)
+		cur = nxt
+		if not changed:
+			break
+	return cur
+
+
+static func _smooth_all_road_corners(L: Dictionary, roads: Array, inner: Rect2, clears: Array) -> Array:
+	for r: Dictionary in roads:
+		var keep_arcs: Array = r.get("_keep_arcs", [])
+		r.erase("_keep_arcs")
+		var pts := _clean_dup_pts(r.pts, 0.20)
+		if pts.size() < 3:
+			r.pts = pts
+			continue
+		var w := float(r.w)
+		var hw := w * 0.5
+		var bridge := bool(r.bridge)
+		var ring := pts.size() > 8 and pts[0].distance_to(pts[pts.size() - 1]) < 1.0
+		if ring:
+			var max_ang := 0.0
+			var body := pts.slice(0, pts.size() - 1)
+			var m := body.size()
+			for i in m:
+				var a := body[(i - 1 + m) % m]
+				var b := body[i]
+				var c := body[(i + 1) % m]
+				var d0 := (b - a).normalized()
+				var d1 := (c - b).normalized()
+				if d0 != Vector2.ZERO and d1 != Vector2.ZERO:
+					max_ang = maxf(max_ang, acos(clampf(d0.dot(d1), -1.0, 1.0)))
+			if max_ang >= deg_to_rad(3.0):
+				var r_t := 8.0 if w < 8.0 else (11.0 if w < 10.5 else 15.5)
+				var fil := _fillet_closed_ring(body, r_t, 0.70)
+				if _arc_ok(L, fil, hw, bridge, clears):
+					r.pts = fil
+			continue
+		var s_arr := _poly_s_arr(pts)
+		var n := pts.size()
+		var total := s_arr[n - 1]
+		if total < 8.0:
+			r.pts = pts
+			continue
+		var w0 := float(r.get("w0", w))
+		var w1 := float(r.get("w1", w))
+		var pin_start := 2.0 if absf(w0 - w) > 0.05 else 0.4
+		var pin_end := 2.0 if absf(w1 - w) > 0.05 else 0.4
+		var v_angs := PackedFloat32Array()
+		var v_crs := PackedFloat32Array()
+		v_angs.resize(n)
+		v_crs.resize(n)
+		for k in range(1, n - 1):
+			var d0 := (pts[k] - pts[k - 1]).normalized()
+			var d1 := (pts[k + 1] - pts[k]).normalized()
+			if d0 != Vector2.ZERO and d1 != Vector2.ZERO:
+				v_angs[k] = acos(clampf(d0.dot(d1), -1.0, 1.0))
+				v_crs[k] = d0.cross(d1)
+		var bends: Array = []
+		for k in range(1, n - 1):
+			if s_arr[k] < pin_start or total - s_arr[k] < pin_end:
+				continue
+			var in_kept := false
+			for ka: Array in keep_arcs:
+				if pts[k].distance_to(ka[0]) < float(ka[1]):
+					in_kept = true
+					break
+			if in_kept:
+				continue
+			var ang_v := v_angs[k]
+			var ang_w := 0.0
+			var l_prev := pts[k - 1].distance_to(pts[k])
+			var l_next := pts[k].distance_to(pts[k + 1])
+			if minf(l_prev, l_next) < 2.6:
+				var sb := _sample_poly_at_s(pts, s_arr, maxf(0.0, s_arr[k] - 2.5))
+				var sf := _sample_poly_at_s(pts, s_arr, minf(total, s_arr[k] + 2.5))
+				var t_b := (pts[k] - (sb[0] as Vector2)).normalized()
+				var t_f := ((sf[0] as Vector2) - pts[k]).normalized()
+				if t_b != Vector2.ZERO and t_f != Vector2.ZERO:
+					ang_w = acos(clampf(t_b.dot(t_f), -1.0, 1.0))
+			var prev_ang := v_angs[k - 1]
+			var next_ang := v_angs[k + 1]
+			var iso_mild := ang_v >= deg_to_rad(1.8) and (minf(prev_ang, next_ang) < minf(ang_v * 0.45, deg_to_rad(1.0)) or minf(prev_ang, next_ang) < deg_to_rad(0.6) or maxf(l_prev, l_next) >= 4.2)
+			if ang_v >= deg_to_rad(7.5) or ang_w >= deg_to_rad(12.0) or iso_mild:
+				bends.append(k)
+		if bends.is_empty():
+			r.pts = pts
+			continue
+		var spans: Array = []
+		var k_lo: int = bends[0]
+		var k_hi: int = bends[0]
+		for bi in range(1, bends.size()):
+			var kb: int = bends[bi]
+			if s_arr[kb] - s_arr[k_hi] < 6.5 and s_arr[kb] - s_arr[k_lo] <= 14.0 and v_crs[kb] * v_crs[k_hi] >= -1e-4:
+				k_hi = kb
+			else:
+				spans.append([k_lo, k_hi])
+				k_lo = kb
+				k_hi = kb
+		spans.append([k_lo, k_hi])
+		var active: Array = []
+		var r_t := 8.0 if w < 8.0 else (11.0 if w < 10.5 else 15.5)
+		for sp: Array in spans:
+			var klo: int = sp[0]
+			var khi: int = sp[1]
+			var kmid := (klo + khi) / 2
+			if not inner.has_point(pts[kmid]):
+				continue
+			var s_lo := s_arr[klo]
+			var s_hi := s_arr[khi]
+			var s_mid := 0.5 * (s_lo + s_hi)
+			var half_span := 0.5 * (s_hi - s_lo)
+			var tin_s := _sample_poly_at_s(pts, s_arr, maxf(0.0, s_lo - 4.0))
+			var tout_s := _sample_poly_at_s(pts, s_arr, minf(total, s_hi + 4.0))
+			var theta := acos(clampf((tin_s[2] as Vector2).dot(tout_s[2] as Vector2), -0.96, 1.0))
+			var half_des := clampf(maxf(r_t * tan(theta * 0.5), half_span + 3.0), half_span + 1.5, 22.0)
+			active.append([klo, khi, s_mid, maxf(pin_start, s_mid - half_des), minf(total - pin_end, s_mid + half_des)])
+		if active.is_empty():
+			r.pts = pts
+			continue
+		for ai in active.size() - 1:
+			var cur_sp: Array = active[ai]
+			var nxt_sp: Array = active[ai + 1]
+			var sb_c: float = cur_sp[4]
+			var sa_n: float = nxt_sp[3]
+			if sb_c > sa_n - 0.5:
+				var split_s := 0.5 * (float(cur_sp[2]) + float(nxt_sp[2]))
+				var s_hi_prev := s_arr[int(cur_sp[1])]
+				var s_lo_next := s_arr[int(nxt_sp[0])]
+				if s_hi_prev + 0.6 < s_lo_next - 0.6:
+					split_s = clampf(split_s, s_hi_prev + 0.6, s_lo_next - 0.6)
+				cur_sp[4] = minf(sb_c, split_s - 0.25)
+				nxt_sp[3] = maxf(sa_n, split_s + 0.25)
+		var splices: Array = []
+		for sp: Array in active:
+			var s_lo := s_arr[int(sp[0])]
+			var s_hi := s_arr[int(sp[1])]
+			var sa_lim := float(sp[3])
+			var sb_lim := float(sp[4])
+			if sb_lim - sa_lim < 2.2 or sa_lim >= s_lo - 0.25 or sb_lim <= s_hi + 0.25:
+				continue
+			var arm_l := s_lo - sa_lim
+			var arm_r := sb_lim - s_hi
+			for sc: float in [1.0, 0.70, 0.45, 0.25]:
+				var sa_t := s_lo - arm_l * sc
+				var sb_t := s_hi + arm_r * sc
+				if sa_t > s_lo - 0.45 or sb_t < s_hi + 0.45:
+					continue
+				var samp_a := _sample_poly_at_s(pts, s_arr, sa_t)
+				var samp_b := _sample_poly_at_s(pts, s_arr, sb_t)
+				var arc := _make_corner_bezier(samp_a[0], samp_a[2], samp_b[0], samp_b[2], 0.60, false)
+				if _arc_ok(L, arc, hw, bridge, clears):
+					splices.append([sa_t, sb_t, arc])
+					break
+		if splices.is_empty():
+			r.pts = pts
+			continue
+		var out := PackedVector2Array([pts[0]])
+		var cur_s := 0.0
+		var v_idx := 1
+		for sp: Array in splices:
+			var sa_t: float = sp[0]
+			var sb_t: float = sp[1]
+			var arc: PackedVector2Array = sp[2]
+			while v_idx < n - 1 and s_arr[v_idx] <= sa_t + 0.05:
+				if s_arr[v_idx] > cur_s + 0.05 and out[out.size() - 1].distance_to(pts[v_idx]) > 0.08:
+					out.append(pts[v_idx])
+				v_idx += 1
+			for pt: Vector2 in arc:
+				if out[out.size() - 1].distance_to(pt) > 0.08:
+					out.append(pt)
+			while v_idx < n - 1 and s_arr[v_idx] < sb_t - 0.05:
+				v_idx += 1
+			cur_s = sb_t
+		while v_idx < n - 1:
+			if out[out.size() - 1].distance_to(pts[v_idx]) > 0.08:
+				out.append(pts[v_idx])
+			v_idx += 1
+		out.append(pts[n - 1])
+		r.pts = _clean_dup_pts(out, 0.08)
+	return roads
 
 
 static func _trim_dead_tail(g: SegGrid, i: int, pts: PackedVector2Array, e: int, max_tail: float) -> Array:
@@ -1965,32 +3073,46 @@ static func _trim_dead_tail(g: SegGrid, i: int, pts: PackedVector2Array, e: int,
 	var dist := 0.0
 	var wet_end := water_dist(pts[0] if e == 0 else pts[n - 1], true) <= 6.0
 	if e == 0:
-		for k in range(1, n - 2):
-			dist += pts[k - 1].distance_to(pts[k])
+		for k in range(0, n - 1):
+			if k > 0:
+				dist += pts[k - 1].distance_to(pts[k])
 			if dist > max_tail or (not wet_end and water_dist(pts[k], true) < 0.0):
 				break
-			var s := _seg_inside(g, pts[k], i, -0.3)
+			var s := _seg_inside(g, pts[k], i, -0.35)
+			if s < 0 and k > 0:
+				s = _seg_inside(g, (pts[k - 1] + pts[k]) * 0.5, i, -0.45)
 			if s >= 0:
 				var k2 := k
-				while k2 + 1 < n - 1 and _seg_inside(g, pts[k2 + 1], i, -0.3) >= 0:
+				while k2 + 1 < n - 1 and _seg_inside(g, pts[k2 + 1], i, -0.35) >= 0:
 					k2 += 1
-				var sb := _seg_inside(g, pts[k2], i, -0.3)
+				var sb := _seg_inside(g, pts[k2], i, -0.35)
+				if sb < 0:
+					sb = s
 				var trimmed := pts.slice(k2)
 				trimmed[0] = Geometry2D.get_closest_point_to_segment(trimmed[0], g.a[sb], g.b[sb])
+				if trimmed.size() < 2 or _poly_len(trimmed) < 15.0:
+					return [PackedVector2Array(), true]
 				return [trimmed, false]
 	else:
-		for k in range(n - 2, 1, -1):
-			dist += pts[k + 1].distance_to(pts[k])
+		for k in range(n - 1, 0, -1):
+			if k < n - 1:
+				dist += pts[k + 1].distance_to(pts[k])
 			if dist > max_tail or (not wet_end and water_dist(pts[k], true) < 0.0):
 				break
-			var s := _seg_inside(g, pts[k], i, -0.3)
+			var s := _seg_inside(g, pts[k], i, -0.35)
+			if s < 0 and k < n - 1:
+				s = _seg_inside(g, (pts[k] + pts[k + 1]) * 0.5, i, -0.45)
 			if s >= 0:
 				var k2 := k
-				while k2 - 1 > 0 and _seg_inside(g, pts[k2 - 1], i, -0.3) >= 0:
+				while k2 - 1 > 0 and _seg_inside(g, pts[k2 - 1], i, -0.35) >= 0:
 					k2 -= 1
-				var sb := _seg_inside(g, pts[k2], i, -0.3)
+				var sb := _seg_inside(g, pts[k2], i, -0.35)
+				if sb < 0:
+					sb = s
 				var trimmed := pts.slice(0, k2 + 1)
 				trimmed[trimmed.size() - 1] = Geometry2D.get_closest_point_to_segment(trimmed[trimmed.size() - 1], g.a[sb], g.b[sb])
+				if trimmed.size() < 2 or _poly_len(trimmed) < 15.0:
+					return [PackedVector2Array(), true]
 				return [trimmed, false]
 	return [pts, true]
 
@@ -2210,9 +3332,9 @@ static func _radial_streets(L: Dictionary, rc: Dictionary, roads: Array, clears:
 	var lines: Array = []
 	for r: float in rc.rings:
 		var ring_ctrl := PackedVector2Array()
-		for i in ns + 1:
+		for i in ns:
 			ring_ctrl.append(_radial_pt(c, r, i, ns))
-		lines.append([dense(ring_ctrl, 3.0), 9.0 if r == rc.rings[0] else 7.0])
+		lines.append([dense(_fillet_closed_ring(ring_ctrl, 9.5, 0.70), 2.0), 9.0 if r == rc.rings[0] else 7.0])
 	for i in ns:
 		var spk := PackedVector2Array([
 			_radial_pt(c, float(rc.rings[0]), i, ns),

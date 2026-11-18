@@ -1120,10 +1120,15 @@ class Crosshair extends Control:
 	var pip := Vector2.ZERO
 	var bloom := 0.0
 	var spin := 0.0
+	var hit_t := 0.0
 	var _init_done := false
 	const AMBER := Color(0.78, 0.48, 0.16)
+	const HIT_COL := Color(1.0, 0.46, 0.16)
 	const STEEL := Color(0.84, 0.86, 0.86, 0.95)
 	const SHADOW := Color(0, 0, 0, 0.58)
+
+	func trigger_hit() -> void:
+		hit_t = 1.0
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1132,19 +1137,29 @@ class Crosshair extends Control:
 	func _process(d: float) -> void:
 		var vp_sz := get_viewport_rect().size
 		var m := get_viewport().get_mouse_position().clamp(Vector2.ZERO, vp_sz)
+		var fp_on := false
 		if mech and is_instance_valid(mech):
+			fp_on = mech.raid != null and mech.raid.has_method("is_first_person") and mech.raid.is_first_person()
 			var cam0 := get_viewport().get_camera_3d()
-			var joy_on: bool = (mech.raid != null and bool(mech.raid.get("_joy_aim_active"))) or (mech.raid != null and mech.raid.hud != null and mech.raid.hud.is_touch_busy())
-			if cam0 and joy_on:
-				var ap := Vector3(mech.aim_point.x, 1.8, mech.aim_point.z)
-				if not cam0.is_position_behind(ap):
-					m = cam0.unproject_position(ap).clamp(Vector2.ZERO, vp_sz)
+			if fp_on:
+				if cam0 and mech.raid.aim_override != null and not cam0.is_position_behind(mech.aim_point):
+					m = cam0.unproject_position(mech.aim_point).clamp(Vector2.ZERO, vp_sz)
+				else:
+					m = vp_sz * 0.5
+			else:
+				var joy_on: bool = (mech.raid != null and bool(mech.raid.get("_joy_aim_active"))) or (mech.raid != null and mech.raid.hud != null and mech.raid.hud.is_touch_busy())
+				if cam0 and joy_on:
+					var ap := Vector3(mech.aim_point.x, 1.8, mech.aim_point.z)
+					if not cam0.is_position_behind(ap):
+						m = cam0.unproject_position(ap).clamp(Vector2.ZERO, vp_sz)
 		if not _init_done:
 			pos = m
 			pip = m
 			_init_done = true
-		pos = pos.lerp(m, 1.0 - exp(-16.0 * d))
+		pos = m if fp_on else pos.lerp(m, 1.0 - exp(-16.0 * d))
 		spin += d * 0.6
+		if hit_t > 0.0:
+			hit_t = maxf(0.0, hit_t - d * 4.5)
 		if mech and is_instance_valid(mech):
 			var r := 0.0
 			for k in mech.recoil:
@@ -1152,10 +1167,16 @@ class Crosshair extends Control:
 			bloom = maxf(bloom - d * 3.0, r)
 			var cam := get_viewport().get_camera_3d()
 			if cam and mech.torso:
-				var o: Vector3 = mech.global_position
-				var dist := clampf(Vector2(mech.aim_point.x - o.x, mech.aim_point.z - o.z).length(), 0.0, 80.0)
-				var w: Vector3 = o + mech.aim_dir() * dist
-				w.y = 1.8
+				var w: Vector3
+				if fp_on:
+					var origin3: Vector3 = mech.torso.global_position
+					var dist3 := clampf(mech.aim_point.distance_to(origin3), 4.0, 120.0)
+					w = origin3 + mech.aim_dir() * dist3
+				else:
+					var o: Vector3 = mech.global_position
+					var dist := clampf(Vector2(mech.aim_point.x - o.x, mech.aim_point.z - o.z).length(), 0.0, 80.0)
+					w = o + mech.aim_dir() * dist
+					w.y = 1.8
 				if not cam.is_position_behind(w):
 					var up := cam.unproject_position(w).clamp(Vector2(-160, -160), vp_sz + Vector2(160, 160))
 					pip = pip.lerp(up, 1.0 - exp(-30.0 * d))
@@ -1181,6 +1202,21 @@ class Crosshair extends Control:
 		# 中心十字点
 		for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
 			_seg(p + dv * 3.0, p + dv * 6.0, white, 1.5)
+		# 命中提示：自然收缩的四角斜向角标
+		if hit_t > 0.0:
+			var h_ease := pow(hit_t, 1.85)
+			var h_alpha := clampf(hit_t * 1.65, 0.0, 1.0)
+			var h_col := Color(HIT_COL.r, HIT_COL.g, HIT_COL.b, h_alpha)
+			var h_shd := Color(0, 0, 0, 0.62 * h_alpha)
+			var r_in := 6.5 + 13.5 * h_ease
+			var r_out := r_in + 6.5 + 2.5 * h_ease
+			for k in 4:
+				var ang := PI * 0.25 + k * PI * 0.5
+				var dir := Vector2(cos(ang), sin(ang))
+				var a := p + dir * r_in
+				var b := p + dir * r_out
+				draw_line(a, b, h_shd, 4.2, false)
+				draw_line(a, b, h_col, 2.2, false)
 		# 慢速旋转的刻度弧
 		var R := gap + 12.0
 		for k in 3:
@@ -1259,3 +1295,35 @@ class HiResView extends Control:
 		box.size = Vector2(px)
 		box.scale = Vector2.ONE / k
 		box.position = Vector2.ZERO
+
+
+static func fit_centered_panel(p: Control, margin := 14.0) -> void:
+	if p == null or not is_instance_valid(p) or not p.is_inside_tree():
+		return
+	var vp := p.get_viewport()
+	if vp == null:
+		return
+	var vs := vp.get_visible_rect().size
+	if vs.x <= 0.0 or vs.y <= 0.0 or p.size.x <= 0.0 or p.size.y <= 0.0:
+		return
+	var max_w := maxf(vs.x - margin * 2.0, 200.0)
+	var max_h := maxf(vs.y - margin * 2.0, 200.0)
+	var s := minf(1.0, minf(max_w / p.size.x, max_h / p.size.y))
+	p.pivot_offset = p.size * 0.5
+	p.scale = Vector2(s, s)
+
+
+static func bind_fit_panel(p: Control, margin := 14.0) -> void:
+	var fn := func(): fit_centered_panel.call_deferred(p, margin)
+	p.resized.connect(fn)
+	p.visibility_changed.connect(fn)
+	p.tree_entered.connect(func():
+		var vp := p.get_viewport()
+		if vp != null and not vp.size_changed.is_connected(fn):
+			vp.size_changed.connect(fn)
+		fn.call())
+	if p.is_inside_tree():
+		var vp := p.get_viewport()
+		if vp != null and not vp.size_changed.is_connected(fn):
+			vp.size_changed.connect(fn)
+		fn.call()

@@ -98,15 +98,20 @@ static func _hleg(b, body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: f
 	b._limb(hip, Vector3.ZERO, knee, 0.3 * s * th, 0.32 * s * th, M.DK, 0.72, 1.22)
 	_armor_along(b, hip, Vector3.ZERO, knee, 0.24 * s * th, M.AR)
 	b._hydraulic(hip, Vector3(sx * 0.1 * s, -0.16 * s * th, 0), knee + Vector3(-sx * 0.16 * s, -0.12 * s, 0), 0.052 * s * th, M.DK)
-	b._servo(hip, knee, 0.15 * s * th)
-	b._limb(hip, knee, ank, 0.28 * s * th, 0.3 * s * th, M.DK, 0.62, 1.18, Vector3.FORWARD)
-	_armor_along(b, hip, knee + Vector3(0, -0.04 * s, 0), ank + Vector3(0, 0.12 * s, 0), 0.22 * s * th, M.OL, Vector3(0, 0, -1))
-	b._box(hip, M.HZ, knee.lerp(ank, 0.45) + Vector3(sx * 0.132 * s * th, 0, 0), Vector3(0.012, 0.22, 0.065) * s * th)
-	b._hydraulic(hip, knee + Vector3(0, -0.1, 0.13 * th) * s, ank + Vector3(0, 0.1, 0.13 * th) * s, 0.046 * s * th, M.MD)
-	b._p(hip, A.cyl(0.21 * s * th, 0.11 * s, 0.27 * s * th, 12), M.DK, foot + Vector3(0, 0.08 * s, 0))
-	b._p(hip, HS.cbox(Vector3(0.64, 0.11, 0.74) * s * th, 0.03 * s), M.AR, foot + Vector3(0, 0.0, -0.04 * s))
+	var kj := _node(hip, knee)
+	kj.name = "Knee"
+	var ank_rel := ank - knee
+	var foot_rel := foot - knee
+	b._servo(kj, Vector3.ZERO, 0.15 * s * th)
+	b._limb(kj, Vector3.ZERO, ank_rel, 0.28 * s * th, 0.3 * s * th, M.DK, 0.62, 1.18, Vector3.FORWARD)
+	_armor_along(b, kj, Vector3(0, -0.04 * s, 0), ank_rel + Vector3(0, 0.12 * s, 0), 0.22 * s * th, M.OL, Vector3(0, 0, -1))
+	b._box(kj, M.HZ, ank_rel * 0.45 + Vector3(sx * 0.132 * s * th, 0, 0), Vector3(0.012, 0.22, 0.065) * s * th)
+	b._hydraulic(kj, Vector3(0, -0.1, 0.13 * th) * s, ank_rel + Vector3(0, 0.1, 0.13 * th) * s, 0.046 * s * th, M.MD)
+	b._p(kj, A.cyl(0.21 * s * th, 0.11 * s, 0.27 * s * th, 12), M.DK, foot_rel + Vector3(0, 0.08 * s, 0))
+	b._p(kj, HS.cbox(Vector3(0.64, 0.11, 0.74) * s * th, 0.03 * s), M.AR, foot_rel + Vector3(0, 0.0, -0.04 * s))
 	for cz: float in [-0.28, 0.0, 0.24]:
-		b._box(hip, M.ST, foot + Vector3(0, -0.035 * s * th, cz * s * th), Vector3(0.66, 0.035, 0.08) * s * th)
+		b._box(kj, M.ST, foot_rel + Vector3(0, -0.035 * s * th, cz * s * th), Vector3(0.66, 0.035, 0.08) * s * th)
+	hip.set_meta("knee", kj)
 	_leg_meta(b, hip, sx, phase)
 	return hip
 

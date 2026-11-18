@@ -9,6 +9,7 @@ const Bugs2 = preload("res://scripts/bugs2.gd")
 const Models = preload("res://scripts/enemies/models.gd")
 const Ext = preload("res://scripts/enemies/boss_models_ext.gd")
 const NewLM = preload("res://scripts/enemies/boss_models_new.gd")
+const ModularGlb = preload("res://scripts/enemies/boss_modular_glb.gd")
 const BONE := Color(0.66, 0.68, 0.71)
 
 
@@ -33,6 +34,8 @@ static func decal_size(kind: String) -> float:
 		"excavator_titan": return 9.2
 		"core_overlord": return 9.4
 		"drydock_behemoth": return 9.2
+		"citadel_behemoth": return 6.8
+		"sky_carrier": return 4.4
 		_: return 7.8
 
 
@@ -57,6 +60,8 @@ static func build(h, body: Node3D, kind: String, s: float) -> void:
 		"excavator_titan": NewLM.build_excavator_titan(h, body, s)
 		"core_overlord": NewLM.build_core_overlord(h, body, s)
 		"drydock_behemoth": NewLM.build_drydock_behemoth(h, body, s)
+		"citadel_behemoth": ModularGlb.build_citadel_behemoth(h, body, s)
+		"sky_carrier": ModularGlb.build_sky_carrier(h, body, s)
 		_: _brood(h, body, s)
 
 

@@ -54,19 +54,21 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(leg, K.trap(0.46, 0.38, 0.26, 0.04), 0.14, M_LEG2, Vector3(0, 0.18, 0.10), Vector3(90, 0, 0), 0.025)
 		K.actuator(leg, Vector3(0, 0.02, 0.18), 0.17, 0.40)
 
-		# 粗短股节（H -> KN）：箱式承力梁 + 厚甲背壳 + 双粗液压缸
-		var up := K.bone(leg, H, KN)
+		# 粗短股节枢轴（H -> KN）：箱式承力梁 + 厚甲背壳 + 双粗液压缸
+		var fm := K.node(leg, H, Vector3.ZERO, "Femur")
+		var up := K.bone(fm, H, KN)
 		var l1 := H.distance_to(KN)
 		K.bb(up, Vector3(0.32, l1 * 0.92, 0.28), M_FRAME, Vector3(0, -l1 * 0.5, 0.0), Vector3.ZERO, 0.03)
 		K.plate(up, K.trap(0.38, 0.48, l1 * 0.88, 0.06), 0.22, M_LEG, Vector3(0, -l1 * 0.48, 0.14), Vector3.ZERO, 0.035)
 		for sx_p in [-0.14, 0.14]:
-			K.piston(leg, Vector3(sx_p, -0.14, 0.16), Vector3(sx_p, 0.18, 0.84), 0.034)
+			K.piston(fm, Vector3(sx_p, -0.14, 0.16), Vector3(sx_p, 0.18, 0.84), 0.034)
 
 		# 膝部重型铰接鼓
-		K.actuator(leg, KN, 0.20, 0.44)
+		K.actuator(fm, KN, 0.20, 0.44)
 
-		# 胫节（KN -> FT）：外挂超宽攻城防爆盾板（蟹钳式装甲护盾特征！）
-		var lo := K.bone(leg, KN, FT)
+		# 胫节枢轴（KN -> FT）：外挂超宽攻城防爆盾板
+		var kj := K.node(fm, KN, Vector3.ZERO, "Knee")
+		var lo := K.bone(kj, Vector3.ZERO, FT - KN)
 		var l2 := KN.distance_to(FT)
 		K.bb(lo, Vector3(0.28, l2 * 0.90, 0.26), M_FRAME, Vector3(0, -l2 * 0.46, -0.03), Vector3.ZERO, 0.03)
 		# 外侧巨型多面折角防爆盾板 + ERA 反应装甲块 + 维修抓手
@@ -79,17 +81,24 @@ static func build(ctx: Dictionary) -> Node3D:
 		if p.y < 0.0:
 			A.stencil(shd, "CR-" + serial, Vector3(0, -0.02, 0.098), Vector3.ZERO, 0.0030, Color(0.95, 0.93, 0.86, 0.88))
 		K.grab_iron(shd, 0.24, 0.045, Vector3(0, 0.42, 0.08), Vector3(180, 0, 0), 0.014)
-		K.piston(leg, KN + Vector3(0, -0.12, -0.12), KN + (FT - KN) * 0.65 + Vector3(0, 0, -0.10), 0.042)
-		A.hose(leg, Vector3(0.16, 0.26, 0.64), KN + Vector3(0.16, -0.44, 0.06), Vector3(0.08, 0.04, 0.14), 0.026)
+		K.piston(kj, Vector3(0, -0.12, -0.12), (FT - KN) * 0.65 + Vector3(0, 0, -0.10), 0.042)
+		A.hose(kj, Vector3(0.16, -0.10, -0.32), Vector3(0.16, -0.44, 0.06), Vector3(0.08, 0.04, 0.14), 0.026)
 
-		# 重型破岩三叉锚定蟹爪足垫
-		var pad := K.node(leg, FT + Vector3(0, 0.03, 0))
+		# 踝枢轴与重型破岩三叉锚定蟹爪足垫
+		var aj := K.node(kj, FT - KN, Vector3.ZERO, "Ankle")
+		var pad := K.node(aj, Vector3(0, 0.03, 0))
 		K.cy(pad, 0.16, 0.11, M_GUN, Vector3(0, 0.06, 0), Vector3.ZERO, 0.20, 14)
 		K.cy(pad, 0.24, 0.055, A.rubber(), Vector3(0, -0.012, 0), Vector3.ZERO, 0.26, 16)
 		for ca in [-42.0, 42.0, 180.0]:
 			var cl := K.node(pad, Vector3.ZERO, Vector3(0, ca, 0))
 			K.plate(cl, K.trap(0.14, 0.08, 0.20, 0.015), 0.10, M_DARK, Vector3(0, 0.01, 0.21), Vector3(76, 0, 0), 0.015)
 			K.bb(cl, Vector3(0.13, 0.032, 0.18), A.rubber(), Vector3(0, -0.025, 0.21), Vector3.ZERO, 0.008)
+		leg.set_meta("femur", fm)
+		leg.set_meta("knee", kj)
+		leg.set_meta("ankle", aj)
+		leg.set_meta("KN", KN)
+		leg.set_meta("AN", FT)
+		leg.set_meta("base_yaw", leg.rotation.y)
 		leg_parts.append(leg)
 
 	K.socket(root, "core", Vector3(0, hip + 0.54, 0), Vector3.UP)

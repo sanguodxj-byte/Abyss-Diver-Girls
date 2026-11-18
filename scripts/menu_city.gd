@@ -91,20 +91,22 @@ func setup(sky_mat: ShaderMaterial, sun_dir: Vector3) -> void:
 	city = Node3D.new()
 	city.position = Vector3(0, -ALT, 0)
 	add_child(city)
-	# 云海层
-	var cm := ShaderMaterial.new()
-	cm.shader = load("res://shaders/menu_cloudsea.gdshader")
-	for p in common:
-		if common[p] != null:
-			cm.set_shader_parameter(p, common[p])
-	var cl := MeshInstance3D.new()
-	var cp := PlaneMesh.new()
-	cp.size = Vector2(14000, 14000)
-	cl.mesh = cp
-	cl.material_override = cm
-	cl.position = Vector3(0, -15.0, 0)
-	cl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(cl)
+	# 云海层（移动端跳过 14km 全屏光线步进体积云平面，由天空盒云海 + 近景云团承担，大幅降低所有画质档位的移动 GPU 开销）
+	var mob_perf := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	if not mob_perf:
+		var cm := ShaderMaterial.new()
+		cm.shader = load("res://shaders/menu_cloudsea.gdshader")
+		for p in common:
+			if common[p] != null:
+				cm.set_shader_parameter(p, common[p])
+		var cl := MeshInstance3D.new()
+		var cp := PlaneMesh.new()
+		cp.size = Vector2(14000, 14000)
+		cl.mesh = cp
+		cl.material_override = cm
+		cl.position = Vector3(0, -15.0, 0)
+		cl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(cl)
 	_update_cols()
 
 

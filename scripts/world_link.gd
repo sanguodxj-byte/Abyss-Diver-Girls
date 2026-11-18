@@ -136,15 +136,12 @@ func _build_gate(g: Dictionary) -> void:
 	var M_BRASS := A.paint(Color(0.58, 0.44, 0.22), 0.78, 0.36, {"wear": 0.4})
 	var m_glow := A.emit(c, 3.2 if g.open else 0.9)
 	m_glow.albedo_color = c.darkened(0.45)
-	# 光幕（高度收敛至龙门下弦梁底 7.9m，顶部嵌入暗钢力场导槽，避免高光溢出遮挡桁架）
-	var qm := QuadMesh.new()
-	qm.size = Vector2(HALF_SPAN * 2.0 - 1.6, 7.8)
-	var curtain := MeshInstance3D.new()
-	curtain.mesh = qm
-	curtain.material_override = _curtain_mat(Color(c.r, c.g, c.b, 0.36 if g.open else 0.18))
-	curtain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	curtain.position = Vector3(0, 3.9, 0)
-	n.add_child(curtain)
+	# 界门两侧立柱低对比度边界雾汽粒子（取代大面积平滑矩形光幕）
+	for sx_fog in [-HALF_SPAN + 1.2, HALF_SPAN - 1.2]:
+		A.emitter(n, Vector3(sx_fog, 1.8, 0.0), {"tex": A.smoke_tex(), "additive": false, "soft_depth": 0.45, "amount": 10, "life": 2.4, "size": 1.65,
+			"dir": Vector3(-signf(sx_fog), 0.35, 0.0).normalized(), "spread": 25.0, "vmin": 0.6, "vmax": 1.4, "gravity": Vector3(0, 0.15, 0),
+			"c0": Color(c.r * 0.55 + 0.2, c.g * 0.55 + 0.2, c.b * 0.55 + 0.2, 0.20 if g.open else 0.12),
+			"c1": Color(c.r * 0.4 + 0.15, c.g * 0.4 + 0.15, c.b * 0.4 + 0.15, 0.0), "grow0": 0.6, "grow1": 2.2, "box": Vector3(0.4, 1.6, 0.3)})
 	# 两侧重工战区封锁龙门塔柱：阶梯钢筋混凝土防撞墩 + 双工字钢主立柱 + 内侧力场发射线圈阵 + 侧翼泽西护栏
 	for sx_s in [-1.0, 1.0]:
 		var sx: float = sx_s * HALF_SPAN
@@ -184,18 +181,21 @@ func _build_gate(g: Dictionary) -> void:
 	for fx_l in [-4.5, 4.5]:
 		A.add(n, A.bevel_box(Vector3(0.68, 0.30, 0.42), 0.02), M_DARK, Vector3(fx_l, 8.16, 0.72), Vector3(22, 0, 0))
 		A.add(n, A.bevel_box(Vector3(0.54, 0.18, 0.06), 0.01), m_glow, Vector3(fx_l, 8.12, 0.92), Vector3(22, 0, 0), Vector3.ONE, false)
-	# 地面装甲导引减速带与三道人字形方向灯条（指向边界外）
-	var am := A.emit(c, 2.4 if g.open else 0.8)
-	am.albedo_color = c.darkened(0.4)
+	# 地面装甲导引减速带与三道做旧铁灰减速钢板（两端仅留小型嵌入式指示灯钉，取代大面积发光灯条）
+	var m_plate := A.paint(Color(0.22, 0.23, 0.25), 0.52, 0.62, {"wear": 0.65, "rust": 0.45})
+	var am := A.emit(c.darkened(0.2), 1.1 if g.open else 0.4)
+	am.albedo_color = c.darkened(0.45)
 	for k in 3:
 		var z := 6.0 + k * 4.5
 		for s in [-1.0, 1.0]:
 			var dy_s := 0.004 if s > 0.0 else 0.0
 			A.add(n, A.bevel_box(Vector3(3.56, 0.05, 0.72), 0.02), M_DARK, Vector3(s * 1.42, 0.115 + dy_s, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
-			var bar := A.add(n, A.bevel_box(Vector3(3.32, 0.075, 0.42), 0.02), am, Vector3(s * 1.42, 0.155 + dy_s, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
-			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# 地面边框
-	A.ground_vfx(n, A.ring_tex(), Color(c.r, c.g, c.b, 0.16), HALF_SPAN * 1.6, Vector3(0, 0.112, 6.0), true, 0.44, false, 3)
+			var plate := A.add(n, A.bevel_box(Vector3(3.32, 0.070, 0.42), 0.02), m_plate, Vector3(s * 1.42, 0.152 + dy_s, z - 1.2), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
+			plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var stud := A.add(n, A.bevel_box(Vector3(0.34, 0.065, 0.16), 0.01), am, Vector3(s * 2.48, 0.162 + dy_s, z - 2.26), Vector3(0, s * 45.0, 0), Vector3.ONE, false)
+			stud.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 地面边框角标
+	A.add(n, A.quad(HALF_SPAN * 1.4, HALF_SPAN * 1.4), A.extract_pad_mat(Color(c.r, c.g, c.b, 0.24), 0.44, 3), Vector3(0, 0.112, 6.0), Vector3.ZERO, Vector3.ONE, false)
 	var l := OmniLight3D.new()
 	l.light_color = c
 	l.light_energy = 1.4
@@ -441,7 +441,7 @@ func _build_shaft(pos: Vector3) -> void:
 		var p_off := Vector3(cos(ang) * 3.8, 1.3, sin(ang) * 3.8)
 		A.add(n, A.bevel_box(Vector3(0.38, 2.6, 0.38), 0.03), m_dark, p_off)
 		A.add(n, A.cyl(0.20, 0.32, 0.20, 10), m_emit, p_off + Vector3(0, 1.45, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.ground_vfx(n, A.ring_tex(), Color(col.r, col.g, col.b, 0.38), 9.2, Vector3(0, 0.31, 0), true, 0.25, false, 3)
+	A.add(n, A.quad(9.2, 9.2), A.extract_pad_mat(Color(col.r, col.g, col.b, 0.36), 0.25, 3), Vector3(0, 0.31, 0), Vector3.ZERO, Vector3.ONE, false)
 	var l := OmniLight3D.new()
 	l.light_color = col
 	l.light_energy = 1.6

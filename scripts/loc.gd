@@ -228,11 +228,6 @@ func apply_growth_tables(tables: Dictionary) -> void:
 			var pe: Dictionary = I18nProg.PILOTS_EN[pid]
 			if pe.has("name"):
 				pilots[pid]["name"] = pe["name"]
-			var te: Dictionary = pe.get("talents", {})
-			for tl in pilots[pid].get("talents", []):
-				var tid := str(tl.get("id", ""))
-				if te.has(tid):
-					_overlay(tl, te[tid])
 	var crew: Dictionary = tables.get("CREW", {})
 	for cid in I18nProg.CREW_EN:
 		if crew.has(cid):

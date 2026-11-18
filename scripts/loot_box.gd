@@ -158,7 +158,7 @@ func _merge_mesh_group(list: Array, cache_key: String) -> Array:
 					raw_mat = mi.material_override
 				if raw_mat == null:
 					raw_mat = m.surface_get_material(s)
-				var sp := RB.split_tint(raw_mat, 2)
+				var sp := RB.split_tint(raw_mat, 3)
 				var mat: Material = sp[0]
 				var tint_col: Color = sp[1]
 				var tint_mode := 0 if mat == raw_mat else (2 if mat is StandardMaterial3D else 1)

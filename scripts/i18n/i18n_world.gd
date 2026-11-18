@@ -283,6 +283,8 @@ const ENEMIES_EN := {
 	"excavator_titan": "Bucket-Wheel Rock Titan",
 	"core_overlord": "Geothermal Flux Overlord",
 	"drydock_behemoth": "Drydock Gantry Behemoth",
+	"citadel_behemoth": "Hexapod Citadel Landcruiser",
+	"sky_carrier": "Sky-Anvil Heavy Drone Carrier",
 	"aegis": "Shieldguard Bug",
 	"lancer": "Lancer Sniping Bug",
 	"overseer": "Overseer Node",

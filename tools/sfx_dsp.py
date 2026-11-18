@@ -530,11 +530,19 @@ def tail_end(x, floor_db=-64.0):
     return min(len(x), idx[-1] + ns(0.03))
 
 
+def deharsh(x):
+    """心理声学抑噪滤波：衰减 3~6 kHz 人耳敏感刺耳区并平缓滚降高频，保持音色厚实耐听。"""
+    y = peak(x, 3400.0, 0.85, -4.5)
+    y = peak(y, 5600.0, 0.80, -5.5)
+    return lp(y, 5200.0, 2)
+
+
 def master(x, target, ceil_db=-1.0, max_gr=8.0, hpf=25.0, fin=0.0008, fout=0.02, dur=None):
-    """单次音效的母带：去直流 → 截掉低于峰值 64 dB 的尾巴（dur 为最长时长，超出时按时长的四分之一、
+    """单次音效的母带：去直流 → 心理声学抑噪 → 截掉低于峰值 64 dB 的尾巴（dur 为最长时长，超出时按时长的四分之一、
     最长 0.12 秒淡出）→ 首尾升余弦淡入淡出 → 响度对齐到 target 并限幅（压缩超过 max_gr 时整体退让响度）。
     限幅只乘增益，所以淡入淡出后为零的首尾采样保持为零；响度在最终波形上测量，与目标一致。"""
     y = hp(x, hpf, 2) if hpf else x.copy()
+    y = deharsh(y)
     end = tail_end(y)
     cut_long = False
     if dur is not None and end > ns(dur):
@@ -569,6 +577,7 @@ def master_loop(x, period, reps, target, ceil_db=-1.0, max_gr=6.0, hpf=25.0):
     """循环音效的母带：x 的前 reps 遍是同一段内容的重复（其后可能还有混响尾音），取第 reps 遍
     （前面各遍让滤波与混响进入稳态），再按三遍圆周拼接做响度与限幅，只保留中间一遍，所以首尾严丝合缝、可以无限循环。"""
     y = hp(x, hpf, 2) if hpf else x.copy()
+    y = deharsh(y)
     seg = y[(reps - 1) * period: reps * period]
     tri = np.concatenate([seg, seg, seg], axis=0)
     z, gr, g_db = level(tri, target, ceil_db, max_gr)
@@ -731,11 +740,11 @@ def sfx(sid, n=1, target=-18.0, dur=None, loop=None, reps=4, fout=0.02, fin=0.00
                     if pk_val > 0 and float(np.argmax(e >= 0.5 * pk_val) / SR) > 0.045:
                         k_tr = min(len(raw), ns(0.024))
                         t_tr = tt(k_tr)
-                        # 自然清脆物理瞬态冲量（兼顾中频密度与高频触点清晰度）
-                        sub_p = np.sin(2.0 * np.pi * phase(110.0 + 180.0 * np.exp(-t_tr / 0.006), k_tr)) * np.exp(-t_tr / 0.009)
-                        snap_p = bp(0.55 * white(k_tr, c.rng) + 0.45 * pink(k_tr, c.rng), 320.0, 3800.0, 2) * np.exp(-t_tr / 0.004)
-                        tr = 0.45 * sub_p + 0.65 * snap_p
-                        tr = tr / (np.max(np.abs(tr)) + 1e-12) * (pk_val * 0.65)
+                        # 自然沉稳物理瞬态冲量（以中低频与中频触点为主，避免高频白噪毛刺）
+                        sub_p = np.sin(2.0 * np.pi * phase(95.0 + 150.0 * np.exp(-t_tr / 0.006), k_tr)) * np.exp(-t_tr / 0.009)
+                        snap_p = bp(0.22 * white(k_tr, c.rng) + 0.78 * pink(k_tr, c.rng), 220.0, 2100.0, 2) * np.exp(-t_tr / 0.0038)
+                        tr = 0.62 * sub_p + 0.38 * snap_p
+                        tr = tr / (np.max(np.abs(tr)) + 1e-12) * (pk_val * 0.48)
                         if raw.ndim == 1:
                             raw[:k_tr] += tr
                         else:

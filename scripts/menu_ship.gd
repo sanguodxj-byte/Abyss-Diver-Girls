@@ -255,6 +255,7 @@ static func build(root: Node3D) -> Dictionary:
 	root.add_child(outside)
 	# 近景云团（广告牌），缓缓向船尾方向流过
 	var clouds: Array = []
+	var cloud_cnt := 6 if A.is_mobile_perf() else 14
 	var cm := StandardMaterial3D.new()
 	cm.albedo_texture = A.cloud_tex()
 	cm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -264,7 +265,7 @@ static func build(root: Node3D) -> Dictionary:
 	cm.disable_receive_shadows = true
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
-	for i in 14:
+	for i in cloud_cnt:
 		var q := QuadMesh.new()
 		var s := rng.randf_range(30, 70)
 		q.size = Vector2(s * 1.8, s)

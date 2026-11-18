@@ -16,9 +16,13 @@ var t := 0.0
 var refs := {}
 var settings_panel: PanelContainer
 var start_panel: PanelContainer
+var slots_panel: PanelContainer
+var slots_mode := "load"
+var slot_cards := {}
 var _dlg_name: LineEdit
 var buttons: Array = []
 var post_mat: ShaderMaterial
+var _sv: SubViewport
 
 
 func _ready() -> void:
@@ -28,8 +32,8 @@ func _ready() -> void:
 	var svc := UI.HiResView.new()
 	add_child(svc)
 	var sv: SubViewport = svc.sv
-	sv.msaa_3d = Viewport.MSAA_4X
-	sv.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	_sv = sv
+	GameData.apply_quality(sv)
 	_build_scene(sv)
 	_build_ui()
 
@@ -41,11 +45,16 @@ func _build_scene(sv: SubViewport) -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	var sky := Sky.new()
+	var mob := OS.has_feature("mobile")
+	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
+	var mob_perf := mob or mob_ren
 	var sm := ShaderMaterial.new()
 	sm.shader = load("res://shaders/menu_sky.gdshader")
+	if mob_perf:
+		sm.set_shader_parameter("mobile_fast", 1.0)
 	sky.sky_material = sm
-	sky.radiance_size = Sky.RADIANCE_SIZE_64
-	sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	sky.radiance_size = Sky.RADIANCE_SIZE_32 if mob_perf else Sky.RADIANCE_SIZE_64
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL if mob_perf else Sky.PROCESS_MODE_QUALITY
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
@@ -54,16 +63,16 @@ func _build_scene(sv: SubViewport) -> void:
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.05
 	env.tonemap_white = 8.0
-	env.ssao_enabled = true
+	env.ssao_enabled = not mob_perf
 	env.ssao_radius = 0.8
 	env.ssao_intensity = 1.6
-	env.glow_enabled = true
+	env.glow_enabled = (not mob_perf) or GameData.quality >= 2
 	env.glow_intensity = 0.9
 	env.glow_bloom = 0.12
 	env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	# 舱内体积雾：只在近处，阳光穿窗形成光柱（天空不受影响）
-	env.volumetric_fog_enabled = true
+	env.volumetric_fog_enabled = not mob_perf
 	env.volumetric_fog_density = 0.012
 	env.volumetric_fog_albedo = Color(1.0, 0.85, 0.7)
 	env.volumetric_fog_anisotropy = 0.75
@@ -80,28 +89,30 @@ func _build_scene(sv: SubViewport) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.light_color = Color(1.0, 0.72, 0.46)
 	sun.light_energy = 2.4
-	sun.shadow_enabled = true
-	sun.shadow_blur = 1.5
-	sun.light_angular_distance = 0.6
+	sun.shadow_enabled = (not mob_perf) or GameData.quality >= 1
+	sun.shadow_blur = 0.0 if mob_perf else 1.5
+	sun.light_angular_distance = 0.0 if mob_perf else 0.6
 	sun.light_volumetric_fog_energy = 4.0
 	sun.directional_shadow_max_distance = 30.0
 	root.add_child(sun)
 	sun.basis = Basis.looking_at(-L, Vector3.UP)
-	# 云下城市（真实 3D 楼体 + 3D 云海层）
-	var city := preload("res://scripts/menu_city.gd").new()
-	root.add_child(city)
-	city.setup(sky.sky_material, L)
+	# 云下城市（真实 3D 楼体 + 3D 云海层；移动端流畅档仅用天空盒云下层以大幅减轻片元开销）
+	if not mob_perf or GameData.quality >= 1:
+		var city := preload("res://scripts/menu_city.gd").new()
+		root.add_child(city)
+		city.setup(sky.sky_material, L)
 	refs = MenuShip.build(root)
 	cam = Camera3D.new()
 	cam.fov = 62
 	cam.near = 0.22
 	cam.far = 16000.0
-	var ca := CameraAttributesPractical.new()
-	ca.dof_blur_near_enabled = true
-	ca.dof_blur_near_distance = 0.35
-	ca.dof_blur_near_transition = 0.4
-	ca.dof_blur_amount = 0.04
-	cam.attributes = ca
+	if not OS.has_feature("mobile") or GameData.quality >= 2:
+		var ca := CameraAttributesPractical.new()
+		ca.dof_blur_near_enabled = true
+		ca.dof_blur_near_distance = 0.35
+		ca.dof_blur_near_transition = 0.4
+		ca.dof_blur_amount = 0.04
+		cam.attributes = ca
 	root.add_child(cam)
 	cam.current = true
 	# 舱内浮尘（被阳光照亮）
@@ -191,11 +202,11 @@ func _build_ui(reopen_settings := false, settings_tab := "video") -> void:
 	menu_box.position = Vector2(96, 330)
 	menu_box.add_theme_constant_override("separation", 0)
 	ui_root.add_child(menu_box)
-	var has_save := FileAccess.file_exists(GameData.save_path)
+	var has_save := GameData.has_any_save()
 	var en := Loc.is_en()
 	var items := [
-		["New Game" if en else "新的游戏", "", func(): _open_start(), "", false],
-		["Continue" if en else "载入游戏", ("" if has_save else ("NO SAVE" if en else "无存档")), func(): _load_game(), "", not has_save],
+		["New Game" if en else "新的游戏", "", func(): _open_slots("new"), "", false],
+		["Continue" if en else "载入游戏", ("" if has_save else ("NO SAVE" if en else "无存档")), func(): _open_slots("load"), "", not has_save],
 		["Settings" if en else "游戏设置", "", func(): _toggle_settings(), "", false],
 		["Quit" if en else "退出游戏", "", func(): get_tree().quit(), "ui_cancel", false]
 	]
@@ -214,6 +225,7 @@ func _build_ui(reopen_settings := false, settings_tab := "video") -> void:
 	readout.offset_bottom = -64
 	readout.add_theme_constant_override("separation", 28)
 	ui_root.add_child(readout)
+	_readout_box = readout
 	status_dot = UI.label("●", 12, UI.GOOD)
 	var live := HBoxContainer.new()
 	live.add_theme_constant_override("separation", 6)
@@ -246,9 +258,13 @@ func _build_ui(reopen_settings := false, settings_tab := "video") -> void:
 
 	_build_settings(settings_tab)
 	_build_start_panel()
+	_build_slots_panel()
 	if reopen_settings:
 		settings_panel.visible = true
 		shade.visible = true
+	_layout_menu()
+	if not get_viewport().size_changed.is_connected(_layout_menu):
+		get_viewport().size_changed.connect(_layout_menu)
 	_select(0, false)
 
 
@@ -396,11 +412,39 @@ func _apply_title_lang() -> void:
 		title_lang = str(loc.get("lang")) if loc != null else ("zh" if OS.get_locale_language() == "zh" else "en")
 	var zh := title_lang == "zh"
 	title_rect.texture = load("res://assets/title_%s.png" % ("zh" if zh else "en"))
+	var vh := get_viewport().get_visible_rect().size.y if is_inside_tree() else 720.0
+	var compact := vh > 0.0 and vh < 680.0
+	var menu_y := clampf(vh - 318.0, 180.0, 330.0) if compact else 330.0
+	var anchor_y := menu_y - 30.0
 	var w := 560.0 if zh else 500.0
 	var tsz: Vector2 = title_rect.texture.get_size()
-	title_rect.position = Vector2(84, 300 - w * tsz.y / tsz.x - 24)
-	title_rect.size = Vector2(w, w * tsz.y / tsz.x)
+	var h := w * tsz.y / tsz.x
+	var max_h := maxf(anchor_y - 54.0, 96.0)
+	if h > max_h:
+		w *= max_h / h
+		h = max_h
+	title_rect.position = Vector2(84, anchor_y - h - 18.0)
+	title_rect.size = Vector2(w, h)
+
+
+func _layout_menu() -> void:
+	if not is_inside_tree() or menu_box == null or not is_instance_valid(menu_box):
+		return
+	var vh := get_viewport().get_visible_rect().size.y
+	if vh <= 0.0:
+		return
+	var compact := vh < 680.0
+	var menu_y := clampf(vh - 318.0, 180.0, 330.0) if compact else 330.0
+	menu_box.position = Vector2(96, menu_y)
+	if _readout_box != null and is_instance_valid(_readout_box):
+		_readout_box.offset_top = -66 if compact else -92
+		_readout_box.offset_bottom = -38 if compact else -64
+	if title_rect != null and is_instance_valid(title_rect):
+		_apply_title_lang()
+	if hud != null and is_instance_valid(hud):
+		hud.queue_redraw()
 var menu_box: VBoxContainer
+var _readout_box: HBoxContainer
 var status_dot: Label
 var shade: ColorRect
 var readout_lbls: Array[Label] = []
@@ -468,6 +512,7 @@ func _dialog(title: String, code: String) -> Array:
 	pc.add_child(v)
 	v.add_child(UI.plate_header(title, code))
 	v.add_child(UI.hazard_strip(8))
+	UI.bind_fit_panel(pc)
 	return [pc, v]
 
 
@@ -564,22 +609,124 @@ func _confirm_start() -> void:
 
 
 func _close_dialogs() -> void:
-	if start_panel.visible:
+	if slots_panel.visible:
+		_close_slots()
+	elif start_panel.visible:
 		_close_start()
 	elif settings_panel.visible:
 		_toggle_settings()
 
 
-## 载入游戏
-func _load_game() -> void:
-	if not FileAccess.file_exists(GameData.save_path):
-		Audio.play_ui("ui_denied")
-		return
-	if GameData.load_game():
-		Audio.play_ui("ui_confirm")
-		start_requested.emit()
+## 存档位选择：mode = "new" 选一个位开新档（覆盖确认走登记页），"load" 选一个位读档
+func _build_slots_panel() -> void:
+	var en := Loc.is_en()
+	var d := _dialog_to_ui(Loc.t("存档位", "Save Slots"), "// 02")
+	slots_panel = d[0]
+	var v: VBoxContainer = d[1]
+	for i in range(1, GameData.SAVE_SLOT_COUNT + 1):
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(0, 62)
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("normal", UI.px9("nav9_n", 10, 10, 14, 8))
+		b.add_theme_stylebox_override("hover", UI.px9("nav9_h", 10, 10, 14, 8))
+		b.add_theme_stylebox_override("pressed", UI.px9("nav9_on", 10, 10, 14, 8))
+		b.add_theme_stylebox_override("disabled", UI.px9("nav9_p", 10, 10, 14, 8))
+		var mc := MarginContainer.new()
+		mc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for kk in ["margin_left", "margin_right"]:
+			mc.add_theme_constant_override(kk, 12)
+		mc.add_theme_constant_override("margin_top", 8)
+		mc.add_theme_constant_override("margin_bottom", 8)
+		b.add_child(mc)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 12)
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mc.add_child(h)
+		var idx_l := UI.label("0%d" % i, 18, UI.ACCENT)
+		idx_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(idx_l)
+		var mv := VBoxContainer.new()
+		mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mv.add_theme_constant_override("separation", 2)
+		h.add_child(mv)
+		var name_l := UI.label("", 14, UI.TEXT)
+		mv.add_child(name_l)
+		var info_l := UI.label("", 11, UI.MUTED)
+		mv.add_child(info_l)
+		var time_l := UI.label("", 11, UI.MUTED)
+		time_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		time_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		h.add_child(time_l)
+		for c: Control in [idx_l, name_l, info_l, time_l, h, mc]:
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.pressed.connect(func(): _pick_slot(i))
+		v.add_child(b)
+		slot_cards[i] = {"btn": b, "name": name_l, "info": info_l, "time": time_l}
+	var foot := HBoxContainer.new()
+	foot.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(foot)
+	foot.add_child(_btn(Loc.t("返回", "Back"), false, _close_slots))
+
+
+func _open_slots(mode: String) -> void:
+	slots_mode = mode
+	var en := Loc.is_en()
+	for i: int in slot_cards:
+		var c: Dictionary = slot_cards[i]
+		var info: Dictionary = GameData.slot_info(i)
+		var name_l: Label = c["name"]
+		var info_l: Label = c["info"]
+		var time_l: Label = c["time"]
+		var btn: Button = c["btn"]
+		if bool(info.get("exists", false)):
+			name_l.text = str(info.get("name", "")) if str(info.get("name", "")) != "" else "—"
+			info_l.text = "¥ %s · %s %d · %s %d" % [_money(info.get("money", 0)), Loc.t("出击", "Raids"), int(info.get("raids", 0)), Loc.t("撤离", "Extracts"), int(info.get("extracts_ok", 0))]
+			time_l.text = GameData.fmt_save_time(int(info.get("saved_at", 0)))
+			btn.disabled = false
+		else:
+			name_l.text = "—"
+			info_l.text = ""
+			time_l.text = Loc.t("空", "EMPTY")
+			btn.disabled = slots_mode == "load"
+		if slots_mode == "new" and not btn.disabled:
+			time_l.add_theme_color_override("font_color", UI.MUTED)
+	slots_panel.visible = true
+	shade.visible = true
+	Audio.play_ui("ui_open")
+
+
+func _close_slots() -> void:
+	slots_panel.visible = false
+	shade.visible = settings_panel.visible
+	Audio.play_ui("ui_cancel")
+
+
+func _pick_slot(i: int) -> void:
+	if slots_mode == "load":
+		GameData.set_slot(i)
+		if GameData.load_game():
+			slots_panel.visible = false
+			shade.visible = false
+			Audio.play_ui("ui_confirm")
+			start_requested.emit()
+		else:
+			Audio.play_ui("ui_denied")
 	else:
-		Audio.play_ui("ui_denied")
+		GameData.set_slot(i)
+		slots_panel.visible = false
+		Audio.play_ui("ui_open")
+		_open_start()
+
+
+func _money(v: int) -> String:
+	var s := str(maxi(v, 0))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return s + out
 
 
 func _build_settings(initial_tab := "video") -> void:
@@ -662,6 +809,10 @@ func _build_settings(initial_tab := "video") -> void:
 	q.item_selected.connect(func(i):
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
+		if _sv and is_instance_valid(_sv):
+			GameData.apply_quality(_sv)
+		if menu_env and OS.has_feature("mobile"):
+			menu_env.glow_enabled = GameData.quality >= 2
 		GameData.save_game())
 	pg.add_child(q)
 	pg.add_child(_field_label(Loc.t("画面风格", "Render Style")))
@@ -703,6 +854,28 @@ func _build_settings(initial_tab := "video") -> void:
 		call_deferred("_build_ui", true, "other"))
 	pg.add_child(tl)
 
+	pg.add_child(_field_label(Loc.t("视角模式", "Camera Mode")))
+	var vopt := OptionButton.new()
+	vopt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	vopt.add_item(Loc.t("第一人称", "First-Person"), 1)
+	vopt.selected = GameData.view_mode
+	vopt.item_selected.connect(func(i):
+		GameData.view_mode = i
+		GameData.save_game())
+	pg.add_child(vopt)
+
+	pg.add_child(_field_label(Loc.t("鼠标灵敏度", "Mouse Sensitivity")))
+	var ssl := HSlider.new()
+	ssl.min_value = 0.2
+	ssl.max_value = 2.5
+	ssl.step = 0.05
+	ssl.value = GameData.mouse_sens
+	ssl.custom_minimum_size = Vector2(0, 22)
+	ssl.value_changed.connect(func(x):
+		GameData.mouse_sens = x
+		GameData.schedule_save())
+	pg.add_child(ssl)
+
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(line)
@@ -713,7 +886,7 @@ func _build_settings(initial_tab := "video") -> void:
 
 func _toggle_settings() -> void:
 	settings_panel.visible = not settings_panel.visible
-	shade.visible = settings_panel.visible or start_panel.visible
+	shade.visible = settings_panel.visible or start_panel.visible or slots_panel.visible
 	Audio.play_ui("ui_open" if settings_panel.visible else "ui_cancel")
 
 
@@ -753,10 +926,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		return
 	if e.keycode == KEY_ESCAPE:
-		if start_panel.visible or settings_panel.visible:
+		if slots_panel.visible or start_panel.visible or settings_panel.visible:
 			_close_dialogs()
 		return
-	if start_panel.visible or settings_panel.visible:
+	if slots_panel.visible or start_panel.visible or settings_panel.visible:
 		return
 	if e.keycode == KEY_UP or e.keycode == KEY_W:
 		_step(-1)

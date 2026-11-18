@@ -88,17 +88,19 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.cy(leg, 0.24, 0.38, M_DARK, Vector3(0, 0.0, 0.04), Vector3.ZERO, 0.26, 18)
 		K.bolt_ring(leg, 0.19, 8, 0.015, Vector3(0, 0.195, 0.04), Vector3.ZERO)
 
-		# 铆接重装甲股节箱梁 + 双顶置粗液压推杆
-		var up := K.bone(leg, H, KN)
+		# 铆接重装甲股节枢轴箱梁 + 双顶置粗液压推杆
+		var fm := K.node(leg, H, Vector3.ZERO, "Femur")
+		var up := K.bone(fm, H, KN)
 		var l1 := H.distance_to(KN)
 		K.bb(up, Vector3(0.36, l1 * 0.94, 0.32), M_LEG2, Vector3(0, -l1 * 0.5, 0.0), Vector3.ZERO, 0.035)
 		K.plate(up, K.trap(0.38, 0.44, l1 * 0.84, 0.05), 0.14, M_LEG, Vector3(0, -l1 * 0.48, 0.15), Vector3.ZERO, 0.028)
 		for px_o in [-0.12, 0.12]:
-			K.piston(leg, Vector3(px_o, 0.18, 0.12), KN + Vector3(px_o, 0.20, -0.06), 0.036)
+			K.piston(fm, Vector3(px_o, 0.18, 0.12), KN + Vector3(px_o, 0.20, -0.06), 0.036)
 
-		# 膝部重型打桩导套头 + 双并联粗镀铬打桩液压柱 + 外挂重型防爆胫盾
-		K.actuator(leg, KN, 0.20, 0.42)
-		var lo := K.bone(leg, KN, FT)
+		# 膝部重型打桩导套头 + 胫节枢轴双并联粗镀铬打桩液压柱 + 外挂重型防爆胫盾
+		K.actuator(fm, KN, 0.20, 0.42)
+		var kj := K.node(fm, KN, Vector3.ZERO, "Knee")
+		var lo := K.bone(kj, Vector3.ZERO, FT - KN)
 		var l2 := KN.distance_to(FT)
 		K.bb(lo, Vector3(0.38, l2 * 0.62, 0.36), M_LEG2, Vector3(0, -l2 * 0.30, 0.0), Vector3.ZERO, 0.038)
 		K.plate(lo, K.trap(0.32, 0.48, l2 * 0.86, 0.06), 0.16, M_LEG, Vector3(0, -l2 * 0.44, 0.16), Vector3(3, 0, 0), 0.032)
@@ -107,14 +109,21 @@ static func build(ctx: Dictionary) -> Node3D:
 		for cx_r in [-0.11, 0.11]:
 			K.cy(lo, 0.058, l2 * 0.88, A.chrome(), Vector3(cx_r, -l2 * 0.52, -0.04), Vector3.ZERO, -1.0, 12)
 			K.cy(lo, 0.076, 0.05, K.brass(), Vector3(cx_r, -l2 * 0.60, -0.04), Vector3.ZERO, -1.0, 12)
-		A.hose(leg, Vector3(0.18, 0.20, 0.42), KN + Vector3(0.18, -0.38, 0.08), Vector3(0.09, 0.04, 0.10), 0.026)
+		A.hose(kj, Vector3(0.18, -0.04, -0.34), Vector3(0.18, -0.38, 0.08), Vector3(0.09, 0.04, 0.10), 0.026)
 
-		# 矩形攻城夯地驻锄大足 + 前后液压缓冲齿块
-		var pad := K.node(leg, FT + Vector3(0, 0.02, 0))
+		# 踝枢轴与矩形攻城夯地驻锄大足 + 前后液压缓冲齿块
+		var aj := K.node(kj, FT - KN, Vector3.ZERO, "Ankle")
+		var pad := K.node(aj, Vector3(0, 0.02, 0))
 		K.bb(pad, Vector3(0.42, 0.12, 0.46), M_GUN, Vector3(0, 0.04, 0), Vector3.ZERO, 0.025)
 		K.bb(pad, Vector3(0.46, 0.055, 0.50), A.rubber(), Vector3(0, -0.052, 0), Vector3.ZERO, 0.015)
 		for fz_c in [-0.24, 0.24]:
 			K.bb(pad, Vector3(0.36, 0.08, 0.10), M_DARK, Vector3(0, -0.01, fz_c), Vector3(sign(fz_c) * 18.0, 0, 0), 0.012)
+		leg.set_meta("femur", fm)
+		leg.set_meta("knee", kj)
+		leg.set_meta("ankle", aj)
+		leg.set_meta("KN", KN)
+		leg.set_meta("AN", FT)
+		leg.set_meta("base_yaw", leg.rotation.y)
 		leg_parts.append(leg)
 
 	K.socket(root, "core", Vector3(0, hip + 0.58, 0), Vector3.UP)

@@ -11,7 +11,7 @@ const RB = preload("res://scripts/render_batch.gd")
 const KINDS := {
 	"ling": {"name": "跳虫", "hp": 26.0, "speed": 8.8, "dmg": 6.0, "range": 2.0, "rate": 0.7, "radius": 0.6, "color": Color(0.36, 0.09, 0.16), "scale": 0.8, "drop": 0.25},
 	"spitter": {"name": "酸液虫", "hp": 42.0, "speed": 5.0, "dmg": 9.0, "range": 14.0, "rate": 2.0, "radius": 0.75, "color": Color(0.2, 0.28, 0.1), "scale": 1.0, "drop": 0.4},
-	"beetle": {"name": "甲虫", "hp": 190.0, "speed": 4.2, "dmg": 20.0, "range": 2.8, "rate": 1.6, "radius": 1.35, "color": Color(0.24, 0.15, 0.1), "scale": 1.8, "drop": 0.9},
+	"beetle": {"name": "甲虫", "hp": 190.0, "armor": 0.35, "speed": 4.2, "dmg": 20.0, "range": 2.8, "rate": 1.6, "radius": 1.35, "color": Color(0.24, 0.15, 0.1), "scale": 1.8, "drop": 0.9},
 
 }
 const Bugs2 = preload("res://scripts/bugs2.gd")
@@ -46,6 +46,7 @@ var flash_t := 0.0
 var _hit_meshes: Array = []
 var _hit_meshes_ready := false
 var _hit_flash_q := 0
+var _cached_bar_y := -1.0
 const FLASH_DUR := 0.13
 static var _dead_eye_mat: StandardMaterial3D
 var gun: Node3D
@@ -98,9 +99,17 @@ func setup(k: String, r, tgt) -> void:
 	if cmi is MeshInstance3D and cmi.material_override:
 		cmi.material_override = cmi.material_override.duplicate()
 	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影
+	var mob_perf := A.is_mobile_perf()
+	var mob_vis_end := 0.0
+	if mob_perf:
+		var big := float(data.get("scale", 1.0)) >= 2.0
+		mob_vis_end = 135.0 if big else (74.0 if GameData.quality == 0 else 92.0)
 	for mi in parts:
 		if is_instance_valid(mi):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if mob_vis_end > 0.0 and not (mi.mesh is PlaneMesh):
+				mi.visibility_range_end = mob_vis_end
+				mi.visibility_range_end_margin = 5.0
 	_anchor_visual()
 
 
@@ -133,18 +142,23 @@ static func _tmat(c: Color, tex := "chitin_gray.png", rough := 0.55, coat := 0.4
 	var key := "%s|%s|%.2f" % [c.to_html(), tex, rough]
 	if _tmats.has(key):
 		return _tmats[key]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
 	m.albedo_texture = A._bug_tex(tex)
-	m.normal_enabled = true
-	m.normal_texture = A._bug_tex("chitin_n.png" if tex.begins_with("chitin") else "leg_n.png")
-	m.normal_scale = 1.3
 	m.roughness = rough
 	m.uv1_scale = Vector3(0.8, 0.8, 1.0)
-	m.clearcoat_enabled = coat > 0.0
-	m.clearcoat = coat
-	m.clearcoat_roughness = 0.35
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	if mob:
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	else:
+		m.normal_enabled = true
+		m.normal_texture = A._bug_tex("chitin_n.png" if tex.begins_with("chitin") else "leg_n.png")
+		m.normal_scale = 1.3
+		m.clearcoat_enabled = coat > 0.0
+		m.clearcoat = coat
+		m.clearcoat_roughness = 0.35
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	_tmats[key] = m
 	return m
 
@@ -286,26 +300,29 @@ func _pustule(p: Node3D, pos: Vector3, r: float, c: Color, e := 1.0) -> void:
 # 统一配色：暗褐黑亮面甲壳 → 骨白刃尖（顶点色渐变），甲片缝隙露出橙红发光肉质，橙色发光眼/囊。
 # 造型语言：弯曲的镰刃、背脊长刺、分段拱形甲、反关节腿、前倾猎食姿态 —— 不是现实昆虫。
 static var _sm := {}
-const C_CH := Color(0.25, 0.26, 0.275)     # 重工暗枪灰轧制钢
-const C_CH2 := Color(0.41, 0.42, 0.44)     # 机加工中灰钢甲
-const C_BONE := Color(0.68, 0.67, 0.63)    # 锻造钨钢刃面
-const C_FL := Color(0.08, 0.08, 0.09)      # 内部暗色骨架
+const C_CH := Color(0.32, 0.34, 0.365)     # 重工暗枪灰轧制钢
+const C_CH2 := Color(0.48, 0.50, 0.525)    # 机加工中灰钢甲
+const C_BONE := Color(0.72, 0.71, 0.67)    # 锻造钨钢刃面
+const C_FL := Color(0.14, 0.145, 0.16)     # 内部暗色骨架
 const C_GLOW := Color(1.0, 0.38, 0.10)     # 工业高温炉芯琥珀橙红
 
 
 static func _vmat() -> StandardMaterial3D:
 	if _sm.has("v"):
 		return _sm["v"]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
+	m.albedo_color = Color(1.16, 1.16, 1.18)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.roughness = 0.42
-	m.metallic = 0.54
-	m.metallic_specular = 0.68
-	m.rim_enabled = true
-	m.rim = 0.22
-	m.rim_tint = 0.65
+	m.roughness = 0.38
+	m.metallic = 0.52
+	m.metallic_specular = 0.72
+	if not mob:
+		m.rim_enabled = true
+		m.rim = 0.24
+		m.rim_tint = 0.65
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_panelize(m)
 	_sm["v"] = m
@@ -317,13 +334,16 @@ static func _flesh(c := C_FL, glow := 0.12) -> StandardMaterial3D:
 	var key := "fl%s%.2f" % [c.to_html(), glow]
 	if _sm.has(key):
 		return _sm[key]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
 	m.albedo_color = c
 	m.metallic = 0.9
 	m.roughness = 0.35
-	m.rim_enabled = true
-	m.rim = 0.5
-	m.rim_tint = 1.0
+	if not mob:
+		m.rim_enabled = true
+		m.rim = 0.5
+		m.rim_tint = 1.0
 	m.emission_enabled = true
 	m.emission = C_GLOW
 	m.emission_energy_multiplier = glow
@@ -354,7 +374,7 @@ static var _merge_cache := {}
 var _merge_n := 0
 
 
-func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array, tints: Array = [], modes: Array = []) -> Mesh:
+func _merged_mesh(tag: String, bi: int, list: Array, top: Node3D, tints: Array = [], modes: Array = []) -> Mesh:
 	var key := "%s|%.3f|%s%d|%d|%d" % [kind, float(data.scale), tag, _merge_n, bi, list.size()]
 	if _merge_cache.has(key):
 		return _merge_cache[key]
@@ -364,8 +384,9 @@ func _merged_mesh(tag: String, bi: int, list: Array, xfs: Array, tints: Array = 
 		var mi: MeshInstance3D = list[i]
 		var tint: Color = tints[i] if i < tints.size() else Color.WHITE
 		var tmode: int = modes[i] if i < modes.size() else 2
+		var rxf := _rel_xf(mi, top)
 		for si in mi.mesh.get_surface_count():
-			st.append_from(RB._tinted_surface(mi.mesh, si, tint, tmode), 0, xfs[i])
+			st.append_from(RB._tinted_surface(mi.mesh, si, tint, tmode), 0, rxf)
 	var m := st.commit()
 	_merge_cache[key] = m
 	return m
@@ -389,6 +410,11 @@ func _batch_static() -> void:
 		var v2 = get(prop)
 		if is_instance_valid(v2) and v2 is Node:
 			roots.append(v2)
+	for hip in legs:
+		if is_instance_valid(hip) and hip is Node and hip.has_meta("knee"):
+			var kn = hip.get_meta("knee")
+			if is_instance_valid(kn) and kn is Node:
+				roots.append(kn)
 	for n in roots:
 		skip[n.get_instance_id()] = true
 	for c in visual.get_children():
@@ -398,6 +424,7 @@ func _batch_static() -> void:
 	for n in roots:
 		if is_instance_valid(n) and n is Node3D:
 			_batch_container(n, skip)
+	parts = parts.filter(func(p): return is_instance_valid(p))
 
 
 func _batch_container(top: Node3D, skip: Dictionary) -> void:
@@ -442,13 +469,12 @@ func _batch_container(top: Node3D, skip: Dictionary) -> void:
 					top.add_child(s_mi)
 			continue
 		var merged := MeshInstance3D.new()
-		merged.mesh = _merged_mesh("c", bi, list, list.map(func(mi): return _rel_xf(mi, top)), b["tints"], b["modes"])
+		merged.mesh = _merged_mesh("c", bi, list, top, b["tints"], b["modes"])
 		merged.material_override = b["mat"]
 		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		top.add_child(merged)
 		parts.append(merged)
 		for mi in list:
-			parts.erase(mi)
 			if mi.get_parent():
 				mi.get_parent().remove_child(mi)
 			mi.free()
@@ -624,15 +650,22 @@ func _zleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	var DKm := _vmat_solid(C_CH)
 	var ARm := _vmat_solid(C_CH2)
 	var foot := Vector3(tip.x, -by + w * 0.5, tip.z)
+	_servo(hip, Vector3.ZERO, w * 1.28)
 	_limb(hip, Vector3.ZERO, knee, w * 1.75, w * 1.95, DKm, 0.78, 1.16)
 	_bar(hip, Vector3(0, w * 0.85, 0), knee + Vector3(0, w * 0.75, 0), w * 1.25, w * 0.42, ARm)
-	_limb(hip, knee, hock, w * 1.45, w * 1.65, ARm, 0.72, 1.12, Vector3.FORWARD)
-	_limb(hip, hock, foot + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, DKm, 0.86, 1.02, Vector3.FORWARD)
-	_foot_pad(hip, foot, w)
-	_servo(hip, Vector3.ZERO, w * 1.28)
-	_servo(hip, knee, w * 1.04)
-	_servo(hip, hock, w * 0.74)
 	_hydraulic(hip, Vector3(sx * w * 0.45, -w * 1.15, 0), knee.lerp(hock, 0.38) + Vector3(0, -w * 0.28, 0), w * 0.26)
+	var kj := Node3D.new()
+	kj.name = "Knee"
+	kj.position = knee
+	hip.add_child(kj)
+	var hock_rel := hock - knee
+	var foot_rel := foot - knee
+	_servo(kj, Vector3.ZERO, w * 1.04)
+	_limb(kj, Vector3.ZERO, hock_rel, w * 1.45, w * 1.65, ARm, 0.72, 1.12, Vector3.FORWARD)
+	_servo(kj, hock_rel, w * 0.74)
+	_limb(kj, hock_rel, foot_rel + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, DKm, 0.86, 1.02, Vector3.FORWARD)
+	_foot_pad(kj, foot_rel, w)
+	hip.set_meta("knee", kj)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -809,14 +842,21 @@ func _mleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, reach: float, 
 	_servo(hip, Vector3.ZERO, w * 1.4)
 	_bar(hip, Vector3.ZERO, knee, w * 1.3, w * 1.6, DK)
 	_bar(hip, Vector3(0, w * 0.9, 0), knee + Vector3(0, w * 0.9, 0), w * 1.9, w * 0.52, AR)
-	_servo(hip, knee, w * 1.15)
 	var ank := knee.lerp(foot, 0.55) + Vector3(sx * w * 0.8, 0, 0)
 	var fp := Vector3(foot.x, -by + w * 0.5, foot.z)
-	_limb(hip, knee, ank, w * 1.5, w * 1.7, DK, 0.75, 1.12, Vector3.FORWARD)
-	_bar(hip, knee + Vector3(sx * w * 0.55, 0, 0), ank + Vector3(sx * w * 0.35, 0, 0), w * 0.42, w * 1.35, AR, Vector3.FORWARD)
-	_limb(hip, ank, fp + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, AR, 0.85, 1.0, Vector3.FORWARD)
-	_foot_pad(hip, fp, w)
 	_hydraulic(hip, Vector3(0, -w * 0.95, 0), knee.lerp(ank, 0.48) + Vector3(-sx * w * 0.55, 0, 0), w * 0.24, DK)
+	var kj := Node3D.new()
+	kj.name = "Knee"
+	kj.position = knee
+	hip.add_child(kj)
+	var ank_rel := ank - knee
+	var fp_rel := fp - knee
+	_servo(kj, Vector3.ZERO, w * 1.15)
+	_limb(kj, Vector3.ZERO, ank_rel, w * 1.5, w * 1.7, DK, 0.75, 1.12, Vector3.FORWARD)
+	_bar(kj, Vector3(sx * w * 0.55, 0, 0), ank_rel + Vector3(sx * w * 0.35, 0, 0), w * 0.42, w * 1.35, AR, Vector3.FORWARD)
+	_limb(kj, ank_rel, fp_rel + Vector3(0, w * 0.8, 0), w * 1.05, w * 1.15, AR, 0.85, 1.0, Vector3.FORWARD)
+	_foot_pad(kj, fp_rel, w)
+	hip.set_meta("knee", kj)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -842,6 +882,7 @@ func _dleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_hydraulic(hip, Vector3(sx * 0.04 * s, 0.06 * s, 0.055 * s), knee + Vector3(sx * 0.03 * s, -0.08 * s, 0.055 * s), 0.022 * s, DK)
 	# 胫：上宽下窄的切面冲压钢柱 + 橡胶防滑靴底
 	var sh := Node3D.new()
+	sh.name = "Knee"
 	sh.position = knee
 	hip.add_child(sh)
 	var L := knee.y - foot.y
@@ -850,6 +891,7 @@ func _dleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_box(sh, LT, Vector3(0, -L * 0.56, 0), Vector3(0.158, 0.07, 0.154) * s, Vector3(0, 0, sx * 6.0))
 	_box(sh, _hazard_yel(), Vector3(sx * 0.076 * s, -L * 0.30, 0), Vector3(0.008, 0.09, 0.036) * s)
 	_box(sh, _steel(), Vector3(0, -L + 0.022 * s, 0), Vector3(0.14, 0.042, 0.18) * s)
+	hip.set_meta("knee", sh)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -1057,23 +1099,29 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	for zz: float in [-0.08, 0.08]:
 		_bar(hip, Vector3(0, 0, zz * s), knee + Vector3(0, 0, zz * s), 0.1 * s, 0.15 * s, DK)
 	_hydraulic(hip, Vector3(sx * 0.08 * s, -0.12 * s, 0), knee + Vector3(-sx * 0.14 * s, -0.1 * s, 0), 0.048 * s, AR)
-	_servo(hip, knee, 0.15 * s)
-	_bar(hip, knee, ank, 0.14 * s, 0.16 * s, DK)
-	_hydraulic(hip, knee + Vector3(-sx * 0.1, -0.08, 0.1) * s, ank + Vector3(-sx * 0.06, 0.06, 0.1) * s, 0.038 * s, AR)
+	var kj := Node3D.new()
+	kj.name = "Knee"
+	kj.position = knee
+	hip.add_child(kj)
+	var ank_rel := ank - knee
+	var foot_rel := foot - knee
+	_servo(kj, Vector3.ZERO, 0.15 * s)
+	_bar(kj, Vector3.ZERO, ank_rel, 0.14 * s, 0.16 * s, DK)
+	_hydraulic(kj, Vector3(-sx * 0.1, -0.08, 0.1) * s, ank_rel + Vector3(-sx * 0.06, 0.06, 0.1) * s, 0.038 * s, AR)
 	# 足：重型驻锄靴 + 防滑齿底板
-	_box(hip, DK, ank + Vector3(0, -0.06 * s, 0), Vector3(0.21, 0.26, 0.25) * s)
-	_box(hip, AR, foot + Vector3(0, 0.04 * s, 0), Vector3(0.28, 0.075, 0.38) * s)
+	_box(kj, DK, ank_rel + Vector3(0, -0.06 * s, 0), Vector3(0.21, 0.26, 0.25) * s)
+	_box(kj, AR, foot_rel + Vector3(0, 0.04 * s, 0), Vector3(0.28, 0.075, 0.38) * s)
 	for cz: float in [-0.14, 0.0, 0.14]:
-		_box(hip, _steel(), foot + Vector3(0, 0.015 * s, cz * s), Vector3(0.29, 0.028, 0.045) * s)
+		_box(kj, _steel(), foot_rel + Vector3(0, 0.015 * s, cz * s), Vector3(0.29, 0.028, 0.045) * s)
 	# 大盾：挂在膝外侧，盾面朝外（沿腿方向），顶部向内后仰
 	var sh := Node3D.new()
-	sh.position = Vector3(sx * 1.36 * s, (0.3 + 0.05 * ss) * s, 0)
+	sh.position = Vector3(sx * 1.36 * s, (0.3 + 0.05 * ss) * s, 0) - knee
 	sh.rotation_degrees = Vector3(0, 90.0 * sx, 0)
 	var tilt := Node3D.new()
 	tilt.rotation_degrees = Vector3(-12, 0, 0)
 	tilt.scale = Vector3.ONE * ss
 	sh.add_child(tilt)
-	hip.add_child(sh)
+	kj.add_child(sh)
 	var hw := func(y: float) -> float:
 		if y >= 0.3:
 			return 0.5 * pow(maxf(1.18 - y, 0.0) / 0.88, 0.75)
@@ -1108,7 +1156,8 @@ func _tleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_box(tilt, _hazard_yel(), Vector3(0, 0.78 * s, 0.175 * s), Vector3(0.36, 0.055, 0.012) * s)
 	_box(tilt, _steel(), Vector3(0, 1.04 * s, 0.178 * s), Vector3(0.045, 0.14, 0.028) * s)
 	# 盾背连接臂（与膝相连）
-	_bar(hip, knee, Vector3(sx * 1.28 * s, 0.45 * s, 0), 0.13 * s, 0.13 * s, AR)
+	_bar(kj, Vector3.ZERO, Vector3(sx * 1.28 * s, 0.45 * s, 0) - knee, 0.13 * s, 0.13 * s, AR)
+	hip.set_meta("knee", kj)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -1245,14 +1294,21 @@ func _pleg(body: Node3D, hip_pos: Vector3, yaw: float, sx: float, s: float, by: 
 	_bar(hip, Vector3.ZERO, knee, 0.2 * s, 0.22 * s, DK)
 	_bar(hip, Vector3(0, 0.13 * s, 0), knee + Vector3(0, 0.13 * s, 0), 0.26 * s, 0.055 * s, AR)
 	_hydraulic(hip, Vector3(sx * 0.06 * s, -0.11 * s, 0), knee + Vector3(-sx * 0.08 * s, -0.06 * s, 0), 0.042 * s, DK)
-	_servo(hip, knee, 0.13 * s)
+	var kj := Node3D.new()
+	kj.name = "Knee"
+	kj.position = knee
+	hip.add_child(kj)
+	_servo(kj, Vector3.ZERO, 0.13 * s)
 	# 活塞胫：重型方形油缸外筒 + 黄铜密封法兰 + 镀铬活塞杆 + 六角驻锄足垫
 	var mid := Vector3(foot.x, knee.y - 0.32 * s, 0)
-	_bar(hip, knee, mid, 0.21 * s, 0.21 * s, AR, Vector3.FORWARD)
-	_box(hip, _hazard_yel(), mid + Vector3(sx * 0.106 * s, 0.12 * s, 0), Vector3(0.008, 0.14, 0.055) * s)
-	_p(hip, A.cyl(0.088 * s, 0.045 * s, 0.088 * s, 10), _brass(), mid + Vector3(0, -0.01 * s, 0))
-	_p(hip, A.cyl(0.064 * s, mid.y - foot.y, 0.064 * s, 10), _chrome(), Vector3(foot.x, (mid.y + foot.y) * 0.5, 0))
-	_foot_pad(hip, foot + Vector3(0, 0.06 * s, 0), 0.13 * s)
+	var mid_rel := mid - knee
+	var foot_rel := foot - knee
+	_bar(kj, Vector3.ZERO, mid_rel, 0.21 * s, 0.21 * s, AR, Vector3.FORWARD)
+	_box(kj, _hazard_yel(), mid_rel + Vector3(sx * 0.106 * s, 0.12 * s, 0), Vector3(0.008, 0.14, 0.055) * s)
+	_p(kj, A.cyl(0.088 * s, 0.045 * s, 0.088 * s, 10), _brass(), mid_rel + Vector3(0, -0.01 * s, 0))
+	_p(kj, A.cyl(0.064 * s, mid.y - foot.y, 0.064 * s, 10), _chrome(), Vector3(foot_rel.x, (mid_rel.y + foot_rel.y) * 0.5, 0))
+	_foot_pad(kj, foot_rel + Vector3(0, 0.06 * s, 0), 0.13 * s)
+	hip.set_meta("knee", kj)
 	hip.set_meta("side", sx)
 	hip.set_meta("phase", phase)
 	hip.set_meta("base_y", hip.rotation.y)
@@ -1356,16 +1412,19 @@ func _build_brute(body: Node3D, s: float) -> void:
 static func _vmat_matte_vc() -> StandardMaterial3D:
 	if _sm.has("vm_vc"):
 		return _sm["vm_vc"]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
+	m.albedo_color = Color(1.14, 1.14, 1.16)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.roughness = 0.56
-	m.metallic = 0.42
-	m.metallic_specular = 0.55
-	m.rim_enabled = true
-	m.rim = 0.14
-	m.rim_tint = 0.45
+	m.roughness = 0.52
+	m.metallic = 0.40
+	m.metallic_specular = 0.58
+	if not mob:
+		m.rim_enabled = true
+		m.rim = 0.18
+		m.rim_tint = 0.48
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_panelize(m)
 	_sm["vm_vc"] = m
@@ -1376,15 +1435,17 @@ static func _vmat_matte(c: Color) -> StandardMaterial3D:
 	var key := "vm%s" % c.to_html()
 	if _sm.has(key):
 		return _sm[key]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
 	m.albedo_color = c
 	m.roughness = 0.56
 	m.metallic = 0.42
 	m.metallic_specular = 0.55
-	m.rim_enabled = true
-	m.rim = 0.14
-	m.rim_tint = 0.45
+	if not mob:
+		m.rim_enabled = true
+		m.rim = 0.14
+		m.rim_tint = 0.45
 	_panelize(m)
 	m.set_meta("_vc_base", _vmat_matte_vc())
 	m.set_meta("_vc_tint", c)
@@ -1396,15 +1457,17 @@ static func _vmat_solid(c: Color) -> StandardMaterial3D:
 	var key := "vs%s" % c.to_html()
 	if _sm.has(key):
 		return _sm[key]
+	var mob := A.is_mobile_perf()
 	var m := StandardMaterial3D.new()
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
 	m.albedo_color = c
 	m.roughness = 0.38
 	m.metallic = 0.62
 	m.metallic_specular = 0.72
-	m.rim_enabled = true
-	m.rim = 0.18
-	m.rim_tint = 0.55
+	if not mob:
+		m.rim_enabled = true
+		m.rim = 0.18
+		m.rim_tint = 0.55
 	_panelize(m)
 	m.set_meta("_vc_base", _vmat())
 	m.set_meta("_vc_tint", c)
@@ -2065,15 +2128,27 @@ func _animate_impl(delta: float, mv: float) -> void:
 	var liftk := 0.45 if beh == "ling" else (0.32 if beh == "spitter" else 0.32)
 	var k := clampf(16.0 * delta, 0.0, 1.0)
 	for hip in legs:
-		var ph: float = anim_t * cad + hip.get_meta("phase")
-		var side: float = float(hip.get_meta("side"))
-		var sy := float(hip.get_meta("base_y")) - sin(ph) * swing * amt * side
-		var lz := maxf(0.0, cos(ph)) * liftk * amt * side
-		if act == "wind" and beh == "beetle":
-			lz += 0.12 * side   # 前摇：收腿蓄力
+		var ph: float = anim_t * cad + float(hip.get_meta("phase", 0.0))
+		var side: float = float(hip.get_meta("side", 1.0))
+		var s_ph := sin(ph)
+		var c_ph := cos(ph)
+		var sy := float(hip.get_meta("base_y", hip.rotation.y)) - s_ph * swing * amt * side
+		var lz := (pow(c_ph, 0.82) * liftk if c_ph > 0.0 else c_ph * 0.08) * amt * side
+		var kz := ((-0.48 * c_ph + 0.28 * s_ph * c_ph) * liftk if c_ph > 0.0 else -c_ph * 0.15) * amt * side
+		if act == "wind":
+			lz += 0.16 * side
+			kz -= 0.26 * side
+		elif act == "strike":
+			lz -= 0.12 * side
+			kz += 0.20 * side
 		hip.rotation.y = lerp_angle(hip.rotation.y, sy, k)
 		hip.rotation.x = 0.0
 		hip.rotation.z = lerp(hip.rotation.z, lz, k)
+		if hip.has_meta("knee"):
+			var kj: Node3D = hip.get_meta("knee")
+			if is_instance_valid(kj):
+				kj.rotation.z = lerp(kj.rotation.z, kz, k)
+				kj.rotation.x = lerp(kj.rotation.x, c_ph * 0.14 * amt, k)
 	var body: Node3D = visual.get_node("Body")
 	# 受击后仰（弹簧）
 	hit_v += (-hit_tilt * 160.0 - hit_v * 13.0) * delta
@@ -2156,6 +2231,22 @@ func _collect_hit_meshes() -> void:
 		return
 	_hit_meshes_ready = true
 	_hit_meshes.clear()
+	var body := visual.get_node_or_null("Body")
+	if body != null:
+		for ch in body.get_children():
+			if ch is MeshInstance3D:
+				var mi := ch as MeshInstance3D
+				if not mi.get_meta("no_flash", false) and not mi.get_meta("shield", false) and not (mi.mesh is PlaneMesh):
+					_hit_meshes.append(mi)
+	if is_instance_valid(sac) and not _hit_meshes.has(sac):
+		_hit_meshes.append(sac)
+	var abd = get("abdomen")
+	if abd is Node3D and is_instance_valid(abd):
+		for ch in (abd as Node3D).get_children():
+			if ch is MeshInstance3D and not _hit_meshes.has(ch):
+				_hit_meshes.append(ch)
+	if not _hit_meshes.is_empty():
+		return
 	for n in visual.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi == null or mi.get_meta("no_flash", false) or mi.get_meta("shield", false):
@@ -2203,6 +2294,35 @@ func _apply_hit_jolt(from: Vector3, push: float) -> void:
 		hit_v += Vector3(randf_range(0.6, 1.1), 0, randf_range(-0.7, 0.7)) * mag
 
 
+func _head_bar_y() -> float:
+	if _cached_bar_y > 0.0:
+		return _cached_bar_y
+	var max_y := -1e9
+	if visual != null and is_instance_valid(visual):
+		var inv := visual.global_transform.affine_inverse()
+		for n in visual.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			if mi == null or mi.mesh == null or (mi.mesh is PlaneMesh) or mi.get_meta("no_flash", false) or mi.get_meta("shield", false):
+				continue
+			var aabb := mi.get_aabb()
+			var rel := inv * mi.global_transform
+			for ix in 2:
+				for iy in 2:
+					for iz in 2:
+						var p := rel * Vector3(
+							aabb.position.x + aabb.size.x * float(ix),
+							aabb.position.y + aabb.size.y * float(iy),
+							aabb.position.z + aabb.size.z * float(iz)
+						)
+						max_y = maxf(max_y, p.y)
+	var sc := float(data.get("scale", 1.0))
+	if max_y > 0.2:
+		_cached_bar_y = max_y + clampf(0.28 + sc * 0.16, 0.35, 0.85)
+	else:
+		_cached_bar_y = maxf(2.0, sc * 1.45 + 0.6)
+	return _cached_bar_y
+
+
 func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	if hp <= 0.0:
 		return
@@ -2210,7 +2330,10 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	var base_arm := float(data.get("armor", 0.22 if kind == "beetle" else 0.0))
 	var eff_arm := clampf(base_arm * (1.0 - clampf(ap, 0.0, 0.85)), 0.0, 0.9) if ap > 0.0 else 0.0
 	var dmg := amount * (1.0 - eff_arm) if ap > 0.0 else amount
+	var prev_hp := hp
 	hp -= dmg
+	if raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit") and not bool(data.get("boss", false)):
+		raid.hud.notify_enemy_hit(self, prev_hp, hp, float(data.get("hp", 30.0)))
 	_aggro_on_hit()
 	flash_t = FLASH_DUR
 	_update_flash()
@@ -2252,20 +2375,21 @@ func _die() -> void:
 		tw.tween_property(s2, "rotation:x", -0.5, 0.4)
 	if gun:
 		tw.tween_property(gun, "rotation:x", -0.18, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
-	# 发光件熄灭
-	for m in find_children("*", "MeshInstance3D", true, false):
-		var mat = m.material_override
-		if mat is StandardMaterial3D and mat.emission_enabled:
-			var dm: StandardMaterial3D = mat.duplicate()
-			m.material_override = dm
-			tw.tween_property(dm, "emission_energy_multiplier", 0.0, 0.8)
-	if raid:
-		var p := global_position + Vector3(0, 0.8 * sc, 0)
-		A.burst(raid.fx, p, {"amount": 16, "life": 0.5, "size": 0.1, "tex": A.soft_dot(), "additive": true, "vmin": 4.0, "vmax": 9.0, "spread": 80.0, "dir": Vector3.UP,
-			"gravity": Vector3(0, -14, 0), "c0": Color(1, 0.85, 0.5), "c1": Color(1, 0.35, 0.1, 0)})
-		A.burst(raid.fx, p, {"amount": 10, "life": 1.6, "size": 0.7 * sc, "additive": false, "vmin": 0.5, "vmax": 1.5, "spread": 30.0, "dir": Vector3.UP,
-			"gravity": Vector3(0, 1.2, 0), "damp": 0.5, "tex": A.soft_dot(), "c0": Color(0.12, 0.12, 0.13, 0.45), "c1": Color(0.15, 0.15, 0.16, 0.0), "grow0": 0.6, "grow1": 1.8})
-	tw.finished.connect(_finalize_corpse)
+		# 发光件熄灭
+		var dead_em := _get_dead_eye_mat()
+		for m in parts:
+			if not is_instance_valid(m):
+				continue
+			var mat = m.material_override
+			if mat is StandardMaterial3D and mat.emission_enabled:
+				m.material_override = dead_em
+		if raid:
+			var p := global_position + Vector3(0, 0.8 * sc, 0)
+			A.burst(raid.fx, p, {"amount": 16, "life": 0.5, "size": 0.1, "tex": A.soft_dot(), "additive": true, "vmin": 4.0, "vmax": 9.0, "spread": 80.0, "dir": Vector3.UP,
+				"gravity": Vector3(0, -14, 0), "c0": Color(1, 0.85, 0.5), "c1": Color(1, 0.35, 0.1, 0)})
+			A.burst(raid.fx, p, {"amount": 10, "life": 1.6, "size": 0.7 * sc, "additive": false, "vmin": 0.5, "vmax": 1.5, "spread": 30.0, "dir": Vector3.UP,
+				"gravity": Vector3(0, 1.2, 0), "damp": 0.5, "tex": A.soft_dot(), "c0": Color(0.12, 0.12, 0.13, 0.45), "c1": Color(0.15, 0.15, 0.16, 0.0), "grow0": 0.6, "grow1": 1.8})
+		tw.finished.connect(_finalize_corpse)
 
 
 static func _get_dead_eye_mat() -> StandardMaterial3D:
@@ -2288,26 +2412,32 @@ func _finalize_corpse() -> void:
 		sh_fx.queue_free()
 		remove_meta("shield_fx")
 	var dm := _get_dead_eye_mat()
+	var vis_end := 42.0 if A.is_mobile_perf() else 62.0
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi == null:
 			continue
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.material_overlay = null
-		if not (mi.mesh is PlaneMesh) and mi.visibility_range_end <= 0.0:
-			mi.visibility_range_end = 68.0
+		if not (mi.mesh is PlaneMesh):
+			mi.visibility_range_end = vis_end
 			mi.visibility_range_end_margin = 4.0
 		var m := mi.material_override as StandardMaterial3D
 		if m != null and m.emission_enabled:
 			mi.material_override = dm
 
 
-static func _panelize(m: StandardMaterial3D, scale := 1.1) -> void:
-	# 机甲面板贴图：分格面板线、铆钉、散热槽、划痕（三平面投射，适配所有构件）
-	m.albedo_texture = A._bug_tex("mech_panel.png")
+static func _panelize(m: StandardMaterial3D, scale := 0.45) -> void:
+	# 重工轧制钢微肌理贴图：三平面连续金属拉丝与法线微起伏，保持硬表面几何零件棱线清晰
+	if A.is_mobile_perf():
+		m.albedo_texture = A.world_tex("steel_plate_a.png")
+		m.uv1_scale = Vector3.ONE * (scale * 0.85)
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		return
+	m.albedo_texture = A.world_tex("steel_plate_a.png")
 	m.normal_enabled = true
-	m.normal_texture = A._bug_tex("mech_panel_n.png")
-	m.normal_scale = 0.85
+	m.normal_texture = A.world_tex("steel_plate_n.png")
+	m.normal_scale = 0.42
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * scale
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC

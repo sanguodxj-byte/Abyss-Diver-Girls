@@ -4,18 +4,6 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 
-const SHELL_SHADER := """
-shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
-uniform vec4 col : source_color = vec4(1.0, 0.7, 0.3, 1.0);
-uniform float power = 1.0;
-void fragment() {
-	float f = pow(1.0 - abs(dot(NORMAL, VIEW)), 2.2);
-	float grid = smoothstep(0.002, 0.0, abs(fract(UV.y * 24.0) - 0.5) - 0.46);
-	ALBEDO = col.rgb * (f * 1.4 + 0.06 + grid * 0.25) * power;
-}
-"""
-
 
 ## 重工业实体长杆穿甲箭弹高速掠过表现（取代旧版双层发光光束）
 static func beam(raid, a: Vector3, b: Vector3, _c: Color, w: float, life := 0.18) -> void:
@@ -51,30 +39,31 @@ static func bolt(raid, a: Vector3, b: Vector3, c: Color, life := 0.14, w := 0.05
 	beam(raid, a, b, c, w * 0.75, life)
 
 
-## 冲击环：贴地的双层立体激波环由小撑开
+## 冲击环：贴地有机冲击波扩散 + 微量扬尘（取代立体圆环）
 static func ring(raid, p: Vector3, c: Color, radius: float, life := 0.4) -> void:
-	var root := Node3D.new()
-	raid.fx.add_child(root)
-	root.global_position = p + Vector3(0, 0.12, 0)
-	root.scale = Vector3(0.22, 0.12, 0.22)
-	A.add(root, A.torus(radius * 0.86, radius, 40), A.emit(c, 4.8), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	A.add(root, A.torus(radius * 0.68, radius * 0.76, 32), A.emit(c.lightened(0.4), 3.0), Vector3(0, 0.06, 0), Vector3.ZERO, Vector3.ONE, false)
-	var tw := root.create_tween()
-	tw.tween_property(root, "scale", Vector3(1, 0.32, 1), life).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_callback(root.queue_free)
+	var wave := A.ground_vfx(raid.fx, A.shockwave_tex(), Color(c.r, c.g, c.b, clampf(c.a * 0.72, 0.22, 0.72)), radius * 2.1, Vector3(p.x, 0.09, p.z), false, 0.44, true, 4)
+	wave.scale = Vector3.ONE * 0.22
+	var tw := wave.create_tween()
+	tw.tween_property(wave, "scale", Vector3.ONE * 1.06, life).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(wave.material_override, "shader_parameter/col", Color(c.r, c.g, c.b, 0.0), life)
+	tw.tween_callback(wave.queue_free)
+	if radius >= 1.5:
+		A.burst(raid.fx, p + Vector3(0, 0.25, 0), {"amount": clampi(int(radius * 3.0), 6, 16), "life": life * 1.15, "size": clampf(radius * 0.26, 0.35, 1.0),
+			"tex": A.smoke_tex(), "additive": false, "spread": 85.0, "vmin": radius * 0.9, "vmax": radius * 1.8, "gravity": Vector3(0, 0.4, 0), "damp": 3.4,
+			"c0": Color(c.r * 0.45 + 0.25, c.g * 0.45 + 0.24, c.b * 0.45 + 0.22, 0.32), "c1": Color(0.28, 0.26, 0.24, 0.0), "grow0": 0.45, "grow1": 1.6})
 
 
-## 落点标记：地面上的加色圆环，随飞行时间收缩
+## 落点标记：地面战术破损角标（取代实心圆环）
 static func marker(raid, p: Vector3, c: Color, radius: float, life: float) -> Node3D:
 	var n := Node3D.new()
 	raid.fx.add_child(n)
 	n.global_position = p + Vector3(0, 0.124, 0)
-	var mi := A.add(n, A.quad(radius * 2.0, radius * 2.0), A.ground_vfx_mat(A.ring_tex(), Color(c.r, c.g, c.b, 0.85), true, 0.44, false, 4), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var mi := A.add(n, A.quad(radius * 2.0, radius * 2.0), A.extract_pad_mat(Color(c.r, c.g, c.b, 0.76), 0.44, 4), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	mi.rotation.x = 0.0
 	mi.set_meta("ring", true)
 	var tw := n.create_tween()
 	tw.tween_property(n, "scale", Vector3.ONE * 1.0, life * 0.75)
-	tw.tween_property(n, "scale", Vector3.ONE * 0.4, life * 0.25).set_ease(Tween.EASE_IN)
+	tw.tween_property(n, "scale", Vector3.ONE * 0.45, life * 0.25).set_ease(Tween.EASE_IN)
 	tw.tween_callback(n.queue_free)
 	return n
 
@@ -103,23 +92,21 @@ static func light(raid, p: Vector3, c: Color, energy := 3.0, rng := 5.0, dur := 
 	tw.tween_callback(l.queue_free)
 
 
-## 能量护罩 / 力场：菲涅尔边缘发光的球壳，撑开后收缩消失
+## 反应力场弧片：局部开放电离偏导弧片 + 脉冲激涌，避免塑料整球
 static func shell(parent: Node3D, c: Color, radius: float, dur: float, y := 1.6) -> MeshInstance3D:
-	var sh := Shader.new()
-	sh.code = SHELL_SHADER
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	mat.set_shader_parameter("col", c)
+	var mat := A.reactive_arc_mat(Color(c.r, c.g, c.b, 0.88))
+	mat.set_shader_parameter("surge", 1.0)
 	var mi := MeshInstance3D.new()
-	mi.mesh = A.sphere(radius)
+	mi.mesh = A.reactive_arc_mesh(clampf(radius * 0.76, 0.9, 2.2), clampf(radius * 0.84, 1.0, 2.3), 4, 12)
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position.y = y
 	parent.add_child(mi)
-	mi.scale = Vector3.ONE * 0.2
+	mi.scale = Vector3.ONE * 0.55
 	var tw := mi.create_tween()
-	tw.tween_property(mi, "scale", Vector3.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mi, "scale", Vector3.ONE, 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(mat, "shader_parameter/surge", 0.15, 0.25)
 	tw.tween_interval(maxf(0.01, dur - 0.36))
-	tw.tween_property(mi, "scale", Vector3.ONE * 0.02, 0.2).set_ease(Tween.EASE_IN)
+	tw.tween_property(mat, "shader_parameter/fade", 0.0, 0.22)
 	tw.tween_callback(mi.queue_free)
 	return mi

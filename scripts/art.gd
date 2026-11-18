@@ -7,6 +7,10 @@ static var _mat_cache := {}
 static var _tex_cache := {}
 
 
+static func is_mobile_perf() -> bool:
+	return OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+
+
 # ======================================================================
 # 网格
 # ======================================================================
@@ -60,14 +64,15 @@ static func bevel_box(size: Vector3, bevel := 0.06, taper := 1.0) -> ArrayMesh:
 		return v
 	var C := Vector3.ZERO
 	var S := [-1.0, 1.0]
-	# 6 个面（顶点色白），棱与角（顶点色 R=0，供着色器做掉漆）
+	# 6 个面（顶点色白），棱与角（宽斜面衰减边缘掉漆权重，避免宽斜面整块出现斑点）
 	_vc = Color(1, 1, 1)
 	for s in S:
 		_quad(st, P.call(s, -1, -1, 0, 1, 1), P.call(s, 1, -1, 0, 1, 1), P.call(s, 1, 1, 0, 1, 1), P.call(s, -1, 1, 0, 1, 1), C)
 		_quad(st, P.call(-1, s, -1, 1, 0, 1), P.call(1, s, -1, 1, 0, 1), P.call(1, s, 1, 1, 0, 1), P.call(-1, s, 1, 1, 0, 1), C)
 		_quad(st, P.call(-1, -1, s, 1, 1, 0), P.call(1, -1, s, 1, 1, 0), P.call(1, 1, s, 1, 1, 0), P.call(-1, 1, s, 1, 1, 0), C)
 	# 12 条棱
-	_vc = Color(0, 1, 1)
+	var edge_r := 1.0 - clampf(0.068 / maxf(b, 0.01), 0.12, 1.0)
+	_vc = Color(edge_r, 1, 1)
 	for s1 in S:
 		for s2 in S:
 			# 平行 Z 轴的棱（X、Y 两面之间）
@@ -93,9 +98,11 @@ static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28) -> CylinderMesh:
 	var rb := r if r2 < 0 else r2
 	var rmax := maxf(r, rb)
 	var s_seg := seg
-	if seg >= 5:
-		var cap_seg := 8 if rmax < 0.08 else (10 if rmax < 0.2 else (14 if rmax < 0.45 else (18 if rmax < 1.2 else 28)))
-		s_seg = mini(seg, cap_seg) if seg == 28 else clampi(seg, 5, cap_seg + 4)
+	if seg >= 8:
+		var mob := is_mobile_perf()
+		var cap_seg := (12 if rmax < 0.08 else (14 if rmax < 0.2 else (18 if rmax < 0.45 else (22 if rmax < 1.2 else 28)))) if mob \
+			else (16 if rmax < 0.08 else (20 if rmax < 0.2 else (24 if rmax < 0.45 else (28 if rmax < 1.2 else 36))))
+		s_seg = cap_seg if seg == 28 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
 	var key := "cy%.3f|%.3f|%.3f|%d" % [r, hgt, r2, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -111,9 +118,11 @@ static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28) -> CylinderMesh:
 
 static func sphere(r: float, hgt := -1.0, seg := 28) -> SphereMesh:
 	var s_seg := seg
-	if seg >= 5:
-		var cap_seg := 8 if r < 0.08 else (10 if r < 0.2 else (14 if r < 0.5 else (18 if r < 1.2 else 26)))
-		s_seg = mini(seg, cap_seg) if seg == 28 else clampi(seg, 5, cap_seg + 4)
+	if seg >= 8:
+		var mob := is_mobile_perf()
+		var cap_seg := (12 if r < 0.08 else (14 if r < 0.2 else (18 if r < 0.5 else (22 if r < 1.2 else 28)))) if mob \
+			else (16 if r < 0.08 else (20 if r < 0.2 else (24 if r < 0.5 else (28 if r < 1.2 else 32))))
+		s_seg = cap_seg if seg == 28 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
 	var key := "sp%.3f|%.3f|%d" % [r, hgt, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -121,7 +130,7 @@ static func sphere(r: float, hgt := -1.0, seg := 28) -> SphereMesh:
 	s.radius = r
 	s.height = r * 2.0 if hgt < 0 else hgt
 	s.radial_segments = s_seg
-	s.rings = maxi(5, s_seg / 2)
+	s.rings = maxi(6, s_seg / 2)
 	_mesh_cache[key] = s
 	return s
 
@@ -516,8 +525,10 @@ static func capsule(r: float, hgt: float) -> CapsuleMesh:
 
 
 static func torus(inner: float, outer: float, seg := 36) -> TorusMesh:
-	var cap_seg := 10 if outer < 0.12 else (14 if outer < 0.35 else (18 if outer < 1.0 else 28))
-	var s_seg := mini(seg, cap_seg) if seg >= 24 else clampi(seg, 6, cap_seg + 4)
+	var mob := is_mobile_perf()
+	var cap_seg := (14 if outer < 0.12 else (18 if outer < 0.35 else (22 if outer < 1.0 else 28))) if mob \
+		else (18 if outer < 0.12 else (24 if outer < 0.35 else (28 if outer < 1.0 else 36)))
+	var s_seg := mini(seg, cap_seg) if seg >= 24 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
 	var key := "to%.3f|%.3f|%d" % [inner, outer, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -525,7 +536,7 @@ static func torus(inner: float, outer: float, seg := 36) -> TorusMesh:
 	t.inner_radius = inner
 	t.outer_radius = outer
 	t.rings = s_seg
-	t.ring_segments = 8 if (outer - inner) < 0.15 else 10
+	t.ring_segments = 10 if (outer - inner) < 0.15 else 12
 	_mesh_cache[key] = t
 	return t
 
@@ -749,16 +760,49 @@ static func ring_tex() -> Texture2D:
 	var half := float(sz - 1) * 0.5
 	for y in sz:
 		for x in sz:
-			var r := Vector2(float(x) - half, float(y) - half).length() / (float(sz) * 0.5)
-			var main_band := smoothstep(0.84, 0.87, r) * (1.0 - smoothstep(0.90, 0.93, r))
-			var inner_tick := smoothstep(0.74, 0.755, r) * (1.0 - smoothstep(0.77, 0.785, r)) * 0.38
-			var outer_halo := smoothstep(0.66, 0.86, r) * (1.0 - smoothstep(0.90, 0.98, r)) * 0.18
-			var fill_in := (1.0 - smoothstep(0.84, 0.90, r)) * 0.05
-			var a := clampf(main_band + inner_tick + outer_halo + fill_in, 0.0, 1.0)
+			var dx := (float(x) - half) / (float(sz) * 0.5)
+			var dy := (float(y) - half) / (float(sz) * 0.5)
+			var r := Vector2(dx, dy).length()
+			var ang := atan2(dy, dx)
+			# Segmented weathered stencil ticks instead of a solid geometric bullseye disc
+			var arc_gap := smoothstep(0.24, 0.50, abs(sin(ang * 2.0)))
+			var grain := 0.72 + 0.28 * sin(ang * 13.0 + r * 9.0) * cos(float(x) * 0.37 - float(y) * 0.41)
+			var thin_band := exp(-pow((r - 0.875) / 0.020, 2.0)) * (0.20 + 0.80 * arc_gap)
+			var tick_band := exp(-pow((r - 0.765) / 0.012, 2.0)) * pow(abs(cos(ang * 4.0)), 6.0) * 0.32
+			var soft_halo := exp(-pow((r - 0.875) / 0.068, 2.0)) * (0.25 + 0.75 * arc_gap) * 0.16
+			var edge := 1.0 - smoothstep(0.92, 0.99, r)
+			var a := clampf((thin_band * 0.78 + tick_band + soft_halo) * grain * edge, 0.0, 1.0)
 			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
 	_tex_cache["ring"] = t
+	return t
+
+static func shockwave_tex() -> Texture2D:
+	if _tex_cache.has("shockwave"):
+		return _tex_cache["shockwave"]
+	var sz := 256
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var half := float(sz - 1) * 0.5
+	for y in sz:
+		for x in sz:
+			var dx := (float(x) - half) / (float(sz) * 0.5)
+			var dy := (float(y) - half) / (float(sz) * 0.5)
+			var r := Vector2(dx, dy).length()
+			var ang := atan2(dy, dx)
+			var turb := 0.45 * sin(ang * 3.0 + r * 5.0) + 0.32 * cos(ang * 5.0 - 1.4) + 0.23 * sin(ang * 9.0 + r * 4.2 + 0.9)
+			var fine := sin(float(x) * 0.41 + float(y) * 0.33) * cos(float(x) * 0.27 - float(y) * 0.47)
+			var rw := r + turb * 0.060 + fine * 0.016
+			var front := exp(-pow((rw - 0.74) / 0.105, 2.0))
+			var wake := exp(-pow((rw - 0.54) / 0.155, 2.0)) * 0.44
+			var wisp := clampf(0.54 + 0.46 * (0.52 * sin(ang * 4.0 + 0.7) + 0.32 * cos(ang * 7.0 - r * 4.5) + 0.16 * sin(ang * 11.0 + 1.8)), 0.16, 1.0)
+			var center := smoothstep(0.16, 0.44, r)
+			var edge := 1.0 - smoothstep(0.84, 0.99, r)
+			var a := clampf((front + wake) * wisp * center * edge * 0.86, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	img.generate_mipmaps()
+	var t := ImageTexture.create_from_image(img)
+	_tex_cache["shockwave"] = t
 	return t
 
 
@@ -786,7 +830,8 @@ static func cloud_tex() -> Texture2D:
 			var wy := nw.get_noise_2d(float(x) + 89.0, float(y) + 43.0) * 24.0
 			var n := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
 			var d := p.length() + (0.5 - n) * 0.42
-			var fall := smoothstep(0.98, 0.16, d)
+			var border := smoothstep(0.98, 0.70, maxf(absf(p.x), absf(p.y)))
+			var fall := smoothstep(0.94, 0.16, d) * border
 			var a := clampf(fall * smoothstep(0.24, 0.78, n), 0.0, 1.0)
 			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	img.generate_mipmaps()
@@ -904,11 +949,18 @@ static func player_ring_tex() -> Texture2D:
 	var c := float(sz - 1) * 0.5
 	for y in sz:
 		for x in sz:
-			var r := Vector2(float(x) - c, float(y) - c).length() / (float(sz) * 0.5)
-			var main_band := smoothstep(0.67, 0.72, r) * (1.0 - smoothstep(0.84, 0.90, r))
-			var inner_tick := smoothstep(0.57, 0.59, r) * (1.0 - smoothstep(0.61, 0.63, r)) * 0.35
-			var outer_halo := smoothstep(0.82, 0.88, r) * (1.0 - smoothstep(0.92, 0.98, r)) * 0.28
-			var a := clampf(main_band * 0.95 + inner_tick + outer_halo, 0.0, 1.0)
+			var dx := (float(x) - c) / (float(sz) * 0.5)
+			var dy := (float(y) - c) / (float(sz) * 0.5)
+			var r := Vector2(dx, dy).length()
+			var ang := atan2(dy, dx)
+			# Four open diagonal compass brackets + subtle cardinal ticks, feathered edge
+			var diag_mask := smoothstep(0.30, 0.58, abs(sin(ang * 2.0)))
+			var card_tick := pow(abs(cos(ang * 2.0)), 18.0) * 0.45
+			var main_band := exp(-pow((r - 0.805) / 0.022, 2.0)) * maxf(diag_mask, card_tick)
+			var inner_hair := exp(-pow((r - 0.675) / 0.013, 2.0)) * diag_mask * 0.24
+			var outer_glow := exp(-pow((r - 0.805) / 0.055, 2.0)) * diag_mask * 0.18
+			var edge := 1.0 - smoothstep(0.90, 0.985, r)
+			var a := clampf((main_band * 0.72 + inner_hair + outer_glow) * edge, 0.0, 1.0)
 			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
@@ -919,8 +971,16 @@ static func player_ring_tex() -> Texture2D:
 # ======================================================================
 # 材质
 # ======================================================================
+static func _is_headless_server() -> bool:
+	if OS.has_feature("dedicated_server"):
+		return true
+	var u := OS.get_cmdline_user_args()
+	return ("--server" in u) or ("--dedicated" in u)
+
 const WORLD_TEX_DIR := "res://assets/textures/world/"
 static func world_tex(file: String) -> Texture2D:
+	if _is_headless_server():
+		return null
 	var key := "wtex_" + file
 	if _tex_cache.has(key):
 		return _tex_cache[key]
@@ -949,7 +1009,7 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	if _mat_cache.has(key):
 		return _mat_cache[key]
 	if _paint_shader == null:
-		_paint_shader = load("res://shaders/mech_paint.gdshader")
+		_paint_shader = load("res://shaders/mech_paint_mobile.gdshader" if is_mobile_perf() else "res://shaders/mech_paint.gdshader")
 	var m := ShaderMaterial.new()
 	m.shader = _paint_shader
 	m.set_shader_parameter("base_color", c)
@@ -960,7 +1020,7 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	m.set_shader_parameter("albedo_tex", world_tex("steel_plate_a.png"))
 	m.set_shader_parameter("use_albedo_tex", 1.0)
 	m.set_shader_parameter("albedo_tex_scale", 0.24)
-	m.set_shader_parameter("albedo_tex_strength", 0.44)
+	m.set_shader_parameter("albedo_tex_strength", 0.40)
 	m.set_shader_parameter("normal_tex", world_tex("steel_plate_n.png"))
 	m.set_shader_parameter("normal_strength", 0.42)
 	if not opts.has("panel_scale"):
@@ -971,11 +1031,12 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	return m
 
 
-static func metal(c := Color(0.18, 0.19, 0.21)) -> ShaderMaterial:
-	return paint(c, 0.68, 0.44, {
-		"wear": 0.35, "panel_scale": 0.0, "dust": 0.12, "rust": 0.08,
-		"scratches": 0.28, "bare_metal": c.lightened(0.55),
-		"albedo_tex_strength": 0.56, "normal_strength": 0.55,
+static func metal(c := Color(0.28, 0.30, 0.33)) -> ShaderMaterial:
+	var mc := Color(maxf(c.r, 0.27), maxf(c.g, 0.28), maxf(c.b, 0.30)).lerp(c.lightened(0.18), 0.45)
+	return paint(mc, 0.65, 0.36, {
+		"wear": 0.36, "panel_scale": 0.0, "dust": 0.10, "rust": 0.06,
+		"scratches": 0.30, "bare_metal": mc.lightened(0.48),
+		"albedo_tex_strength": 0.42, "normal_strength": 0.45,
 	})
 
 
@@ -1152,7 +1213,7 @@ static func foliage_mat(kind := "pine") -> ShaderMaterial:
 	if _mat_cache.has(key):
 		return _mat_cache[key]
 	if _foliage_shader == null:
-		_foliage_shader = load("res://shaders/foliage.gdshader")
+		_foliage_shader = load("res://shaders/foliage_mobile.gdshader" if is_mobile_perf() else "res://shaders/foliage.gdshader")
 	var m := ShaderMaterial.new()
 	m.shader = _foliage_shader
 	m.set_meta("no_outline", true)
@@ -1230,6 +1291,8 @@ static func chitin(c: Color, opts := {}) -> ShaderMaterial:
 ## part: "shell" 甲壳 / "leg" 腿节 / "eye" 复眼 / "membrane" 节间膜 / "sac" 酸囊 / "claw" 颚爪
 const BUG_TEX_DIR := "res://assets/textures/bugs/"
 static func _bug_tex(file: String) -> Texture2D:
+	if _is_headless_server():
+		return null
 	var key := "bugtex_" + file
 	if _mat_cache.has(key):
 		return _mat_cache[key]
@@ -1255,67 +1318,77 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 	var key := "bugmat_%s_%s_%s_%s" % [kind, part, tint.to_html(), str(uv_scale)]
 	if _mat_cache.has(key):
 		return _mat_cache[key]
+	var mob := is_mobile_perf()
 	var m := StandardMaterial3D.new()
 	m.albedo_color = tint
 	m.uv1_scale = Vector3(uv_scale.x, uv_scale.y, 1)
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	m.normal_enabled = true
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if mob else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	m.normal_enabled = not mob
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
 	match part:
 		"shell":
 			m.albedo_texture = _bug_tex("chitin_%s.png" % kind)
-			m.normal_texture = _bug_tex("chitin_n.png")
-			m.normal_scale = 1.0
-			m.roughness_texture = _bug_tex("chitin_r.png")
-			m.roughness = 1.0
-			m.clearcoat_enabled = true
-			m.clearcoat = 0.55
-			m.clearcoat_roughness = 0.25
-			m.rim_enabled = true
-			m.rim = 0.12
-			m.rim_tint = 0.6
+			if not mob:
+				m.normal_texture = _bug_tex("chitin_n.png")
+				m.normal_scale = 1.0
+				m.roughness_texture = _bug_tex("chitin_r.png")
+				m.roughness = 1.0
+				m.clearcoat_enabled = true
+				m.clearcoat = 0.55
+				m.clearcoat_roughness = 0.25
+				m.rim_enabled = true
+				m.rim = 0.12
+				m.rim_tint = 0.6
+			else:
+				m.roughness = 0.48
 		"leg":
 			m.albedo_texture = _bug_tex("leg_%s.png" % kind)
-			m.normal_texture = _bug_tex("leg_n.png")
-			m.roughness_texture = _bug_tex("leg_r.png")
-			m.roughness = 1.0
-			m.clearcoat_enabled = true
-			m.clearcoat = 0.3
-			m.clearcoat_roughness = 0.35
+			if not mob:
+				m.normal_texture = _bug_tex("leg_n.png")
+				m.roughness_texture = _bug_tex("leg_r.png")
+				m.roughness = 1.0
+				m.clearcoat_enabled = true
+				m.clearcoat = 0.3
+				m.clearcoat_roughness = 0.35
+			else:
+				m.roughness = 0.52
 		"eye":
 			m.albedo_texture = _bug_tex("eye_a.png")
-			m.normal_texture = _bug_tex("eye_n.png")
-			m.normal_scale = 0.8
 			m.roughness = 0.12
 			m.metallic_specular = 0.8
-			m.clearcoat_enabled = true
-			m.clearcoat = 1.0
-			m.clearcoat_roughness = 0.05
+			if not mob:
+				m.normal_texture = _bug_tex("eye_n.png")
+				m.normal_scale = 0.8
+				m.clearcoat_enabled = true
+				m.clearcoat = 1.0
+				m.clearcoat_roughness = 0.05
 		"membrane":
 			m.albedo_texture = _bug_tex("membrane_a.png")
-			m.normal_texture = _bug_tex("membrane_n.png")
 			m.roughness = 0.4
-			m.subsurf_scatter_enabled = true
-			m.subsurf_scatter_strength = 0.4
+			if not mob:
+				m.normal_texture = _bug_tex("membrane_n.png")
+				m.subsurf_scatter_enabled = true
+				m.subsurf_scatter_strength = 0.4
 		"sac":
 			m.albedo_texture = _bug_tex("sac_a.png")
-			m.normal_texture = _bug_tex("membrane_n.png")
 			m.roughness = 0.2
 			m.emission_enabled = true
 			m.emission = Color(0.35, 0.6, 0.1)
 			m.emission_energy_multiplier = 0.3
 			m.emission_texture = _bug_tex("sac_e.png")
-			m.clearcoat_enabled = true
-			m.clearcoat = 1.0
-			m.clearcoat_roughness = 0.1
-			m.clearcoat_roughness = 0.15
+			if not mob:
+				m.normal_texture = _bug_tex("membrane_n.png")
+				m.clearcoat_enabled = true
+				m.clearcoat = 1.0
+				m.clearcoat_roughness = 0.15
 		"claw":
 			m.albedo_texture = _bug_tex("claw_a.png")
-			m.normal_texture = _bug_tex("leg_n.png")
-			m.normal_scale = 0.5
 			m.roughness = 0.3
-			m.clearcoat_enabled = true
-			m.clearcoat = 0.6
+			if not mob:
+				m.normal_texture = _bug_tex("leg_n.png")
+				m.normal_scale = 0.5
+				m.clearcoat_enabled = true
+				m.clearcoat = 0.6
 	_mat_cache[key] = m
 	return m
 
@@ -1324,6 +1397,7 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 static func creep() -> StandardMaterial3D:
 	if _mat_cache.has("creep"):
 		return _mat_cache["creep"]
+	var mob := is_mobile_perf()
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.albedo_color = Color(0.11, 0.08, 0.06, 0.82)
@@ -1332,21 +1406,154 @@ static func creep() -> StandardMaterial3D:
 	m.emission = Color(0.45, 0.2, 0.06)
 	m.emission_energy_multiplier = 0.08
 	m.emission_texture = noise_tex("creep")
-	m.normal_enabled = true
-	m.normal_texture = noise_tex("ground_n", 512)
-	m.normal_scale = 1.35
 	m.roughness = 0.28
-	m.clearcoat_enabled = true
-	m.clearcoat = 0.65
-	m.clearcoat_roughness = 0.2
-	m.uv1_triplanar = true
-	m.uv1_world_triplanar = true
-	m.uv1_scale = Vector3(0.12, 0.12, 0.12)
+	if mob:
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+		m.uv1_scale = Vector3(1.8, 1.8, 1.8)
+	else:
+		m.normal_enabled = true
+		m.normal_texture = noise_tex("ground_n", 512)
+		m.normal_scale = 1.35
+		m.clearcoat_enabled = true
+		m.clearcoat = 0.65
+		m.clearcoat_roughness = 0.2
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3(0.12, 0.12, 0.12)
 	_mat_cache["creep"] = m
 	return m
 
 
+static func _ground_mobile() -> ShaderMaterial:
+	if _mat_cache.has("ground"):
+		return _mat_cache["ground"]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_lambert, specular_schlick_ggx;
+uniform sampler2D n_low : filter_linear_mipmap, repeat_enable;
+uniform sampler2D n_hi : filter_linear_mipmap, repeat_enable;
+uniform sampler2D n_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D soil_a : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D soil_n : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D grav_a : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D grav_n : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D conc_a : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D conc_n : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform vec3 dirt_a : source_color = vec3(0.46, 0.41, 0.32);
+uniform vec3 dirt_b : source_color = vec3(0.32, 0.27, 0.20);
+uniform vec3 mud : source_color = vec3(0.25, 0.21, 0.17);
+uniform vec3 grass : source_color = vec3(0.28, 0.31, 0.17);
+uniform vec3 grass2 : source_color = vec3(0.39, 0.38, 0.23);
+uniform sampler2D zone_tex : filter_linear, repeat_disable;
+uniform sampler2D sector_tex : filter_linear, repeat_disable;
+uniform float zone_half = 180.0;
+uniform float zone_on = 0.0;
+uniform float sector_on = 0.0;
+uniform float wet_amt = 0.0;
+varying highp vec3 wp;
+
+void vertex(){ wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment(){
+	highp vec2 p = wp.xz;
+	float low = texture(n_low, p * 0.0055).r;
+	float mid = texture(n_low, p * 0.021 + 0.37).r;
+	float hi = texture(n_hi, p * 0.095).r;
+
+	vec3 s_col = texture(soil_a, p * 0.23).rgb * 1.18;
+	vec3 g_col = texture(grav_a, p * 0.25).rgb * 1.20;
+	vec3 c_col = texture(conc_a, p * 0.20).rgb * 1.16;
+
+	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.28, 0.72, low + (hi - 0.5) * 0.32)) * s_col;
+	float mudm = smoothstep(0.60, 0.78, mid + (hi - 0.5) * 0.14);
+	col = mix(col, mud * s_col * 0.90, mudm);
+
+	float gm = smoothstep(0.44, 0.72, 1.0 - mid + (low - 0.5) * 0.42 + (hi - 0.5) * 0.22) * (1.0 - mudm);
+	vec3 gcol = mix(grass, grass2, hi) * mix(vec3(1.0), s_col, 0.58);
+	col = mix(col, gcol, gm * 0.80);
+
+	float grav_patch = smoothstep(0.58, 0.78, hi * 0.65 + (1.0 - low) * 0.35) * (1.0 - gm * 0.75);
+	col = mix(col, dirt_a * 0.90 * g_col, grav_patch * 0.46);
+	col *= mix(0.84, 1.12, low);
+
+	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
+	float zfade = bfade.x * bfade.y * zone_on;
+	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.030, vec2(0.002), vec2(0.998));
+	vec4 zt = texture(zone_tex, z_uv) * zfade;
+
+	float row_id = floor(p.y / 2.4);
+	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
+	vec2 tf = abs(fract(slab_uv) - 0.5);
+	float seam = smoothstep(0.480, 0.496, max(tf.x, tf.y)) * smoothstep(0.52, 0.86, zt.r);
+	vec3 pave = vec3(0.28, 0.28, 0.27) * c_col * mix(0.90, 1.05, low) * (1.0 - seam * 0.36);
+	float pm = smoothstep(0.32, 0.86, zt.r + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22) * (1.0 - mudm * 0.42);
+	col = mix(col, pave, pm);
+
+	vec3 gr = mix(vec3(0.21, 0.26, 0.13), vec3(0.35, 0.36, 0.19), hi) * mix(vec3(1.0), s_col, 0.62) * (0.85 + low * 0.30);
+	float gmm = smoothstep(0.22, 0.82, zt.g + (low - 0.5) * 0.24 + (mid - 0.5) * 0.36);
+	col = mix(col, gr, gmm);
+
+	vec3 soil = mix(vec3(0.24, 0.19, 0.13), vec3(0.34, 0.27, 0.18), mid) * s_col;
+	float smm = smoothstep(0.24, 0.82, zt.b + (low - 0.5) * 0.28 + (mid - 0.5) * 0.24);
+	col = mix(col, soil, smm);
+
+	vec3 grv = mix(vec3(0.30, 0.29, 0.265), vec3(0.38, 0.34, 0.29), low) * g_col;
+	float am = smoothstep(0.28, 0.84, zt.a + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22) * (1.0 - mudm * 0.35);
+	col = mix(col, grv, am);
+
+	if (abs(sector_on) > 0.5) {
+		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
+		float s_in = 0.0;
+		float road_v = 0.0;
+		float bldg_contact = 0.0;
+		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
+			vec3 sec = texture(sector_tex, s_uv).rgb;
+			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
+			road_v = sec.g * (1.0 - pm * 0.48);
+			bldg_contact = sec.b;
+		}
+		col = mix(col, grv * 0.90, road_v * 0.74);
+		col = mix(col, mix(dirt_b, mud, 0.42) * s_col * 0.82, bldg_contact * 0.50);
+		vec3 out_mul = (sector_on > 0.0) ? vec3(0.76, 0.78, 0.82) : vec3(0.28, 0.25, 0.32);
+		col = mix(col * out_mul, col, s_in);
+	}
+	float w_amt = clamp(wet_amt, 0.0, 1.0);
+	float basin = (1.0 - low) * 0.55 + mid * 0.45;
+	float puddle = w_amt * smoothstep(0.52, 0.68, basin);
+	col = mix(col, col * 0.78, w_amt * 0.22 * (1.0 - puddle));
+	col = mix(col, col * 0.42 + vec3(0.06, 0.075, 0.095), puddle * 0.78);
+	ALBEDO = col;
+
+	vec3 n_det = texture(soil_n, p * 0.23).rgb;
+	vec3 n_macro = texture(n_nrm, p * 0.065).rgb;
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * 0.55 + (n_macro * 2.0 - 1.0) * 0.45 + vec3(0.0, 0.0, 0.65));
+	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.92));
+	ROUGHNESS = mix(mix(0.92, 0.82, pm), 0.14, puddle * 0.92);
+	SPECULAR = mix(0.30, 0.55, puddle * 0.85);
+	NORMAL_MAP = n_comb * 0.5 + 0.5;
+	NORMAL_MAP_DEPTH = 0.75 * (1.0 - puddle * 0.85);
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("n_low", noise_tex("grime_raw", 512))
+	m.set_shader_parameter("n_hi", noise_tex("hi_raw", 512))
+	m.set_shader_parameter("n_nrm", noise_tex("ground_n", 512))
+	m.set_shader_parameter("soil_a", world_tex("ground_soil_a.png"))
+	m.set_shader_parameter("soil_n", world_tex("ground_soil_n.png"))
+	m.set_shader_parameter("grav_a", world_tex("ground_gravel_a.png"))
+	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
+	m.set_shader_parameter("conc_a", world_tex("concrete_a.png"))
+	m.set_shader_parameter("conc_n", world_tex("concrete_n.png"))
+	m.set_shader_parameter("wet_amt", 0.0)
+	m.set_meta("no_outline", true)
+	_mat_cache["ground"] = m
+	return m
+
+
 static func ground() -> ShaderMaterial:
+	if is_mobile_perf():
+		return _ground_mobile()
 	# 写实工业废土地表着色器：多尺度双角旋转无缝混合 壤土碎石 / 压实道砟 / 现浇混凝土 / 荒原草甸 / 泥滩，彻底消除全图蜂窝网格伪影与马赛克噪点
 	if _mat_cache.has("ground"):
 		return _mat_cache["ground"]
@@ -1374,9 +1581,27 @@ uniform float zone_half = 180.0;
 uniform float zone_on = 0.0;
 uniform float sector_on = 0.0;
 uniform float wet_amt = 0.0;
+global uniform float weather_rain;
 varying vec3 wp;
 
 vec2 h2(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
+vec2 g_ripple(vec2 p, float t){
+	vec2 sl = vec2(0.0);
+	for (int i = 0; i < 2; i++){
+		float sc = i == 0 ? 1.40 : 2.20;
+		vec2 gp = p * sc + float(i) * vec2(13.7, 7.9);
+		vec2 cell = floor(gp);
+		vec2 f = fract(gp) - 0.5;
+		vec2 h = h2(cell);
+		vec2 dv = f - (h - 0.5) * 0.52;
+		float d = length(dv);
+		float cyc = fract(t * (0.86 + float(i) * 0.29) + fract(h.x * 6.31 + h.y * 4.17));
+		float rad = cyc * 0.44;
+		float env = exp(-abs(d - rad) * 34.0) * (1.0 - cyc) * (1.0 - cyc) * smoothstep(0.008, 0.045, d);
+		sl += (dv / max(d, 1e-3)) * cos((d - rad) * 68.0) * env;
+	}
+	return sl * 0.14;
+}
 float cracks(vec2 p){
 	vec2 i = floor(p); vec2 f = fract(p);
 	float d1 = 8.0; float d2 = 8.0;
@@ -1409,9 +1634,9 @@ void fragment(){
 	vec2 uv_gb = rot2(p * 0.19 + vec2(3.7, 5.1));
 	vec2 uv_ca = p * 0.21;
 	vec2 uv_cb = rot2(p * 0.14 + vec2(9.1, 2.3));
-	vec3 s_col = mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.50;
-	vec3 g_col = mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.54;
-	vec3 c_col = mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.50;
+	vec3 s_col = mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.18;
+	vec3 g_col = mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.20;
+	vec3 c_col = mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.16;
 
 	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.28, 0.72, low + (hi - 0.5) * 0.32)) * s_col;
 
@@ -1442,11 +1667,13 @@ void fragment(){
 	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
 	vec2 tf = abs(fract(slab_uv) - 0.5);
 	float seam_mask = smoothstep(0.58, 0.88, zt.r) * (1.0 - smoothstep(0.50, 0.76, mid));
-	float seam = smoothstep(0.482, 0.497, max(tf.x, tf.y)) * seam_mask;
+	float seam = smoothstep(0.480, 0.496, max(tf.x, tf.y)) * seam_mask;
+	float tar_seal = smoothstep(0.488, 0.498, max(tf.x, tf.y)) * seam_mask;
 	float slab_var = fract(sin(dot(floor(slab_uv), vec2(41.3, 289.1))) * 43758.5453);
-	vec3 pave = vec3(0.34, 0.335, 0.32) * c_col * mix(0.88, 1.08, low * 0.6 + med2 * 0.4) * (0.95 + slab_var * 0.09);
-	pave *= 1.0 - seam * 0.28;
-	pave = mix(pave, vec3(0.22, 0.215, 0.205) * c_col, smoothstep(0.54, 0.80, mid) * 0.36);
+	vec3 pave = vec3(0.28, 0.28, 0.27) * c_col * mix(0.88, 1.06, low * 0.6 + med2 * 0.4) * (0.94 + slab_var * 0.10);
+		pave *= 1.0 - seam * 0.24;
+		pave = mix(pave, vec3(0.135, 0.135, 0.140), tar_seal * 0.46);
+	pave = mix(pave, vec3(0.20, 0.195, 0.185) * c_col, smoothstep(0.54, 0.80, mid) * 0.34);
 	float pm = smoothstep(0.32, 0.86, zt.r + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22 + (hi - 0.5) * 0.16) * (1.0 - mudm * 0.42);
 	col = mix(col, pave, pm);
 
@@ -1460,7 +1687,7 @@ void fragment(){
 	col = mix(col, soil, smm);
 
 	float rut = smoothstep(0.64, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.38, 0.70, mid) * fw;
-	vec3 grv = mix(vec3(0.36, 0.34, 0.305), vec3(0.45, 0.40, 0.33), low * 0.65 + med2 * 0.35) * g_col;
+	vec3 grv = mix(vec3(0.30, 0.29, 0.265), vec3(0.38, 0.34, 0.29), low * 0.65 + med2 * 0.35) * g_col;
 	grv = mix(grv, vec3(0.22, 0.21, 0.195) * g_col, smoothstep(0.56, 0.78, mid) * 0.40 + rut * 0.16);
 	float am = smoothstep(0.28, 0.84, zt.a + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22 + (hi - 0.5) * 0.18) * (1.0 - mudm * 0.35);
 	col = mix(col, grv, am);
@@ -1485,12 +1712,16 @@ void fragment(){
 		col = mix(col * out_mul, col, s_in);
 	}
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
-	float basin = (1.0 - low) * 0.44 + med2 * 0.36 + mid * 0.20 + (hi - 0.5) * 0.08;
-	float puddle = w_amt * smoothstep(0.51, 0.67, basin) * (1.0 - crack_mud * 0.65);
-	float wet_rim = w_amt * smoothstep(0.41, 0.53, basin) * (1.0 - puddle);
-	col = mix(col, col * 0.68, wet_rim * 0.38);
-	col = mix(col, col * 0.78, w_amt * 0.22 * (1.0 - puddle));
-	col = mix(col, col * 0.42 + vec3(0.06, 0.075, 0.095), puddle * 0.78);
+	float basin = 0.50 + (0.5 - low) * 0.96 + (med2 - 0.5) * 0.78 + (mid - 0.5) * 0.42 + (hi - 0.5) * 0.14;
+	float puddle = w_amt * smoothstep(0.520, 0.590, basin) * (1.0 - crack_mud * 0.65);
+	float p_deep = smoothstep(0.575, 0.700, basin);
+	float soak_rim = w_amt * smoothstep(0.435, 0.528, basin);
+	float damp_halo = w_amt * smoothstep(0.310, 0.445, basin);
+	float col_lum = dot(col, vec3(0.299, 0.587, 0.114));
+	col = mix(col, max(mix(vec3(col_lum), col, 1.15), vec3(0.0)), clamp(max(damp_halo, soak_rim), 0.0, 1.0));
+	col *= mix(1.0, 0.74, max(damp_halo, w_amt * 0.30) * (1.0 - soak_rim * 0.7));
+	col *= mix(1.0, 0.56, soak_rim);
+	col = mix(col, mix(col * 0.82, mix(col * 0.46, vec3(0.036, 0.045, 0.054), 0.45), p_deep), puddle);
 	ALBEDO = col;
 
 	// 按地表类型融合真实壤土颗粒、碎石道砟与混凝土法线贴图，结合表面导数与法线方差防远景闪烁
@@ -1501,20 +1732,30 @@ void fragment(){
 	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45 + road_v * 0.60, 0.0, 1.0));
 	n_det = mix(n_det, nc, pm);
 	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.45, 0.86, fw) + (n_macro * 2.0 - 1.0) * 0.48 + vec3(0.0, 0.0, 0.56));
-	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.94));
-	vec3 dn = dFdx(n_comb) + dFdy(n_comb);
+	vec2 rip_sl = vec2(0.0);
+	if (puddle > 0.02 && weather_rain > 0.01) {
+		float cam_d = length(wp - INV_VIEW_MATRIX[3].xyz);
+		float r_fade = (1.0 - smoothstep(12.0, 42.0, cam_d)) * clamp(weather_rain, 0.0, 1.0);
+		if (r_fade > 0.015) {
+			rip_sl = g_ripple(p, TIME) * puddle * r_fade;
+		}
+	}
+	n_comb = normalize(mix(n_comb, normalize(vec3(rip_sl.x, rip_sl.y, 1.0)), puddle * 0.94));
+	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.85);
 	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.22);
 	float r_base = mix(0.93, 0.78, mudm * (1.0 - zone_cov));
-	r_base = mix(r_base, 0.84, pm * (1.0 - seam));
+	r_base = mix(r_base, 0.82, pm * (1.0 - seam));
+	r_base = mix(r_base, 0.34, pm * tar_seal);
 	r_base = mix(r_base, 0.91, am);
-	r_base = mix(r_base, mix(0.64, 0.50, wet_film), max(wet_film, max(w_amt * 0.55, wet_rim * 0.75)));
-	r_base = sqrt(clamp(r_base * r_base + r_var, 0.04, 1.0));
-	ROUGHNESS = mix(r_base, 0.10, puddle * 0.94);
-	SPECULAR = mix(0.32, 0.56, pm * 0.28 + wet_film * 0.30 + puddle * 0.85);
-	AO = clamp(1.0 - crack_mud * 0.58 - pm * seam * 0.42 - am * rut * 0.18 - road_v * 0.14 - bldg_contact * 0.46, 0.24, 1.0);
+	r_base = mix(r_base, 0.46, max(wet_film, max(damp_halo * 0.82, w_amt * 0.35)));
+	r_base = mix(r_base, 0.18, soak_rim * 0.88);
+	r_base = sqrt(clamp(r_base * r_base + r_var, 0.03, 1.0));
+	ROUGHNESS = mix(r_base, mix(0.055, 0.036, p_deep), puddle * 0.97);
+	SPECULAR = mix(0.32, 0.90, pm * 0.18 + wet_film * 0.22 + soak_rim * 0.45 + puddle * 0.95);
+	AO = clamp(1.0 - crack_mud * 0.58 - pm * seam * 0.36 - am * rut * 0.18 - road_v * 0.14 - bldg_contact * 0.46, 0.24, 1.0);
 	AO_LIGHT_AFFECT = 0.58;
-	CLEARCOAT = puddle * 0.65;
-	CLEARCOAT_ROUGHNESS = 0.08;
+	CLEARCOAT = max(puddle * 0.86, soak_rim * 0.42);
+	CLEARCOAT_ROUGHNESS = mix(0.12, 0.05, puddle);
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
 	NORMAL_MAP_DEPTH = (mix(0.76, 1.12, fw) + crack_mud * 1.25 + pm * seam * 1.05 + am * 0.30) * (1.0 - puddle * 0.88);
 }
@@ -1534,6 +1775,44 @@ void fragment(){
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
 	return m
+
+
+## 3D 视口专用 16x16x16 色彩分级查找表：暗部石板青冷调收束、高光暖象牙柔化滚降与轻微胶片 S 曲线反差。
+static func cinematic_lut() -> ImageTexture3D:
+	if _tex_cache.has("cinematic_lut"):
+		return _tex_cache["cinematic_lut"]
+	var n := 16
+	var slices: Array[Image] = []
+	slices.resize(n)
+	for z in n:
+		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var b0 := float(z) / float(n - 1)
+		for y in n:
+			var g0 := float(y) / float(n - 1)
+			for x in n:
+				var r0 := float(x) / float(n - 1)
+				var luma := r0 * 0.299 + g0 * 0.587 + b0 * 0.114
+				var sr := lerpf(r0, r0 * r0 * (3.0 - 2.0 * r0), 0.15)
+				var sg := lerpf(g0, g0 * g0 * (3.0 - 2.0 * g0), 0.15)
+				var sb := lerpf(b0, b0 * b0 * (3.0 - 2.0 * b0), 0.15)
+				var sh := (1.0 - smoothstep(0.0, 0.46, luma)) * smoothstep(0.0, 0.06, luma)
+				var hi := smoothstep(0.50, 0.96, luma) * (1.0 - smoothstep(0.95, 1.0, luma) * 0.65)
+				sr += -0.010 * sh + 0.014 * hi
+				sg += 0.003 * sh + 0.006 * hi
+				sb += 0.016 * sh - 0.011 * hi
+				var mx := maxf(sr, maxf(sg, sb))
+				var mn := minf(sr, minf(sg, sb))
+				var vib := (1.0 - clampf(mx - mn, 0.0, 1.0)) * 0.07
+				var lum2 := sr * 0.299 + sg * 0.587 + sb * 0.114
+				sr = clampf(lum2 + (sr - lum2) * (1.0 + vib), 0.0, 1.0)
+				sg = clampf(lum2 + (sg - lum2) * (1.0 + vib), 0.0, 1.0)
+				sb = clampf(lum2 + (sb - lum2) * (1.0 + vib), 0.0, 1.0)
+				img.set_pixel(x, y, Color(sr, sg, sb, 1.0))
+		slices[z] = img
+	var lut := ImageTexture3D.new()
+	lut.create(Image.FORMAT_RGB8, n, n, n, false, slices)
+	_tex_cache["cinematic_lut"] = lut
+	return lut
 
 
 ## 叠加用的贴地材质（光圈、阴影斑等），不受光。
@@ -1573,8 +1852,9 @@ static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) ->
 	m.albedo_texture = tex
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	m.billboard_keep_scale = true
-	m.proximity_fade_enabled = true
-	m.proximity_fade_distance = pd
+	if not is_mobile_perf():
+		m.proximity_fade_enabled = true
+		m.proximity_fade_distance = pd
 	if additive:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -1722,24 +2002,30 @@ void vertex() {
 	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
 	VERTEX = vp - normalize(vp) * pull;
 }
+float _grime(vec2 p) {
+	float a = sin(p.x * 11.3 + p.y * 7.9) * cos(p.y * 13.7 - p.x * 6.4);
+	float b = sin(p.x * 23.1 - p.y * 19.3 + a * 1.4);
+	return clamp(0.5 + 0.30 * a + 0.20 * b, 0.0, 1.0);
+}
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
 	float r = length(p);
-	float aa = max(fwidth(r), 0.004);
-	float in_disc = 1.0 - smoothstep(0.955 - aa, 0.965 + aa, r);
-	float outer_ring = 1.0 - smoothstep(0.022 - aa, 0.022 + aa, abs(r - 0.935));
-	float inner_ring = (1.0 - smoothstep(0.007 - aa, 0.007 + aa, abs(r - 0.875))) * 0.65;
 	float ang = atan(p.y, p.x);
-	float tick_band = (1.0 - smoothstep(0.018 - aa, 0.018 + aa, abs(r - 0.905))) * smoothstep(0.28, 0.42, abs(fract(ang * 0.15915494 * ticks - TIME * 0.18) - 0.5));
+	float grime = _grime(p);
+	float wisp_r = r + (grime - 0.5) * 0.070;
+	// Sparse broken corner stencil wisps + organic thermal shockwave (never a solid outline circle or bright center bullseye)
+	float bracket_mask = smoothstep(0.64, 0.88, abs(sin(ang * 2.0 + 0.25)));
+	float aa = max(fwidth(r), 0.006);
+	float arc_line = exp(-pow((r - 0.895) / max(0.018, aa * 1.9), 2.0)) * bracket_mask * (0.55 + 0.45 * grime);
+	float scorch_mist = exp(-pow((wisp_r - 0.64) / 0.34, 2.0)) * (0.38 + 0.62 * grime) * (1.0 - smoothstep(0.86, 0.98, wisp_r));
 	float prog = clamp(progress, 0.0, 1.0);
-	float pr = prog * 0.935;
-	float prog_fill = (1.0 - smoothstep(pr - aa * 2.0, pr + aa * 2.0, r)) * smoothstep(0.01, 0.05, prog);
-	float prog_edge = (1.0 - smoothstep(0.014 - aa, 0.014 + aa, abs(r - pr))) * smoothstep(0.02, 0.08, prog) * (1.0 - smoothstep(0.96, 1.0, prog));
-	float base_fill = in_disc * mix(0.25, 1.0, pow(clamp(r / 0.935, 0.0, 1.0), 1.8)) * fill_alpha;
-	float total_fill = clamp(base_fill + prog_fill * fill_alpha * 1.15, 0.0, 0.72);
-	float rim = clamp(outer_ring + tick_band * 0.45 + inner_ring * 0.40 + prog_edge * 0.95, 0.0, 1.0);
-	vec3 rgb = mix(col.rgb * 0.88, col.rgb * 1.45 + vec3(0.08), clamp(outer_ring + prog_edge, 0.0, 1.0));
-	float a = max(total_fill, rim * 0.92) * col.a * alpha_mul * (1.0 - smoothstep(0.965, 0.995, r));
+	float pr = prog * 0.905;
+	float prog_heat = (1.0 - smoothstep(max(0.0, pr - 0.14), pr + 0.05, wisp_r)) * smoothstep(0.08, 0.22, prog) * (0.45 + 0.55 * grime);
+	float prog_wave = exp(-pow((wisp_r - pr) / 0.068, 2.0)) * smoothstep(0.10, 0.24, prog) * (1.0 - smoothstep(0.94, 1.0, prog)) * (0.60 + 0.40 * grime);
+	float total_fill = (scorch_mist * fill_alpha * 0.72 + prog_heat * fill_alpha * 0.85) * (1.0 - smoothstep(0.90, 0.99, wisp_r));
+	float rim = clamp(arc_line * 0.66 + prog_wave * 0.82, 0.0, 1.0);
+	vec3 rgb = mix(col.rgb * 0.76, col.rgb * 1.18 + vec3(0.04, 0.02, 0.0), clamp(rim + prog_wave * 0.35, 0.0, 1.0));
+	float a = clamp(total_fill + rim * 0.60, 0.0, 0.76) * col.a * alpha_mul * (1.0 - smoothstep(0.92, 0.995, r));
 	ALBEDO = rgb;
 	ALPHA = clamp(a, 0.0, 1.0);
 }
@@ -1783,26 +2069,28 @@ void vertex() {
 void fragment() {
 	vec2 u = vec2((UV.x - 0.5) * 2.0, UV.y);
 	float ax = abs(u.x);
-	float aa_x = max(fwidth(ax), 0.004);
-	float edge_w = 0.055;
-	float side_rail = (1.0 - smoothstep(edge_w - aa_x, edge_w + aa_x, abs(ax - 0.91))) * step(u.y, 0.992) * step(0.008, u.y);
-	float end_w = edge_w / max(aspect, 0.25);
-	float aa_y = max(fwidth(u.y), 0.002);
-	float end_cap = max(1.0 - smoothstep(end_w - aa_y, end_w + aa_y, abs(u.y - 0.03)),
-	                    1.0 - smoothstep(end_w - aa_y, end_w + aa_y, abs(u.y - 0.97))) * (1.0 - smoothstep(0.91, 0.95, ax));
 	float fwd = (chevron_dir < 0.0) ? (1.0 - u.y) : u.y;
-	float ph = fract(fwd * max(aspect * 1.1, 1.0) + ax * 0.55 - TIME * 1.45);
-	float chev = (1.0 - smoothstep(0.10, 0.18, abs(ph - 0.5))) * (1.0 - smoothstep(0.84, 0.91, ax)) * smoothstep(0.02, 0.08, u.y) * smoothstep(0.98, 0.92, u.y);
+	// Softly tapered organic dust/ember corridor — no closed box frame
+	float axial_fade = smoothstep(0.0, 0.14, u.y) * smoothstep(1.0, 0.80, u.y);
+	float side_taper = exp(-pow(ax / 0.58, 2.2));
+	float n1 = sin(u.x * 13.0 + fwd * aspect * 7.0 - TIME * 2.8) * cos(u.x * 8.5 - fwd * aspect * 11.0 + TIME * 1.9);
+	float n2 = sin(u.x * 23.0 - fwd * aspect * 15.0 + TIME * 4.2 + n1 * 1.2);
+	float streak = clamp(0.50 + 0.32 * n1 + 0.18 * n2, 0.0, 1.0);
+	// Discontinuous dashed flank stencil ticks (20% duty cycle, soft ends)
+	float dash = smoothstep(0.62, 0.86, sin(fwd * max(aspect, 1.0) * 5.2));
+	float flank_guide = exp(-pow((ax - 0.86) / 0.032, 2.0)) * dash * axial_fade * 0.52;
+	// Flowing angled directional wake wisps instead of sharp geometric chevrons
+	float wake_ph = fract(fwd * max(aspect * 0.95, 1.0) + ax * 0.42 - TIME * 1.35);
+	float wake = exp(-pow((wake_ph - 0.5) / 0.16, 2.0)) * side_taper * axial_fade * (0.55 + 0.45 * streak);
 	float prog = clamp(progress, 0.0, 1.0);
-	float sweep = (1.0 - smoothstep(prog - aa_y * 2.0, prog + aa_y * 2.0, fwd)) * smoothstep(0.01, 0.05, prog);
-	float sweep_line = (1.0 - smoothstep(end_w * 0.8 - aa_y, end_w * 0.8 + aa_y, abs(fwd - prog))) * smoothstep(0.02, 0.08, prog) * (1.0 - smoothstep(0.96, 1.0, prog));
-	float body = (1.0 - smoothstep(0.92 - aa_x, 0.94 + aa_x, ax)) * smoothstep(0.01, 0.03, u.y) * (1.0 - smoothstep(0.97, 0.99, u.y));
-	float fill = body * (0.16 + 0.14 * (ax * ax) + sweep * 0.24 + chev * 0.34);
-	float rim = clamp(side_rail + end_cap * 0.85 + sweep_line * 0.95, 0.0, 1.0);
-	vec3 rgb = mix(col.rgb * 0.90, col.rgb * 1.48 + vec3(0.10), clamp(rim + chev * 0.45, 0.0, 1.0));
-	float a = max(fill, rim * 0.92) * col.a * alpha_mul;
+	float front_dist = fwd - prog;
+	float wave_front = exp(-pow(front_dist / 0.065, 2.0)) * smoothstep(0.02, 0.09, prog) * (1.0 - smoothstep(0.94, 1.0, prog)) * side_taper * (0.65 + 0.35 * streak);
+	float behind_glow = (1.0 - smoothstep(prog - 0.10, prog + 0.04, fwd)) * smoothstep(0.02, 0.08, prog) * side_taper * axial_fade * (0.20 + 0.25 * streak);
+	float body_mist = side_taper * axial_fade * (0.12 + 0.18 * streak);
+	float total_a = (body_mist + wake * 0.34 + behind_glow * 0.45 + wave_front * 0.62 + flank_guide * (0.5 + 0.5 * streak)) * col.a * alpha_mul;
+	vec3 rgb = mix(col.rgb * 0.72, col.rgb * 1.22 + vec3(0.05, 0.02, 0.0), clamp(wake * 0.6 + wave_front * 0.9 + flank_guide * 0.5, 0.0, 1.0));
 	ALBEDO = rgb;
-	ALPHA = clamp(a, 0.0, 1.0);
+	ALPHA = clamp(total_a, 0.0, 0.78);
 }
 """
 	_mat_cache[key] = sh
@@ -1820,6 +2108,139 @@ static func tactical_lane_mat(c: Color, aspect := 3.0, chevron_dir := -1.0, dept
 	m.set_shader_parameter("chevron_dir", chevron_dir)
 	m.set_shader_parameter("depth_pull", depth_pull)
 	return m
+
+
+static func _extract_pad_shader() -> Shader:
+	var key := "_ext_pad_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform, blend_mix;
+uniform vec4 col : source_color = vec4(0.32, 0.78, 0.44, 1.0);
+uniform float progress = 0.0;
+uniform float active_pulse = 1.0;
+uniform float depth_pull = 0.44;
+void vertex() {
+	vec3 vp = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float pull = min(depth_pull, max(0.0, length(vp) - 0.5));
+	VERTEX = vp - normalize(vp) * pull;
+}
+void fragment() {
+	vec2 p = UV * 2.0 - 1.0;
+	float r = length(p);
+	float ang = atan(p.y, p.x);
+	float grime = 0.68 + 0.32 * sin(p.x * 19.0 + p.y * 13.0) * cos(p.y * 23.0 - p.x * 11.0);
+	// Four subtle corner stencil brackets only — no solid disc or neon outer ring
+	float corner = smoothstep(0.46, 0.70, abs(sin(ang * 2.0)));
+	float bracket = exp(-pow((r - 0.89) / 0.018, 2.0)) * corner;
+	float sub_tick = exp(-pow((r - 0.84) / 0.008, 2.0)) * pow(abs(cos(ang * 2.0)), 14.0) * 0.45;
+	// Small stencil crosshair hash at pad center
+	float cx = exp(-pow(abs(p.y) / 0.012, 2.0)) * step(0.06, abs(p.x)) * (1.0 - smoothstep(0.16, 0.22, abs(p.x)));
+	float cy = exp(-pow(abs(p.x) / 0.012, 2.0)) * step(0.06, abs(p.y)) * (1.0 - smoothstep(0.16, 0.22, abs(p.y)));
+	float cross_mark = max(cx, cy) * 0.35;
+	// Subtle inward radar sweep when active
+	float pr = mix(0.88, 0.20, fract(TIME * 0.42));
+	float sweep = exp(-pow((r - pr) / 0.045, 2.0)) * active_pulse * (0.14 + 0.20 * progress) * (1.0 - smoothstep(0.88, 0.95, r));
+	float ink = (bracket * 0.62 + sub_tick + cross_mark + sweep) * grime;
+	float a = clamp(ink, 0.0, 0.62) * col.a * (1.0 - smoothstep(0.94, 0.995, r));
+	ALBEDO = mix(col.rgb * 0.76, col.rgb * 1.15, clamp(bracket + sweep, 0.0, 1.0));
+	ALPHA = a;
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func extract_pad_mat(c: Color, depth_pull := 0.44, priority := 2) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _extract_pad_shader()
+	m.render_priority = priority
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("progress", 0.0)
+	m.set_shader_parameter("active_pulse", 1.0)
+	m.set_shader_parameter("depth_pull", depth_pull)
+	return m
+
+
+static func _reactive_arc_shader() -> Shader:
+	var key := "_react_arc_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, blend_add;
+uniform vec4 col : source_color = vec4(0.42, 0.78, 1.0, 1.0);
+uniform float surge = 0.0;
+uniform float fade = 1.0;
+void fragment() {
+	float ndv = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 2.1);
+	// Fine scrolling diagonal ionized filaments + vertical edge fade along strip V
+	float edge_v = smoothstep(0.0, 0.24, UV.y) * smoothstep(1.0, 0.76, UV.y);
+	float edge_u = smoothstep(0.0, 0.14, UV.x) * smoothstep(1.0, 0.86, UV.x);
+	float fil = 0.5 + 0.5 * sin(UV.x * 26.0 - TIME * 4.5 + sin(UV.y * 9.0) * 1.8);
+	float lattice = pow(fil, 3.0);
+	float base_i = (0.05 + 0.22 * rim + 0.12 * lattice * rim);
+	float hit_i = surge * (0.55 + 0.95 * lattice + 0.45 * rim);
+	float a = clamp((base_i + hit_i) * edge_v * edge_u * fade * col.a, 0.0, 0.95);
+	ALBEDO = col.rgb * (0.85 + 1.35 * surge + 0.45 * lattice);
+	ALPHA = a;
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func reactive_arc_mat(c: Color) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _reactive_arc_shader()
+	m.render_priority = 6
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("surge", 0.0)
+	m.set_shader_parameter("fade", 1.0)
+	return m
+
+
+static func reactive_arc_mesh(radius := 1.48, height := 1.50, blades := 5, segs := 14) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for bi in blades:
+		var t_b := float(bi) / float(maxi(blades, 1))
+		var base_a := t_b * TAU + sin(float(bi) * 2.3) * 0.25
+		var span := lerpf(0.88, 1.24, fmod(float(bi) * 0.37, 1.0))
+		var y_off := (float(bi % 3) - 1.0) * (height * 0.24)
+		var tilt := ((float((bi * 7) % 5) / 4.0) - 0.5) * 0.42
+		var half_w := lerpf(0.14, 0.22, fmod(float(bi) * 0.61 + 0.2, 1.0)) * (height / 1.5)
+		var rad := radius * lerpf(0.92, 1.08, fmod(float(bi) * 0.43, 1.0))
+		var prev_top := Vector3.ZERO
+		var prev_bot := Vector3.ZERO
+		var prev_nrm := Vector3.UP
+		for si in range(segs + 1):
+			var u := float(si) / float(segs)
+			var ang := base_a + (u - 0.5) * span
+			var taper := sin(u * PI)
+			var w_here := half_w * (0.28 + 0.72 * taper)
+			var r_here := rad + sin(u * PI * 2.0 + float(bi)) * 0.06
+			var center := Vector3(cos(ang) * r_here, y_off + sin((u - 0.5) * 2.2) * tilt * r_here, sin(ang) * r_here)
+			var radial := Vector3(cos(ang), sin(ang) * 0.12 * tilt, sin(ang)).normalized()
+			var tang := Vector3(-sin(ang), tilt * cos((u - 0.5) * 2.2), cos(ang)).normalized()
+			var binorm := radial.cross(tang).normalized()
+			var top := center + binorm * w_here
+			var bot := center - binorm * w_here
+			if si > 0:
+				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 1.0)); st.add_vertex(prev_top)
+				st.set_normal(radial);   st.set_uv(Vector2(u, 1.0)); st.add_vertex(top)
+				st.set_normal(radial);   st.set_uv(Vector2(u, 0.0)); st.add_vertex(bot)
+				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 1.0)); st.add_vertex(prev_top)
+				st.set_normal(radial);   st.set_uv(Vector2(u, 0.0)); st.add_vertex(bot)
+				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 0.0)); st.add_vertex(prev_bot)
+			prev_top = top
+			prev_bot = bot
+			prev_nrm = radial
+	return st.commit()
 
 
 static func _acid_pool_shader() -> Shader:
@@ -1843,10 +2264,9 @@ void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
 	float ang = atan(p.y, p.x);
 	float warp = sin(ang * 3.0 + seed * 6.28) * 0.08 + sin(ang * 5.0 - seed * 11.3) * 0.055 + sin(p.x * 5.2 + p.y * 4.7 + seed * 4.1) * 0.045;
-	float r = length(p) + warp;
-	float aa = max(fwidth(r), 0.006);
-	float mask = 1.0 - smoothstep(0.84 - aa, 0.87 + aa, r);
-	float meniscus = (1.0 - smoothstep(0.032 - aa, 0.032 + aa, abs(r - 0.835))) * mask;
+	float micro_warp = 0.04 * sin(p.x * 17.0 - p.y * 19.0 + seed * 2.7);
+	float r = length(p) + warp + micro_warp;
+	float mask = 1.0 - smoothstep(0.62, 0.94, r);
 	float v1 = sin(p.x * 8.5 + cos(p.y * 7.2 + TIME * 1.3 + seed * 5.0));
 	float v2 = cos(p.y * 9.0 - sin(p.x * 7.8 - TIME * 1.1 + seed * 3.0));
 	float veins = smoothstep(0.45, 0.95, 0.5 + 0.5 * v1 * v2);
@@ -1855,11 +2275,14 @@ void fragment() {
 	float cid = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
 	float bphase = fract(TIME * (0.45 + cid * 0.4) + cid * 7.0);
 	float brad = 0.10 + bphase * 0.16;
-	float bubble = (1.0 - smoothstep(brad - 0.05, brad + 0.04, length(cf))) * (1.0 - bphase) * smoothstep(0.55, 0.85, cid) * smoothstep(0.84, 0.45, r);
+	float inner_mask = smoothstep(0.86, 0.42, r);
+	float bubble = (1.0 - smoothstep(brad - 0.05, brad + 0.04, length(cf))) * (1.0 - bphase) * smoothstep(0.55, 0.85, cid) * inner_mask;
 	vec3 base_c = col.rgb * vec3(0.32, 0.52, 0.28);
-	vec3 bright_c = col.rgb * vec3(1.35, 1.55, 0.95) + vec3(0.06, 0.12, 0.02);
-	vec3 rgb = mix(base_c, bright_c, clamp(veins * 0.55 + meniscus * 0.95 + bubble * 0.90, 0.0, 1.0));
-	float a = mask * mix(0.58, 0.94, clamp(meniscus + bubble * 0.7 + veins * 0.25, 0.0, 1.0)) * col.a * alpha_mul;
+	vec3 damp_edge = mix(base_c * 0.55, base_c, smoothstep(0.90, 0.58, r));
+	vec3 bright_c = col.rgb * vec3(1.25, 1.45, 0.88) + vec3(0.05, 0.10, 0.02);
+	float core_fx = clamp((veins * 0.58 + bubble * 0.95) * inner_mask, 0.0, 1.0);
+	vec3 rgb = mix(damp_edge, bright_c, core_fx);
+	float a = mask * mix(0.42, 0.88, clamp(smoothstep(0.92, 0.52, r) * 0.55 + veins * 0.28 * inner_mask + bubble * 0.65, 0.0, 1.0)) * col.a * alpha_mul;
 	ALBEDO = rgb;
 	ALPHA = clamp(a, 0.0, 1.0);
 }
@@ -1926,7 +2349,8 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	var p := CPUParticles3D.new()
 	p.one_shot = true
 	p.explosiveness = opts.get("explosive", 0.95)
-	p.amount = opts.get("amount", 16)
+	var b_amt: int = int(opts.get("amount", 16))
+	p.amount = maxi(3, int(round(float(b_amt) * 0.45))) if is_mobile_perf() else b_amt
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.lifetime = opts.get("life", 0.5)
 	p.local_coords = false
@@ -1937,10 +2361,10 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 	var prox: float = float(opts.get("soft_depth", -1.0))
 	if opts.has("mesh"):
 		p.mesh = opts["mesh"]
-		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY, bool(opts.get("align_y", false)))
+		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY, bool(opts.get("align_y", true)))
 		p.set_particle_flag(CPUParticles3D.PARTICLE_FLAG_ROTATE_Y, true)
-		p.angular_velocity_min = opts.get("ang_min", -360.0)
-		p.angular_velocity_max = opts.get("ang_max", 360.0)
+		p.angular_velocity_min = opts.get("ang_min", -540.0)
+		p.angular_velocity_max = opts.get("ang_max", 540.0)
 	else:
 		p.mesh = _burst_res_get("q%d|%s|%s|%.2f" % [tex.get_instance_id(), add, sz, prox], func():
 			var qm := QuadMesh.new()
@@ -2000,7 +2424,8 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 ## 持续粒子（火焰、烟柱、尘埃）
 static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUParticles3D:
 	var p := CPUParticles3D.new()
-	p.amount = opts.get("amount", 24)
+	var e_amt: int = int(opts.get("amount", 24))
+	p.amount = maxi(3, int(round(float(e_amt) * 0.45))) if is_mobile_perf() else e_amt
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.lifetime = opts.get("life", 1.0)
 	p.local_coords = opts.get("local", false)
@@ -2241,9 +2666,10 @@ static func lens(parent: Node3D, pos: Vector3, rot: Vector3, r: float, c := Colo
 		mat.albedo_color = c.darkened(0.55)
 		mat.metallic = 0.65
 		mat.roughness = 0.08
-		mat.clearcoat_enabled = true
-		mat.clearcoat = 1.0
-		mat.clearcoat_roughness = 0.04
+		if not is_mobile_perf():
+			mat.clearcoat_enabled = true
+			mat.clearcoat = 1.0
+			mat.clearcoat_roughness = 0.04
 		if energy >= 0.45:
 			mat.emission_enabled = true
 			mat.emission = c

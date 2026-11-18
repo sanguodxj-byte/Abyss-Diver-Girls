@@ -41,6 +41,7 @@ func setup(r: Dictionary) -> void:
 	p.add_theme_stylebox_override("panel", K.px9("panel9", 16, 16, 16, 14))
 	p.custom_minimum_size = Vector2(780, 0)
 	center.add_child(p)
+	UI.bind_fit_panel(p)
 
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)

@@ -24,7 +24,13 @@ func _ready() -> void:
 	Net.session_lost.connect(_network_lost)
 	Net.result_received.connect(_network_finished)
 	Net.personal_result_received.connect(_network_account)
+	Net.lobby_reset.connect(_on_dedicated_lobby_reset)
 	Loc.language_changed.connect(_on_language_changed)
+	if _start_dedicated_if_requested():
+		return
+	_apply_mobile_ui_scale()
+	if OS.has_feature("mobile") and not get_viewport().size_changed.is_connected(_apply_mobile_ui_scale):
+		get_viewport().size_changed.connect(_apply_mobile_ui_scale)
 	GameData.apply_quality(get_viewport())
 	var names := _test_args()
 	if names.is_empty():
@@ -61,6 +67,57 @@ func _ready() -> void:
 			show_hub()
 	for sc: Script in loaded:
 		add_child(sc.new())
+
+
+func _start_dedicated_if_requested() -> bool:
+	var all_args: Array = []
+	for a in OS.get_cmdline_user_args():
+		all_args.append(str(a))
+	for a in OS.get_cmdline_args():
+		all_args.append(str(a))
+	if "--server" not in all_args and "--dedicated" not in all_args:
+		return false
+	var srv_port := Net.DEFAULT_PORT
+	var srv_pass := ""
+	var srv_map := "greyport"
+	for a: String in all_args:
+		if a.begins_with("--port="):
+			srv_port = clampi(int(a.substr(7)), 1024, 65535)
+		elif a.begins_with("--password="):
+			srv_pass = a.substr(11)
+		elif a.begins_with("--map="):
+			srv_map = a.substr(6)
+	var err := Net.host_dedicated(srv_port, srv_pass, srv_map)
+	if err != OK:
+		push_error("[server] failed to bind UDP port %d: %s" % [srv_port, Net.last_error])
+		get_tree().quit(1)
+		return true
+	print("[server] dedicated server listening UDP :%d (map=%s, fingerprint=%s)" % [srv_port, Net.room_map, Net.fingerprint().left(12)])
+	return true
+
+
+func _apply_mobile_ui_scale() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	var root_win := get_tree().root
+	var ws := DisplayServer.window_get_size()
+	if ws.x <= 0 or ws.y <= 0:
+		return
+	var asp := float(ws.x) / float(ws.y)
+	var max_s_w := (720.0 * asp) / 1060.0
+	var s := clampf(minf(1.25, max_s_w), 1.12, 1.25)
+	if not is_equal_approx(root_win.content_scale_factor, s):
+		root_win.content_scale_factor = s
+
+
+func _on_dedicated_lobby_reset() -> void:
+	if is_instance_valid(raid):
+		if raid.get_parent():
+			raid.get_parent().remove_child(raid)
+		raid.queue_free()
+		raid = null
+	_deploying = false
+	print("[server] returned to lobby, ready for next sortie")
 
 
 ## 命令行里的 --<名字>；带 = 的是测试自己的选项（如 --view=solo0），不算测试名
@@ -223,6 +280,39 @@ func _start_network_raid(config: Dictionary) -> void:
 	if _deploying:
 		return
 	_deploying = true
+	if Net.is_dedicated_server():
+		for old in [hub, raid, result_layer]:
+			if is_instance_valid(old):
+				old.get_parent().remove_child(old)
+				old.queue_free()
+		hub = null
+		result_layer = null
+		var keep_map: String = GameData.map_id
+		Net.controller = null
+		GameData.map_id = config.map
+		var transit_state := {}
+		if not config.transit.is_empty():
+			transit_state = {"edge": config.edge, "mech": {}, "time": config.transit.time, "kills": config.transit.kills,
+				"start_cargo": [], "visited": config.transit.visited, "seen": {}, "found_pois": {}, "allies": []}
+		raid = RaidScript.new()
+		add_child(raid)
+		await raid.start_async(GameData.STARTER.duplicate(), [], transit_state, null)
+		if not Net.active() or Net.state != "loading":
+			if is_instance_valid(raid):
+				raid.queue_free()
+			raid = null
+			GameData.map_id = keep_map
+			_deploying = false
+			return
+		GameData.map_id = keep_map
+		var coop = load("res://scripts/net/coop_raid.gd").new()
+		raid.coop = coop
+		raid.add_child(coop)
+		coop.setup(raid, config)
+		_deploying = false
+		if Net.active(): Net.loaded()
+		print("[server] sortie %d ready on map=%s (%d players)" % [config.mission, config.map, config.roster.size()])
+		return
 	var room = get_node_or_null("CoopLobby")
 	if room: room.queue_free()
 	var fresh: bool = config.transit.is_empty()
@@ -269,8 +359,15 @@ func _start_network_raid(config: Dictionary) -> void:
 	GameData.map_id = config.map
 	raid = RaidScript.new()
 	add_child(raid)
-	# Synchronous construction occurs behind the loading curtain; all peers wait at a barrier.
-	raid.start(lo, carry, transit_state)
+	await raid.start_async(lo, carry, transit_state, loader)
+	if not Net.active() or Net.state != "loading":
+		if is_instance_valid(raid):
+			raid.queue_free()
+		raid = null
+		loader.queue_free()
+		GameData.map_id = keep_map
+		_deploying = false
+		return
 	GameData.map_id = keep_map
 	var coop = load("res://scripts/net/coop_raid.gd").new()
 	raid.coop = coop
@@ -283,6 +380,8 @@ func _start_network_raid(config: Dictionary) -> void:
 
 
 func _network_finished(r: Dictionary) -> void:
+	if Net.is_dedicated_server():
+		return
 	if _network_result:
 		return
 	_network_result = true
@@ -301,6 +400,8 @@ func _network_account(r: Dictionary) -> void:
 
 
 func _network_lost(reason: String) -> void:
+	if Net.is_dedicated_server():
+		return
 	get_tree().paused = false
 	if _network_committed and not _network_result:
 		if not _accounted_result.is_empty():

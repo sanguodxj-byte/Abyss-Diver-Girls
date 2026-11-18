@@ -120,7 +120,7 @@ func _on_added(n: Node) -> void:
 		_convert_one.call_deferred(n, true)
 
 
-const ENV_KEYS := ["tonemap_mode", "tonemap_exposure", "adjustment_saturation", "adjustment_contrast",
+const ENV_KEYS := ["tonemap_mode", "tonemap_exposure", "adjustment_saturation", "adjustment_contrast", "adjustment_color_correction",
 	"ssao_intensity", "ssil_enabled", "volumetric_fog_density", "fog_density", "glow_intensity", "ambient_light_energy"]
 
 
@@ -138,6 +138,7 @@ func _style_env(on: bool) -> void:
 	env.tonemap_exposure = float(_env_orig["tonemap_exposure"]) * 1.05
 	env.adjustment_saturation = 1.18
 	env.adjustment_contrast = 1.06
+	env.adjustment_color_correction = null
 	env.ssao_intensity = float(_env_orig["ssao_intensity"]) * 0.4
 	env.ssil_enabled = false
 	env.volumetric_fog_density = float(_env_orig["volumetric_fog_density"]) * 0.5

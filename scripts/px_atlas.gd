@@ -11,4 +11,4 @@ const LEGS := {"tread": "legs_tread", "biped": "legs_biped", "quad": "legs_quad"
 const BACK := {"missile": "back_missile", "shield": "back_shield", "none": "back_cargo", "cloak": "back_cloak", "drone": "back_drone", "jump": "back_jump", "turret": "back_turret", "mines": "back_mines", "repair": "back_repair"}
 const SLOT := {"core": "core_std", "legs": "legs_biped", "arm": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}
 const CAT := {"food": "can_food", "misc": "bolts", "use": "fuel_cell", "money": "credit_s", "module": "unknown"}
-const FAC := {"hangar": "nav_maintenance", "workshop": "gift_wrench", "infirmary": "repair_kit", "lab": "fac_flask", "kitchen": "can_food", "research": "fac_flask_b", "ability": "gen_cell", "talent": "fac_star", "training": "fac_star_b", "meal": "biscuit"}
+const FAC := {"hangar": "nav_maintenance", "workshop": "gift_wrench", "infirmary": "repair_kit", "lab": "fac_flask", "kitchen": "can_food", "research": "fac_flask_b", "ability": "gen_cell", "training": "fac_star_b", "meal": "biscuit"}

@@ -12,18 +12,18 @@ uniform int row0 = -10;
 uniform int rows = 11;
 uniform vec3 ground_a : source_color = vec3(0.27, 0.24, 0.21);
 uniform vec3 ground_b : source_color = vec3(0.13, 0.125, 0.13);
-varying vec3 wp;
+varying highp vec3 wp;
 void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 vec2 rot1i(vec2 q) { return vec2(-q.y, q.x); }   // 与 menu_city.gd 的 _rot1 互逆
 void fragment() {
-	vec2 g = wp.xz - vec2(offset_x, 0.0);
-	vec2 gp = g / 2400.0;
+	highp vec2 g = wp.xz - vec2(offset_x, 0.0);
+	highp vec2 gp = g / 2400.0;
 	float g1 = fbm(gp * 1.3, 5);
 	float g2 = fbm(gp * 7.0, 3);
 	vec3 gc = mix(ground_b, ground_a, smoothstep(0.35, 0.7, g1));
 	gc *= 0.8 + g2 * 0.4;
-	vec2 cell = floor(g / 360.0 + 0.5);
-	vec2 q = g - cell * 360.0;
+	highp vec2 cell = floor(g / 360.0 + 0.5);
+	highp vec2 q = g - cell * 360.0;
 	int ci = int(mod(cell.x, float(period)));
 	int cj = int(cell.y) - row0;
 	if (cj >= 0 && cj < rows) {
@@ -51,6 +51,6 @@ void fragment() {
 	gc *= 1.0;
 	float sh = menu_cloud_shadow(wp, CAMERA_POSITION_WORLD);
 	gc *= 1.0 - sh * 0.62;
-	vec3 d = normalize(wp - CAMERA_POSITION_WORLD);
+	highp vec3 d = normalize(wp - CAMERA_POSITION_WORLD);
 	ALBEDO = menu_fog(gc, d) * exposure;
 }

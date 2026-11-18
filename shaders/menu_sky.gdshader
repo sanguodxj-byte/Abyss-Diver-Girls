@@ -24,6 +24,7 @@ uniform sampler2D map2 : source_color, filter_linear_mipmap, repeat_disable;
 uniform float altitude = 260.0;     // 飞空艇离地高度（米）
 uniform float tile_m = 360.0;       // 一张地图的边长（米）
 uniform float ground_speed = 7.0;   // 地面向船尾流过的速度（米/秒）
+uniform float mobile_fast = 0.0;
 
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -56,8 +57,10 @@ float fbm(vec2 p, int oct) {
 
 // 云海密度（平面坐标）
 float sea(vec2 p) {
-	float n = fbm(p * 0.9, 6);
-	float big = fbm(p * 0.22 + vec2(3.0, 7.0), 3);
+	int o1 = mobile_fast > 0.5 ? 3 : 6;
+	int o2 = mobile_fast > 0.5 ? 2 : 3;
+	float n = fbm(p * 0.9, o1);
+	float big = fbm(p * 0.22 + vec2(3.0, 7.0), o2);
 	return smoothstep(cloud_cover - 0.08, cloud_cover + 0.18, n * 0.65 + big * 0.55);
 }
 
@@ -86,7 +89,7 @@ void sky() {
 		if (y > 0.0) {
 			vec2 cp = d.xz / (y + 0.06) * 0.55 + vec2(t * 2.0, t * 0.6);
 			vec2 sp = cp * vec2(0.35, 1.6);
-			float ci = fbm(sp + fbm(cp * 0.7, 3) * 1.4, 5);
+			float ci = fbm(sp + fbm(cp * 0.7, mobile_fast > 0.5 ? 2 : 3) * 1.4, mobile_fast > 0.5 ? 2 : 5);
 			ci = smoothstep(0.52, 0.85, ci) * smoothstep(0.0, 0.12, y) * (1.0 - smoothstep(0.55, 0.9, y));
 			vec3 cc = mix(cloud_lit * 0.95, sun_col * 1.25, pow(sd, 4.0));
 			col = mix(col, cc, ci * 0.55);
@@ -105,17 +108,17 @@ void sky() {
 			vec2 toL = normalize(L.xz + 1e-4) * 0.08;
 			float dens2 = sea(sp + toL);
 			float lit = clamp(0.55 + (dens - dens2) * 2.6, 0.0, 1.0);
-			float top = fbm(sp * 3.1, 4);
+			float top = fbm(sp * 3.1, mobile_fast > 0.5 ? 2 : 4);
 			vec3 cl = mix(cloud_shade, cloud_lit, lit * 0.75 + top * 0.35);
 			cl *= mix(0.55, 1.0, smoothstep(0.0, 0.7, dens));   // 云缘较暗，显出厚度
 			cl = mix(cl, sun_col * 1.15, pow(sd, 10.0) * 0.6 * lit);
 			// 地面：真实米制坐标
 			vec2 gm = d.xz / dn * altitude + vec2(TIME * ground_speed, TIME * ground_speed * 0.3);
 			vec2 gp = gm / 2400.0;
-			float g1 = fbm(gp * 1.3, 5);
-			float g2 = fbm(gp * 7.0, 3);
+			float g1 = fbm(gp * 1.3, mobile_fast > 0.5 ? 2 : 5);
+			float g2 = fbm(gp * 7.0, mobile_fast > 0.5 ? 2 : 3);
 			vec3 gc = mix(ground_b, ground_a, smoothstep(0.35, 0.7, g1));
-			float riv = abs(fbm(gp * 0.9 + 11.0, 4) - 0.5);
+			float riv = abs(fbm(gp * 0.9 + 11.0, mobile_fast > 0.5 ? 2 : 4) - 0.5);
 			gc = mix(gc, vec3(0.1, 0.12, 0.14), smoothstep(0.015, 0.0, riv) * 0.8);
 			gc *= 0.8 + g2 * 0.4;
 			// 城市遗迹贴图

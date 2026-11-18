@@ -27,12 +27,27 @@ const CAM_OFFSET := Vector3(0, 31, 22.5)  # 2.5D 斜俯视（约 54°）
 const ZOOM_MIN := 0.30   ## 滚轮拉到最近（看机甲细节）
 const ZOOM_STD := 0.69   ## 最大腰射视距收缩至原 1.15 的 0.6 倍（远距离侦察与开镜由右键瞄准接管）
 const AI_VIEW_ZOOM_REF := 1.15   ## 敌人视野感知沿用的基准镜头高度倍率
+const AI_VIEW_FOV_REF := 40.0    ## 敌人视野感知沿用的固定竖直参考视角，与渲染相机实时 FOV 解耦
+const FP_CAM_OFFSET := Vector3(0.0, 0.58, -0.52)  ## 第一人称机舱视点局部坐标（穿透机体并完整保留左右武器可见）
+const FP_FOV_STD := 74.0
+const FP_FOV_AIM := 58.0
+const FP_FOV_SCOPE := 28.0
+const FP_PITCH_MIN := deg_to_rad(-58.0)
+const FP_PITCH_MAX := deg_to_rad(62.0)
+const RaidSkyShader = preload("res://shaders/raid_sky.gdshader")
 var ZOOM_MAX := ZOOM_STD   ## 滚轮拉到最远：在 0.6x 基础上小幅受高射程武器影响
 
 var coop = null
 var rng := RandomNumberGenerator.new()
 var mech
 var camera: Camera3D
+var _sun_light: DirectionalLight3D
+var view_mode := 0               ## 0 = 第三人称斜俯视，1 = 第一人称机舱视角
+var fp_yaw := 0.0                ## 第一人称水平偏航角（弧度，0 朝向 -Z）
+var fp_pitch := 0.0              ## 第一人称垂直俯仰角（弧度，正值仰视）
+var _fp_fov := FP_FOV_STD
+var _window_focused := true
+var force_mouse_capture := false ## 测试显式验证指针捕获与解锁时置为 true
 var cam_zoom := ZOOM_STD  # 鼠标滚轮缩放：默认最远一档（ZOOM_MAX），可滚轮拉近到 ZOOM_MIN
 var _eff_zoom := ZOOM_STD
 var _aim_pan := Vector3.ZERO
@@ -61,6 +76,7 @@ var listener: AudioListener3D
 var _joy_aim_active := false
 var _last_joy_aim := Vector3.FORWARD
 var _last_mouse_pos := Vector2.ZERO
+var _fp_look_touch_id := -1
 var _pinch_pts := {}
 var _pinch_dist := 0.0
 ## 交战与遭遇：每 0.25 秒扫描一次附近的虫子
@@ -71,6 +87,36 @@ var _seen_kinds := {}
 var _found_pois := {}
 var factions          ## 流浪者小队与战斗队友（scripts/factions/factions.gd）
 var world_link        ## 地图边缘转场（scripts/world_link.gd）
+var server_drop := Vector3.ZERO
+
+class ServerHud extends RefCounted:
+	var radar = null
+	var pause_panel = null
+	var settings_panel = null
+	var loot_panel = null
+	var joy_left = null
+	var joy_right = null
+	var last_toggle_frame := -100
+	var _touch_revealed := false
+	func msg(t: String) -> void: print("[server] ", t)
+	func show_zone_banner(_t: String, _d := 0.0) -> void: pass
+	func refresh() -> void: pass
+	func refresh_loot() -> void: pass
+	func open_loot(_b) -> void: pass
+	func close_loot() -> void: pass
+	func set_prompt(_t: String) -> void: pass
+	func on_loadout_changed() -> void: pass
+	func hurt() -> void: pass
+	func notify_hit() -> void: pass
+	func notify_enemy_hit(_n: Node3D, _prev: float, _cur: float, _mx: float) -> void: pass
+	func set_coop_status(_t: String, _warn := false) -> void: pass
+	func inv_open() -> bool: return false
+	func map_open() -> bool: return false
+	func is_touch_busy() -> bool: return false
+	func is_touch_aiming() -> bool: return false
+	func is_touch_firing() -> bool: return false
+	func clear_touch_aim() -> void: pass
+	func sync_view_mode_ui() -> void: pass
 var transit := {}     ## 从相邻战区转场进来时携带的状态（空 = 正常空投出击）
 var visited_maps: Array = []
 var drop_points: Array = []   ## 本战区候选空投出生点列表（每局从中随机选取一处）
@@ -121,9 +167,12 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	if not transit.is_empty():
 		drop = world_link.entry_point(str(transit.get("edge", "")), drop)
 	_tlast = Time.get_ticks_usec()
-	_build_map_texture()
-	world_link.paint_map(map_tex)
-	_build_zone_ground()
+	if Net.is_dedicated_server():
+		_inst.clear()
+	else:
+		_build_map_texture()
+		world_link.paint_map(map_tex)
+		_build_zone_ground()
 	_tmark("map_tex+zone_ground")
 	_run_ext_build(drop)
 	_tmark("ext")
@@ -135,7 +184,10 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_spawn_initial_bugs(drop)
 	_sanitize_spawns_and_loot(drop)
 	_tmark("extracts+bugs")
-	_bake_static(drop)
+	if not Net.is_dedicated_server():
+		_bake_static(drop)
+	else:
+		_inst.clear()
 	_tmark("bake")
 	_tmark("nav")
 	print("[raid] map build %s: %d ms, world nodes %d, blocks %d" % [map_id, (Time.get_ticks_usec() - t_build) / 1000, _count_nodes(world), blocks.size()])
@@ -161,6 +213,8 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.08, Loc.t("正在同步信天翁号空投航线与战区遥测数据...", "Syncing Albatross drop vector & sector telemetry..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_load_map()
 	_tmark("load_map")
 	_build_environment()
@@ -169,18 +223,22 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.20, Loc.t("正在扫描地表路网、水系与铁道脉络...", "Scanning surface roads, waterways & rail networks..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_tlast = Time.get_ticks_usec()
 	_shield_spots()
 	_tmark("shield_spots")
-	_build_roads()
 	_build_river()
 	_build_lakes()
+	_build_roads()
 	_build_rails()
 	_build_ridges()
 	_tmark("roads+water+rails")
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.36, Loc.t("正在重构重点设施与遗迹院落...", "Reconstructing key facilities & ruin compounds..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	poi_centers.clear()
 	poi_ids.clear()
 	for p: Dictionary in layout.pois:
@@ -194,11 +252,15 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.50, Loc.t("正在测绘街区建筑群与废墟掩体...", "Mapping urban blocks & ruin cover..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_build_blocks()
 	_tmark("blocks")
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.62, Loc.t("正在散布地表植被、残骸与边界通道...", "Scattering surface foliage, wrecks & border gates..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_build_fields()
 	_scatter()
 	_tmark("fields+scatter")
@@ -221,16 +283,23 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.74, Loc.t("正在渲染战术卫星地形图与地标建筑...", "Rendering tactical satellite terrain & landmarks..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_tlast = Time.get_ticks_usec()
-	_build_map_texture()
-	world_link.paint_map(map_tex)
-	_build_zone_ground()
+	if Net.is_dedicated_server():
+		_inst.clear()
+	else:
+		_build_map_texture()
+		world_link.paint_map(map_tex)
+		_build_zone_ground()
 	_tmark("map_tex+zone_ground")
 	_run_ext_build(drop)
 	_tmark("ext")
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.83, Loc.t("正在部署撤离信标与优化战场物理碰撞...", "Deploying extract beacons & optimizing collision..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_spawn_extracts(drop)
 	preload("res://scripts/collision_opt.gd").optimize(self)
 	rebuild_nav()
@@ -239,13 +308,20 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.91, Loc.t("正在侦测虫群活跃热区与战区首领信标...", "Scanning swarm hotspots & sector boss signals..."))
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
 	_spawn_initial_bugs(drop)
 	_sanitize_spawns_and_loot(drop)
 	_tmark("extracts+bugs")
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.96, Loc.t("正在合并渲染批次与烘焙战术导航网格...", "Batching static meshes & baking tactical navgrid..."))
-	_bake_static(drop)
+	elif Net.is_dedicated_server():
+		await get_tree().process_frame
+	if not Net.is_dedicated_server():
+		_bake_static(drop)
+	else:
+		_inst.clear()
 	_tmark("bake")
 	_tmark("nav")
 	print("[raid] map build %s (async): %d ms, world nodes %d, blocks %d" % [map_id, (Time.get_ticks_usec() - t_build) / 1000, _count_nodes(world), blocks.size()])
@@ -253,6 +329,18 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 
 
 func _finish_setup(drop: Vector3) -> void:
+	if Net.is_dedicated_server():
+		server_drop = drop
+		hud = ServerHud.new()
+		_add_ext_nodes()
+		factions = FactionsScript.new()
+		factions.name = "Factions"
+		add_child(factions)
+		factions.setup(self, drop)
+		_sanitize_npcs()
+		visited_maps = [map_id]
+		dropping = false
+		return
 	mech = MechScript.new()
 	mech.net_peer = Net.local_id()
 	mech.raid = self
@@ -291,6 +379,8 @@ func _finish_setup(drop: Vector3) -> void:
 	add_child(hud)
 	hud.setup(self)
 	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	if GameData.view_mode == 1:
+		set_view_mode(1, false)
 	_add_ext_nodes()
 
 	factions = FactionsScript.new()
@@ -298,6 +388,8 @@ func _finish_setup(drop: Vector3) -> void:
 	add_child(factions)
 	factions.setup(self, drop)
 	_sanitize_npcs()
+	if Audio.has_method("warm_combat_sfx"):
+		Audio.warm_combat_sfx()
 	var zone_name := str(MAP.get("name", map_id))
 	if Net.active():
 		visited_maps = [map_id]
@@ -375,14 +467,19 @@ func _add_ext_nodes() -> void:
 ## 空投：高空坠落（尾焰 + 拖烟 + 地面引导光束）→ 反推减速（地面扬尘）→ 重落地（冲击波尘环、碎石、弹坑）→ 下蹲缓冲后起身排气
 func _drop_sequence(drop: Vector3) -> void:
 	mech.global_position = drop + Vector3(0, 30, 0)
-	camera.global_position = drop + Vector3(0, 6.5, 0) + CAM_OFFSET * cam_zoom
-	camera.look_at(drop + Vector3(0, 6.5, 0), Vector3.UP)
-	# 地面着陆点激光引导环与垂直制导光束
+	if view_mode == 0:
+		camera.global_position = drop + Vector3(0, 6.5, 0) + CAM_OFFSET * cam_zoom
+		camera.look_at(drop + Vector3(0, 6.5, 0), Vector3.UP)
+	else:
+		sync_fp_camera()
+	# 地面着陆点战术角标与信号烟雾信标（取代32m实心光柱）
 	var beacon_node := Node3D.new()
 	fx.add_child(beacon_node)
 	beacon_node.global_position = Vector3(drop.x, 0.115, drop.z)
-	A.ground_vfx(beacon_node, A.ring_tex(), Color(1.0, 0.68, 0.2, 0.85), 5.2, Vector3.ZERO, true, 0.44, false, 4)
-	A.add(beacon_node, A.cyl(0.05, 32.0, 0.05, 8), A.emit(Color(1.0, 0.72, 0.25), 7.5), Vector3(0, 16.0, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(beacon_node, A.quad(5.4, 5.4), A.extract_pad_mat(Color(0.95, 0.58, 0.18, 0.82), 0.44, 4), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.emitter(beacon_node, Vector3.ZERO, {"tex": A.smoke_tex(), "additive": false, "soft_depth": 0.45, "amount": 10, "life": 1.6, "size": 0.78,
+		"dir": Vector3(0.25, 1.0, 0.1).normalized(), "spread": 18.0, "vmin": 0.9, "vmax": 1.8, "gravity": Vector3(0, 0.3, 0),
+		"c0": Color(0.88, 0.54, 0.22, 0.36), "c1": Color(0.35, 0.26, 0.20, 0.0), "grow0": 0.4, "grow1": 1.9})
 	var flames: Array = []
 	for x in [-0.55, 0.55]:
 		var f := A.emitter(mech, Vector3(x, 0.4, 0.2), {"amount": 36, "life": 0.22, "size": 1.3, "dir": Vector3.DOWN, "spread": 10.0, "vmin": 9.0, "vmax": 14.0,
@@ -467,18 +564,21 @@ func _drop_impact(drop: Vector3) -> void:
 	# 弹坑 + 扩散冲击波
 	var crater := A.ground_vfx(world, A.scorch_tex(), Color(0.90, 0.86, 0.82, 0.88), 6.2, Vector3(p.x, 0.094, p.z), false, 0.44, false, 2)
 	crater.rotation.y = rng.randf() * TAU
-	var wave_c := Color(1.0, 0.95, 0.85, 0.9)
-	var wave := A.ground_vfx(fx, A.ring_tex(), wave_c, 3.0, Vector3(p.x, 0.116, p.z), true, 0.44, true, 4)
+	var wave_c := Color(0.90, 0.82, 0.70, 0.72)
+	var wave := A.ground_vfx(fx, A.shockwave_tex(), wave_c, 4.0, Vector3(p.x, 0.116, p.z), false, 0.44, true, 4)
 	var tw := create_tween()
-	tw.tween_property(wave, "scale", Vector3(8, 1, 8), 0.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	tw.parallel().tween_property(wave.material_override, "shader_parameter/col", Color(wave_c.r, wave_c.g, wave_c.b, 0.0), 0.45)
+	tw.tween_property(wave, "scale", Vector3(5.6, 1, 5.6), 0.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tw.parallel().tween_property(wave.material_override, "shader_parameter/col", Color(wave_c.r, wave_c.g, wave_c.b, 0.0), 0.48)
 	tw.tween_callback(wave.queue_free)
 	# 起身时背部排气
 	var steam: Array = []
 	for x: float in [-0.5, 0.5]:
 		var sx: float = -0.35 if x < 0.0 else 0.35
-		steam.append(A.emitter(mech, Vector3(x, 2.4, 0.6), {"amount": 22, "life": 0.9, "size": 0.78, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(sx, 1.0, 0.55).normalized(),
-			"spread": 14.0, "vmin": 3.0, "vmax": 5.2, "gravity": Vector3(0, 1.0, 0), "c0": Color(0.95, 0.96, 0.98, 0.0), "cmid": Color(0.92, 0.94, 0.96, 0.42), "cmid_pos": 0.20, "c1": Color(0.88, 0.90, 0.92, 0.0), "grow0": 0.25, "grow1": 1.65, "soft_depth": 0.35}))
+		var em := A.emitter(mech, Vector3(x, 2.4, 0.6), {"amount": 22, "life": 0.9, "size": 0.78, "tex": A.smoke_tex(), "additive": false, "dir": Vector3(sx, 1.0, 0.55).normalized(),
+			"spread": 14.0, "vmin": 3.0, "vmax": 5.2, "gravity": Vector3(0, 1.0, 0), "c0": Color(0.95, 0.96, 0.98, 0.0), "cmid": Color(0.92, 0.94, 0.96, 0.42), "cmid_pos": 0.20, "c1": Color(0.88, 0.90, 0.92, 0.0), "grow0": 0.25, "grow1": 1.65, "soft_depth": 0.35})
+		if is_first_person():
+			em.layers = MechScript.FP_HIDE_LAYER
+		steam.append(em)
 	var t2 := create_tween()
 	t2.tween_interval(1.4)
 	t2.tween_callback(func():
@@ -499,55 +599,69 @@ var smoke: CPUParticles3D
 
 
 func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.45, 0.45, 0.42)
-	sky_mat.sky_horizon_color = Color(0.68, 0.64, 0.56)
-	sky_mat.ground_horizon_color = Color(0.42, 0.4, 0.34)
-	sky_mat.ground_bottom_color = Color(0.1, 0.08, 0.09)
-	sky_mat.sun_angle_max = 26.0
-	sky_mat.sun_curve = 0.14
-	sky_mat.sky_cover = A.world_tex("sky_clouds.png")
-	sky_mat.sky_cover_modulate = Color(0.92, 0.90, 0.86, 0.58)
+	if Net.is_dedicated_server():
+		return
+	var sky_mat := ShaderMaterial.new()
+	sky_mat.shader = RaidSkyShader
+	sky_mat.set_shader_parameter("cloud_pano", A.world_tex("skybox_clouds_pano.png"))
+	sky_mat.set_shader_parameter("horizon_pano", A.world_tex("skybox_horizon_pano.png"))
+	sky_mat.set_shader_parameter("sky_top", Color(0.45, 0.45, 0.42))
+	sky_mat.set_shader_parameter("sky_horizon", Color(0.68, 0.64, 0.56))
+	sky_mat.set_shader_parameter("sky_ground", Color(0.42, 0.4, 0.34))
+	sky_mat.set_shader_parameter("sky_bottom", Color(0.1, 0.08, 0.09))
+	sky_mat.set_shader_parameter("cloud_tint", Color(0.92, 0.90, 0.86, 0.58))
+	sky_mat.set_shader_parameter("sun_tint", Color(1.0, 0.91, 0.78))
+	sky_mat.set_shader_parameter("fog_tint", Color(0.52, 0.5, 0.44))
+	sky_mat.set_shader_parameter("urban_horizon", 0.72 if map_id in ["greyport", "ironbelt", "bayport"] else 0.16)
+	sky_mat.set_shader_parameter("cavern_mode", 1.0 if map_id == "abyss_maw" else 0.0)
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.42
-	env.ambient_light_sky_contribution = 0.65
+	env.ambient_light_color = Color(0.56, 0.60, 0.66)
+	env.ambient_light_energy = 0.46
+	env.ambient_light_sky_contribution = 0.58
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.0
-	env.tonemap_white = 8.0
+	env.tonemap_exposure = 1.05
+	env.tonemap_white = 7.6
 	env.glow_enabled = true
 	env.glow_normalized = true
-	env.glow_intensity = 0.24
-	env.glow_strength = 0.85
+	env.glow_intensity = 0.26
+	env.glow_strength = 0.86
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.35
+	env.glow_hdr_threshold = 1.25
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
-	env.set_glow_level(0, 0.0)
-	env.set_glow_level(1, 0.60)
-	env.set_glow_level(2, 0.45)
-	env.set_glow_level(3, 0.25)
-	env.set_glow_level(4, 0.0)
+	env.set_glow_level(0, 0.12)
+	env.set_glow_level(1, 0.62)
+	env.set_glow_level(2, 0.48)
+	env.set_glow_level(3, 0.28)
+	env.set_glow_level(4, 0.10)
 	env.set_glow_level(5, 0.0)
-	env.ssao_enabled = true
-	env.ssao_radius = 2.1
-	env.ssao_intensity = 3.6
-	env.ssao_power = 1.48
+	env.ssr_fade_in = 0.045
+	env.ssr_fade_out = 2.0
+	env.ssr_depth_tolerance = 0.45
+	env.ssao_enabled = (not OS.has_feature("mobile")) and (RenderingServer.get_current_rendering_method() != "mobile") and (RenderingServer.get_current_rendering_method() != "gl_compatibility")
+	env.ssao_radius = 1.45
+	env.ssao_intensity = 1.85
+	env.ssao_power = 1.25
 	env.ssil_enabled = false
 	env.ssil_radius = 4.0
 	env.ssil_intensity = 0.8
-	env.ssao_detail = 1.0
+	env.ssao_detail = 0.85
 	env.ssao_horizon = 0.06
 	env.ssao_sharpness = 0.96
-	env.ssao_light_affect = 0.72
+	env.ssao_light_affect = 0.12
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.52, 0.5, 0.44)
-	env.fog_density = 0.0009
-	env.fog_sky_affect = 0.38
+	env.fog_density = 0.00075
+	env.fog_aerial_perspective = 0.40
+	env.fog_sun_scatter = 0.18
+	env.fog_height = 2.2
+	env.fog_height_density = 0.045
+	env.fog_sky_affect = 0.34
 	env.volumetric_fog_enabled = false
 	env.volumetric_fog_density = 0.0
 	env.volumetric_fog_albedo = Color(0.82, 0.8, 0.74)
@@ -555,30 +669,36 @@ func _build_environment() -> void:
 	env.volumetric_fog_length = 80.0
 	env.volumetric_fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.18
-	env.adjustment_saturation = 0.90  # 鲜明冷峻的战场色调
+	env.adjustment_contrast = 1.04
+	env.adjustment_saturation = 0.98
+	if not A.is_mobile_perf():
+		env.adjustment_color_correction = A.cinematic_lut()
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-37, 52, 0)
-	sun.light_color = Color(1.0, 0.91, 0.78)
-	sun.light_energy = 2.55
+	sun.light_color = Color(1.0, 0.92, 0.80)
+	sun.light_energy = 2.52
 	sun.light_angular_distance = 0.25
 	sun.shadow_enabled = true
-	sun.shadow_bias = 0.02
-	sun.shadow_normal_bias = 0.75
-	sun.shadow_blur = 0.55
-	sun.directional_shadow_max_distance = 72.0
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_split_1 = 0.35
+	sun.shadow_bias = 0.012
+	sun.shadow_normal_bias = 0.24
+	sun.shadow_blur = 0.42
+	sun.directional_shadow_max_distance = 84.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_split_1 = 0.16
+	sun.directional_shadow_split_2 = 0.36
+	sun.directional_shadow_split_3 = 0.62
 	sun.directional_shadow_blend_splits = true
 	sun.light_volumetric_fog_energy = 1.4
 	add_child(sun)
+	_sun_light = sun
+	RenderingServer.global_shader_parameter_set("sun_dir_world", sun.transform.basis.z.normalized())
 	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-50, -140, 0)
-	fill.light_color = Color(0.50, 0.62, 0.78)
-	fill.light_energy = 0.16
+	fill.rotation_degrees = Vector3(-46, -135, 0)
+	fill.light_color = Color(0.58, 0.68, 0.82)
+	fill.light_energy = 0.24
 	fill.shadow_enabled = false
 	add_child(fill)
 	GameData.apply_env_quality(env, sun)
@@ -644,7 +764,15 @@ func _rand_basis(tilt := 25.0) -> Basis:
 
 
 func _add_flicker(l: OmniLight3D) -> void:
-	flicker_lights.append([l, l.light_energy, rng.randf() * 100.0])
+	var ph := rng.randf() * 100.0
+	if A.is_mobile_perf() and GameData.quality == 0:
+		l.queue_free()
+		return
+	if A.is_mobile_perf():
+		l.distance_fade_enabled = true
+		l.distance_fade_begin = 32.0
+		l.distance_fade_length = 8.0
+	flicker_lights.append([l, l.light_energy, ph])
 
 
 func _fire_barrel(p: Vector3) -> void:
@@ -665,10 +793,11 @@ func _fire_barrel(p: Vector3) -> void:
 	for k in 2:
 		A.add(n, A.bevel_box(Vector3(0.08, 0.48, 0.07), 0.01), A.paint(Color(0.18, 0.13, 0.10), 0.0, 0.95),
 			Vector3(-0.08 + k * 0.16, 0.88, -0.05 + k * 0.10), Vector3(18 - k * 32, k * 55, -14 + k * 24), Vector3.ONE, false)
-	A.emitter(n, Vector3(0, 0.95, 0), {"amount": 22, "life": 0.7, "size": 0.55, "vmin": 0.8, "vmax": 1.8, "gravity": Vector3(0, 2.5, 0),
-		"radius": 0.2, "c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
-	A.emitter(n, Vector3(0, 1.6, 0), {"amount": 10, "life": 3.0, "size": 1.4, "tex": A.smoke_tex(), "additive": false, "vmin": 0.6, "vmax": 1.2,
-		"gravity": Vector3(0.4, 0.6, 0.2), "c0": Color(0.15, 0.12, 0.12, 0.5), "c1": Color(0.25, 0.22, 0.22, 0.0), "grow0": 0.6, "grow1": 2.2})
+	if not (A.is_mobile_perf() and GameData.quality == 0):
+		A.emitter(n, Vector3(0, 0.95, 0), {"amount": 22, "life": 0.7, "size": 0.55, "vmin": 0.8, "vmax": 1.8, "gravity": Vector3(0, 2.5, 0),
+			"radius": 0.2, "c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
+		A.emitter(n, Vector3(0, 1.6, 0), {"amount": 10, "life": 3.0, "size": 1.4, "tex": A.smoke_tex(), "additive": false, "vmin": 0.6, "vmax": 1.2,
+			"gravity": Vector3(0.4, 0.6, 0.2), "c0": Color(0.15, 0.12, 0.12, 0.5), "c1": Color(0.25, 0.22, 0.22, 0.0), "grow0": 0.6, "grow1": 2.2})
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.55, 0.2)
 	l.light_energy = 2.5
@@ -687,7 +816,7 @@ func _build_ground() -> void:
 	g.collision_layer = 1
 	var cs := CollisionShape3D.new()
 	var sh := BoxShape3D.new()
-	sh.size = Vector3(HALF * 2.0 + 80.0, 1.0, HALF * 2.0 + 80.0)
+	sh.size = Vector3(EXT_HALF * 2.0 + 80.0, 1.0, EXT_HALF * 2.0 + 80.0)
 	cs.shape = sh
 	cs.position.y = -0.5
 	g.add_child(cs)
@@ -775,6 +904,29 @@ func _build_ground() -> void:
 
 
 func _build_perimeter() -> void:
+	if is_surface_map:
+		# 地表战区不再生成战区封锁围栏：仅在无建模外沿处布置不可见空气墙，避免机甲走出已建图范围
+		var air_wall := StaticBody3D.new()
+		air_wall.name = "MapEdgeAirWall"
+		air_wall.collision_layer = 1
+		air_wall.set_meta("water_bank", true)
+		var edge_d := EXT_HALF - 2.0
+		var span_l := EXT_HALF * 2.0 + 8.0
+		for sd: float in [-1.0, 1.0]:
+			var cs_z := CollisionShape3D.new()
+			var sh_z := BoxShape3D.new()
+			sh_z.size = Vector3(span_l, 18.0, 4.0)
+			cs_z.shape = sh_z
+			cs_z.position = Vector3(0.0, 8.0, sd * edge_d)
+			air_wall.add_child(cs_z)
+			var cs_x := CollisionShape3D.new()
+			var sh_x := BoxShape3D.new()
+			sh_x.size = Vector3(4.0, 18.0, span_l)
+			cs_x.shape = sh_x
+			cs_x.position = Vector3(sd * edge_d, 8.0, 0.0)
+			air_wall.add_child(cs_x)
+		world.add_child(air_wall)
+		return
 	if zone_poly.size() < 3:
 		return
 	var prev_enf := _enforce_zone_bounds
@@ -972,42 +1124,60 @@ func _build_perimeter() -> void:
 
 
 func _bug_spire(p: Vector3, h: float) -> void:
-	# 地下自动化熔铸区裂隙排烟导热桩（取代有机甲壳虫塔与悬浮发光圆环：玄武矿渣底座 + 多棱锈蚀铸铁导热烟囱 + 铆接法兰箍 + 窄缝暗琥珀余烬窗）
+	# 地下自动化熔铸区废土排烟导热桩：玄武矿渣乱石丘 + 倾斜铸铁烟管（高细分圆筒 + 弯折旁通管）+ 暗沉余烬百叶孔 + 淡煤烟
 	var n := Node3D.new()
 	world.add_child(n)
 	n.position = p
-	n.rotation_degrees = Vector3(rng.randf_range(-7, 7), rng.randf() * 360.0, rng.randf_range(-7, 7))
-	var r0 := rng.randf_range(0.58, 1.02)
-	var M_SLAG := A.rock_mat(Color(0.20, 0.17, 0.15))
-	var M_IRON := A.paint(Color(0.20, 0.21, 0.23), 0.68, 0.56, {"rust": 0.72, "wear": 0.62, "grime": 0.85, "panel_scale": 0.9})
-	var M_RUST := A.paint(Color(0.34, 0.20, 0.13), 0.52, 0.68, {"rust": 0.88, "wear": 0.65, "grime": 0.82})
-	var M_DARK := A.metal(Color(0.12, 0.13, 0.14))
-	var m_ember := A.emit(Color(1.0, 0.44, 0.10), 1.4)
-	m_ember.albedo_color = Color(0.32, 0.12, 0.03)
-	A.add(n, A.cyl(r0 * 1.12, 0.34, r0 * 1.38, 8), M_SLAG, Vector3(0, 0.17, 0))
-	var segs := 4
-	var y := 0.26
-	var rem_h := maxf(1.8, h - 0.26)
+	n.rotation_degrees = Vector3(rng.randf_range(-5, 5), rng.randf() * 360.0, rng.randf_range(-5, 5))
+	var r0 := rng.randf_range(0.56, 0.96)
+	var M_SLAG := A.rock_mat(Color(0.19, 0.16, 0.14))
+	var M_IRON := A.paint(Color(0.20, 0.21, 0.22), 0.66, 0.58, {"rust": 0.74, "wear": 0.60, "grime": 0.88, "panel_scale": 0.9})
+	var M_RUST := A.paint(Color(0.32, 0.19, 0.12), 0.50, 0.70, {"rust": 0.88, "wear": 0.64, "grime": 0.84})
+	var M_DARK := A.metal(Color(0.11, 0.12, 0.13))
+	var m_ember := A.emit(Color(0.78, 0.30, 0.07), 0.85)
+	m_ember.albedo_color = Color(0.24, 0.08, 0.02)
+	# 玄武矿渣乱石基底群，取代规整八边形锥台
+	for k in 4:
+		var a := TAU * float(k) / 4.0 + rng.randf_range(-0.25, 0.25)
+		var sc := r0 * rng.randf_range(0.68, 0.95)
+		A.add(n, A.rock_mesh((k * 5 + 2) % 12), M_SLAG,
+			Vector3(cos(a) * r0 * 0.62, sc * 0.28, sin(a) * r0 * 0.62),
+			Vector3(rng.randf_range(-10, 10), k * 78.0, rng.randf_range(-10, 10)),
+			Vector3(sc * 1.15, sc * 0.65, sc * 0.95))
+	# 微倾多段圆滑铸铁排烟管与螺栓法兰箍（18段细分无机械八棱折角）
+	var stack := Node3D.new()
+	stack.rotation_degrees = Vector3(rng.randf_range(5.0, 11.0), 0.0, rng.randf_range(-6.0, 6.0))
+	n.add_child(stack)
+	var pipe_r := r0 * 0.54
+	var rem_h := maxf(2.0, h - 0.15)
+	var y := 0.20
+	var segs := 3
 	for i in segs:
 		var sh := rem_h / float(segs)
-		var ra: float = r0 * (1.0 - float(i) / float(segs) * 0.48)
-		var rb: float = r0 * (1.0 - float(i + 1) / float(segs) * 0.52)
-		A.add(n, A.cyl(rb, sh, ra, 8), M_IRON if i % 2 == 0 else M_RUST, Vector3(0, y + sh * 0.5, 0), Vector3(0, i * 22.5, 0))
-		A.add(n, A.cyl(rb * 1.10, 0.10, rb * 1.10, 8), M_DARK, Vector3(0, y + sh - 0.04, 0), Vector3(0, i * 22.5, 0))
-		if i < segs - 1:
-			for s_i in 4:
-				var sa := TAU * float(s_i) / 4.0 + float(i) * 0.4
-				A.add(n, A.bevel_box(Vector3(rb * 0.42, 0.07, 0.04), 0.008), m_ember,
-					Vector3(cos(sa) * rb * 0.98, y + sh * 0.72, sin(sa) * rb * 0.98), Vector3(0, -rad_to_deg(sa) + 90.0, 0), Vector3.ONE, false)
+		var ra := pipe_r * (1.0 - float(i) * 0.14)
+		var rb := pipe_r * (1.0 - float(i + 1) * 0.15)
+		A.add(stack, A.cyl(rb, sh, ra, 18), M_IRON if i % 2 == 0 else M_RUST, Vector3(0, y + sh * 0.5, 0))
+		A.add(stack, A.cyl(rb * 1.10, 0.09, rb * 1.10, 18), M_DARK, Vector3(0, y + sh - 0.03, 0))
 		y += sh
-	A.add(n, A.cyl(r0 * 0.36, 0.12, r0 * 0.40, 8), A.paint(Color(0.03, 0.03, 0.03), 0.0, 0.95), Vector3(0, y + 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
-	for k in 4:
-		var a := TAU * float(k) / 4.0 + 0.35
-		A.add(n, A.bevel_box(Vector3(0.12, h * 0.38, r0 * 0.52), 0.02), M_DARK,
-			Vector3(cos(a) * r0 * 0.86, h * 0.19, sin(a) * r0 * 0.86), Vector3(0, -rad_to_deg(a) + 90.0, 14.0))
-		A.add(n, A.rock_mesh((k * 3 + 1) % 12), M_SLAG,
-			Vector3(cos(a + 0.4) * r0 * 1.05, 0.14, sin(a + 0.4) * r0 * 1.05), Vector3(0, k * 67.0, 0), Vector3(r0 * 0.52, 0.28, r0 * 0.44))
-	A.ground_decal(n, A.cloud_tex(), Color(0.08, 0.07, 0.06, 0.72), r0 * 3.2, Vector3(0, 0.036, 0))
+	# 顶部斜切铸铁防雨排烟帽 + 暗黑烟道内膛
+	A.add(stack, A.cyl(pipe_r * 0.44, 0.16, pipe_r * 0.48, 16), A.paint(Color(0.03, 0.03, 0.03), 0.0, 0.95), Vector3(0, y - 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(stack, A.cyl(pipe_r * 0.72, 0.07, pipe_r * 0.78, 16), M_DARK, Vector3(0.06, y + 0.18, 0), Vector3(0, 0, -14.0))
+	# 内嵌格栅微光余烬缝（深暗琥珀点，无突出橙色方块）
+	for s_i in 3:
+		var sa := TAU * float(s_i) / 3.0 + 0.5
+		var slot_r := pipe_r * 0.94
+		var slp := Vector3(cos(sa) * slot_r, 0.62 + float(s_i % 2) * 0.34, sin(sa) * slot_r)
+		var syaw := -rad_to_deg(sa) + 90.0
+		A.add(stack, A.cyl(0.055, 0.04, 0.055, 10), m_ember, slp, Vector3(90.0, syaw, 0.0), Vector3.ONE, false)
+		A.add(stack, A.cyl(0.09, 0.06, 0.09, 10), M_DARK, slp * 0.98, Vector3(90.0, syaw, 0.0))
+	# 弯曲旁通泄压铁管
+	var bypass := [Vector3(r0 * 0.85, 0.25, 0.18), Vector3(r0 * 0.88, minf(rem_h * 0.45, 1.4), 0.22), Vector3(pipe_r * 0.78, minf(rem_h * 0.62, 1.85), 0.08)]
+	A.add(stack, A.tube(bypass, 0.075, 10, 6), M_RUST)
+	A.ground_decal(n, A.grime_stain_tex(), Color(0.07, 0.06, 0.05, 0.68), r0 * 3.4, Vector3(0, 0.036, 0))
+	if h >= 4.2:
+		A.emitter(stack, Vector3(0, y + 0.06, 0), {"tex": A.smoke_tex(), "additive": false, "soft_depth": 0.45, "amount": 5, "life": 2.6, "size": 0.95,
+			"dir": Vector3(0.22, 1.0, 0.14).normalized(), "spread": 16.0, "vmin": 0.5, "vmax": 1.1, "gravity": Vector3(0.1, 0.2, 0.05),
+			"c0": Color(0.16, 0.15, 0.14, 0.22), "c1": Color(0.20, 0.19, 0.18, 0.0), "grow0": 0.4, "grow1": 2.1, "radius": 0.12})
 	blocks.append(Rect2(p.x - r0, p.z - r0, r0 * 2, r0 * 2))
 
 
@@ -1645,88 +1815,298 @@ func _process(delta: float) -> void:
 	Prof.add("proc.raid", _pt)
 
 
+func is_first_person() -> bool:
+	if view_mode != 1:
+		return false
+	if coop != null and mech != null and (mech.net_done or mech.dead):
+		return false
+	return true
+
+
+func fp_forward_xz() -> Vector3:
+	if camera != null and is_first_person():
+		var f := -camera.global_transform.basis.z
+		f.y = 0.0
+		if f.length_squared() > 0.0001:
+			return f.normalized()
+	return Vector3(-sin(fp_yaw), 0.0, -cos(fp_yaw)).normalized()
+
+
+func should_capture_mouse() -> bool:
+	if not is_first_person() or dropping or ended or not _window_focused:
+		return false
+	if mech == null or not is_instance_valid(mech) or mech.dead or mech.net_done:
+		return false
+	if Story.get("flow") != null and Story.flow.is_playing():
+		return false
+	if hud != null:
+		if hud._touch_revealed:
+			return false
+		if hud.pause_panel.visible or (hud.settings_panel != null and hud.settings_panel.visible):
+			return false
+		if hud.loot_panel.visible or hud.map_open() or hud.is_touch_busy():
+			return false
+	if (GameData.test_mode or DisplayServer.get_name() == "headless") and not force_mouse_capture:
+		return false
+	return true
+
+
+func set_view_mode(mode: int, save := false) -> void:
+	var next := clampi(mode, 0, 1)
+	var prev := view_mode
+	view_mode = next
+	_fp_look_touch_id = -1
+	GameData.view_mode = next
+	if save:
+		GameData.save_game()
+	if mech != null and is_instance_valid(mech) and mech.has_method("set_fp_passthrough"):
+		mech.set_fp_passthrough(next == 1)
+	if camera != null:
+		if next == 1:
+			camera.cull_mask = 0xFFFFF & ~(1 << 19)
+			if prev != 1 and mech != null and is_instance_valid(mech) and mech.torso != null:
+				var tf: Vector3 = -(mech.torso as Node3D).global_transform.basis.z
+				fp_yaw = atan2(-tf.x, -tf.z)
+				fp_pitch = deg_to_rad(-2.0)
+			_fp_fov = FP_FOV_STD
+			camera.near = 0.08
+			camera.far = 420.0
+			camera.fov = _fp_fov
+			if _sun_light != null and is_instance_valid(_sun_light):
+				if A.is_mobile_perf():
+					_sun_light.directional_shadow_blend_splits = false
+					if GameData.quality <= 1:
+						_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+						_sun_light.directional_shadow_max_distance = 44.0 if GameData.quality == 0 else 56.0
+					else:
+						_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+						_sun_light.directional_shadow_split_1 = 0.22
+						_sun_light.directional_shadow_max_distance = 68.0
+				elif GameData.quality > 0:
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.08
+					_sun_light.directional_shadow_split_2 = 0.22
+					_sun_light.directional_shadow_split_3 = 0.48
+					_sun_light.directional_shadow_max_distance = 120.0
+				else:
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.18
+					_sun_light.directional_shadow_max_distance = 75.0
+				_sun_light.shadow_bias = 0.010
+				_sun_light.shadow_normal_bias = 0.18
+			sync_fp_camera()
+		else:
+			camera.cull_mask = 0xFFFFF
+			camera.fov = 40.0
+			camera.near = 1.0
+			camera.far = 340.0
+			if _sun_light != null and is_instance_valid(_sun_light):
+				if A.is_mobile_perf():
+					_sun_light.directional_shadow_blend_splits = false
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if GameData.quality <= 1 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.28
+					_sun_light.directional_shadow_max_distance = 40.0 if GameData.quality == 0 else (50.0 if GameData.quality == 1 else 62.0)
+				elif GameData.quality > 0:
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.16
+					_sun_light.directional_shadow_split_2 = 0.36
+					_sun_light.directional_shadow_split_3 = 0.62
+					_sun_light.directional_shadow_max_distance = 84.0
+				else:
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.28
+					_sun_light.directional_shadow_max_distance = 58.0
+				_sun_light.shadow_bias = 0.012
+				_sun_light.shadow_normal_bias = 0.24
+			if mech != null and is_instance_valid(mech):
+				cam_focus = Vector3(mech.global_position.x, 0.0, mech.global_position.z)
+				_aim_pan = Vector3.ZERO
+				camera.global_position = cam_focus + CAM_OFFSET * _eff_zoom
+				camera.look_at(cam_focus, Vector3.UP)
+	if hud != null:
+		if hud.has_method("sync_view_mode_ui"):
+			hud.sync_view_mode_ui()
+		hud._update_cursor()
+
+
+func toggle_view_mode() -> void:
+	set_view_mode(1 - view_mode, true)
+	Audio.play_ui("ui_tab")
+
+
+func sync_fp_camera() -> void:
+	if not is_first_person() or camera == null or mech == null or not is_instance_valid(mech) or mech.torso == null:
+		return
+	var gt: Transform3D = mech.torso.global_transform
+	var torso_yaw := atan2(gt.basis.z.x, gt.basis.z.z)
+	var body_pitch := asin(clampf(-gt.basis.z.y, -0.5, 0.5)) * 0.36
+	var body_roll := asin(clampf(gt.basis.x.y, -0.4, 0.4)) * 0.36
+	var cam_pos: Vector3 = gt.origin + gt.basis * FP_CAM_OFFSET
+	if aim_override != null:
+		var to_ov: Vector3 = aim_override - cam_pos
+		var hz := Vector2(to_ov.x, to_ov.z).length()
+		if hz > 0.04 or absf(to_ov.y) > 0.04:
+			fp_yaw = atan2(-to_ov.x, -to_ov.z)
+			fp_pitch = clampf(atan2(to_ov.y, maxf(hz, 0.001)), FP_PITCH_MIN, FP_PITCH_MAX)
+	# 机身穿透、左右双臂武器保留可见：偏航相对于躯干限幅在正负 32 度内并沿前弧微移，保证双臂武器始终位于画面两侧且不穿入枪机后座
+	var yaw_lead := clampf(angle_difference(torso_yaw, fp_yaw), deg_to_rad(-32.0), deg_to_rad(32.0))
+	var eff_yaw := torso_yaw + yaw_lead
+	var eff_pitch := clampf(fp_pitch + body_pitch, FP_PITCH_MIN, FP_PITCH_MAX)
+	if absf(yaw_lead) > 0.005:
+		var neck_local := Vector3(0.0, FP_CAM_OFFSET.y, 0.0)
+		var visor_arm := Vector3(0.0, 0.0, FP_CAM_OFFSET.z).rotated(Vector3.UP, yaw_lead)
+		cam_pos = gt.origin + gt.basis * (neck_local + visor_arm)
+	var cam_basis := Basis.from_euler(Vector3(eff_pitch, eff_yaw, body_roll))
+	if shake > 0.0:
+		cam_pos += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.14
+	camera.global_transform = Transform3D(cam_basis, cam_pos)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_window_focused = false
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif what == NOTIFICATION_WM_WINDOW_FOCUS_IN:
+		_window_focused = true
+		if hud != null:
+			hud._update_cursor()
+
+
+func _exit_tree() -> void:
+	if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
 func _process_impl(delta: float) -> void:
+	if Net.is_dedicated_server():
+		if ended or dropping:
+			return
+		time += delta
+		_update_transport(delta)
+		return
 	if mech == null:
 		return
-	if hud != null and hud.joy_left != null and hud.joy_right != null:
-		mech.joy_move = hud.joy_left.value
-		mech.joy_aim = hud.joy_right.value
-	# 镜头跟随 + 双摇杆瞄准 / 鼠标前探
-	var vp_sz := get_viewport().get_visible_rect().size
-	var mp := get_viewport().get_mouse_position().clamp(Vector2.ZERO, vp_sz)
-	var from := camera.project_ray_origin(mp)
-	var dir := camera.project_ray_normal(mp)
-	var hit = Plane(Vector3.UP, 1.8).intersects_ray(from, dir) if dir.y < -0.05 else null
-	var ray_max := 160.0 if mech.is_scoping() else (110.0 if mech.is_aiming else 80.0)
-	if hit != null:
-		var hd: Vector3 = hit - mech.global_position
-		hd.y = 0.0
-		if hd.length() > ray_max:
-			hit = mech.global_position + hd.normalized() * ray_max
-			hit.y = 1.8
-	if aim_override != null:
-		mech.aim_point = aim_override
-	elif hud != null and hud.joy_right != null and hud.joy_right.is_active() and hud.joy_right.value.length() > 0.12:
-		_joy_aim_active = true
-		var jv: Vector2 = hud.joy_right.value
-		_last_joy_aim = Vector3(jv.x, 0.0, jv.y).normalized()
-		mech.aim_point = mech.global_position + _last_joy_aim * (6.0 + jv.length() * 12.0)
-		_last_mouse_pos = mp
-	elif _joy_aim_active:
-		if mp.distance_to(_last_mouse_pos) > 6.0 and (hud == null or not hud.is_touch_busy()):
-			_joy_aim_active = false
-			if hit != null:
-				mech.aim_point = hit
-		else:
-			mech.aim_point = mech.global_position + _last_joy_aim * 10.0
-	elif hit != null and (hud == null or not hud.is_touch_busy()):
-		mech.aim_point = hit
-		_last_mouse_pos = mp
 	var ui_block: bool = hud != null and (hud.pause_panel.visible or (hud.settings_panel != null and hud.settings_panel.visible) or hud.loot_panel.visible or hud.map_open())
-	var aiming: bool = mech.is_aiming and not dropping and not ended and not ui_block
+	var story_block: bool = Story.get("flow") != null and Story.flow.is_playing()
+	if hud != null and hud.joy_left != null and hud.joy_right != null:
+		if dropping or ended or ui_block or story_block or mech.input_locked:
+			if hud.joy_left.is_active():
+				hud.joy_left.release()
+			if hud.joy_right.is_active():
+				hud.joy_right.release()
+			if hud.joy_fire != null and hud.joy_fire.is_held():
+				hud.joy_fire.release()
+			mech.joy_move = Vector2.ZERO
+			mech.joy_aim = Vector2.ZERO
+		else:
+			mech.joy_move = hud.joy_left.value if hud.joy_left.is_active() else Vector2.ZERO
+			mech.joy_aim = hud.joy_right.value if hud.joy_right.is_active() else Vector2.ZERO
+	var aiming: bool = mech.is_aiming and not dropping and not ended and not ui_block and not story_block
 	var scoping: bool = aiming and mech.is_scoping()
 	var recon_pts := 0.0
 	if mech.get("stats") != null:
 		recon_pts = float(mech.stats.get("recon", 0.0)) + (1.0 if bool(mech.stats.get("recon_tag", false)) else 0.0)
-	var pan_cap := 4.5
-	var zoom_want := cam_zoom
-	var lerp_spd := 10.0 if dropping else 6.0
-	if scoping:
-		pan_cap = 42.0 + clampf(recon_pts, 0.0, 8.0) * 5.0
-		zoom_want = maxf(cam_zoom, ZOOM_STD * (2.25 + clampf(recon_pts, 0.0, 8.0) * 0.14))
-		lerp_spd = 7.5
-	elif aiming:
-		pan_cap = 10.0 + clampf(recon_pts, 0.0, 8.0) * 3.5
-		zoom_want = maxf(cam_zoom, ZOOM_STD * (1.28 + clampf(recon_pts, 0.0, 8.0) * 0.12))
-		lerp_spd = 7.0
-	_eff_zoom = lerpf(_eff_zoom, zoom_want, clampf(delta * 7.5, 0.0, 1.0))
-	var pan_want := Vector3.ZERO
-	if coop != null and (mech.net_done or mech.dead):
-		pan_want = Vector3.ZERO
-	elif aiming:
-		if aim_override != null or _joy_aim_active or (hud != null and hud.is_touch_busy()):
-			var av := Vector3(mech.aim_point.x - mech.global_position.x, 0.0, mech.aim_point.z - mech.global_position.z)
-			pan_want = av.limit_length(pan_cap)
+	var ray_max := 160.0 if mech.is_scoping() else (110.0 if mech.is_aiming else 80.0)
+
+	if is_first_person():
+		if hud != null and hud.joy_right != null and hud.joy_right.is_active() and not ui_block and not story_block:
+			var jd: Vector2 = hud.joy_right.consume_drag_delta()
+			if jd.length_squared() > 0.0001:
+				_apply_fp_look_delta(jd, 1.35)
+		var fov_want := FP_FOV_SCOPE if scoping else (FP_FOV_AIM if aiming else FP_FOV_STD)
+		_fp_fov = lerpf(_fp_fov, fov_want, clampf(delta * 10.0, 0.0, 1.0))
+		camera.fov = _fp_fov
+		if shake > 0.0:
+			shake = maxf(0.0, shake - delta)
+		sync_fp_camera()
+		if aim_override != null:
+			mech.aim_point = aim_override
 		else:
-			var sc_nx := (mp.x - vp_sz.x * 0.5) / maxf(vp_sz.x * 0.45, 1.0)
-			var sc_ny := (mp.y - vp_sz.y * 0.5) / maxf(vp_sz.y * 0.45, 1.0)
-			var asp := _view_aspect_now()
-			var sv := Vector2(sc_nx * clampf(asp * 0.72, 0.9, 1.4), sc_ny)
-			if sv.length() > 0.05:
-				pan_want = Vector3(sv.x, 0.0, sv.y).limit_length(1.0) * pan_cap
+			var look_dir := Vector3(-sin(fp_yaw) * cos(fp_pitch), sin(fp_pitch), -cos(fp_yaw) * cos(fp_pitch)).normalized()
+			var ray_from := camera.global_position
+			var ray_to := ray_from + look_dir * ray_max
+			var rq := PhysicsRayQueryParameters3D.create(ray_from, ray_to, 1 | 4 | 16, [mech.get_rid()])
+			var rhit := get_world_3d().direct_space_state.intersect_ray(rq)
+			if not rhit.is_empty():
+				var hp: Vector3 = rhit.position
+				if hp.distance_to(ray_from) < 2.2:
+					hp = ray_from + look_dir * 2.2
+				mech.aim_point = hp
+			else:
+				mech.aim_point = ray_to
+		cam_focus = mech.global_position
 	else:
-		pan_want = Vector3(mech.aim_point.x - mech.global_position.x, 0.0, mech.aim_point.z - mech.global_position.z).limit_length(12.0) * 0.25
-	_aim_pan = _aim_pan.lerp(pan_want, clampf(delta * lerp_spd, 0.0, 1.0))
-	var base_pos: Vector3 = coop.view_position() if (coop != null and (mech.net_done or mech.dead)) else mech.global_position
-	var look: Vector3 = base_pos + _aim_pan
-	look.y = clampf((mech.global_position.y - 0.2) * 0.22, 0.0, 6.5) if dropping else 0.0
-	cam_focus = look
-	var want: Vector3 = look + CAM_OFFSET * _eff_zoom
-	camera.global_position = camera.global_position.lerp(want, clampf(lerp_spd * delta, 0.0, 1.0))
-	if shake > 0.0:
-		shake = max(0.0, shake - delta)
-		camera.global_position += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.6
-	camera.look_at(camera.global_position - CAM_OFFSET * _eff_zoom, Vector3.UP)
+		# 镜头跟随 + 双摇杆瞄准 / 鼠标前探
+		var vp_sz := get_viewport().get_visible_rect().size
+		var mp := get_viewport().get_mouse_position().clamp(Vector2.ZERO, vp_sz)
+		var from := camera.project_ray_origin(mp)
+		var dir := camera.project_ray_normal(mp)
+		var hit = Plane(Vector3.UP, 1.8).intersects_ray(from, dir) if dir.y < -0.05 else null
+		if hit != null:
+			var hd: Vector3 = hit - mech.global_position
+			hd.y = 0.0
+			if hd.length() > ray_max:
+				hit = mech.global_position + hd.normalized() * ray_max
+				hit.y = 1.8
+		if aim_override != null:
+			mech.aim_point = aim_override
+		elif hud != null and hud.joy_right != null and hud.joy_right.is_active() and hud.joy_right.value.length() > 0.12:
+			_joy_aim_active = true
+			var jv: Vector2 = hud.joy_right.value
+			_last_joy_aim = Vector3(jv.x, 0.0, jv.y).normalized()
+			mech.aim_point = mech.global_position + _last_joy_aim * (6.0 + jv.length() * 12.0)
+			_last_mouse_pos = mp
+		elif _joy_aim_active:
+			if mp.distance_to(_last_mouse_pos) > 6.0 and (hud == null or not hud.is_touch_busy()):
+				_joy_aim_active = false
+				if hit != null:
+					mech.aim_point = hit
+			else:
+				mech.aim_point = mech.global_position + _last_joy_aim * 10.0
+		elif hit != null and (hud == null or not hud.is_touch_busy()):
+			mech.aim_point = hit
+			_last_mouse_pos = mp
+		var pan_cap := 4.5
+		var zoom_want := cam_zoom
+		var lerp_spd := 10.0 if dropping else 6.0
+		if scoping:
+			pan_cap = 42.0 + clampf(recon_pts, 0.0, 8.0) * 5.0
+			zoom_want = maxf(cam_zoom, ZOOM_STD * (2.25 + clampf(recon_pts, 0.0, 8.0) * 0.14))
+			lerp_spd = 7.5
+		elif aiming:
+			pan_cap = 10.0 + clampf(recon_pts, 0.0, 8.0) * 3.5
+			zoom_want = maxf(cam_zoom, ZOOM_STD * (1.28 + clampf(recon_pts, 0.0, 8.0) * 0.12))
+			lerp_spd = 7.0
+		_eff_zoom = lerpf(_eff_zoom, zoom_want, clampf(delta * 7.5, 0.0, 1.0))
+		var pan_want := Vector3.ZERO
+		if coop != null and (mech.net_done or mech.dead):
+			pan_want = Vector3.ZERO
+		elif aiming:
+			if aim_override != null or _joy_aim_active or (hud != null and hud.is_touch_busy()):
+				var av := Vector3(mech.aim_point.x - mech.global_position.x, 0.0, mech.aim_point.z - mech.global_position.z)
+				pan_want = av.limit_length(pan_cap)
+			else:
+				var sc_nx := (mp.x - vp_sz.x * 0.5) / maxf(vp_sz.x * 0.45, 1.0)
+				var sc_ny := (mp.y - vp_sz.y * 0.5) / maxf(vp_sz.y * 0.45, 1.0)
+				var asp := _view_aspect_now()
+				var sv := Vector2(sc_nx * clampf(asp * 0.72, 0.9, 1.4), sc_ny)
+				if sv.length() > 0.05:
+					pan_want = Vector3(sv.x, 0.0, sv.y).limit_length(1.0) * pan_cap
+		else:
+			pan_want = Vector3(mech.aim_point.x - mech.global_position.x, 0.0, mech.aim_point.z - mech.global_position.z).limit_length(12.0) * 0.25
+		_aim_pan = _aim_pan.lerp(pan_want, clampf(delta * lerp_spd, 0.0, 1.0))
+		var base_pos: Vector3 = coop.view_position() if (coop != null and (mech.net_done or mech.dead)) else mech.global_position
+		var look: Vector3 = base_pos + _aim_pan
+		look.y = clampf((mech.global_position.y - 0.2) * 0.22, 0.0, 6.5) if dropping else 0.0
+		cam_focus = look
+		var want: Vector3 = look + CAM_OFFSET * _eff_zoom
+		camera.global_position = camera.global_position.lerp(want, clampf(lerp_spd * delta, 0.0, 1.0))
+		if shake > 0.0:
+			shake = max(0.0, shake - delta)
+			camera.global_position += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.6
+		camera.look_at(camera.global_position - CAM_OFFSET * _eff_zoom, Vector3.UP)
+
 	var tt := Time.get_ticks_msec() * 0.001
 	for f in flicker_lights:
 		if is_instance_valid(f[0]):
@@ -1734,13 +2114,23 @@ func _process_impl(delta: float) -> void:
 			if fmod(tt + f[2], 7.0) < 0.12:
 				k *= 0.3
 			f[0].light_energy = f[1] * k
-	if smoke:
-		smoke.global_position = Vector3(camera.global_position.x - 10.0, 4.0, camera.global_position.z - 21.0)
-	if ash:
-		ash.global_position = Vector3(camera.global_position.x, 6.0, camera.global_position.z - 21.0)
-	if listener:
-		var lp: Vector3 = mech.global_position + Vector3(0, 6.0, 0)
-		listener.global_transform = Transform3D(Basis.IDENTITY, lp).looking_at(lp - CAM_OFFSET, Vector3.UP)
+	if is_first_person():
+		var f_xz := fp_forward_xz()
+		var r_xz := Vector3(-f_xz.z, 0.0, f_xz.x)
+		if smoke:
+			smoke.global_position = mech.global_position + f_xz * 14.0 - r_xz * 6.0 + Vector3(0.0, 4.0, 0.0)
+		if ash:
+			ash.global_position = mech.global_position + f_xz * 12.0 + Vector3(0.0, 5.5, 0.0)
+		if listener:
+			listener.global_transform = camera.global_transform
+	else:
+		if smoke:
+			smoke.global_position = Vector3(camera.global_position.x - 10.0, 4.0, camera.global_position.z - 21.0)
+		if ash:
+			ash.global_position = Vector3(camera.global_position.x, 6.0, camera.global_position.z - 21.0)
+		if listener:
+			var lp: Vector3 = mech.global_position + Vector3(0, 6.0, 0)
+			listener.global_transform = Transform3D(Basis.IDENTITY, lp).looking_at(lp - CAM_OFFSET, Vector3.UP)
 	if ended or dropping:
 		hud.refresh()
 		return
@@ -2413,7 +2803,7 @@ func _update_view() -> void:
 	if absf(asp - _view_aspect) < 0.001 and not _view_poly.is_empty():
 		return
 	_view_aspect = asp
-	var fov: float = camera.fov if camera else 40.0
+	var fov: float = AI_VIEW_FOV_REF
 	var off: Vector3 = CAM_OFFSET * AI_VIEW_ZOOM_REF
 	var f := -off.normalized()
 	var right := f.cross(Vector3.UP).normalized()
@@ -2617,6 +3007,84 @@ func bug_neighbors(p: Vector3) -> Array:
 	return out
 
 
+func _build_or_reuse_body(body: Node3D, cache_key: String, build_fn: Callable) -> void:
+	if _bullet_meshes.has(cache_key):
+		for entry: Array in _bullet_meshes[cache_key]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = entry[0]
+			mi.material_override = entry[1]
+			mi.transform = entry[2]
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			body.add_child(mi)
+		return
+	build_fn.call(body)
+	if body.get_child_count() > 1:
+		MechScript._batch_visual(body)
+	var cached: Array = []
+	for ch in body.get_children():
+		if ch is MeshInstance3D:
+			var cmi := ch as MeshInstance3D
+			cached.append([cmi.mesh, cmi.material_override, cmi.transform])
+	_bullet_meshes[cache_key] = cached
+
+
+func _populate_proj_body(b_node: Node3D, kind: String, size: float) -> void:
+	var m_steel := A.metal(Color(0.24, 0.26, 0.28))
+	var m_dark := A.metal(Color(0.12, 0.13, 0.15))
+	var m_brass := A.paint(Color(0.88, 0.66, 0.22), 0.9, 0.26, {"panel_scale": 0.0, "wear": 0.12})
+	var m_copper := A.paint(Color(0.84, 0.45, 0.24), 0.88, 0.28, {"panel_scale": 0.0, "wear": 0.12})
+	match kind:
+		"missile", "rocket", "vls":
+			var r := size * (0.64 if kind == "vls" else (0.50 if kind == "rocket" else 0.56))
+			var body_col := Color(0.26, 0.29, 0.31) if kind == "vls" else (Color(0.30, 0.34, 0.24) if kind == "rocket" else Color(0.24, 0.27, 0.25))
+			var nose_col := Color(0.76, 0.22, 0.14) if kind != "rocket" else Color(0.68, 0.54, 0.22)
+			var m_fuse := A.paint(body_col, 0.55, 0.44, {"panel_scale": 0.0, "wear": 0.25})
+			var m_nose := A.paint(nose_col, 0.28, 0.42, {"panel_scale": 0.0, "wear": 0.2})
+			var m_band := A.paint(Color(0.92, 0.74, 0.16), 0.3, 0.42, {"panel_scale": 0.0})
+			A.add(b_node, A.cyl(r, size * 3.3, r, 14), m_fuse, Vector3(0, 0, size * 0.2), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(r * 0.22, size * 1.38, r, 14), m_nose, Vector3(0, 0, -size * 2.12), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.014, size * 0.36, r * 0.22, 10), m_brass, Vector3(0, 0, -size * 2.95), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(r * 1.04, size * 0.28, r * 1.04, 14), m_band, Vector3(0, 0, -size * 0.9), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(r * 0.68, size * 0.48, r * 0.92, 12), m_dark, Vector3(0, 0, size * 2.02), Vector3(90, 0, 0), Vector3.ONE, false)
+			for fi in 4:
+				var fa := fi * 90.0
+				A.add(b_node, _box_cached(Vector3(size * 0.09, size * 1.48, size * 0.95)), m_dark, Vector3(0, 0, size * 1.25), Vector3(0, 0, fa), Vector3.ONE, false)
+				if kind != "rocket":
+					A.add(b_node, _box_cached(Vector3(size * 0.07, size * 0.82, size * 0.42)), m_steel, Vector3(0, 0, -size * 0.65), Vector3(0, 0, fa + 45.0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(r * 0.42, size * 0.22, r * 0.66, 10), m_copper, Vector3(0, 0, size * 2.18), Vector3(90, 0, 0), Vector3.ONE, false)
+		"spit":
+			var rs := size * 0.42
+			var m_can := A.paint(Color(0.28, 0.35, 0.20), 0.42, 0.48, {"rust": 0.45, "wear": 0.35})
+			var m_haz := A.hazard()
+			A.add(b_node, A.cyl(rs, size * 1.95, rs * 1.04, 12), m_can, Vector3(0, 0, 0.05 * size), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rs * 1.08, size * 0.34, rs * 1.08, 12), m_haz, Vector3(0, 0, -size * 0.42), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rs * 0.38, size * 0.56, rs, 12), m_steel, Vector3(0, 0, -size * 1.18), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rs * 0.22, size * 0.22, rs * 0.38, 10), m_brass, Vector3(0, 0, -size * 1.54), Vector3(-90, 0, 0), Vector3.ONE, false)
+			for fi in 4:
+				A.add(b_node, _box_cached(Vector3(rs * 0.18, rs * 2.15, size * 0.62)), m_dark, Vector3(0, 0, size * 0.88), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+		"flamer":
+			var rf := size * 0.36
+			var m_char := A.paint(Color(0.16, 0.14, 0.13), 0.45, 0.68, {"rust": 0.5, "wear": 0.4})
+			var m_inc := A.paint(Color(0.84, 0.30, 0.12), 0.32, 0.45, {"panel_scale": 0.0, "wear": 0.25})
+			var m_vent := A.emit(Color(1.0, 0.44, 0.10), 1.35)
+			A.add(b_node, A.cyl(rf, size * 1.48, rf, 10), m_char, Vector3(0, 0, size * 0.1), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rf * 0.32, size * 0.68, rf, 10), m_inc, Vector3(0, 0, -size * 0.94), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rf * 1.07, size * 0.18, rf * 1.07, 10), m_brass, Vector3(0, 0, size * 0.45), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rf * 0.82, size * 0.26, rf * 0.92, 8), m_vent, Vector3(0, 0, size * 0.88), Vector3(90, 0, 0), Vector3.ONE, false)
+		"cryo":
+			var rc := size * 0.38
+			var m_n2 := A.paint(Color(0.32, 0.40, 0.46), 0.48, 0.42, {"panel_scale": 0.0, "wear": 0.25})
+			A.add(b_node, A.cyl(rc, size * 1.65, rc, 10), m_n2, Vector3(0, 0, size * 0.08), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rc * 0.30, size * 0.62, rc, 10), m_steel, Vector3(0, 0, -size * 1.02), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rc * 1.06, size * 0.16, rc * 1.06, 10), m_brass, Vector3(0, 0, size * 0.42), Vector3(90, 0, 0), Vector3.ONE, false)
+		_:
+			var rd := maxf(size * 0.42, 0.065)
+			var Ld := maxf(size * 2.8, 0.52)
+			A.add(b_node, A.cyl(rd * 0.9, Ld * 0.56, rd, 10), m_steel, Vector3(0, 0, Ld * 0.06), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.01, Ld * 0.48, rd * 0.9, 10), m_copper, Vector3(0, 0, -Ld * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(rd * 1.07, Ld * 0.10, rd * 1.07, 10), m_brass, Vector3(0, 0, Ld * 0.18), Vector3(90, 0, 0), Vector3.ONE, false)
+
+
 func _proj(pos: Vector3, vel: Vector3, dmg: float, life: float, mask: int, c: Color, size: float, _glow := false, kind := "shell"):
 	if coop != null: coop.emit_effect("shot", [pos, vel, life, c, size, kind])
 	var p = ProjScript.new()
@@ -2629,69 +3097,17 @@ func _proj(pos: Vector3, vel: Vector3, dmg: float, life: float, mask: int, c: Co
 	var body := Node3D.new()
 	p.add_child(body)
 	p.body_node = body
-	var m_steel := A.metal(Color(0.24, 0.26, 0.28))
-	var m_dark := A.metal(Color(0.12, 0.13, 0.15))
-	var m_brass := A.paint(Color(0.88, 0.66, 0.22), 0.9, 0.26, {"panel_scale": 0.0, "wear": 0.12})
-	var m_copper := A.paint(Color(0.84, 0.45, 0.24), 0.88, 0.28, {"panel_scale": 0.0, "wear": 0.12})
 	match kind:
 		"missile", "rocket", "vls":
 			p.spin_spd = 14.0 if kind != "rocket" else 22.0
-			var r := size * (0.64 if kind == "vls" else (0.50 if kind == "rocket" else 0.56))
-			var body_col := Color(0.26, 0.29, 0.31) if kind == "vls" else (Color(0.30, 0.34, 0.24) if kind == "rocket" else Color(0.24, 0.27, 0.25))
-			var nose_col := Color(0.76, 0.22, 0.14) if kind != "rocket" else Color(0.68, 0.54, 0.22)
-			var m_fuse := A.paint(body_col, 0.55, 0.44, {"panel_scale": 0.0, "wear": 0.25})
-			var m_nose := A.paint(nose_col, 0.28, 0.42, {"panel_scale": 0.0, "wear": 0.2})
-			var m_band := A.paint(Color(0.92, 0.74, 0.16), 0.3, 0.42, {"panel_scale": 0.0})
-			# 实体军工火箭/导弹弹体：车削钢制发动机管 + 战斗部风帽 + 黄铜碰炸引信探针 + 黄黑识别环 + 十字钢制安定翼 + 文丘里金属喷管
-			A.add(body, A.cyl(r, size * 3.3, r, 14), m_fuse, Vector3(0, 0, size * 0.2), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(r * 0.22, size * 1.38, r, 14), m_nose, Vector3(0, 0, -size * 2.12), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.014, size * 0.36, r * 0.22, 10), m_brass, Vector3(0, 0, -size * 2.95), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(r * 1.04, size * 0.28, r * 1.04, 14), m_band, Vector3(0, 0, -size * 0.9), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(r * 0.68, size * 0.48, r * 0.92, 12), m_dark, Vector3(0, 0, size * 2.02), Vector3(90, 0, 0), Vector3.ONE, false)
-			for fi in 4:
-				var fa := fi * 90.0
-				A.add(body, _box_cached(Vector3(size * 0.09, size * 1.48, size * 0.95)), m_dark, Vector3(0, 0, size * 1.25), Vector3(0, 0, fa), Vector3.ONE, false)
-				if kind != "rocket":
-					A.add(body, _box_cached(Vector3(size * 0.07, size * 0.82, size * 0.42)), m_steel, Vector3(0, 0, -size * 0.65), Vector3(0, 0, fa + 45.0), Vector3.ONE, false)
-			# 文丘里扩张钢喷管内腔与石墨喷口衬环（纯实体重工金属结构，零发光球体）
-			A.add(body, A.cyl(r * 0.42, size * 0.22, r * 0.66, 10), m_copper, Vector3(0, 0, size * 2.18), Vector3(90, 0, 0), Vector3.ONE, false)
-		"spit":
+		"spit", "cryo":
 			p.spin_spd = 18.0
-			var rs := size * 0.42
-			var m_can := A.paint(Color(0.28, 0.35, 0.20), 0.42, 0.48, {"rust": 0.45, "wear": 0.35})
-			var m_haz := A.hazard()
-			# 重工业强酸破片钢瓶弹：加厚钢壳瓶身 + 橄榄绿防腐涂层罐 + 黄黑高危环 + 黄铜撞击引信头 + 十字钢尾翼（彻底取代发光有机毒球）
-			A.add(body, A.cyl(rs, size * 1.95, rs * 1.04, 12), m_can, Vector3(0, 0, 0.05 * size), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rs * 1.08, size * 0.34, rs * 1.08, 12), m_haz, Vector3(0, 0, -size * 0.42), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rs * 0.38, size * 0.56, rs, 12), m_steel, Vector3(0, 0, -size * 1.18), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rs * 0.22, size * 0.22, rs * 0.38, 10), m_brass, Vector3(0, 0, -size * 1.54), Vector3(-90, 0, 0), Vector3.ONE, false)
-			for fi in 4:
-				A.add(body, _box_cached(Vector3(rs * 0.18, rs * 2.15, size * 0.62)), m_dark, Vector3(0, 0, size * 0.88), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
 		"flamer":
 			p.spin_spd = 24.0
-			var rf := size * 0.38
-			var m_char := A.paint(Color(0.16, 0.14, 0.13), 0.45, 0.68, {"rust": 0.5, "wear": 0.4})
-			var m_inc := A.paint(Color(0.84, 0.30, 0.12), 0.32, 0.45, {"panel_scale": 0.0, "wear": 0.25})
-			# 40mm 实体增压铝热凝固汽油钢壳燃烧弹：熏黑穿孔钢壳弹筒 + 橘红燃烧弹识别风帽 + 黄铜闭气弹带（彻底取代纯光球）
-			A.add(body, A.cyl(rf, size * 1.55, rf, 10), m_char, Vector3(0, 0, size * 0.1), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rf * 0.32, size * 0.68, rf, 10), m_inc, Vector3(0, 0, -size * 0.98), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rf * 1.07, size * 0.18, rf * 1.07, 10), m_brass, Vector3(0, 0, size * 0.45), Vector3(90, 0, 0), Vector3.ONE, false)
-		"cryo":
-			p.spin_spd = 18.0
-			var rc := size * 0.38
-			var m_n2 := A.paint(Color(0.32, 0.40, 0.46), 0.48, 0.42, {"panel_scale": 0.0, "wear": 0.25})
-			A.add(body, A.cyl(rc, size * 1.65, rc, 10), m_n2, Vector3(0, 0, size * 0.08), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rc * 0.30, size * 0.62, rc, 10), m_steel, Vector3(0, 0, -size * 1.02), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rc * 1.06, size * 0.16, rc * 1.06, 10), m_brass, Vector3(0, 0, size * 0.42), Vector3(90, 0, 0), Vector3.ONE, false)
 		_:
 			p.spin_spd = 32.0
-			var rd := maxf(size * 0.42, 0.065)
-			var Ld := maxf(size * 2.8, 0.52)
-			A.add(body, A.cyl(rd * 0.9, Ld * 0.56, rd, 10), m_steel, Vector3(0, 0, Ld * 0.06), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.01, Ld * 0.48, rd * 0.9, 10), m_copper, Vector3(0, 0, -Ld * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(rd * 1.07, Ld * 0.10, rd * 1.07, 10), m_brass, Vector3(0, 0, Ld * 0.18), Vector3(90, 0, 0), Vector3.ONE, false)
-	if body.get_child_count() > 1:
-		MechScript._batch_visual(body)
+	var bkey := "pbody|%s|%.3f|%s" % [kind, size, c.to_html()]
+	_build_or_reuse_body(body, bkey, _populate_proj_body.bind(kind, size))
 	fx.add_child(p)
 	p.global_position = pos
 	if vel.length() > 0.1:
@@ -2718,25 +3134,95 @@ func recycle_projectile(p) -> bool:
 	return true
 
 
+func _populate_tracer_body(b_node: Node3D, caliber: String, br: float, bl: float, c: Color) -> void:
+	var m_gun := A.metal(Color(0.14, 0.15, 0.17))
+	var m_dark := A.metal(Color(0.10, 0.11, 0.13))
+	var m_tung := A.metal(Color(0.32, 0.34, 0.37))
+	var m_brass := A.paint(Color(0.88, 0.66, 0.22), 0.9, 0.25, {"panel_scale": 0.0, "wear": 0.1})
+	var m_copper := A.paint(Color(0.84, 0.45, 0.24), 0.88, 0.28, {"panel_scale": 0.0, "wear": 0.1})
+	var m_cup := A.emit(c, 3.2)
+	var m_glint := A.emit(c.lightened(0.25), 2.2)
+	match caliber:
+		"apfsds":
+			A.add(b_node, A.cyl(br * 0.56, bl * 0.66, br * 0.64, 10), m_gun, Vector3(0, 0, 0.02 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.005, bl * 0.36, br * 0.56, 10), m_glint, Vector3(0, 0, -bl * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
+			for gi in 3:
+				A.add(b_node, A.cyl(br * 0.92, bl * 0.038, br * 0.92, 10), m_brass, Vector3(0, 0, (-0.10 + gi * 0.075) * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			for fi in 3:
+				A.add(b_node, _box_cached(Vector3(br * 0.18, br * 2.5, bl * 0.24)), m_tung, Vector3(0, 0, bl * 0.28), Vector3(0, 0, fi * 60.0), Vector3.ONE, false)
+		"sniper", "sniper_ap":
+			var m_tip: Material = m_glint if caliber == "sniper_ap" else m_copper
+			A.add(b_node, A.cyl(br * 0.86, bl * 0.54, br, 10), m_gun, Vector3(0, 0, 0.01 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.005, bl * 0.44, br * 0.86, 10), m_tip, Vector3(0, 0, -bl * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 1.05, bl * 0.08, br * 1.05, 10), m_brass, Vector3(0, 0, bl * 0.14), Vector3(90, 0, 0), Vector3.ONE, false)
+		"coil":
+			A.add(b_node, A.cyl(br * 0.64, bl * 0.60, br * 0.70, 10), m_gun, Vector3(0, 0, 0.02 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.005, bl * 0.38, br * 0.64, 10), m_glint, Vector3(0, 0, -bl * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
+			for bz in [-bl * 0.08, bl * 0.06]:
+				A.add(b_node, A.cyl(br * 0.96, bl * 0.052, br * 0.96, 10), m_copper, Vector3(0, 0, bz), Vector3(90, 0, 0), Vector3.ONE, false)
+			for fi in 2:
+				A.add(b_node, _box_cached(Vector3(br * 0.18, br * 2.3, bl * 0.24)), m_tung, Vector3(0, 0, bl * 0.26), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+		"cannon":
+			var m_olive := A.paint(Color(0.24, 0.28, 0.18), 0.45, 0.45, {"panel_scale": 0.0, "wear": 0.25})
+			A.add(b_node, A.cyl(br * 0.92, bl * 0.52, br, 12), m_olive, Vector3(0, 0, 0.01 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 0.24, bl * 0.36, br * 0.92, 12), m_dark, Vector3(0, 0, -bl * 0.43), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.008, bl * 0.22, br * 0.16, 8), m_brass, Vector3(0, 0, -bl * 0.70), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 1.08, bl * 0.09, br * 1.08, 12), m_copper, Vector3(0, 0, bl * 0.13), Vector3(90, 0, 0), Vector3.ONE, false)
+			for fi in 4:
+				A.add(b_node, _box_cached(Vector3(br * 0.16, br * 2.0, bl * 0.24)), m_tung, Vector3(0, 0, bl * 0.24), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+		"ac30":
+			var m_he := A.paint(Color(0.84, 0.26, 0.12), 0.35, 0.40, {"panel_scale": 0.0})
+			A.add(b_node, A.cyl(br * 0.92, bl * 0.52, br, 10), m_gun, Vector3(0, 0, 0.01 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.006, bl * 0.44, br * 0.92, 10), m_he, Vector3(0, 0, -bl * 0.47), Vector3(-90, 0, 0), Vector3.ONE, false)
+			for bz in [bl * 0.06, bl * 0.17]:
+				A.add(b_node, A.cyl(br * 1.07, bl * 0.055, br * 1.07, 10), m_copper, Vector3(0, 0, bz), Vector3(90, 0, 0), Vector3.ONE, false)
+		"slug":
+			A.add(b_node, A.cyl(br * 0.86, bl * 0.54, br, 10), m_gun, Vector3(0, 0, -bl * 0.12), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 1.04, bl * 0.28, br * 0.95, 10), m_brass, Vector3(0, 0, bl * 0.22), Vector3(90, 0, 0), Vector3.ONE, false)
+		"pellet":
+			A.add(b_node, A.cyl(0.004, bl * 0.52, br, 8), m_glint, Vector3(0, 0, -bl * 0.26), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 0.78, bl * 0.38, br * 0.78, 8), m_gun, Vector3(0, 0, bl * 0.14), Vector3(90, 0, 0), Vector3.ONE, false)
+			for fi in 2:
+				A.add(b_node, _box_cached(Vector3(br * 0.18, br * 1.85, bl * 0.28)), m_copper, Vector3(0, 0, bl * 0.22), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+		_:
+			A.add(b_node, A.cyl(br * 0.88, bl * 0.50, br, 8), m_gun, Vector3(0, 0, 0.01 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(0.005, bl * 0.46, br * 0.88, 8), m_copper, Vector3(0, 0, -bl * 0.46), Vector3(-90, 0, 0), Vector3.ONE, false)
+			A.add(b_node, A.cyl(br * 1.07, bl * 0.08, br * 1.07, 8), m_brass, Vector3(0, 0, bl * 0.13), Vector3(90, 0, 0), Vector3.ONE, false)
+	A.add(b_node, A.cyl(br * 0.92, bl * 0.20, br * 0.78, 8), m_cup, Vector3(0, 0, bl * 0.28), Vector3(90, 0, 0), Vector3.ONE, false)
+
+
 func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: float, core: float, caliber := "mg"):
 	if coop != null: coop.emit_effect("shot", [pos, vel, life, c, w, "tracer:" + caliber])
-	var key := "%s|%s|%s|%s" % [c, w, core, caliber]
-	var br := clampf(core * 0.34, 0.016, 0.028)
-	var bl := clampf(core * 3.0, 0.18, 0.28)
+	var key := "%s|%s|%s|%s" % [c.to_html(), w, core, caliber]
+	var br := clampf(core * 0.34, 0.020, 0.028)
+	var bl := clampf(core * 3.2, 0.22, 0.30)
+	var wake_w := 0.056
+	var wake_len := 1.35
 	match caliber:
-		"apfsds": br = 0.022; bl = 0.42
-		"sniper_ap": br = 0.022; bl = 0.40
-		"sniper": br = 0.019; bl = 0.34
-		"coil": br = 0.018; bl = 0.32
-		"cannon": br = 0.048; bl = 0.40
-		"ac30": br = 0.030; bl = 0.28
-		"slug": br = 0.026; bl = 0.22
-		"pellet": br = 0.014; bl = 0.16
+		"apfsds":
+			br = 0.026; bl = 0.48; wake_w = 0.118; wake_len = 3.80
+		"sniper_ap":
+			br = 0.028; bl = 0.48; wake_w = 0.124; wake_len = 4.20
+		"sniper":
+			br = 0.024; bl = 0.40; wake_w = 0.106; wake_len = 3.50
+		"coil":
+			br = 0.022; bl = 0.38; wake_w = 0.098; wake_len = 2.75
+		"cannon":
+			br = 0.048; bl = 0.46; wake_w = 0.155; wake_len = 1.95
+		"ac30":
+			br = 0.032; bl = 0.36; wake_w = 0.116; wake_len = 2.35
+		"hmg":
+			br = 0.024; bl = 0.28; wake_w = 0.096; wake_len = 1.75
+		"slug":
+			br = 0.028; bl = 0.28; wake_w = 0.108; wake_len = 1.60
+		"pellet":
+			br = 0.016; bl = 0.19; wake_w = 0.072; wake_len = 1.05
+		_:
+			br = 0.021; bl = 0.25; wake_w = 0.086; wake_len = 1.50
 	var is_hi_vel := caliber in ["apfsds", "sniper", "sniper_ap", "coil"]
-	var wake_w := br * 2.0
-	var wake_len := bl * (2.35 if is_hi_vel else (1.85 if caliber == "cannon" else 1.70))
-	var t_off := bl * 0.45
+	var t_off := bl * 0.36
 	var spin_v := 18.0 if (is_hi_vel or caliber == "cannon") else 38.0
+	var up_ref := Vector3.UP if (vel.length_squared() < 0.01 or absf(vel.normalized().y) < 0.95) else Vector3.FORWARD
 	var pool: Array = _tracer_pool.get(key, [])
 	while not pool.is_empty():
 		var q = pool.pop_back()
@@ -2757,7 +3243,8 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 		q.tail_offset = t_off
 		q.tail_len = wake_len
 		q.global_position = pos
-		q.look_at(pos + vel, Vector3.UP)
+		if vel.length_squared() > 0.01:
+			q.look_at(pos + vel, up_ref)
 		q.visible = true
 		q.set_physics_process(true)
 		return q
@@ -2771,63 +3258,13 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 	p.source = mech
 	p.color = c
 	p.spin_spd = spin_v
-	# 3D 写实重工业实体金属弹药（按真实口径比例缩放）
+	# 3D 写实重工业实体金属弹药 + 高对比暗钢弹体 + 炽热曳光药柱底火 + 锐利弹尖反光
 	var body := Node3D.new()
 	p.add_child(body)
 	p.body_node = body
-	var m_steel := A.metal(Color(0.24, 0.26, 0.28))
-	var m_dark := A.metal(Color(0.13, 0.14, 0.16))
-	var m_tung := A.metal(Color(0.42, 0.44, 0.47))
-	var m_brass := A.paint(Color(0.88, 0.66, 0.22), 0.9, 0.25, {"panel_scale": 0.0, "wear": 0.1})
-	var m_copper := A.paint(Color(0.84, 0.45, 0.24), 0.88, 0.28, {"panel_scale": 0.0, "wear": 0.1})
-	match caliber:
-		"apfsds":
-			A.add(body, A.cyl(br * 0.56, bl * 0.72, br * 0.64, 10), m_tung, Vector3(0, 0, 0.05 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.004, bl * 0.34, br * 0.56, 10), A.chrome(), Vector3(0, 0, -bl * 0.48), Vector3(-90, 0, 0), Vector3.ONE, false)
-			for gi in 3:
-				A.add(body, A.cyl(br * 0.92, bl * 0.038, br * 0.92, 10), m_brass, Vector3(0, 0, (-0.08 + gi * 0.075) * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			for fi in 3:
-				A.add(body, _box_cached(Vector3(br * 0.18, br * 2.6, bl * 0.26)), m_dark, Vector3(0, 0, bl * 0.31), Vector3(0, 0, fi * 60.0), Vector3.ONE, false)
-		"sniper", "sniper_ap":
-			var m_tip := A.chrome() if caliber == "sniper_ap" else m_copper
-			A.add(body, A.cyl(br * 0.86, bl * 0.58, br, 10), m_steel, Vector3(0, 0, 0.03 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.004, bl * 0.44, br * 0.86, 10), m_tip, Vector3(0, 0, -bl * 0.47), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 1.05, bl * 0.08, br * 1.05, 10), m_brass, Vector3(0, 0, bl * 0.18), Vector3(90, 0, 0), Vector3.ONE, false)
-		"coil":
-			A.add(body, A.cyl(br * 0.64, bl * 0.66, br * 0.70, 10), m_steel, Vector3(0, 0, 0.04 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.004, bl * 0.38, br * 0.64, 10), m_tung, Vector3(0, 0, -bl * 0.48), Vector3(-90, 0, 0), Vector3.ONE, false)
-			for bz in [-bl * 0.06, bl * 0.08]:
-				A.add(body, A.cyl(br * 0.96, bl * 0.052, br * 0.96, 10), m_copper, Vector3(0, 0, bz), Vector3(90, 0, 0), Vector3.ONE, false)
-			for fi in 2:
-				A.add(body, _box_cached(Vector3(br * 0.18, br * 2.4, bl * 0.26)), m_dark, Vector3(0, 0, bl * 0.28), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
-		"cannon":
-			var m_olive := A.paint(Color(0.28, 0.32, 0.22), 0.45, 0.45, {"panel_scale": 0.0, "wear": 0.25})
-			A.add(body, A.cyl(br * 0.92, bl * 0.56, br, 12), m_olive, Vector3(0, 0, 0.02 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 0.24, bl * 0.36, br * 0.92, 12), m_dark, Vector3(0, 0, -bl * 0.44), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.008, bl * 0.24, br * 0.16, 8), m_brass, Vector3(0, 0, -bl * 0.72), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 1.08, bl * 0.09, br * 1.08, 12), m_copper, Vector3(0, 0, bl * 0.16), Vector3(90, 0, 0), Vector3.ONE, false)
-			for fi in 4:
-				A.add(body, _box_cached(Vector3(br * 0.16, br * 2.0, bl * 0.28)), m_steel, Vector3(0, 0, bl * 0.28), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
-		"ac30":
-			var m_he := A.paint(Color(0.84, 0.26, 0.12), 0.35, 0.40, {"panel_scale": 0.0})
-			A.add(body, A.cyl(br * 0.92, bl * 0.58, br, 10), m_steel, Vector3(0, 0, 0.02 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.005, bl * 0.44, br * 0.92, 10), m_he, Vector3(0, 0, -bl * 0.49), Vector3(-90, 0, 0), Vector3.ONE, false)
-			for bz in [bl * 0.08, bl * 0.20]:
-				A.add(body, A.cyl(br * 1.07, bl * 0.055, br * 1.07, 10), m_copper, Vector3(0, 0, bz), Vector3(90, 0, 0), Vector3.ONE, false)
-		"slug":
-			A.add(body, A.cyl(br * 0.86, bl * 0.58, br, 10), A.chrome(), Vector3(0, 0, -bl * 0.10), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 1.04, bl * 0.32, br * 0.95, 10), m_brass, Vector3(0, 0, bl * 0.28), Vector3(90, 0, 0), Vector3.ONE, false)
-		"pellet":
-			A.add(body, A.cyl(0.004, bl * 0.56, br, 8), A.chrome(), Vector3(0, 0, -bl * 0.26), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 0.74, bl * 0.44, br * 0.74, 8), m_copper, Vector3(0, 0, bl * 0.18), Vector3(90, 0, 0), Vector3.ONE, false)
-			for fi in 2:
-				A.add(body, _box_cached(Vector3(br * 0.18, br * 1.9, bl * 0.34)), m_steel, Vector3(0, 0, bl * 0.26), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
-		_:
-			A.add(body, A.cyl(br * 0.88, bl * 0.56, br, 8), m_steel, Vector3(0, 0, 0.04 * bl), Vector3(90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(0.004, bl * 0.48, br * 0.88, 8), m_copper, Vector3(0, 0, -bl * 0.48), Vector3(-90, 0, 0), Vector3.ONE, false)
-			A.add(body, A.cyl(br * 1.07, bl * 0.085, br * 1.07, 8), m_brass, Vector3(0, 0, bl * 0.17), Vector3(90, 0, 0), Vector3.ONE, false)
-	MechScript._batch_visual(body)
-	# 与子弹口径/弹长严密对齐的双交叉窄带曳光尾迹
+	var bkey := "tbody|%s|%.4f|%.4f|%s" % [caliber, br, bl, c.to_html()]
+	_build_or_reuse_body(body, bkey, _populate_tracer_body.bind(caliber, br, bl, c))
+	# 与子弹口径严密对齐的双交叉炽热针状曳光带
 	var t := Node3D.new()
 	t.visible = false
 	t.scale = Vector3(1, 1, 0.01)
@@ -2851,7 +3288,8 @@ func _tracer(pos: Vector3, vel: Vector3, dmg: float, life: float, c: Color, w: f
 	p.tail_len = wake_len
 	fx.add_child(p)
 	p.global_position = pos
-	p.look_at(pos + vel, Vector3.UP)
+	if vel.length_squared() > 0.01:
+		p.look_at(pos + vel, up_ref)
 	return p
 
 
@@ -2884,25 +3322,23 @@ func _quad_cached(sz: float) -> QuadMesh:
 	return _bullet_meshes[k]
 
 
-## 3D 实体黄铜/红壳弹壳粒子网格（抛壳时旋转弹跳）
-func _casing_mesh(heavy := false, red_shell := false) -> CylinderMesh:
+## 3D 实体黄铜/红壳弹壳粒子网格（横置倾角网格，配合 PARTICLE_FLAG_ROTATE_Y 产生真实三维翻滚）
+func _casing_mesh(heavy := false, red_shell := false) -> BoxMesh:
 	var k := "cas_%s_%s" % [heavy, red_shell]
 	if not _bullet_meshes.has(k):
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.045 if heavy else 0.028
-		cm.bottom_radius = 0.048 if heavy else 0.03
-		cm.height = 0.22 if heavy else 0.14
-		cm.radial_segments = 8
-		cm.rings = 1
+		var bm := BoxMesh.new()
+		var r := 0.036 if heavy else 0.022
+		var l := 0.125 if heavy else 0.082
+		bm.size = Vector3(l, r, r)
 		var m := StandardMaterial3D.new()
-		m.albedo_color = Color(0.76, 0.16, 0.11) if red_shell else Color(0.95, 0.74, 0.26)
-		m.metallic = 0.35 if red_shell else 0.92
-		m.roughness = 0.42 if red_shell else 0.22
+		m.albedo_color = Color(0.76, 0.16, 0.11) if red_shell else Color(0.92, 0.72, 0.28)
+		m.metallic = 0.35 if red_shell else 0.72
+		m.roughness = 0.42 if red_shell else 0.28
 		m.emission_enabled = true
-		m.emission = Color(0.45, 0.12, 0.05) if red_shell else Color(0.55, 0.38, 0.1)
-		m.emission_energy_multiplier = 0.45
-		cm.material = m
-		_bullet_meshes[k] = cm
+		m.emission = Color(0.38, 0.10, 0.04) if red_shell else Color(0.45, 0.32, 0.08)
+		m.emission_energy_multiplier = 0.35
+		bm.material = m
+		_bullet_meshes[k] = bm
 	return _bullet_meshes[k]
 
 
@@ -2911,22 +3347,22 @@ func _debris_mesh(kind := "metal") -> PrismMesh:
 	var k := "deb_" + kind
 	if not _bullet_meshes.has(k):
 		var pm := PrismMesh.new()
-		pm.size = Vector3(0.14, 0.18, 0.08) if kind != "rock" else Vector3(0.18, 0.16, 0.14)
+		pm.size = Vector3(0.085, 0.052, 0.068) if kind != "rock" else Vector3(0.105, 0.072, 0.088)
 		pm.left_to_right = 0.32
 		var m := StandardMaterial3D.new()
 		m.vertex_color_use_as_albedo = true
 		if kind == "metal":
-			m.albedo_color = Color(0.52, 0.54, 0.58)
-			m.metallic = 0.85
-			m.roughness = 0.28
+			m.albedo_color = Color(0.68, 0.70, 0.74)
+			m.metallic = 0.48
+			m.roughness = 0.34
 		elif kind == "chitin":
-			m.albedo_color = Color(0.32, 0.35, 0.22)
-			m.metallic = 0.25
-			m.roughness = 0.32
+			m.albedo_color = Color(0.42, 0.45, 0.30)
+			m.metallic = 0.22
+			m.roughness = 0.36
 			m.clearcoat_enabled = true
 			m.clearcoat = 0.8
 		else:
-			m.albedo_color = Color(0.56, 0.52, 0.46)
+			m.albedo_color = Color(0.58, 0.54, 0.48)
 			m.metallic = 0.05
 			m.roughness = 0.88
 		pm.material = m
@@ -2966,15 +3402,26 @@ const TRACER_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
 uniform vec4 col : source_color;
-varying float t;
-void vertex() { t = clamp(UV.y, 0.0, 1.0); }
 void fragment() {
-	float fade = pow(1.0 - t, 1.85);
-	float core_rib = smoothstep(0.5, 0.08, abs(UV.x - 0.5));
-	float hot = smoothstep(0.28, 0.0, t) * smoothstep(0.32, 0.0, abs(UV.x - 0.5));
-	vec3 smoke = mix(vec3(0.86, 0.80, 0.70), vec3(0.60, 0.59, 0.57), smoothstep(0.0, 0.35, t));
-	ALBEDO = mix(smoke, mix(col.rgb, vec3(1.0, 0.94, 0.78), hot * 0.78), (1.0 - t) * 0.45);
-	ALPHA = fade * core_rib * 0.52;
+	float tc = clamp(UV.y, 0.0, 1.0);
+	float half_w = mix(1.0, 0.16, pow(clamp(tc, 1e-4, 1.0), 0.75));
+	float rn = clamp(abs(UV.x - 0.5) * 2.0, 0.0, 2.0) / max(half_w, 0.01);
+	if (rn > 1.0 || tc > 0.992) discard;
+	float core_w = smoothstep(0.52, 0.08, rn);
+	float body_w = smoothstep(0.88, 0.42, rn);
+	float edge_mask = 1.0 - smoothstep(0.82, 1.0, rn);
+	float len_fade = pow(clamp(1.0 - tc, 1e-4, 1.0), 1.08) * smoothstep(0.992, 0.90, tc);
+	float tip_hot = smoothstep(0.48, 0.0, tc);
+	vec3 sat_col = pow(clamp(col.rgb, vec3(0.02), vec3(1.0)), vec3(1.25));
+	vec3 hot_core = sat_col * 2.6 + vec3(1.15) * mix(0.45, 0.95, tip_hot);
+	vec3 mid_col = sat_col * mix(2.5, 1.35, tc);
+	vec3 rim_dark = mix(vec3(0.06, 0.05, 0.05), sat_col * 0.25, 0.25);
+	vec3 c_out = mix(rim_dark, mid_col, body_w);
+	c_out = clamp(mix(c_out, hot_core, core_w), vec3(0.0), vec3(8.0));
+	float alpha_out = clamp(edge_mask * len_fade * mix(0.42, 0.98, body_w), 0.0, 1.0);
+	if (alpha_out < 0.005) discard;
+	ALBEDO = c_out;
+	ALPHA = alpha_out;
 }
 """
 var _tracer_cache := {}
@@ -2988,6 +3435,44 @@ func _tracer_mat(c: Color) -> ShaderMaterial:
 		mm.set_shader_parameter("col", c)
 		_tracer_cache[k] = mm
 	return _tracer_cache[k]
+
+
+const MUZZLE_JET_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 col : source_color;
+void fragment() {
+	float tc = clamp(1.0 - UV.y, 0.0, 1.0);
+	float tip_t = clamp((tc - 0.20) / 0.80, 0.0, 1.0);
+	float half_w = mix(0.32, 1.0, smoothstep(0.0, 0.22, tc)) * pow(clamp(1.0 - tip_t, 1e-4, 1.0), 1.25);
+	float rn = clamp(abs(UV.x - 0.5) * 2.0, 0.0, 2.0) / max(half_w, 0.01);
+	if (rn > 1.0 || tc > 0.992) discard;
+	float core_w = smoothstep(0.52, 0.08, rn);
+	float body_w = smoothstep(0.88, 0.36, rn);
+	float edge_mask = 1.0 - smoothstep(0.80, 1.0, rn);
+	float len_fade = pow(clamp(1.0 - tc * 0.88, 1e-4, 1.0), 0.85) * smoothstep(0.992, 0.90, tc);
+	vec3 sat_col = pow(clamp(col.rgb, vec3(0.02), vec3(1.0)), vec3(1.25));
+	vec3 hot_core = sat_col * 2.5 + vec3(1.10) * smoothstep(0.75, 0.0, tc);
+	vec3 flame_col = sat_col * mix(2.4, 1.25, tc);
+	vec3 c_out = mix(sat_col * 0.40, flame_col, body_w);
+	c_out = clamp(mix(c_out, hot_core, core_w), vec3(0.0), vec3(8.0));
+	float alpha_out = clamp(edge_mask * len_fade * mix(0.35, 0.96, body_w), 0.0, 1.0);
+	if (alpha_out < 0.005) discard;
+	ALBEDO = c_out;
+	ALPHA = alpha_out;
+}
+"""
+var _muzzle_mat_cache := {}
+func _muzzle_mat(c: Color) -> ShaderMaterial:
+	var k := c.to_html()
+	if not _muzzle_mat_cache.has(k):
+		var sh := Shader.new()
+		sh.code = MUZZLE_JET_SHADER
+		var mm := ShaderMaterial.new()
+		mm.shader = sh
+		mm.set_shader_parameter("col", c)
+		_muzzle_mat_cache[k] = mm
+	return _muzzle_mat_cache[k]
 
 
 var _glow_cache := {}
@@ -3014,43 +3499,49 @@ func spawn_projectile(origin: Vector3, dir: Vector3, m: Dictionary, _friendly: b
 		"laser":
 			var is_rail := dmg >= 75.0
 			var spd_l: float = float(m.get("speed", 135.0 if is_rail else 96.0))
-			var life_l: float = GameData.weapon_range_m(m) / maxf(spd_l, 20.0)
-			proj = _tracer(origin, dir * spd_l, dmg, life_l, Color(0.76, 0.74, 0.70), 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
+			var life_l: float = clampf(GameData.weapon_range_m(m) / maxf(spd_l, 20.0) * 6.0, 2.5, 6.0)
+			var col_l := Color(0.30, 0.86, 1.0) if is_rail else Color(0.18, 0.74, 1.0)
+			proj = _tracer(origin, dir * spd_l, dmg, life_l, col_l, 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
 		"sniper":
 			var spd_s: float = float(m.get("speed", 145.0))
-			var life_s: float = GameData.weapon_range_m(m) / maxf(spd_s, 30.0)
-			var cal_s := "sniper_ap" if dmg >= 100.0 else "sniper"
-			proj = _tracer(origin, dir * spd_s, dmg, life_s, Color(0.84, 0.78, 0.68), 0.12, 0.065, cal_s)
+			var life_s: float = clampf(GameData.weapon_range_m(m) / maxf(spd_s, 30.0) * 6.0, 2.5, 6.0)
+			var is_amr := dmg >= 100.0
+			var cal_s := "sniper_ap" if is_amr else "sniper"
+			var col_s := Color(1.0, 0.28, 0.14) if is_amr else Color(1.0, 0.76, 0.24)
+			proj = _tracer(origin, dir * spd_s, dmg, life_s, col_s, 0.12, 0.065, cal_s)
 		"flamer":
 			var spd_f: float = float(m.get("speed", 16.0))
-			var life_f: float = GameData.weapon_range_m(m) / maxf(spd_f, 8.0)
-			var p = _proj(origin, dir * spd_f * randf_range(0.86, 1.12), dmg, life_f, 1 | 4 | 16, Color(0.86, 0.42, 0.16), 0.34, false, "flamer")
+			var life_f: float = clampf(GameData.weapon_range_m(m) / maxf(spd_f, 8.0) * 6.0, 2.5, 6.0)
+			var p = _proj(origin, dir * spd_f * randf_range(0.86, 1.12), dmg, life_f, 1 | 4 | 16, Color(1.0, 0.44, 0.12), 0.34, false, "flamer")
 			p.source = mech
 			p.pierce = true
 			p.grow = 0.0
 			p.hit_sfx = "-"
-			A.emitter(p, Vector3(0, 0, 0.16), {"amount": 8, "life": 0.34, "size": 0.42, "tex": A.smoke_tex(), "additive": false, "spread": 55.0, "vmin": 0.2, "vmax": 0.8,
-				"gravity": Vector3(0, 1.4, 0), "c0": Color(0.16, 0.14, 0.13, 0.55), "c1": Color(0.22, 0.20, 0.18, 0.0), "grow0": 0.65, "grow1": 1.65})
+			A.emitter(p, Vector3(0, 0, 0.16), {"amount": 7, "life": 0.20, "size": 0.26, "tex": A.smoke_tex(), "additive": false, "spread": 32.0, "vmin": 0.2, "vmax": 0.6,
+				"gravity": Vector3(0, 1.2, 0), "c0": Color(1.0, 0.52, 0.12, 0.82), "c1": Color(0.22, 0.16, 0.14, 0.0), "grow0": 0.65, "grow1": 1.35})
 			proj = p
-		"shotgun":
+		"shotgun", "cannon", "launcher", "melee":
 			var speed: float = float(m.get("speed", 40.0))
-			var life: float = GameData.weapon_range_m(m) / speed
+			var life: float = clampf(GameData.weapon_range_m(m) / maxf(speed, 20.0) * 6.0, 2.5, 6.0)
 			var pellets: int = int(m.get("pellets", 7))
 			if dmg >= 55.0:
-				proj = _tracer(origin, dir * speed, dmg, life, Color(0.82, 0.76, 0.68), 0.19, 0.11, "cannon")
+				proj = _tracer(origin, dir * speed, dmg, life, Color(1.0, 0.34, 0.10), 0.19, 0.11, "cannon")
 			elif pellets == 1:
-				proj = _tracer(origin, dir * speed * randf_range(0.96, 1.04), dmg, life, Color(0.80, 0.76, 0.70), 0.15, 0.085, "slug")
+				proj = _tracer(origin, dir * speed * randf_range(0.96, 1.04), dmg, life, Color(1.0, 0.56, 0.16), 0.15, 0.085, "slug")
 			else:
-				proj = _tracer(origin, dir * speed * randf_range(0.9, 1.1), dmg, life, Color(0.78, 0.74, 0.68), 0.095, 0.052, "pellet")
+				proj = _tracer(origin, dir * speed * randf_range(0.9, 1.1), dmg, life, Color(1.0, 0.62, 0.20), 0.095, 0.052, "pellet")
 		_:
 			var speed: float = float(m.get("speed", 40.0))
-			var life: float = GameData.weapon_range_m(m) / speed
+			var life: float = clampf(GameData.weapon_range_m(m) / maxf(speed, 20.0) * 6.0, 2.5, 6.0)
 			if dmg >= 20.0:
-				proj = _tracer(origin, dir * speed, dmg, life, Color(0.80, 0.75, 0.68), 0.16, 0.09, "ac30")
+				proj = _tracer(origin, dir * speed, dmg, life, Color(1.0, 0.40, 0.12), 0.16, 0.09, "ac30")
+			elif dmg >= 12.0:
+				proj = _tracer(origin, dir * speed, dmg, life, Color(1.0, 0.54, 0.15), 0.13, 0.072, "hmg")
 			else:
-				proj = _tracer(origin, dir * speed, dmg, life, Color(0.78, 0.75, 0.70), 0.12, 0.065, "mg")
+				proj = _tracer(origin, dir * speed, dmg, life, Color(1.0, 0.68, 0.20), 0.12, 0.065, "mg")
 	if proj != null:
 		proj.ap = ap
+		proj.apply_falloff(GameData.weapon_falloff(m))
 
 
 func spawn_spit(origin: Vector3, dir: Vector3, dmg: float) -> void:
@@ -3066,9 +3557,10 @@ func launch_missiles(origin: Vector3, m: Dictionary) -> void:
 	for i in cnt:
 		var a := TAU * i / float(cnt)
 		var v := Vector3(cos(a) * 6.0, 9.0, sin(a) * 6.0)
-		var p = _proj(origin, v, m.dmg, 3.0, 1 | 4 | 16, Color(0.82, 0.52, 0.28), 0.28, false, m_kind)
+		var p = _proj(origin, v, m.dmg, 6.0, 1 | 4 | 16, Color(0.82, 0.52, 0.28), 0.28, false, m_kind)
 		p.homing = true
 		p.aoe = 3.2
+		p.apply_falloff(GameData.weapon_falloff({"weapon": "launcher", "reach_m": 60.0}))
 		# 固体燃料推进剂灰白浓烟柱（非发光实体烟雾）
 		A.emitter(p, Vector3(0, 0, 0.62), {"amount": 38, "life": 1.05, "size": 0.68, "tex": A.smoke_tex(), "additive": false, "spread": 140.0, "vmin": 0.15, "vmax": 0.48,
 			"gravity": Vector3(0, 0.7, 0), "c0": Color(0.76, 0.74, 0.70, 0.58), "c1": Color(0.45, 0.43, 0.40, 0.0), "grow0": 0.45, "grow1": 2.15})
@@ -3088,7 +3580,8 @@ func laser_visual(origin: Vector3, end: Vector3, _color: Color, is_rail: bool) -
 		return
 	var dir := (end - origin) / span
 	var spd := 135.0 if is_rail else 96.0
-	var p = _tracer(origin, dir * spd, 0.0, clampf(span / spd, 0.04, 0.6), Color(0.76, 0.74, 0.70), 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
+	var col_l := Color(0.30, 0.86, 1.0) if is_rail else Color(0.18, 0.74, 1.0)
+	var p = _tracer(origin, dir * spd, 0.0, clampf(span / spd, 0.04, 0.6), col_l, 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
 	p.set_meta("net_visual", true)
 	p.pool_key = ""
 
@@ -3114,20 +3607,28 @@ func _beam_mat(c: Color) -> StandardMaterial3D:
 ## 阳光仍然进雾，大气感保留。
 func _no_fog_light(n: Node) -> void:
 	if n is OmniLight3D or n is SpotLight3D:
-		(n as Light3D).light_volumetric_fog_energy = 0.0
+		var lt := n as Light3D
+		lt.light_volumetric_fog_energy = 0.0
+		if A.is_mobile_perf() and n.get_parent() != fx:
+			lt.distance_fade_enabled = true
+			lt.distance_fade_begin = 34.0
+			lt.distance_fade_length = 8.0
 
 
 ## 短暂的点光源闪烁（炮口火光、爆炸、道具闪光）——全部走这个池，不再每发子弹 new 一盏灯
 const LIGHT_POOL_MAX := 10
 var _light_pool: Array = []
 func _flash_light(p: Vector3, c: Color, energy: float, rng_m: float, dur := 0.08) -> void:
+	if A.is_mobile_perf() and GameData.quality == 0:
+		return
+	var pool_cap := 3 if A.is_mobile_perf() else LIGHT_POOL_MAX
 	var l: OmniLight3D = null
 	for x in _light_pool:
 		if not x.visible:
 			l = x
 			break
 	if l == null:
-		if _light_pool.size() >= LIGHT_POOL_MAX:
+		if _light_pool.size() >= pool_cap:
 			return
 		l = OmniLight3D.new()
 		l.shadow_enabled = false
@@ -3150,10 +3651,14 @@ func _flash_light(p: Vector3, c: Color, energy: float, rng_m: float, dur := 0.08
 	l.set_meta("tw", tw)
 
 
-func explode(p: Vector3, radius: float, dmg: float, sfx := "explosion") -> void:
+func explode(p: Vector3, radius: float, dmg: float, sfx := "explosion", notify_hit := false) -> void:
+	var hit_any := false
 	for b in get_tree().get_nodes_in_group("bugs") + get_tree().get_nodes_in_group("nests") + get_tree().get_nodes_in_group("rovers"):
 		if is_instance_valid(b) and b.global_position.distance_to(p) < radius + 0.8:
 			b.take_damage(dmg)
+			hit_any = true
+	if notify_hit and hit_any and hud != null and hud.has_method("notify_hit"):
+		hud.notify_hit()
 	explode_fx(p, radius, Color(1.0, 0.55, 0.2))
 	Audio.play_sfx(sfx, p + Vector3(0, 1.0, 0))
 	shake = max(shake, 0.25)
@@ -3162,17 +3667,16 @@ func explode(p: Vector3, radius: float, dmg: float, sfx := "explosion") -> void:
 func explode_fx(p: Vector3, radius: float, c: Color) -> void:
 	if coop != null: coop.emit_effect("explosion", [p, radius, c])
 	# 3D 膨胀爆轰球壳 + 快速闪光（不遮挡体积火球与黑烟）
-	var dome := Node3D.new()
-	fx.add_child(dome)
-	dome.global_position = p + Vector3(0, 0.35, 0)
-	dome.scale = Vector3.ONE * 0.25
-	var dm_core := A.add(dome, A.sphere(radius * 0.36, -1, 14), A.emit(Color(1.0, 0.90, 0.68), 6.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	var dm_shell := A.add(dome, A.sphere(radius * 0.85, -1, 18), _mach_cone_mat(c.lightened(0.15)), Vector3.ZERO, Vector3.ZERO, Vector3(1.0, 0.55, 1.0), false)
-	var dtw := dome.create_tween()
-	dtw.tween_property(dome, "scale", Vector3(1.38, 0.95, 1.38), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	dtw.parallel().tween_property(dm_core, "scale", Vector3.ONE * 0.04, 0.15).set_ease(Tween.EASE_IN)
-	dtw.parallel().tween_property(dm_shell, "scale", Vector3(1.45, 0.10, 1.45), 0.18)
-	dtw.tween_callback(dome.queue_free)
+	# 瞬时冲击波贴花 + 热核闪焰（取代光滑半透明几何球壳）
+	var sw_c := Color(c.r * 0.7 + 0.3, c.g * 0.7 + 0.25, c.b * 0.7 + 0.2, 0.65)
+	var sw := A.ground_vfx(fx, A.shockwave_tex(), sw_c, radius * 1.1, Vector3(p.x, 0.11, p.z), false, 0.44, true, 4)
+	var dtw := sw.create_tween()
+	dtw.tween_property(sw, "scale", Vector3.ONE * 2.5, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	dtw.parallel().tween_property(sw.material_override, "shader_parameter/col", Color(sw_c.r, sw_c.g, sw_c.b, 0.0), 0.24)
+	dtw.tween_callback(sw.queue_free)
+	A.burst(fx, p + Vector3(0, 0.35, 0), {"amount": 5, "life": 0.16, "size": radius * 0.82, "tex": A.smoke_tex(), "additive": true,
+		"vmin": 0.4, "vmax": radius * 0.8, "gravity": Vector3.ZERO, "c0": Color(1.0, 0.88, 0.62, 0.85),
+		"c1": Color(c.r, c.g * 0.6, 0.1, 0.0), "grow0": 0.45, "grow1": 1.35, "soft_depth": 0.30})
 	# 火球
 	A.burst(fx, p + Vector3(0, 0.55, 0), {"amount": 18, "life": 0.56, "size": radius * 0.86, "tex": A.smoke_tex(), "vmin": radius * 1.1, "vmax": radius * 2.5,
 		"gravity": Vector3(0, 3.0, 0), "damp": 5.2, "radius": 0.30, "c0": Color(1.0, 0.90, 0.56, 0.95), "cmid": Color(c.r, c.g * 0.52, 0.12, 0.88), "cmid_pos": 0.32,
@@ -3213,59 +3717,154 @@ func _fx_in_range(p: Vector3, r: float) -> bool:
 func spark(p: Vector3, c: Color, n := 8) -> void:
 	if not _fx_in_range(p, 55.0):
 		return
+	if n >= 8:
+		_flash_light(p + Vector3(0, 0.25, 0), c.lightened(0.28), 1.35, 3.2, 0.045)
 	A.burst(fx, p, {"amount": n, "life": 0.3, "size": 0.13, "vmin": 3.5, "vmax": 9.5, "gravity": Vector3(0, -12, 0), "damp": 2.0,
 		"c0": c.lightened(0.55), "c1": Color(c.r, c.g * 0.5, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
 	A.burst(fx, p, {"amount": maxi(3, n / 3), "life": 0.42, "mesh": _debris_mesh("metal"), "additive": false, "vmin": 2.5, "vmax": 6.8,
 		"gravity": Vector3(0, -19, 0), "damp": 0.8, "smin": 0.45, "smax": 0.9, "c0": c.lightened(0.35), "c1": Color(0.2, 0.2, 0.22, 0.0), "grow0": 1.0, "grow1": 0.5})
 
 
+const MUZZLE_POOL_MAX := 18
+var _muzzle_pool := {}
+
+func _spawn_muzzle_jet(p: Vector3, dir: Vector3, c: Color, weapon: String, dmg: float) -> void:
+	var is_heavy := weapon in ["shotgun", "cannon", "railgun", "sniper", "mortar", "grenade", "flak"] or dmg >= 50.0
+	var is_med := (not is_heavy) and (weapon in ["laser", "slug"] or dmg >= 12.0)
+	var jet_len := 1.85 if is_heavy else (1.32 if is_med else 0.92)
+	var jet_w := 0.56 if is_heavy else (0.42 if is_med else 0.30)
+	var k := "%s|%.2f|%.2f" % [c.to_html(), jet_w, jet_len]
+	var arr: Array = _muzzle_pool.get(k, [])
+	var root: Node3D = null
+	for i in range(arr.size() - 1, -1, -1):
+		var n = arr[i]
+		if not is_instance_valid(n):
+			arr.remove_at(i)
+		elif not n.visible:
+			root = n
+			break
+	if root == null:
+		if arr.size() >= MUZZLE_POOL_MAX:
+			return
+		root = Node3D.new()
+		var mat := _muzzle_mat(c)
+		var rib := _ribbon_cached(1.0)
+		for ang in [0.0, 90.0]:
+			var piv := Node3D.new()
+			piv.rotation_degrees = Vector3(0, 0, ang)
+			var mi := MeshInstance3D.new()
+			mi.mesh = rib
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.position = Vector3(0, 0, -jet_len * 0.5)
+			mi.scale = Vector3(jet_w, 1.0, jet_len)
+			piv.add_child(mi)
+			root.add_child(piv)
+		var v_scale_z := jet_len * (0.58 if (is_heavy or is_med) else 0.42)
+		var v_scale_x := jet_w * (0.76 if (is_heavy or is_med) else 0.62)
+		for sx in [-54.0, 54.0]:
+			var vpiv := Node3D.new()
+			vpiv.rotation_degrees = Vector3(0, sx, 0)
+			var vmi := MeshInstance3D.new()
+			vmi.mesh = rib
+			vmi.material_override = mat
+			vmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			vmi.position = Vector3(0, 0, -v_scale_z * 0.5)
+			vmi.scale = Vector3(v_scale_x, 1.0, v_scale_z)
+			vpiv.add_child(vmi)
+			root.add_child(vpiv)
+		fx.add_child(root)
+		arr.append(root)
+		_muzzle_pool[k] = arr
+	root.visible = true
+	root.global_position = p
+	root.scale = Vector3.ONE
+	var d := dir.normalized()
+	var up_ref := Vector3.UP if absf(d.y) < 0.95 else Vector3.FORWARD
+	root.look_at(p + d, up_ref)
+	root.rotate_object_local(Vector3.FORWARD, deg_to_rad(randf_range(-6.0, 6.0)))
+	var old: Tween = root.get_meta("tw") if root.has_meta("tw") else null
+	if old != null and old.is_valid():
+		old.kill()
+	var dur := 0.080 if is_heavy else (0.066 if is_med else 0.056)
+	var tw := create_tween()
+	tw.tween_property(root, "scale", Vector3(0.30, 0.30, 0.18), dur).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		if is_instance_valid(root):
+			root.visible = false)
+	root.set_meta("tw", tw)
+
+
 func muzzle_flash(p: Vector3, c: Color, dir := Vector3.ZERO, weapon := "", dmg := 10.0) -> void:
 	if coop != null: coop.emit_effect("muzzle", [p, c, dir, weapon, dmg])
 	if not _fx_in_range(p, 95.0):
 		return
-	var flash_c := Color(1.0, 0.76, 0.42)
-	_flash_light(p, flash_c, 2.2, 4.8, 0.045)
+	var is_sabot := weapon in ["laser", "railgun", "arc"]
+	var heavy := weapon in ["shotgun", "cannon", "railgun", "sniper", "mortar", "grenade", "flak"] or dmg >= 50.0
+	var is_rover_red := (not is_sabot) and c.r > 0.85 and c.g < 0.32
+	var jet_col := Color(0.26, 0.82, 1.0) if is_sabot else (Color(1.0, 0.26, 0.14) if is_rover_red else (Color(1.0, 0.42, 0.12) if heavy else Color(1.0, 0.62, 0.16)))
+	_flash_light(p + Vector3(0, 0.55, 0), jet_col, 2.35 if heavy else 1.60, 5.2 if heavy else 4.2, 0.048)
 	if dir == Vector3.ZERO:
 		return
-	var is_sabot := weapon in ["laser", "railgun"]
-	var heavy := weapon in ["shotgun", "cannon", "railgun", "sniper", "mortar", "grenade", "flak"] or dmg >= 50.0
-	# 写实短促膛口燃气火舌（去除霓虹光环）
-	if weapon not in ["cryo"]:
-		A.burst(fx, p + dir * 0.28, {"amount": 5 if heavy else 3, "life": 0.05, "size": 0.48 if heavy else 0.34, "dir": dir, "spread": 14.0, "vmin": 7.0, "vmax": 14.0,
-			"gravity": Vector3.ZERO, "damp": 32.0, "c0": Color(1.0, 0.88, 0.62), "c1": Color(0.95, 0.42, 0.10, 0.0), "grow0": 0.9, "grow1": 0.35})
-	# 写实轻薄发射药硝烟 / 高压冷气烟丝（随口径缩放，明度贴合环境光避免发白）
-	A.burst(fx, p + dir * 0.38, {"amount": 3 if heavy else 1, "life": 0.52 if heavy else 0.32, "size": 0.46 if heavy else 0.25, "tex": A.dust_tex(), "additive": false, "dir": dir, "spread": 22.0,
-		"vmin": 1.6 if heavy else 1.2, "vmax": 3.8 if heavy else 2.5, "gravity": Vector3(0, 0.65, 0), "damp": 3.8,
-		"c0": Color(0.55, 0.53, 0.50, 0.0), "cmid": Color(0.48, 0.46, 0.43, 0.24 if heavy else 0.16), "cmid_pos": 0.16, "c1": Color(0.38, 0.36, 0.34, 0.0), "grow0": 0.4, "grow1": 1.45, "soft_depth": 0.20})
+	# 锐利立体膛口矛状喷焰 + 制退器侧向 V 型射流（取代圆形叠加雾团）
+	if weapon not in ["cryo", "flamer"]:
+		_spawn_muzzle_jet(p + dir * 0.12, dir, jet_col, weapon, dmg)
+		A.burst(fx, p + dir * 0.18, {"amount": 5 if heavy else 3, "life": 0.055, "size": 0.048, "dir": dir, "spread": 16.0, "vmin": 9.0, "vmax": 18.0,
+			"gravity": Vector3.ZERO, "damp": 18.0, "c0": jet_col.lightened(0.22), "c1": Color(jet_col.r, jet_col.g * 0.45, jet_col.b * 0.2, 0.0), "grow0": 1.0, "grow1": 0.2})
+	# 克制发射药黑灰硝烟（重武器每发少量，连射轻武器抽样排放，防止连射堆出白灰雾团）
+	if weapon == "cryo" or heavy:
+		A.burst(fx, p + dir * 0.34, {"amount": 2, "life": 0.36, "size": 0.34, "tex": A.dust_tex(), "additive": false, "dir": dir, "spread": 18.0,
+			"vmin": 1.5, "vmax": 3.4, "gravity": Vector3(0, 0.60, 0), "damp": 4.2,
+			"c0": Color(0.30, 0.29, 0.27, 0.0), "cmid": Color(0.26, 0.25, 0.23, 0.18), "cmid_pos": 0.18, "c1": Color(0.22, 0.21, 0.20, 0.0), "grow0": 0.45, "grow1": 1.30, "soft_depth": 0.20})
+	elif randf() < 0.28:
+		A.burst(fx, p + dir * 0.28, {"amount": 1, "life": 0.22, "size": 0.20, "tex": A.dust_tex(), "additive": false, "dir": dir, "spread": 16.0,
+			"vmin": 1.2, "vmax": 2.4, "gravity": Vector3(0, 0.50, 0), "damp": 4.8,
+			"c0": Color(0.32, 0.30, 0.28, 0.0), "cmid": Color(0.28, 0.27, 0.25, 0.10), "cmid_pos": 0.20, "c1": Color(0.24, 0.23, 0.21, 0.0), "grow0": 0.45, "grow1": 1.15, "soft_depth": 0.18})
 	if weapon in ["flamer", "cryo"]:
 		return
 	var side := dir.cross(Vector3.UP).normalized()
-	if is_sabot:
-		# 电磁轨道炮 / 线圈步枪：膛口抛离三瓣铝合金脱壳弹托瓣（APFSDS Sabot Petals）向两侧前方翻滚散落
-		A.burst(fx, p + dir * 0.55, {"amount": 3, "life": 0.68, "mesh": _sabot_petal_mesh(), "additive": false,
-			"dir": (dir * 0.65 + Vector3(0, 0.25, 0)).normalized(), "spread": 42.0, "vmin": 6.5, "vmax": 11.5, "gravity": Vector3(0, -22, 0), "damp": 0.8,
-			"smin": 0.85, "smax": 1.2, "c0": Color(1, 1, 1, 1), "c1": Color(0.85, 0.85, 0.85, 0.95), "grow0": 1.0, "grow1": 1.0})
-	else:
-		# 3D 实体黄铜/红塑霰弹弹壳从抛壳窗翻滚弹出
-		A.burst(fx, p - dir * 0.55, {"amount": 2 if heavy else 1, "life": 0.82, "mesh": _casing_mesh(heavy, weapon == "shotgun" and dmg < 50.0), "additive": false,
-			"dir": (side + Vector3(0, 0.95, 0)).normalized(), "spread": 18.0, "vmin": 3.4, "vmax": 5.6, "gravity": Vector3(0, -21, 0), "damp": 0.4,
-			"smin": 0.9, "smax": 1.15, "c0": Color(1, 1, 1, 1), "c1": Color(0.85, 0.85, 0.85, 0.95), "grow0": 1.0, "grow1": 1.0})
+	var mob_perf := A.is_mobile_perf()
+	if mob_perf and GameData.quality == 0 and not heavy and not is_sabot:
+		return
+	if mob_perf and not heavy and not is_sabot and randf() < 0.55:
+		return
+		if is_sabot:
+			# 电磁轨道炮 / 线圈步枪：膛口抛离三瓣铝合金脱壳弹托瓣（APFSDS Sabot Petals）向两侧前方翻滚散落
+			A.burst(fx, p + dir * 0.55, {"amount": 3, "life": 0.52, "mesh": _sabot_petal_mesh(), "additive": false,
+				"dir": (dir * 0.65 + Vector3(0, 0.25, 0)).normalized(), "spread": 42.0, "vmin": 6.5, "vmax": 11.5, "gravity": Vector3(0, -22, 0), "damp": 0.8,
+				"smin": 0.65, "smax": 0.95, "c0": Color(1, 1, 1, 1), "c1": Color(0.85, 0.85, 0.85, 0.95), "grow0": 1.0, "grow1": 0.85})
+		else:
+			# 3D 实体黄铜/红塑霰弹弹壳从外侧抛壳窗翻滚弹出（向外侧偏移避免遮挡第一人称镜头）
+			var is_fp := view_mode == 1
+			var eject_pos := p - dir * 0.22 + side * (0.26 if is_fp else 0.16) - Vector3(0, 0.08 if is_fp else 0.02, 0)
+			A.burst(fx, eject_pos, {"amount": 2 if heavy else 1, "life": 0.65, "mesh": _casing_mesh(heavy, weapon == "shotgun" and dmg < 50.0), "additive": false,
+				"dir": (side * 1.15 + Vector3(0, 0.72, 0)).normalized(), "spread": 16.0, "vmin": 3.6, "vmax": 5.8, "gravity": Vector3(0, -22, 0), "damp": 0.4,
+				"smin": 0.65, "smax": 0.90, "c0": Color(1, 1, 1, 1), "c1": Color(0.85, 0.85, 0.85, 0.95), "grow0": 1.0, "grow1": 0.85})
 
 
 ## 命中：打在单位上 → 金属火星 + 3D 实体甲壳/装甲碎块；打在墙/地上 → 火花 + 尘烟 + 3D 混凝土碎石块 + 实体跳弹钢芯
+var _last_heavy_impact_usec := 0
 func impact(p: Vector3, n: Vector3, c: Color, unit: bool, vel: Vector3, organic := false) -> void:
 	if coop != null: coop.emit_effect("impact", [p, n, c, unit, vel, organic])
 	if not _fx_in_range(p, 95.0):
 		return
 	var nrm := n if n != Vector3.ZERO else Vector3.UP
 	var refl := vel.normalized().bounce(nrm) if vel.length_squared() > 0.01 else Vector3.UP
-	if not organic and randf() < 0.45:
+	var spk_c := c if (c.b > c.r or c.r > 0.85) else Color(1.0, 0.68, 0.22)
+	var now_u := Time.get_ticks_usec()
+	var mob_perf := A.is_mobile_perf()
+	var allow_heavy := now_u - _last_heavy_impact_usec >= (42000 if mob_perf else 18000)
+	if allow_heavy:
+		_last_heavy_impact_usec = now_u
+	if allow_heavy and not organic and randf() < 0.45:
 		# 实体变形弹芯跳弹飞散（取代纯发光环）
 		A.burst(fx, p, {"amount": 2, "life": 0.36, "mesh": _debris_mesh("metal"), "additive": false, "dir": refl, "spread": 18.0, "vmin": 11.0, "vmax": 18.0,
-			"gravity": Vector3(0, -18, 0), "smin": 0.45, "smax": 0.75, "c0": Color(0.95, 0.82, 0.58), "c1": Color(0.45, 0.44, 0.42, 0.9), "grow0": 1.0, "grow1": 0.8})
-	# 硬质金属撞击火星
-	A.burst(fx, p, {"amount": 9, "life": 0.24, "size": 0.09, "dir": (refl + nrm).normalized(), "spread": 40.0, "vmin": 5.5, "vmax": 12.0, "gravity": Vector3(0, -15, 0), "damp": 2.2,
-		"c0": Color(1.0, 0.88, 0.58), "c1": Color(0.95, 0.42, 0.08, 0.0), "grow0": 1.0, "grow1": 0.2})
+			"gravity": Vector3(0, -18, 0), "smin": 0.45, "smax": 0.75, "c0": spk_c.lightened(0.25), "c1": Color(0.45, 0.44, 0.42, 0.9), "grow0": 1.0, "grow1": 0.8})
+	# 锐利金属撞击火星（按弹药色系着色）
+	A.burst(fx, p, {"amount": 9, "life": 0.22, "size": 0.075, "dir": (refl + nrm).normalized(), "spread": 38.0, "vmin": 6.0, "vmax": 13.0, "gravity": Vector3(0, -15, 0), "damp": 2.4,
+		"c0": spk_c.lightened(0.20), "c1": Color(spk_c.r * 0.8, spk_c.g * 0.45, spk_c.b * 0.2, 0.0), "grow0": 1.0, "grow1": 0.18})
+	if not allow_heavy:
+		return
 	if unit:
 		# 3D 实体机械装甲 / 焦黑机械残片与机油雾（全部敌机与机械虫均走硬工业受击反馈）
 		var d_kind := "metal"
@@ -3292,8 +3891,23 @@ func on_player_hurt(amount: float) -> void:
 	hud.hurt()
 
 
+var _corpses: Array = []
+func _register_corpse(b) -> void:
+	if b == null or not is_instance_valid(b) or bool(b.data.get("boss", false)):
+		return
+	_corpses.append(b)
+	var cap := (8 if GameData.quality == 0 else 12) if A.is_mobile_perf() else 18
+	while _corpses.size() > cap:
+		var old = _corpses.pop_front()
+		if is_instance_valid(old):
+			old.visible = false
+			if "vis_anchor" in old and old.vis_anchor != null and is_instance_valid(old.vis_anchor):
+				old.vis_anchor.visible = false
+
+
 func on_bug_killed(b) -> void:
 	var p: Vector3 = b.global_position
+	_register_corpse(b)
 	# 流浪者打死的虫不算玩家的击杀（不计数、不广播）；队友的击杀算进小队战绩
 	var by = b.get("aggressor")
 	if not (is_instance_valid(by) and by.is_in_group("rovers")):
@@ -3354,6 +3968,8 @@ func _finish(success: bool, reason: String) -> void:
 	if open_box:
 		close_box()
 	mech.input_locked = true
+	if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	var result := {
 		"success": success,
@@ -3377,7 +3993,41 @@ func abandon() -> void:
 
 
 
+func _apply_fp_look_delta(rel: Vector2, sens_mult := 1.0) -> void:
+	var fov_scale := clampf(_fp_fov / FP_FOV_STD, 0.32, 1.0)
+	var rad_per_px := 0.0026 * GameData.mouse_sens * fov_scale * sens_mult
+	fp_yaw = wrapf(fp_yaw - rel.x * rad_per_px, -PI, PI)
+	fp_pitch = clampf(fp_pitch - rel.y * rad_per_px * 0.88, FP_PITCH_MIN, FP_PITCH_MAX)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if Net.is_dedicated_server():
+		return
+	if is_first_person() and aim_override == null:
+		var ui_open_m: bool = hud != null and (hud.pause_panel.visible or (hud.settings_panel != null and hud.settings_panel.visible) or hud.loot_panel.visible or hud.map_open())
+		var story_m: bool = Story.get("flow") != null and Story.flow.is_playing()
+		var can_look: bool = not dropping and not ended and not ui_open_m and not story_m
+		if not can_look:
+			_fp_look_touch_id = -1
+		elif event is InputEventScreenTouch:
+			if event.pressed:
+				if _fp_look_touch_id == -1:
+					_fp_look_touch_id = event.index
+			elif event.index == _fp_look_touch_id:
+				_fp_look_touch_id = -1
+			return
+		elif event is InputEventScreenDrag and event.index == _fp_look_touch_id:
+			_apply_fp_look_delta(event.relative, 1.35)
+			sync_fp_camera()
+			return
+		elif event is InputEventMouseMotion and (hud == null or not hud._touch_revealed) and not (hud != null and hud.is_touch_busy()):
+			_apply_fp_look_delta(event.relative, 1.0)
+			sync_fp_camera()
+			return
+		return
+	_fp_look_touch_id = -1
+	if is_first_person():
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			cam_zoom = clampf(cam_zoom - 0.06, ZOOM_MIN, ZOOM_MAX)
@@ -3527,11 +4177,43 @@ func _load_map() -> void:
 	var acc := 0.0
 	for r: Dictionary in layout.roads:
 		var pts: PackedVector2Array = r.pts
-		curves.append({"pts": pts, "d": pts, "w": float(r.w), "dirt": bool(r.dirt), "kind": str(r.kind), "bridge": bool(r.bridge), "caps": r.get("caps", [false, false])})
-		_rg.add_poly(pts, float(r.w) * 0.5, curves.size() - 1)
+		var w_def := float(r.w)
+		curves.append({"pts": pts, "d": pts, "w": w_def, "w0": float(r.get("w0", w_def)), "w1": float(r.get("w1", w_def)), "dirt": bool(r.dirt), "kind": str(r.kind), "bridge": bool(r.bridge), "caps": r.get("caps", [false, false]), "tangent_mates": PackedInt32Array(), "mate_ends": [false, false], "mate_dirs": [Vector2.ZERO, Vector2.ZERO]})
+		_rg.add_poly(pts, w_def * 0.5, curves.size() - 1)
 		for k in pts.size() - 1:
 			acc += pts[k].distance_to(pts[k + 1])
 		_road_len.append(acc)
+	for ci in curves.size():
+		var pi_pts: PackedVector2Array = curves[ci].d
+		if pi_pts.size() < 2 or bool(curves[ci].dirt):
+			continue
+		for cj in range(ci + 1, curves.size()):
+			var pj_pts: PackedVector2Array = curves[cj].d
+			if pj_pts.size() < 2 or bool(curves[cj].dirt):
+				continue
+			for ei in 2:
+				var pei := pi_pts[0] if ei == 0 else pi_pts[pi_pts.size() - 1]
+				var toi := (pi_pts[0] - pi_pts[1]).normalized() if ei == 0 else (pi_pts[pi_pts.size() - 1] - pi_pts[pi_pts.size() - 2]).normalized()
+				for ej in 2:
+					var pej := pj_pts[0] if ej == 0 else pj_pts[pj_pts.size() - 1]
+					if pei.distance_to(pej) > 0.85:
+						continue
+					var toj := (pj_pts[0] - pj_pts[1]).normalized() if ej == 0 else (pj_pts[pj_pts.size() - 1] - pj_pts[pj_pts.size() - 2]).normalized()
+					if toi != Vector2.ZERO and toj != Vector2.ZERO and toi.dot(toj) < -0.90:
+						var mi: PackedInt32Array = curves[ci].tangent_mates
+						mi.append(cj)
+						curves[ci].tangent_mates = mi
+						var mj: PackedInt32Array = curves[cj].tangent_mates
+						mj.append(ci)
+						curves[cj].tangent_mates = mj
+						curves[ci].mate_ends[ei] = true
+						curves[cj].mate_ends[ej] = true
+						var bis := (toi - toj).normalized()
+						if bis != Vector2.ZERO:
+							curves[ci].mate_dirs[ei] = bis
+							curves[cj].mate_dirs[ej] = -bis
+	for ci in curves.size():
+		curves[ci].d = _bezier_refine_road(curves[ci])
 	rivers.clear()
 	_wg = WC.SegGrid.new()
 	_wg.cell = 16.0
@@ -3581,6 +4263,25 @@ func district_at(p: Vector3) -> String:
 
 
 ## 是否在路面上（pad > 0 外扩，< 0 内缩）
+func _rg_edge_dist_ignore(g: WC.SegGrid, p: Vector2, skip: int, mates: PackedInt32Array) -> float:
+	if mates.is_empty():
+		return g.edge_dist(p, skip)
+	var lst = g.grid.get(Vector2i(floori(p.x / g.cell), floori(p.y / g.cell)))
+	if lst == null:
+		return INF
+	var best := INF
+	for i: int in lst:
+		var tg := g.tag[i]
+		if tg == skip or (tg in mates):
+			continue
+		var ab: Vector2 = g.b[i] - g.a[i]
+		var t := clampf((p - g.a[i]).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var d := p.distance_to(g.a[i] + ab * t) - g.hw[i]
+		if d < best:
+			best = d
+	return best
+
+
 func on_road(p: Vector2, pad := 0.0) -> bool:
 	return _rg != null and _rg.edge_dist(p) < pad
 
@@ -3759,9 +4460,9 @@ func _build_map() -> Vector3:
 	_tlast = Time.get_ticks_usec()
 	_shield_spots()
 	_tmark("shield_spots")
-	_build_roads()
 	_build_river()
 	_build_lakes()
+	_build_roads()
 	_build_rails()
 	_build_ridges()
 	_tmark("roads+water+rails")
@@ -3863,7 +4564,7 @@ func _curb_car_spot() -> Array:
 		var q := d[j] + nrm * sd * off
 		if not in_bounds_xz(q, 10.0):
 			continue
-		if _rg.edge_dist(q, i) < 4.5 or _on_bridge(q, 5.0) or in_river(q, 4.5):
+		if _rg_edge_dist_ignore(_rg, q, i, cv.get("tangent_mates", PackedInt32Array())) < 7.5 or _on_bridge(q, 5.0) or in_river(q, 4.5):
 			continue
 		var on_rail := false
 		for rl: PackedVector2Array in rail_polys:
@@ -3899,7 +4600,7 @@ func _roadside_spot() -> Vector3:
 		var q := d[j] + Vector2(-tg.y, tg.x) * sd * maxf(1.0, float(cv.w) * 0.5 - WALK_W * 0.5)
 		if not in_bounds_xz(q, 9.0):
 			continue
-		if _rg.edge_dist(q, i) < 4.0 or _on_bridge(q, 4.0) or in_river(q, 4.0):
+		if _rg_edge_dist_ignore(_rg, q, i, cv.get("tangent_mates", PackedInt32Array())) < 7.5 or _on_bridge(q, 4.0) or in_river(q, 4.0):
 			continue
 		var p := Vector3(q.x, 0, q.y)
 		if not _blocked(p, 2.5, false):
@@ -4170,8 +4871,8 @@ func _build_map_texture() -> void:
 		var inner := WC.inset(e[0], 2.2)
 		if inner.size() >= 3:
 			_img_poly(img, inner, Color(0.51, 0.49, 0.45))
-	# 不规则战区周界以外：地表战区保留压暗降饱和的城市群侦察底图与斜纹封控阴影；地下竖井涂成深渊黑曜岩体
-	if zone_poly.size() >= 3:
+	# 不规则战区周界以外：地下竖井涂成深渊黑曜岩体与暗紫边界线；地表战区保留全幅连续地形（无战区封锁边框）
+	if not is_surface_map and zone_poly.size() >= 3:
 		var inv_k := 1.0 / k
 		for py in MAP_PX:
 			var wz := -HALF + (float(py) + 0.5) * inv_k
@@ -4292,7 +4993,7 @@ func _build_zone_ground() -> void:
 	for y in n:
 		for x in n:
 			var q := Vector2(-zh + (x + 0.5) * step, -zh + (y + 0.5) * step)
-			var r_sec: float = clampf(0.5 + border_dist(q) / 24.0, 0.0, 1.0)
+			var r_sec: float = 1.0 if is_surface_map else clampf(0.5 + border_dist(q) / 24.0, 0.0, 1.0)
 			var rv: float = 0.0
 			if _rg != null:
 				var ed: float = _rg.edge_dist(q)
@@ -4382,6 +5083,471 @@ func _st_commit(st: SurfaceTool, m: Material, count: int) -> void:
 	world.add_child(mi)
 
 
+static var _feather_terrain_shader: Shader
+func _terrain_feather_mat(c: Color, tex_scale := 0.30, rough_v := 0.90, spec_v := 0.14, priority := -8) -> ShaderMaterial:
+	if _feather_terrain_shader == null:
+		_feather_terrain_shader = Shader.new()
+		_feather_terrain_shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_never, cull_back, diffuse_burley, specular_schlick_ggx;
+uniform vec4 tint : source_color = vec4(0.32, 0.28, 0.22, 1.0);
+uniform float tex_scale = 0.30;
+uniform float rough_v = 0.90;
+uniform float spec_v = 0.14;
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
+varying vec3 wp;
+void vertex() {
+	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+	vec2 uv = wp.xz * tex_scale;
+	vec3 tex_a = texture(albedo_tex, uv).rgb;
+	vec3 tex_n = texture(normal_tex, uv).rgb;
+	float macro_n = texture(noise_tex, wp.xz * 0.055).r;
+	float micro_n = texture(noise_tex, wp.xz * 0.28).r;
+	float n_mod = macro_n * 0.68 + micro_n * 0.32;
+	ALBEDO = tint.rgb * mix(0.76, 1.24, tex_a.r) * (0.86 + 0.28 * macro_n);
+	NORMAL_MAP = tex_n;
+	NORMAL_MAP_DEPTH = 0.85;
+	ROUGHNESS = clamp(rough_v + (tex_a.r - 0.5) * 0.14, 0.35, 0.98);
+	SPECULAR = spec_v;
+	float a_in = COLOR.a;
+	float edge = smoothstep(0.02, 0.92, clamp(a_in + (n_mod - 0.5) * 0.56 * sin(a_in * 3.14159), 0.0, 1.0));
+	ALPHA = edge * tint.a;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = _feather_terrain_shader
+	m.render_priority = priority
+	m.set_shader_parameter("tint", c)
+	m.set_shader_parameter("tex_scale", tex_scale)
+	m.set_shader_parameter("rough_v", rough_v)
+	m.set_shader_parameter("spec_v", spec_v)
+	m.set_shader_parameter("albedo_tex", A.world_tex("ground_gravel_a.png"))
+	m.set_shader_parameter("normal_tex", A.world_tex("ground_gravel_n.png"))
+	m.set_shader_parameter("noise_tex", A.noise_tex("grime_raw", 512))
+	m.set_meta("no_outline", true)
+	return m
+
+
+## 折线 Chaikin 圆角细分，保持首尾端点不变，消除河道/土路刚性折线拐角
+func _smooth_pts(pts: PackedVector2Array, passes := 2) -> PackedVector2Array:
+	if pts.size() < 3:
+		return pts.duplicate()
+	var cur := pts.duplicate()
+	for _p in passes:
+		var nxt := PackedVector2Array()
+		nxt.append(cur[0])
+		for i in cur.size() - 1:
+			var a := cur[i]
+			var b := cur[i + 1]
+			nxt.append(a.lerp(b, 0.25))
+			nxt.append(a.lerp(b, 0.75))
+		nxt.append(cur[cur.size() - 1])
+		cur = nxt
+	return cur
+
+
+func _append_bezier_span(out: PackedVector2Array, p0: Vector2, p3: Vector2, chord: float, u_dir: Vector2, t0: Vector2, t1: Vector2, fine_step: float, gentle_step: float, max_deg: float, sag_tol := 0.0020) -> void:
+	if chord < 0.06:
+		out.append(p3)
+		return
+	var a0 := acos(clampf(u_dir.dot(t0), -1.0, 1.0))
+	var a1 := acos(clampf(u_dir.dot(t1), -1.0, 1.0))
+	var a01 := acos(clampf(t0.dot(t1), -1.0, 1.0))
+	var span_ang := maxf(a01, a0 + a1)
+	if span_ang < deg_to_rad(0.25) and chord * span_ang < 0.004:
+		out.append(p3)
+		return
+	var dot01 := maxf(0.5, t0.dot(t1))
+	var h := (chord / 3.0) * minf(1.15, 2.0 / (1.0 + dot01))
+	var p1 := p0 + t0 * h
+	var p2 := p3 - t1 * h
+	var m_ang := ceili(span_ang / deg_to_rad(max_deg))
+	var m_sag := ceili(sqrt(maxf(0.0, chord * span_ang) / (8.0 * sag_tol)))
+	var m_len := ceili(chord / (fine_step if span_ang >= deg_to_rad(2.5) else gentle_step))
+	var m_seg := clampi(maxi(2, maxi(m_ang, maxi(m_sag, m_len))), 2, 24)
+	for k in range(1, m_seg + 1):
+		var u := float(k) / float(m_seg)
+		var v := 1.0 - u
+		out.append((v * v * v) * p0 + (3.0 * v * v * u) * p1 + (3.0 * v * u * u) * p2 + (u * u * u) * p3)
+
+
+## 自适应 C1 三次贝塞尔样条细分：直道零细分保直防鼓包，缓弯/急弯按弦高与转角自适应加密消除实机放大折线痕迹
+func _bezier_refine_polyline(pts: PackedVector2Array, pin_t0 := Vector2.ZERO, pin_t1 := Vector2.ZERO, fine_step := 0.24, gentle_step := 0.38, max_deg := 0.65, sag_tol := 0.0020, near_rect := Rect2()) -> PackedVector2Array:
+	if pts.size() < 2:
+		return pts.duplicate()
+	var clean := PackedVector2Array([pts[0]])
+	for i in range(1, pts.size()):
+		if clean[clean.size() - 1].distance_to(pts[i]) >= 0.03:
+			clean.append(pts[i])
+	if clean.size() < 2:
+		return pts.duplicate()
+	var closed := pts.size() > 8 and pts[0].distance_to(pts[pts.size() - 1]) < 0.5 and pin_t0 == Vector2.ZERO and pin_t1 == Vector2.ZERO
+	if closed:
+		if clean.size() >= 3 and clean[0].distance_to(clean[clean.size() - 1]) < 0.06:
+			clean.remove_at(clean.size() - 1)
+		var m := clean.size()
+		if m < 3:
+			return pts.duplicate()
+		var lens := PackedFloat32Array()
+		var us: Array[Vector2] = []
+		lens.resize(m)
+		us.resize(m)
+		for i in m:
+			var seg_v := clean[(i + 1) % m] - clean[i]
+			var l := seg_v.length()
+			lens[i] = l
+			us[i] = seg_v / maxf(l, 1e-5)
+		var v_ang := PackedFloat32Array()
+		v_ang.resize(m)
+		for i in m:
+			v_ang[i] = acos(clampf(us[(i - 1 + m) % m].dot(us[i]), -1.0, 1.0))
+		var ts: Array[Vector2] = []
+		ts.resize(m)
+		for i in m:
+			var ip := (i - 1 + m) % m
+			var in_st := (v_ang[ip] < deg_to_rad(0.20) and lens[ip] > 1.5)
+			var out_st := (v_ang[(i + 1) % m] < deg_to_rad(0.20) and lens[i] > 1.5)
+			if v_ang[i] < deg_to_rad(0.15):
+				ts[i] = us[i]
+			elif in_st and not out_st and lens[ip] > 1.6 * lens[i]:
+				ts[i] = us[ip]
+			elif out_st and not in_st and lens[i] > 1.6 * lens[ip]:
+				ts[i] = us[i]
+			else:
+				var tv := lens[i] * us[ip] + lens[ip] * us[i]
+				ts[i] = tv.normalized() if tv.length_squared() > 1e-8 else us[i]
+		var out := PackedVector2Array([clean[0]])
+		for i in m:
+			var pa := clean[i]
+			var pb := clean[(i + 1) % m]
+			var far := near_rect.has_area() and not near_rect.has_point((pa + pb) * 0.5)
+			if far:
+				_append_bezier_span(out, pa, pb, lens[i], us[i], ts[i], ts[(i + 1) % m], fine_step * 2.5, gentle_step * 2.5, max_deg * 2.5, sag_tol * 4.0)
+			else:
+				_append_bezier_span(out, pa, pb, lens[i], us[i], ts[i], ts[(i + 1) % m], fine_step, gentle_step, max_deg, sag_tol)
+		if out.size() >= 2 and out[out.size() - 1].distance_to(out[0]) > 0.02:
+			out.append(out[0])
+		elif not out.is_empty():
+			out[out.size() - 1] = out[0]
+		return out
+	var n := clean.size()
+	if n == 2:
+		if pin_t0 == Vector2.ZERO and pin_t1 == Vector2.ZERO:
+			return clean
+		var d01 := clean[1] - clean[0]
+		var l01 := d01.length()
+		if l01 < 0.06:
+			return clean
+		var u01 := d01 / l01
+		var t0 := pin_t0.normalized() if pin_t0 != Vector2.ZERO else u01
+		var t1 := pin_t1.normalized() if pin_t1 != Vector2.ZERO else u01
+		var out2 := PackedVector2Array([clean[0]])
+		var far2 := near_rect.has_area() and not near_rect.has_point((clean[0] + clean[1]) * 0.5)
+		if far2:
+			_append_bezier_span(out2, clean[0], clean[1], l01, u01, t0, t1, fine_step * 2.5, gentle_step * 2.5, max_deg * 2.5, sag_tol * 4.0)
+		else:
+			_append_bezier_span(out2, clean[0], clean[1], l01, u01, t0, t1, fine_step, gentle_step, max_deg, sag_tol)
+		return out2
+	var lens := PackedFloat32Array()
+	var us: Array[Vector2] = []
+	lens.resize(n - 1)
+	us.resize(n - 1)
+	for i in n - 1:
+		var seg_v := clean[i + 1] - clean[i]
+		var l := seg_v.length()
+		lens[i] = l
+		us[i] = seg_v / maxf(l, 1e-5)
+	var v_ang := PackedFloat32Array()
+	v_ang.resize(n)
+	for i in range(1, n - 1):
+		v_ang[i] = acos(clampf(us[i - 1].dot(us[i]), -1.0, 1.0))
+	var ts: Array[Vector2] = []
+	ts.resize(n)
+	for i in range(1, n - 1):
+		var in_straight := (i >= 2 and v_ang[i - 1] < deg_to_rad(0.20)) or (i == 1 and lens[0] > 4.2 and v_ang[1] >= deg_to_rad(0.45))
+		var out_straight := (i <= n - 3 and v_ang[i + 1] < deg_to_rad(0.20)) or (i == n - 2 and lens[n - 2] > 4.2 and v_ang[n - 2] >= deg_to_rad(0.45))
+		if v_ang[i] < deg_to_rad(0.15):
+			ts[i] = us[i]
+		elif in_straight and not out_straight and lens[i - 1] > 1.6 * lens[i]:
+			ts[i] = us[i - 1]
+		elif out_straight and not in_straight and lens[i] > 1.6 * lens[i - 1]:
+			ts[i] = us[i]
+		else:
+			var tv := lens[i] * us[i - 1] + lens[i - 1] * us[i]
+			ts[i] = tv.normalized() if tv.length_squared() > 1e-8 else us[i]
+	if pin_t0 != Vector2.ZERO:
+		ts[0] = pin_t0.normalized()
+	elif v_ang[1] < deg_to_rad(0.20):
+		ts[0] = us[0]
+	else:
+		var tv0 := 2.0 * us[0] - ts[1]
+		ts[0] = tv0.normalized() if (tv0.length_squared() > 1e-8 and tv0.normalized().dot(us[0]) >= us[0].dot(ts[1]) - 0.02) else us[0]
+	if pin_t1 != Vector2.ZERO:
+		ts[n - 1] = pin_t1.normalized()
+	elif v_ang[n - 2] < deg_to_rad(0.20):
+		ts[n - 1] = us[n - 2]
+	else:
+		var tv1 := 2.0 * us[n - 2] - ts[n - 2]
+		ts[n - 1] = tv1.normalized() if (tv1.length_squared() > 1e-8 and tv1.normalized().dot(us[n - 2]) >= us[n - 2].dot(ts[n - 2]) - 0.02) else us[n - 2]
+	var out := PackedVector2Array([clean[0]])
+	for i in n - 1:
+		var pa := clean[i]
+		var pb := clean[i + 1]
+		var far := near_rect.has_area() and not near_rect.has_point((pa + pb) * 0.5)
+		if far:
+			_append_bezier_span(out, pa, pb, lens[i], us[i], ts[i], ts[i + 1], fine_step * 2.5, gentle_step * 2.5, max_deg * 2.5, sag_tol * 4.0)
+		else:
+			_append_bezier_span(out, pa, pb, lens[i], us[i], ts[i], ts[i + 1], fine_step, gentle_step, max_deg, sag_tol)
+	return out
+
+
+func _bezier_refine_road(cv: Dictionary) -> PackedVector2Array:
+	var pts: PackedVector2Array = cv.pts
+	var mate_ends: Array = cv.get("mate_ends", [false, false])
+	var mate_dirs: Array = cv.get("mate_dirs", [Vector2.ZERO, Vector2.ZERO])
+	var pin_t0 := -(mate_dirs[0] as Vector2) if bool(mate_ends[0]) else Vector2.ZERO
+	var pin_t1 := (mate_dirs[1] as Vector2) if bool(mate_ends[1]) else Vector2.ZERO
+	var near_r := Rect2(-215.0, -215.0, 430.0, 430.0)
+	if bool(cv.dirt):
+		return _bezier_refine_polyline(pts, Vector2.ZERO, Vector2.ZERO, 0.55, 0.90, 1.4, 0.0030, near_r)
+	return _bezier_refine_polyline(pts, pin_t0, pin_t1, 0.36, 0.65, 1.00, 0.0018, near_r)
+
+
+func _st_tri_alpha(st: SurfaceTool, a: Vector3, aa: float, b: Vector3, ab: float, c: Vector3, ac: float) -> void:
+	if (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x) < 0.0:
+		var tmp := b; b = c; c = tmp
+		var ta := ab; ab = ac; ac = ta
+	var pts := [a, b, c]
+	var alps := [aa, ab, ac]
+	for idx in 3:
+		var v: Vector3 = pts[idx]
+		st.set_normal(Vector3.UP)
+		st.set_uv(Vector2(v.x, v.z) * 0.1)
+		st.set_color(Color(1.0, 1.0, 1.0, float(alps[idx])))
+		st.add_vertex(v)
+
+
+func _poly_seg_grid(poly: PackedVector2Array, cell := 16.0) -> Dictionary:
+	var grid := {}
+	var m := poly.size()
+	for i in m:
+		var a := poly[i]
+		var b := poly[(i + 1) % m]
+		var seg := [a, b, minf(a.x, b.x), maxf(a.x, b.x), minf(a.y, b.y), maxf(a.y, b.y)]
+		var x0 := int(floor(float(seg[2]) / cell)) - 1
+		var x1 := int(floor(float(seg[3]) / cell)) + 1
+		var y0 := int(floor(float(seg[4]) / cell)) - 1
+		var y1 := int(floor(float(seg[5]) / cell)) + 1
+		for gx in range(x0, x1 + 1):
+			for gy in range(y0, y1 + 1):
+				var key := Vector2i(gx, gy)
+				if not grid.has(key):
+					grid[key] = []
+				(grid[key] as Array).append(seg)
+	return grid
+
+
+func _segs_dist_grid(p: Vector2, grid: Dictionary, fallback: float, cell := 16.0) -> float:
+	var key := Vector2i(int(floor(p.x / cell)), int(floor(p.y / cell)))
+	var bucket = grid.get(key, null)
+	if bucket == null:
+		return fallback
+	var best := fallback
+	for s: Array in bucket:
+		if p.x < float(s[2]) - fallback or p.x > float(s[3]) + fallback or p.y < float(s[4]) - fallback or p.y > float(s[5]) + fallback:
+			continue
+		var d := WC.seg_dist(p, s[0], s[1])
+		if d < best:
+			best = d
+	return best
+
+
+func _slice_rect_poly(pr: Rect2) -> PackedVector2Array:
+	return PackedVector2Array([pr.position, Vector2(pr.end.x, pr.position.y), pr.end, Vector2(pr.position.x, pr.end.y)])
+
+
+func _subtract_holes_linear(piece: PackedVector2Array, holes: Array, depth := 0) -> Array:
+	if holes.is_empty() or piece.size() < 3:
+		return [piece] if piece.size() >= 3 else []
+	var pr: Rect2 = WC._poly_rect(piece)
+	var rel: Array = []
+	for h: PackedVector2Array in holes:
+		if pr.intersects(WC._poly_rect(h)):
+			rel.append(h)
+	if rel.is_empty():
+		return [piece]
+	# Try subtracting relevant holes directly; if none leave a hole ring we are done in 1 pass
+	var cur_pieces: Array = [piece]
+	var trapped: Array = []
+	for h: PackedVector2Array in rel:
+		var nxt: Array = []
+		var any_trapped := false
+		for cp: PackedVector2Array in cur_pieces:
+			if not WC._poly_rect(cp).intersects(WC._poly_rect(h)):
+				nxt.append(cp)
+				continue
+			var clipped := Geometry2D.clip_polygons(cp, h)
+			var out_subs := _outers(clipped)
+			if out_subs.size() < clipped.size():
+				nxt.append(cp)
+				any_trapped = true
+			else:
+				nxt.append_array(out_subs)
+		cur_pieces = nxt
+		if any_trapped:
+			trapped.append(h)
+	if trapped.is_empty() or depth >= 4:
+		return cur_pieces
+	# Split along hole centers on one axis so holes become open bays in O(K) slabs
+	var horiz := (depth % 2) == 1
+	var cuts := PackedFloat32Array()
+	for h: PackedVector2Array in trapped:
+		var hr: Rect2 = WC._poly_rect(h)
+		cuts.append((hr.position.y + hr.size.y * 0.5) if horiz else (hr.position.x + hr.size.x * 0.5))
+	cuts.sort()
+	var filtered_cuts := PackedFloat32Array()
+	var lo := (pr.position.y if horiz else pr.position.x)
+	var hi := (pr.end.y if horiz else pr.end.x)
+	for cv: float in cuts:
+		if cv > lo + 0.15 and cv < hi - 0.15:
+			if filtered_cuts.is_empty() or cv - filtered_cuts[filtered_cuts.size() - 1] > 0.25:
+				filtered_cuts.append(cv)
+	if filtered_cuts.is_empty():
+		return cur_pieces
+	var edges := PackedFloat32Array([lo - 2.0])
+	edges.append_array(filtered_cuts)
+	edges.append(hi + 2.0)
+	var final_out: Array = []
+	for cp: PackedVector2Array in cur_pieces:
+		var cpr: Rect2 = WC._poly_rect(cp)
+		var still_trapped := false
+		for h: PackedVector2Array in trapped:
+			if cpr.intersects(WC._poly_rect(h)):
+				still_trapped = true
+				break
+		if not still_trapped:
+			final_out.append(cp)
+			continue
+		for si in edges.size() - 1:
+			var a0 := edges[si]
+			var a1 := edges[si + 1]
+			var slab_r := Rect2(cpr.position.x - 2.0, a0, cpr.size.x + 4.0, a1 - a0) if horiz else Rect2(a0, cpr.position.y - 2.0, a1 - a0, cpr.size.y + 4.0)
+			if not cpr.intersects(slab_r):
+				continue
+			for sub: PackedVector2Array in _outers(Geometry2D.intersect_polygons(cp, _slice_rect_poly(slab_r))):
+				final_out.append_array(_subtract_holes_linear(sub, trapped, depth + 1))
+	return final_out
+
+
+func _st_strip_soft(st: SurfaceTool, pts: PackedVector2Array, half_w: float, feather_w: float, off: float, y: float) -> int:
+	if pts.size() < 2:
+		return 0
+	var fw := clampf(feather_w, 0.05, half_w * 0.92)
+	var hw_i := maxf(0.02, half_w - fw)
+	var O_L := PackedVector3Array()
+	var I_L := PackedVector3Array()
+	var I_R := PackedVector3Array()
+	var O_R := PackedVector3Array()
+	for i in pts.size():
+		var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+		var nn := Vector2(-t.y, t.x)
+		var c := pts[i] + nn * off
+		O_L.append(Vector3(c.x + nn.x * half_w, y, c.y + nn.y * half_w))
+		I_L.append(Vector3(c.x + nn.x * hw_i, y, c.y + nn.y * hw_i))
+		I_R.append(Vector3(c.x - nn.x * hw_i, y, c.y - nn.y * hw_i))
+		O_R.append(Vector3(c.x - nn.x * half_w, y, c.y - nn.y * half_w))
+	for i in pts.size() - 1:
+		var al := 0.0 if (i == 0) else 1.0
+		var ar := 0.0 if (i + 1 == pts.size() - 1) else 1.0
+		_st_tri_alpha(st, O_L[i], 0.0, I_L[i], al, O_L[i + 1], 0.0)
+		_st_tri_alpha(st, I_L[i], al, I_L[i + 1], ar, O_L[i + 1], 0.0)
+		_st_tri_alpha(st, I_L[i], al, I_R[i], al, I_L[i + 1], ar)
+		_st_tri_alpha(st, I_R[i], al, I_R[i + 1], ar, I_L[i + 1], ar)
+		_st_tri_alpha(st, I_R[i], al, O_R[i], 0.0, I_R[i + 1], ar)
+		_st_tri_alpha(st, O_R[i], 0.0, O_R[i + 1], 0.0, I_R[i + 1], ar)
+	return 1
+
+
+func _dice_large_poly(poly: PackedVector2Array, max_verts := 180, step := 72.0, axis_pass := 0) -> Array:
+	if poly.size() < 3:
+		return []
+	if poly.size() <= max_verts or axis_pass >= 2:
+		return [poly]
+	var pr: Rect2 = WC._poly_rect(poly)
+	var horiz := (pr.size.y >= pr.size.x) if axis_pass == 0 else (pr.size.x > pr.size.y)
+	var span := pr.size.y if horiz else pr.size.x
+	var n_slabs := maxi(2, ceili(maxf(span / step, float(poly.size()) / float(max_verts))))
+	if span < 12.0 or n_slabs <= 1:
+		return [poly]
+	var s_len := span / float(n_slabs)
+	var lo := pr.position.y if horiz else pr.position.x
+	var out: Array = []
+	for si in n_slabs:
+		var a0 := (lo - 1.0) if si == 0 else (lo + float(si) * s_len)
+		var a1 := (lo + span + 1.0) if si == n_slabs - 1 else (lo + float(si + 1) * s_len)
+		var slab_r := Rect2(pr.position.x - 2.0, a0, pr.size.x + 4.0, a1 - a0) if horiz else Rect2(a0, pr.position.y - 2.0, a1 - a0, pr.size.y + 4.0)
+		for sub: PackedVector2Array in _outers(Geometry2D.intersect_polygons(poly, _slice_rect_poly(slab_r))):
+			if sub.size() > max_verts and axis_pass == 0:
+				out.append_array(_dice_large_poly(sub, max_verts, step, 1))
+			elif sub.size() >= 3:
+				out.append(sub)
+	return out
+
+
+func _emit_soft_polys(st: SurfaceTool, polys: Array, feather_w: float, y: float) -> int:
+	var count := 0
+	for poly: PackedVector2Array in polys:
+		if poly.size() < 3:
+			continue
+		var fw := maxf(feather_w, 0.1)
+		var grid := _poly_seg_grid(poly, maxf(14.0, fw * 4.0))
+		var cell := maxf(14.0, fw * 4.0)
+		var inners := _outers(Geometry2D.offset_polygon(poly, -fw, Geometry2D.JOIN_ROUND))
+		if inners.is_empty():
+			fw = feather_w * 0.42
+			inners = _outers(Geometry2D.offset_polygon(poly, -fw, Geometry2D.JOIN_ROUND))
+		if inners.is_empty():
+			for fp: PackedVector2Array in _dice_large_poly(poly):
+				var idx_f := Geometry2D.triangulate_polygon(fp)
+				for k in range(0, idx_f.size(), 3):
+					var p0 := fp[idx_f[k]]
+					var p1 := fp[idx_f[k + 1]]
+					var p2 := fp[idx_f[k + 2]]
+					_st_tri_alpha(st, Vector3(p0.x, y, p0.y), clampf(_segs_dist_grid(p0, grid, fw, cell) / maxf(fw, 0.12), 0.12, 0.9),
+						Vector3(p1.x, y, p1.y), clampf(_segs_dist_grid(p1, grid, fw, cell) / maxf(fw, 0.12), 0.12, 0.9),
+						Vector3(p2.x, y, p2.y), clampf(_segs_dist_grid(p2, grid, fw, cell) / maxf(fw, 0.12), 0.12, 0.9))
+				if not idx_f.is_empty():
+					count += 1
+			continue
+		for inner_raw: PackedVector2Array in inners:
+			for inner: PackedVector2Array in _dice_large_poly(inner_raw):
+				var idx_c := Geometry2D.triangulate_polygon(inner)
+				for k in range(0, idx_c.size(), 3):
+					var ca := inner[idx_c[k]]
+					var cb := inner[idx_c[k + 1]]
+					var cc := inner[idx_c[k + 2]]
+					_st_tri_alpha(st, Vector3(ca.x, y, ca.y), 1.0, Vector3(cb.x, y, cb.y), 1.0, Vector3(cc.x, y, cc.y), 1.0)
+				if not idx_c.is_empty():
+					count += 1
+		for skirt_raw: PackedVector2Array in _subtract_holes_linear(poly, inners):
+			for skirt: PackedVector2Array in _dice_large_poly(skirt_raw):
+				var idx_s := Geometry2D.triangulate_polygon(skirt)
+				for k in range(0, idx_s.size(), 3):
+					var sa := skirt[idx_s[k]]
+					var sb := skirt[idx_s[k + 1]]
+					var sc := skirt[idx_s[k + 2]]
+					_st_tri_alpha(st, Vector3(sa.x, y, sa.y), clampf(_segs_dist_grid(sa, grid, fw, cell) / fw, 0.0, 1.0),
+						Vector3(sb.x, y, sb.y), clampf(_segs_dist_grid(sb, grid, fw, cell) / fw, 0.0, 1.0),
+						Vector3(sc.x, y, sc.y), clampf(_segs_dist_grid(sc, grid, fw, cell) / fw, 0.0, 1.0))
+				if not idx_s.is_empty():
+					count += 1
+	return count
+
+
 ## 水平三角形（顶面）：统一成从上往下看的正面朝向
 func _st_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
 	if (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x) < 0.0:
@@ -4420,22 +5586,54 @@ func _st_caps(st: SurfaceTool, d: PackedVector2Array, r: float, y: float, caps: 
 ## 折线按 WALK_CHUNK 个点分段（段间重叠两个点，弯道外侧不留楔形缝），每段用 Clipper（Geometry2D）做偏移与相减。
 const WALK_W := 1.15          ## 人行道宽（含路沿石）
 const CURB_W := 0.22          ## 路沿石宽（人行道靠车道一侧）
-const WALK_CHUNK := 16
+const WALK_CHUNK := 18
 const _CUT_CELL := 24.0
 
 
-func _chunks(d: PackedVector2Array) -> Array:
+func _prepare_chunk_poly(d: PackedVector2Array, wrap_len := 10.5) -> PackedVector2Array:
+	if d.size() > 8 and d[0].distance_to(d[d.size() - 1]) < 1.0 and WC._poly_len(d) > wrap_len + 4.0:
+		var work := d.duplicate()
+		var acc := 0.0
+		for i in range(1, d.size()):
+			acc += d[i - 1].distance_to(d[i])
+			work.append(d[i])
+			if acc >= wrap_len and i >= 2:
+				break
+		return work
+	return d
+
+
+func _chunk_ranges(d: PackedVector2Array, chunk_len := 64.0, overlap_len := 10.5, max_pts := 160) -> Array:
 	var n := d.size()
-	if n <= WALK_CHUNK + 1:
-		return [d]
+	if n <= 2:
+		return [[0, n]]
+	var s_arr := WC._poly_s_arr(d)
+	var total := s_arr[n - 1]
+	if n <= max_pts and total <= chunk_len + overlap_len:
+		return [[0, n]]
 	var out: Array = []
 	var s := 0
 	while s < n - 1:
-		var e := mini(n, s + WALK_CHUNK + 1)
-		out.append(d.slice(s, e))
-		if e >= n:
+		var e := s + 2
+		while e < n and (e - s) < max_pts and (s_arr[e - 1] - s_arr[s]) < chunk_len:
+			e += 1
+		if e >= n or (total - s_arr[e - 1]) < overlap_len + 4.0:
+			out.append([s, n])
 			break
-		s = e - 3
+		out.append([s, e])
+		var target_s := maxf(s_arr[s] + 1.0, s_arr[e - 1] - overlap_len)
+		var ns := e - 2
+		while ns > s + 1 and s_arr[ns] > target_s:
+			ns -= 1
+		s = maxi(s + 1, ns)
+	return out
+
+
+func _chunks(d: PackedVector2Array) -> Array:
+	var work := _prepare_chunk_poly(d, 10.5)
+	var out: Array = []
+	for rg: Array in _chunk_ranges(work, 64.0, 10.5, 160):
+		out.append(work.slice(int(rg[0]), int(rg[1])))
 	return out
 
 
@@ -4450,34 +5648,63 @@ func _ext_line(d: PackedVector2Array, e: float) -> PackedVector2Array:
 	return out
 
 
-## 折线向两侧各偏移 r 的条带（圆角拐弯、平头端），只取外轮廓
-func _offset_line(d: PackedVector2Array, r: float) -> Array:
+## 折线向两侧各偏移 r 的条带（32 倍局部缩放：将 Clipper 圆角容差压低至 0.0078m，彻底消除弯道与拐角外扩折线），只取外轮廓
+func _offset_line(d: PackedVector2Array, r: float, end_type := Geometry2D.END_BUTT, scale := 16.0) -> Array:
 	if d.size() < 2 or r <= 0.05:
 		return []
-	return _outers(Geometry2D.offset_polyline(d, r, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT))
+	var s := maxf(1.0, scale)
+	var inv_s := 1.0 / s
+	var ref := d[0]
+	var sd := PackedVector2Array()
+	sd.resize(d.size())
+	for i in d.size():
+		sd[i] = (d[i] - ref) * s
+	var out: Array = []
+	for poly: PackedVector2Array in _outers(Geometry2D.offset_polyline(sd, r * s, Geometry2D.JOIN_ROUND, end_type)):
+		var up := PackedVector2Array()
+		up.resize(poly.size())
+		for i in poly.size():
+			up[i] = poly[i] * inv_s + ref
+		if WC.poly_area_signed(up) < 0.0:
+			up.reverse()
+		out.append(up)
+	return out
 
 
-## Clipper 结果里去掉洞（洞会被包含在别的结果多边形里）
+## Clipper 结果里去掉洞（仅当环面积符号与外环相反且在面积更大的外环内时才是真正的洞，防止相邻同向外轮廓在共享顶点处被误删）
 func _outers(res: Array) -> Array:
 	if res.size() <= 1:
-		return res
+		if res.size() == 1 and (res[0] as PackedVector2Array).size() >= 3:
+			return res
+		return []
+	var areas := PackedFloat32Array()
+	areas.resize(res.size())
+	for i in res.size():
+		var p: PackedVector2Array = res[i]
+		areas[i] = WC.poly_area_signed(p) if p.size() >= 3 else 0.0
 	var out: Array = []
 	for i in res.size():
-		var hole := false
 		var pi: PackedVector2Array = res[i]
-		if pi.size() < 3:
+		var ai := areas[i]
+		if pi.size() < 3 or absf(ai) < 1e-4:
 			continue
+		var hole := false
 		for j in res.size():
-			if j != i and (res[j] as PackedVector2Array).size() >= 3 and Geometry2D.is_point_in_polygon(pi[0], res[j]):
-				hole = true
-				break
+			if j == i:
+				continue
+			var aj := areas[j]
+			if ai * aj < 0.0 and absf(ai) < absf(aj):
+				var pj: PackedVector2Array = res[j]
+				if Geometry2D.is_point_in_polygon(pi[0], pj) or Geometry2D.is_point_in_polygon(pi[pi.size() / 2], pj):
+					hole = true
+					break
 		if not hole:
 			out.append(pi)
 	return out
 
 
 ## 断头路外的半圆环（内半径 r0、外半径 r1），朝 t 方向
-func _half_ring(p: Vector2, t: Vector2, r0: float, r1: float, seg := 24) -> PackedVector2Array:
+func _half_ring(p: Vector2, t: Vector2, r0: float, r1: float, seg := 48) -> PackedVector2Array:
 	var nn := Vector2(-t.y, t.x)
 	var poly := PackedVector2Array()
 	for k in seg + 1:
@@ -4489,7 +5716,7 @@ func _half_ring(p: Vector2, t: Vector2, r0: float, r1: float, seg := 24) -> Pack
 	return poly
 
 
-func _circle_poly(c: Vector2, r: float, seg := 64) -> PackedVector2Array:
+func _circle_poly(c: Vector2, r: float, seg := 80) -> PackedVector2Array:
 	var out := PackedVector2Array()
 	for i in seg:
 		var a := TAU * i / seg
@@ -4524,20 +5751,46 @@ func _merge_polys(polys: Array) -> Array:
 func _shift_line(pts: PackedVector2Array, off: float) -> PackedVector2Array:
 	if pts.size() < 2 or absf(off) < 1e-4:
 		return pts
+	var n := pts.size()
+	var closed := n > 8 and pts[0].distance_to(pts[n - 1]) < 0.15
 	var out := PackedVector2Array()
-	for i in pts.size():
-		var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
-		var nn := Vector2(-t.y, t.x)
-		out.append(pts[i] + nn * off)
+	out.resize(n)
+	for i in n:
+		var t := Vector2.ZERO
+		if i == 0:
+			t = ((pts[1] - pts[0]).normalized() + (pts[n - 1] - pts[n - 2]).normalized()).normalized() if closed else (pts[1] - pts[0]).normalized()
+		elif i == n - 1:
+			t = ((pts[1] - pts[0]).normalized() + (pts[n - 1] - pts[n - 2]).normalized()).normalized() if closed else (pts[n - 1] - pts[n - 2]).normalized()
+		else:
+			var v0 := pts[i] - pts[i - 1]
+			var v1 := pts[i + 1] - pts[i]
+			var l0 := v0.length()
+			var l1 := v1.length()
+			if l0 > 1e-5 and l1 > 1e-5:
+				t = (l1 * (v0 / l0) + l0 * (v1 / l1)).normalized()
+			elif l1 > 1e-5:
+				t = v1 / l1
+			elif l0 > 1e-5:
+				t = v0 / l0
+		if t.length_squared() < 1e-8:
+			t = (pts[mini(i + 1, n - 1)] - pts[maxi(i - 1, 0)]).normalized()
+		out[i] = pts[i] + Vector2(-t.y, t.x) * off
 	return out
 
 
 func _cap_polys(d: PackedVector2Array, r: float, caps: Array) -> Array:
+	return _cap_polys_ends(d, r, r, caps)
+
+
+func _cap_polys_ends(d: PackedVector2Array, r0: float, r1: float, caps: Array) -> Array:
 	var out: Array = []
 	if d.size() < 2:
 		return out
 	for e in 2:
 		if not bool(caps[e]):
+			continue
+		var r := r0 if e == 0 else r1
+		if r <= 0.05:
 			continue
 		var p: Vector2 = d[0] if e == 0 else d[d.size() - 1]
 		var q: Vector2 = d[1] if e == 0 else d[d.size() - 2]
@@ -4545,12 +5798,117 @@ func _cap_polys(d: PackedVector2Array, r: float, caps: Array) -> Array:
 		if t.length_squared() < 1e-6:
 			continue
 		var nn := Vector2(-t.y, t.x)
-		var seg := 24
+		var seg := 48
 		var poly := PackedVector2Array()
 		for k in seg + 1:
 			var a := PI * float(k) / float(seg)
 			poly.append(p + (nn * cos(a) + t * sin(a)) * r)
 		out.append(poly)
+	return out
+
+
+func _curve_band_polys(cv: Dictionary, inset: float, ext_e: float, lim := Rect2(), extend_mates := false) -> Array:
+	var d: PackedVector2Array = cv.d
+	if d.size() < 2:
+		return []
+	var w := float(cv.w)
+	var w0 := float(cv.get("w0", w))
+	var w1 := float(cv.get("w1", w))
+	var out: Array = []
+	if absf(w0 - w) < 0.05 and absf(w1 - w) < 0.05:
+		var r := w * 0.5 - inset
+		if r <= 0.05:
+			return out
+		var chunks := _chunks(d)
+		var mate_ends: Array = cv.get("mate_ends", [false, false])
+		var mate_dirs: Array = cv.get("mate_dirs", [Vector2.ZERO, Vector2.ZERO])
+		for idx in chunks.size():
+			var ch: PackedVector2Array = chunks[idx]
+			if lim.has_area() and not lim.intersects(WC._poly_rect(ch).grow(r + 2.0)):
+				continue
+			var line := ch.duplicate()
+			if ch.size() >= 2:
+				if idx == 0 and bool(mate_ends[0]) and (mate_dirs[0] as Vector2) != Vector2.ZERO and (ext_e > 0.001 or extend_mates):
+					var mlen := maxf(ext_e, 0.32) if ext_e > 0.001 else 0.22
+					line.insert(0, ch[0] + (mate_dirs[0] as Vector2) * mlen)
+				elif ext_e > 0.001:
+					line[0] = ch[0] + (ch[0] - ch[1]).normalized() * ext_e
+				if idx == chunks.size() - 1 and bool(mate_ends[1]) and (mate_dirs[1] as Vector2) != Vector2.ZERO and (ext_e > 0.001 or extend_mates):
+					var mlen := maxf(ext_e, 0.32) if ext_e > 0.001 else 0.22
+					line.append(ch[ch.size() - 1] + (mate_dirs[1] as Vector2) * mlen)
+				elif ext_e > 0.001:
+					line[line.size() - 1] = ch[ch.size() - 1] + (ch[ch.size() - 1] - ch[ch.size() - 2]).normalized() * ext_e
+			out.append_array(_offset_line(line, r))
+		return out
+	var s_arr := WC._poly_s_arr(d)
+	var total := s_arr[d.size() - 1]
+	if total < 0.2:
+		return out
+	var taper_l := minf(10.0, total * 0.48)
+	var r_arr := PackedFloat32Array()
+	r_arr.resize(d.size())
+	for k in d.size():
+		var s := s_arr[k]
+		var hw_k := w * 0.5
+		if absf(w0 - w) >= 0.05 and s < taper_l:
+			hw_k = lerpf(w0 * 0.5, w * 0.5, smoothstep(0.0, taper_l, s))
+		if absf(w1 - w) >= 0.05 and (total - s) < taper_l:
+			hw_k = lerpf(w1 * 0.5, hw_k, smoothstep(0.0, taper_l, total - s))
+		r_arr[k] = maxf(0.15, hw_k - inset)
+	var n := d.size()
+	var mate_ends2: Array = cv.get("mate_ends", [false, false])
+	var mate_dirs2: Array = cv.get("mate_dirs", [Vector2.ZERO, Vector2.ZERO])
+	var ranges := _chunk_ranges(d, 64.0, 10.5, 160)
+	for r_idx in ranges.size():
+		var s_idx: int = ranges[r_idx][0]
+		var e_idx: int = ranges[r_idx][1]
+		var c_pts := d.slice(s_idx, e_idx)
+		var c_r := r_arr.slice(s_idx, e_idx)
+		if not lim.has_area() or lim.intersects(WC._poly_rect(c_pts).grow(w * 0.5 + 2.0)):
+			if c_pts.size() >= 2:
+				if r_idx == 0 and bool(mate_ends2[0]) and (mate_dirs2[0] as Vector2) != Vector2.ZERO and (ext_e > 0.001 or extend_mates):
+					var mlen := maxf(ext_e, 0.32) if ext_e > 0.001 else 0.22
+					c_pts.insert(0, c_pts[0] + (mate_dirs2[0] as Vector2) * mlen)
+					c_r.insert(0, c_r[0])
+				elif ext_e > 0.001:
+					c_pts[0] = c_pts[0] + (c_pts[0] - c_pts[1]).normalized() * ext_e
+				if (r_idx == ranges.size() - 1 or e_idx >= n) and bool(mate_ends2[1]) and (mate_dirs2[1] as Vector2) != Vector2.ZERO and (ext_e > 0.001 or extend_mates):
+					var mlen := maxf(ext_e, 0.32) if ext_e > 0.001 else 0.22
+					c_pts.append(c_pts[c_pts.size() - 1] + (mate_dirs2[1] as Vector2) * mlen)
+					c_r.append(c_r[c_r.size() - 1])
+				elif ext_e > 0.001:
+					var ml := c_pts.size()
+					c_pts[ml - 1] = c_pts[ml - 1] + (c_pts[ml - 1] - c_pts[ml - 2]).normalized() * ext_e
+				var m := c_pts.size()
+				var left_side := PackedVector2Array()
+				var right_side := PackedVector2Array()
+				for k in m:
+					var t_k := Vector2.ZERO
+					var ref_d := Vector2.ZERO
+					if k == 0:
+						t_k = (c_pts[1] - c_pts[0]).normalized()
+						ref_d = t_k
+					elif k == m - 1:
+						t_k = (c_pts[m - 1] - c_pts[m - 2]).normalized()
+						ref_d = t_k
+					else:
+						var d0 := (c_pts[k] - c_pts[k - 1]).normalized()
+						var d1 := (c_pts[k + 1] - c_pts[k]).normalized()
+						t_k = (d0 + d1).normalized()
+						if t_k.length_squared() < 1e-4:
+							t_k = (c_pts[k + 1] - c_pts[k - 1]).normalized()
+						ref_d = d0
+					var miter := clampf(1.0 / maxf(0.6, absf(t_k.dot(ref_d))), 1.0, 1.35)
+					var nn := Vector2(-t_k.y, t_k.x) * (c_r[k] * miter)
+					left_side.append(c_pts[k] - nn)
+					right_side.append(c_pts[k] + nn)
+				right_side.reverse()
+				var rib := left_side
+				rib.append_array(right_side)
+				if WC.poly_area_signed(rib) < 0.0:
+					rib.reverse()
+				for u: PackedVector2Array in _offset_poly_smooth(rib, 0.02, c_pts[0]):
+					out.append_array(_offset_poly_smooth(u, -0.02, c_pts[0]))
 	return out
 
 
@@ -4561,67 +5919,544 @@ func _emit_dedup_polys(st: SurfaceTool, polys: Array, y: float, thick := 0.0) ->
 	for raw: PackedVector2Array in polys:
 		if raw.size() < 3:
 			continue
-		for piece: PackedVector2Array in _subtract_cuts(raw, cuts, cgrid, []):
+		for raw_piece: PackedVector2Array in _subtract_cuts(raw, cuts, cgrid, []):
+			var piece := _sanitize_poly(raw_piece, 0.15)
+			if piece.is_empty():
+				continue
 			_emit_poly(st, piece, y, thick)
 			_add_cut(cuts, cgrid, piece)
 			n += 1
 	return n
 
 
-func _build_walks(st_w: SurfaceTool, st_c: SurfaceTool) -> int:
-	var lim := Rect2(-EXT_HALF - 12.0, -EXT_HALF - 12.0, EXT_HALF * 2.0 + 24.0, EXT_HALF * 2.0 + 24.0)
+## 多边形清理：顺序剔除微短边、严格共线冗余点（弦高 < 1.5mm）及 180° 细针尖刺，绝不抽稀平滑弯道
+func _sanitize_poly(poly: PackedVector2Array, min_area := 0.20) -> PackedVector2Array:
+	var pts := poly.duplicate()
+	if pts.size() < 3:
+		return PackedVector2Array()
+	for _pass in 3:
+		var dedup := PackedVector2Array()
+		for q in pts:
+			if dedup.is_empty() or dedup[dedup.size() - 1].distance_to(q) >= 0.012:
+				dedup.append(q)
+		while dedup.size() >= 3 and dedup[dedup.size() - 1].distance_to(dedup[0]) < 0.012:
+			dedup.remove_at(dedup.size() - 1)
+		if dedup.size() < 3:
+			return PackedVector2Array()
+		var m := dedup.size()
+		var nxt := PackedVector2Array()
+		var changed := dedup.size() != pts.size()
+		for i in m:
+			var a: Vector2 = nxt[nxt.size() - 1] if not nxt.is_empty() else dedup[m - 1]
+			var b := dedup[i]
+			var c := dedup[(i + 1) % m]
+			var la := a.distance_to(b)
+			var lc := b.distance_to(c)
+			if la < 0.008 or lc < 0.008:
+				nxt.append(b)
+				continue
+			var dp := ((b - a) / la).dot((c - b) / lc)
+			if dp < -0.955:
+				changed = true
+				continue
+			if dp > 0.999995 and WC.seg_dist(b, a, c) < 0.0002:
+				changed = true
+				continue
+			nxt.append(b)
+		if nxt.size() < 3:
+			return PackedVector2Array()
+		while nxt.size() >= 3 and nxt[nxt.size() - 1].distance_to(nxt[0]) < 0.012:
+			nxt.remove_at(nxt.size() - 1)
+			changed = true
+		if nxt.size() < 3:
+			return PackedVector2Array()
+		pts = nxt
+		if not changed:
+			break
+	if pts.size() < 3 or WC.poly_area(pts) < min_area:
+		return PackedVector2Array()
+	return pts
+
+
+## 对人行道/路沿石裁剪后的外凸锐角尖刺（< 47°）做平头倒角削尖，并按层面积阈值丢弃碎渣片
+func _clean_walk_piece(poly: PackedVector2Array, min_area := 0.24) -> PackedVector2Array:
+	var pts := _sanitize_poly(poly, min_area * 0.8)
+	if pts.is_empty():
+		return PackedVector2Array()
+	var ccw := WC.poly_area_signed(pts) > 0.0
+	var out := PackedVector2Array()
+	var m := pts.size()
+	for i in m:
+		var a := pts[(i - 1 + m) % m]
+		var b := pts[i]
+		var c := pts[(i + 1) % m]
+		var d_in := b - a
+		var d_out := c - b
+		var la := d_in.length()
+		var lc := d_out.length()
+		if la < 0.04 or lc < 0.04:
+			out.append(b)
+			continue
+		var in_dir := d_in / la
+		var out_dir := d_out / lc
+		var cr := in_dir.cross(out_dir)
+		var is_convex := (cr > 0.015) if ccw else (cr < -0.015)
+		if is_convex and in_dir.dot(out_dir) < -0.68:
+			var bev := minf(0.45, minf(la, lc) * 0.30)
+			out.append(b - in_dir * bev)
+			out.append(b + out_dir * bev)
+		else:
+			out.append(b)
+	return _sanitize_poly(out, min_area)
+
+
+## 16 倍局部缩放圆角偏移：将 Clipper 默认 0.25m 弦高容差压低至 0.0156m，使交叉口喇叭口圆弧细腻顺滑
+func _offset_poly_smooth(poly: PackedVector2Array, delta: float, ref: Vector2) -> Array:
+	if poly.size() < 3:
+		return []
+	if absf(delta) < 0.0005:
+		var cp := poly.duplicate()
+		if WC.poly_area_signed(cp) < 0.0:
+			cp.reverse()
+		return [cp]
+	const S := 20.0
+	const INV_S := 1.0 / 20.0
+	var sp := PackedVector2Array()
+	sp.resize(poly.size())
+	for i in poly.size():
+		sp[i] = (poly[i] - ref) * S
+	if WC.poly_area_signed(sp) < 0.0:
+		sp.reverse()
+	var out: Array = []
+	for r: PackedVector2Array in _outers(Geometry2D.offset_polygon(sp, delta * S, Geometry2D.JOIN_ROUND)):
+		if r.size() < 3:
+			continue
+		var up := PackedVector2Array()
+		up.resize(r.size())
+		for i in r.size():
+			up[i] = r[i] * INV_S + ref
+		if WC.poly_area_signed(up) < 0.0:
+			up.reverse()
+		out.append(up)
+	return out
+
+
+func _sample_poly_at_s(pts: PackedVector2Array, s_arr: PackedFloat32Array, target_s: float) -> Vector2:
+	if pts.is_empty():
+		return Vector2.ZERO
+	var n := pts.size()
+	if n == 1 or target_s <= 0.0:
+		return pts[0]
+	if target_s >= s_arr[n - 1]:
+		return pts[n - 1]
+	for k in n - 1:
+		var s0 := s_arr[k]
+		var s1 := s_arr[k + 1]
+		if target_s <= s1:
+			var t := (target_s - s0) / maxf(0.0001, s1 - s0)
+			return pts[k].lerp(pts[k + 1], t)
+	return pts[n - 1]
+
+
+func _compute_junction_bellmouths(lim: Rect2) -> Array:
+	var raw_pts: Array = []
+	for ci in curves.size():
+		var cvi: Dictionary = curves[ci]
+		if cvi.dirt:
+			continue
+		var di: PackedVector2Array = cvi.d
+		if di.size() < 2:
+			continue
+		var mates_i: PackedInt32Array = cvi.get("tangent_mates", PackedInt32Array())
+		for e in 2:
+			var pe: Vector2 = di[0] if e == 0 else di[di.size() - 1]
+			if not lim.has_point(pe):
+				continue
+			var te := (di[1] - di[0]).normalized() if e == 0 else (di[di.size() - 1] - di[di.size() - 2]).normalized()
+			var lst = _rg.grid.get(Vector2i(floori(pe.x / _rg.cell), floori(pe.y / _rg.cell)))
+			if lst != null:
+				for si: int in lst:
+					var cj: int = _rg.tag[si]
+					if cj == ci or (cj in mates_i) or curves[cj].dirt:
+						continue
+					var seg_dir := (_rg.b[si] - _rg.a[si]).normalized()
+					if absf(te.dot(seg_dir)) < 0.93 and WC.seg_dist(pe, _rg.a[si], _rg.b[si]) <= _rg.hw[si] + 1.5:
+						raw_pts.append(pe)
+		var ri := WC._poly_rect(di).grow(2.0)
+		if not lim.intersects(ri):
+			continue
+		var pi_seg: PackedVector2Array = cvi.pts
+		var ri_seg := WC._poly_rect(pi_seg).grow(2.5)
+		for cj in range(ci + 1, curves.size()):
+			var cvj: Dictionary = curves[cj]
+			if cvj.dirt or (cj in mates_i):
+				continue
+			var pj_seg: PackedVector2Array = cvj.pts
+			if pj_seg.size() < 2 or not ri_seg.intersects(WC._poly_rect(pj_seg).grow(2.5)):
+				continue
+			for ka in pi_seg.size() - 1:
+				var a0 := pi_seg[ka]
+				var a1 := pi_seg[ka + 1]
+				var da := (a1 - a0).normalized()
+				var ra := Rect2(a0, Vector2.ZERO).expand(a1)
+				for kb in pj_seg.size() - 1:
+					var b0 := pj_seg[kb]
+					var b1 := pj_seg[kb + 1]
+					if not ra.intersects(Rect2(b0, Vector2.ZERO).expand(b1)):
+						continue
+					var xing = Geometry2D.segment_intersects_segment(a0, a1, b0, b1)
+					if xing != null:
+						var db := (b1 - b0).normalized()
+						if absf(da.dot(db)) < 0.93:
+							raw_pts.append(xing)
+	raw_pts.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+		var sx_a := snappedf(a.x, 0.1)
+		var sx_b := snappedf(b.x, 0.1)
+		if sx_a != sx_b:
+			return sx_a < sx_b
+		return snappedf(a.y, 0.1) < snappedf(b.y, 0.1)
+	)
+	var clusters: Array = []
+	for pt: Vector2 in raw_pts:
+		if not lim.has_point(pt) or in_wet(pt, 1.8) or _on_bridge(pt, 1.8):
+			continue
+		var merged := false
+		for cl: Array in clusters:
+			var cur_c: Vector2 = cl[0] / float(cl[1])
+			if pt.distance_to(cur_c) < 7.5:
+				cl[0] += pt
+				cl[1] += 1
+				merged = true
+				break
+		if not merged:
+			clusters.append([pt, 1])
+	var all_bldgs: Array = []
+	for b: Dictionary in layout.get("bldgs", []) + layout.get("backdrop_bldgs", []):
+		var bp: PackedVector2Array = WC.obb_corners(b.c, float(b.ang), float(b.sx), float(b.sz))
+		if bp.size() >= 3:
+			all_bldgs.append([bp, WC._poly_rect(bp).grow(WALK_W + 2.0)])
+	var out: Array = []
+	for cl: Array in clusters:
+		var jp: Vector2 = cl[0] / float(cl[1])
+		if not lim.has_point(jp) or in_wet(jp, 1.8) or _on_bridge(jp, 1.8):
+			continue
+		var min_w := INF
+		var max_hw := 0.0
+		var all_wide := true
+		var part: Array = []
+		for ci in curves.size():
+			var cv: Dictionary = curves[ci]
+			if cv.dirt:
+				continue
+			var hw := float(cv.w) * 0.5
+			if WC.poly_dist(cv.d, jp) <= hw + 7.5:
+				part.append(cv)
+				min_w = minf(min_w, float(cv.w))
+				max_hw = maxf(max_hw, hw)
+				if float(cv.w) < 10.0:
+					all_wide = false
+		if part.size() < 2:
+			continue
+		var arm_dirs: Array = []
+		for cv: Dictionary in part:
+			var d_cv: PackedVector2Array = cv.d
+			if d_cv.size() < 2:
+				continue
+			var s_arr := WC._poly_s_arr(d_cv)
+			var total_s := s_arr[d_cv.size() - 1]
+			var best_d2 := INF
+			var s_hit := 0.0
+			for k in d_cv.size() - 1:
+				var pa := d_cv[k]
+				var pb := d_cv[k + 1]
+				var ab := pb - pa
+				var ab2 := ab.length_squared()
+				var t := clampf((jp - pa).dot(ab) / ab2, 0.0, 1.0) if ab2 > 1e-6 else 0.0
+				var proj := pa + ab * t
+				var d2 := jp.distance_squared_to(proj)
+				if d2 < best_d2:
+					best_d2 = d2
+					s_hit = lerpf(s_arr[k], s_arr[k + 1], t)
+			if s_hit >= 5.5:
+				var p_back := _sample_poly_at_s(d_cv, s_arr, maxf(0.0, s_hit - 9.0))
+				var v_back := p_back - jp
+				if v_back.length_squared() > 1e-4:
+					v_back = v_back.normalized()
+					var dup := false
+					for u: Vector2 in arm_dirs:
+						if u.dot(v_back) > 0.945:
+							dup = true
+							break
+					if not dup:
+						arm_dirs.append(v_back)
+			if total_s - s_hit >= 5.5:
+				var p_fwd := _sample_poly_at_s(d_cv, s_arr, minf(total_s, s_hit + 9.0))
+				var v_fwd := p_fwd - jp
+				if v_fwd.length_squared() > 1e-4:
+					v_fwd = v_fwd.normalized()
+					var dup := false
+					for u: Vector2 in arm_dirs:
+						if u.dot(v_fwd) > 0.945:
+							dup = true
+							break
+					if not dup:
+						arm_dirs.append(v_fwd)
+		var max_acute_cos := -0.35
+		for i in arm_dirs.size():
+			for j in range(i + 1, arm_dirs.size()):
+				max_acute_cos = maxf(max_acute_cos, (arm_dirs[i] as Vector2).dot(arm_dirs[j] as Vector2))
+		var rf_base := 5.0 if min_w < 8.5 else (6.2 if min_w < 11.5 else 7.4)
+		var rf := minf(rf_base, 4.6) if max_acute_cos > 0.55 else rf_base
+		var sin_half := sqrt(maxf(0.08, 0.5 * (1.0 - max_acute_cos)))
+		var cos_half := sqrt(maxf(0.0, 1.0 - sin_half * sin_half))
+		var x_tan := (maxf(1.5, max_hw - WALK_W) + rf) * (cos_half / sin_half)
+		var tan_reach := sqrt(x_tan * x_tan + max_hw * max_hw)
+		var r_clip := clampf(tan_reach + 2.8, 12.0, 34.0)
+		var r_loc := r_clip + rf + WALK_W + 6.0
+		var loc_box := Rect2(jp - Vector2(r_loc, r_loc), Vector2(r_loc * 2.0, r_loc * 2.0))
+		var cw_polys: Array = []
+		for cv: Dictionary in part:
+			cw_polys.append_array(_curve_band_polys(cv, WALK_W, 0.25, loc_box, true))
+			var d_cv: PackedVector2Array = cv.d
+			var caps_cv: Array = cv.get("caps", [false, false])
+			var cw0 := maxf(0.5, float(cv.get("w0", cv.w)) * 0.5 - WALK_W)
+			var cw1 := maxf(0.5, float(cv.get("w1", cv.w)) * 0.5 - WALK_W)
+			for cp_cap: PackedVector2Array in _cap_polys_ends(d_cv, cw0, cw1, caps_cv):
+				if loc_box.intersects(WC._poly_rect(cp_cap)):
+					cw_polys.append(cp_cap)
+		var u_polys := _merge_polys(cw_polys)
+		if u_polys.is_empty():
+			continue
+		for ui in u_polys.size():
+			if WC.poly_area_signed(u_polys[ui]) < 0.0:
+				(u_polys[ui] as PackedVector2Array).reverse()
+		var dilated: Array = []
+		for u: PackedVector2Array in u_polys:
+			dilated.append_array(_offset_poly_smooth(u, rf, jp))
+		var d_merged := _merge_polys(dilated)
+		var eroded: Array = []
+		for dp: PackedVector2Array in d_merged:
+			eroded.append_array(_offset_poly_smooth(dp, -rf, jp))
+		var closed_polys := _merge_polys(eroded)
+		if closed_polys.is_empty():
+			continue
+		var b_box := Rect2(jp - Vector2(r_clip + WALK_W + 3.0, r_clip + WALK_W + 3.0), Vector2(r_clip + WALK_W + 3.0, r_clip + WALK_W + 3.0) * 2.0)
+		var obs_polys: Array = []
+		for be: Array in all_bldgs:
+			if (be[1] as Rect2).intersects(b_box):
+				var bc_pos: PackedVector2Array = be[0]
+				if WC.poly_area_signed(bc_pos) < 0.0:
+					bc_pos = bc_pos.duplicate()
+					bc_pos.reverse()
+				obs_polys.append_array(_outers(Geometry2D.offset_polygon(bc_pos, WALK_W + 0.35, Geometry2D.JOIN_MITER)))
+		for line: PackedVector2Array in rail_polys:
+			for ch: PackedVector2Array in _chunks(line):
+				if b_box.intersects(WC._poly_rect(ch).grow(WALK_W + 3.0)):
+					obs_polys.append_array(_offset_line(_ext_line(ch, 0.2), WALK_W + 2.45))
+		for br: Array in bridges:
+			var b0: Vector2 = br[0]
+			var b1: Vector2 = br[1]
+			var bln := b0.distance_to(b1)
+			if bln < 0.1:
+				continue
+			var br_r := Rect2(b0, Vector2.ZERO).expand(b1).grow(float(br[2]) * 0.5 + WALK_W + 1.0)
+			if b_box.intersects(br_r):
+				var bdir := (b1 - b0) / bln
+				obs_polys.append_array(_offset_line(PackedVector2Array([b0 - bdir * 0.2, b1 + bdir * 0.2]), float(br[2]) * 0.5 + WALK_W + 0.35))
+		for rv: Dictionary in rivers:
+			if bool(rv.dry):
+				continue
+			var rhw := float(rv.w) * 0.5 + WALK_W + 1.2
+			for ch: PackedVector2Array in _chunks(rv.pts):
+				if b_box.intersects(WC._poly_rect(ch).grow(rhw + 1.0)):
+					obs_polys.append_array(_offset_line(ch, rhw))
+		for l: Vector3 in lakes:
+			if jp.distance_to(Vector2(l.x, l.y)) < l.z * 1.45 + r_clip + WALK_W + 4.0:
+				obs_polys.append(WC.lake_poly(l, 56, WALK_W + 2.2))
+		for oi in obs_polys.size():
+			if WC.poly_area_signed(obs_polys[oi]) < 0.0:
+				(obs_polys[oi] as PackedVector2Array).reverse()
+		var safe_closed: Array = closed_polys
+		if not obs_polys.is_empty():
+			var flares: Array = closed_polys.duplicate()
+			for u: PackedVector2Array in u_polys:
+				for u_in: PackedVector2Array in _offset_poly_smooth(u, -0.05, jp):
+					var nxt_f: Array = []
+					for fp: PackedVector2Array in flares:
+						nxt_f.append_array(_outers(Geometry2D.clip_polygons(fp, u_in)))
+					flares = nxt_f
+					if flares.is_empty():
+						break
+				if flares.is_empty():
+					break
+			for ob: PackedVector2Array in obs_polys:
+				if flares.is_empty():
+					break
+				var nxt_f: Array = []
+				for fp: PackedVector2Array in flares:
+					nxt_f.append_array(_outers(Geometry2D.clip_polygons(fp, ob)))
+				flares = nxt_f
+			var comb: Array = []
+			comb.append_array(u_polys)
+			comb.append_array(flares)
+			safe_closed = _merge_polys(comb)
+		for si in safe_closed.size():
+			if WC.poly_area_signed(safe_closed[si]) < 0.0:
+				(safe_closed[si] as PackedVector2Array).reverse()
+		var disk := _circle_poly(jp, r_clip, 80)
+		if WC.poly_area_signed(disk) < 0.0:
+			disk.reverse()
+		var disk_band := _circle_poly(jp, maxf(2.0, r_clip - 0.005), 80)
+		if WC.poly_area_signed(disk_band) < 0.0:
+			disk_band.reverse()
+		var disk_bcut := _circle_poly(jp, r_clip + 0.25, 80)
+		if WC.poly_area_signed(disk_bcut) < 0.0:
+			disk_bcut.reverse()
+		var inner_clip: Array = []
+		for cp: PackedVector2Array in safe_closed:
+			for bp_c: PackedVector2Array in _outers(Geometry2D.intersect_polygons(cp, disk)):
+				var sb := _sanitize_poly(bp_c, 0.5)
+				if sb.size() >= 3:
+					if WC.poly_area_signed(sb) < 0.0:
+						sb.reverse()
+					inner_clip.append(sb)
+		if inner_clip.is_empty():
+			continue
+		var b_cuts: Array = []
+		for cp: PackedVector2Array in safe_closed:
+			for zp: PackedVector2Array in _offset_poly_smooth(cp, 0.006, jp):
+				for zc: PackedVector2Array in _outers(Geometry2D.intersect_polygons(zp, disk_bcut)):
+					var szc := _sanitize_poly(zc, 0.25)
+					if szc.size() >= 3:
+						if WC.poly_area_signed(szc) < 0.0:
+							szc.reverse()
+						b_cuts.append(szc)
+		var band_cuts: Array = []
+		for cp: PackedVector2Array in safe_closed:
+			for zp: PackedVector2Array in _offset_poly_smooth(cp, WALK_W + 0.45, jp):
+				for zc: PackedVector2Array in _outers(Geometry2D.intersect_polygons(zp, disk_band)):
+					var szc := _sanitize_poly(zc, 0.25)
+					if szc.size() >= 3:
+						if WC.poly_area_signed(szc) < 0.0:
+							szc.reverse()
+						band_cuts.append(szc)
+		out.append({"cp": safe_closed, "inner_clip": inner_clip, "b_cuts": b_cuts, "band_cuts": band_cuts, "disk": disk, "jp": jp, "wide": all_wide})
+	return out
+
+
+func _has_crossing_paved(pg: WC.SegGrid, p: Vector2, skip: int, mates: PackedInt32Array, dir: Vector2, min_d: float, max_d: float) -> bool:
+	var lst = pg.grid.get(Vector2i(floori(p.x / pg.cell), floori(p.y / pg.cell)))
+	if lst == null:
+		return false
+	var best := INF
+	for i: int in lst:
+		var tg := pg.tag[i]
+		if tg == skip or (tg in mates):
+			continue
+		var sd := (pg.b[i] - pg.a[i]).normalized()
+		if absf(dir.dot(sd)) >= 0.85:
+			continue
+		var ab: Vector2 = pg.b[i] - pg.a[i]
+		var u := clampf((p - pg.a[i]).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var d := p.distance_to(pg.a[i] + ab * u) - pg.hw[i]
+		if d < best:
+			best = d
+	return best > min_d and best < max_d
+
+
+func _build_walks(st_w: SurfaceTool, st_c: SurfaceTool, bellmouths: Array) -> int:
+	var lim := Rect2(-EXT_HALF - 56.0, -EXT_HALF - 56.0, EXT_HALF * 2.0 + 112.0, EXT_HALF * 2.0 + 112.0)
 	var cuts: Array = []          ## [多边形, 外接矩形]
 	var cgrid := {}
-	var bands: Array = []         ## [折线段, 半宽, 本段车道切口序号列表]
-	var ends: Array = []          ## [端点, 朝外方向, 半宽]
-	for cv: Dictionary in curves:
+	var bands: Array = []         ## [曲线索引, 各自车道切口序号列表]
+	var ends: Array = []          ## [端点, 朝外方向, 端半宽]
+	for ci in curves.size():
+		var cv: Dictionary = curves[ci]
+		if cv.dirt:
+			continue
 		var d: PackedVector2Array = cv.d
 		if d.size() < 2:
 			continue
 		var hw: float = float(cv.w) * 0.5
-		var cw: float = hw if cv.dirt else hw - WALK_W
-		for ch: PackedVector2Array in _chunks(d):
-			if not lim.intersects(WC._poly_rect(ch).grow(hw)):
-				continue
-			var own: Array = []
-			for poly: PackedVector2Array in _offset_line(_ext_line(ch, 0.05), cw):
-				own.append(_add_cut(cuts, cgrid, poly))
-			if not cv.dirt:
-				bands.append([ch, hw, own])
-		if not cv.dirt:
-			var caps: Array = cv.get("caps", [false, false])
-			for e in 2:
-				if bool(caps[e]):
-					var p: Vector2 = d[0] if e == 0 else d[d.size() - 1]
-					var q: Vector2 = d[1] if e == 0 else d[d.size() - 2]
-					if lim.has_point(p):
-						ends.append([p, (p - q).normalized(), hw])
+		var all_own: Array = []
+		for poly: PackedVector2Array in _curve_band_polys(cv, WALK_W, 0.05, lim):
+			all_own.append(_add_cut(cuts, cgrid, poly))
+		bands.append([cv, all_own])
+		var caps: Array = cv.get("caps", [false, false])
+		var hw0 := float(cv.get("w0", cv.w)) * 0.5
+		var hw1 := float(cv.get("w1", cv.w)) * 0.5
+		for e in 2:
+			if bool(caps[e]):
+				var p: Vector2 = d[0] if e == 0 else d[d.size() - 1]
+				var q: Vector2 = d[1] if e == 0 else d[d.size() - 2]
+				if lim.has_point(p):
+					ends.append([p, (p - q).normalized(), hw0 if e == 0 else hw1])
 	for line: PackedVector2Array in rail_polys:
 		for ch: PackedVector2Array in _chunks(line):
 			if lim.intersects(WC._poly_rect(ch).grow(3.0)):
-				for poly: PackedVector2Array in _offset_line(_ext_line(ch, 0.05), 2.0):
+				for poly: PackedVector2Array in _offset_line(_ext_line(ch, 0.05), 2.35):
 					_add_cut(cuts, cgrid, poly)
+	for br: Array in bridges:
+		var b0: Vector2 = br[0]
+		var b1: Vector2 = br[1]
+		var bln := b0.distance_to(b1)
+		if bln < 0.1:
+			continue
+		var bdir := (b1 - b0) / bln
+		for poly: PackedVector2Array in _offset_line(PackedVector2Array([b0 - bdir * 0.18, b1 + bdir * 0.18]), float(br[2]) * 0.5 + 0.25):
+			_add_cut(cuts, cgrid, poly)
 	var n := 0
-	# 两层：人行道面（0.18 米高）与靠车道一侧的路沿石（0.215 米高）；已发出的多边形记入本层切口，转角与分段重叠处不叠两层
-	for layer in [[st_w, 0.0, 0.18, 0.14], [st_c, WALK_W - CURB_W, 0.215, 0.035]]:
+	# 两层：人行道面（0.18 米高）与靠车道一侧的路沿石（0.215 米高）；喇叭口与沿线带分用独立切口表（喇叭口用 b_cuts，沿线带仅用一次性的 band_cuts），避免 r_clip 接缝三重阶梯切割
+	for layer in [[st_w, 0.0, 0.18, 0.14, 0.24], [st_c, WALK_W - CURB_W, 0.215, 0.035, 0.055]]:
 		var st: SurfaceTool = layer[0]
 		var inset: float = layer[1]
-		var lcuts := cuts.duplicate()
-		var lcgrid := cgrid.duplicate(true)
-		for b: Array in bands:
-			var hw: float = b[1]
-			for outer: PackedVector2Array in _offset_line(b[0], hw - inset):
-				for piece: PackedVector2Array in _subtract_cuts(outer, lcuts, lcgrid, b[2]):
-					_emit_poly(st, piece, layer[2], layer[3])
-					_add_cut(lcuts, lcgrid, piece)
-					n += 1
+		var min_a: float = layer[4]
+		var bell_lcuts := cuts.duplicate()
+		var bell_lcgrid := cgrid.duplicate(true)
+		var bell_items: Array = []
+		for bm: Dictionary in bellmouths:
+			var b_own: Array = []
+			for bc_poly: PackedVector2Array in bm.b_cuts:
+				b_own.append(_add_cut(bell_lcuts, bell_lcgrid, bc_poly))
+			bell_items.append([bm, b_own])
+		var band_lcuts := cuts.duplicate()
+		var band_lcgrid := cgrid.duplicate(true)
+		for bi: Array in bell_items:
+			var bm: Dictionary = bi[0]
+			var b_own: Array = bi[1]
+			for c_poly: PackedVector2Array in bm.cp:
+				for expanded: PackedVector2Array in _offset_poly_smooth(c_poly, WALK_W - inset, bm.jp):
+					for outer: PackedVector2Array in _outers(Geometry2D.intersect_polygons(expanded, bm.disk)):
+						for raw_piece: PackedVector2Array in _subtract_cuts(outer, bell_lcuts, bell_lcgrid, b_own):
+							var piece := _clean_walk_piece(raw_piece, min_a)
+							if piece.is_empty():
+								continue
+							_emit_poly(st, piece, layer[2], layer[3])
+							_add_cut(bell_lcuts, bell_lcgrid, piece)
+							n += 1
 		for e: Array in ends:
 			var hw: float = e[2]
 			var ring := _half_ring(e[0], e[1], hw - WALK_W, hw - inset)
-			for piece: PackedVector2Array in _subtract_cuts(ring, lcuts, lcgrid, []):
+			for raw_piece: PackedVector2Array in _subtract_cuts(ring, bell_lcuts, bell_lcgrid, []):
+				var piece := _clean_walk_piece(raw_piece, min_a)
+				if piece.is_empty():
+					continue
 				_emit_poly(st, piece, layer[2], layer[3])
-				_add_cut(lcuts, lcgrid, piece)
+				_add_cut(bell_lcuts, bell_lcgrid, piece)
+				_add_cut(band_lcuts, band_lcgrid, piece)
 				n += 1
+		for bm: Dictionary in bellmouths:
+			for bc_poly: PackedVector2Array in bm.band_cuts:
+				_add_cut(band_lcuts, band_lcgrid, bc_poly)
+		for b: Array in bands:
+			for outer: PackedVector2Array in _curve_band_polys(b[0], inset, 0.0, lim, true):
+				for raw_piece: PackedVector2Array in _subtract_cuts(outer, band_lcuts, band_lcgrid, b[1]):
+					var piece := _clean_walk_piece(raw_piece, min_a)
+					if piece.is_empty():
+						continue
+					_emit_poly(st, piece, layer[2], layer[3])
+					_add_cut(band_lcuts, band_lcgrid, piece)
+					n += 1
 	return n
 
 
@@ -4676,10 +6511,16 @@ func _subtract_cuts(poly: PackedVector2Array, cuts: Array, cgrid: Dictionary, fi
 	return out
 
 
-## 多边形顶面（高 y）+ 一圈向下 thick 的侧壁
-func _emit_poly(st: SurfaceTool, poly: PackedVector2Array, y: float, thick: float) -> void:
+## 多边形顶面（高 y）+ 一圈向下 thick 的侧壁；耳切退化时用形态学开运算自愈兜底，绝不静默丢弃整段路面/路沿
+func _emit_poly(st: SurfaceTool, poly: PackedVector2Array, y: float, thick: float, allow_heal := true) -> void:
 	var idx := Geometry2D.triangulate_polygon(poly)
 	if idx.is_empty():
+		if allow_heal:
+			for shrunk: PackedVector2Array in _outers(Geometry2D.offset_polygon(poly, -0.05, Geometry2D.JOIN_MITER)):
+				for healed: PackedVector2Array in _outers(Geometry2D.offset_polygon(shrunk, 0.05, Geometry2D.JOIN_ROUND)):
+					var sp := _sanitize_poly(healed, 0.10)
+					if sp.size() >= 3 and not Geometry2D.triangulate_polygon(sp).is_empty():
+						_emit_poly(st, sp, y, thick, false)
 		return
 	for k in range(0, idx.size(), 3):
 		var a := poly[idx[k]]
@@ -4714,19 +6555,45 @@ func _emit_poly(st: SurfaceTool, poly: PackedVector2Array, y: float, thick: floa
 			st.add_vertex(v)
 
 
+func _rail_dist(p: Vector2) -> float:
+	var best := INF
+	for line: PackedVector2Array in rail_polys:
+		best = minf(best, WC.poly_dist(line, p))
+	return best
+
+
+func _paved_seg_grid() -> WC.SegGrid:
+	var pg := WC.SegGrid.new()
+	pg.cell = 16.0
+	pg.reach = 14.0
+	for ci in curves.size():
+		var cv: Dictionary = curves[ci]
+		if not cv.dirt:
+			pg.add_poly(cv.pts, float(cv.w) * 0.5, ci)
+	return pg
+
+
 func _build_roads() -> void:
 	rng.seed = _map_seed(2)
 	var ASPH: ShaderMaterial = A.asphalt(Color(0.26, 0.265, 0.275)).duplicate()
 	var ASPH2: ShaderMaterial = A.asphalt(Color(0.29, 0.295, 0.305)).duplicate()
 	var ARUT: ShaderMaterial = A.asphalt(Color(0.20, 0.205, 0.215)).duplicate()
-	var DIRT: ShaderMaterial = A.gravel_mat(Color(0.42, 0.36, 0.27)).duplicate()
-	var RUT: ShaderMaterial = A.gravel_mat(Color(0.30, 0.25, 0.19)).duplicate()
-	for m in [ASPH, ASPH2, ARUT, DIRT, RUT]:
+	var DIRT: ShaderMaterial = _terrain_feather_mat(Color(0.36, 0.31, 0.23), 0.30, 0.92, 0.12, -9)
+	var RUT: ShaderMaterial = _terrain_feather_mat(Color(0.29, 0.25, 0.19), 0.34, 0.94, 0.10, -8)
+	for m in [ASPH, ASPH2, ARUT]:
 		m.set_meta("no_outline", true)
 	var WALK := A.concrete(Color(0.49, 0.47, 0.43), true)
 	var CURB := A.concrete(Color(0.6, 0.58, 0.53), false)
-	var LINE := A.paint(Color(0.82, 0.72, 0.42), 0.0, 0.85, {"wear": 0.65, "dust": 0.35, "panel_scale": 0.0})
-	var XWALK := A.paint(Color(0.74, 0.74, 0.71), 0.0, 0.88, {"wear": 0.72, "dust": 0.42, "panel_scale": 0.0})
+	var LINE := A.paint(Color(0.82, 0.72, 0.42), 0.0, 0.85, {
+		"wear": 0.65, "metal_wear": 0.0, "bare_metal": Color(0.20, 0.205, 0.215), "scratches": 0.12,
+		"dust": 0.22, "panel_scale": 0.0, "use_albedo_tex": 1.0, "albedo_tex": A.world_tex("asphalt_a.png"),
+		"albedo_tex_scale": 0.38, "albedo_tex_strength": 0.42, "normal_tex": A.world_tex("asphalt_n.png"), "normal_strength": 0.72,
+	})
+	var XWALK := A.paint(Color(0.74, 0.74, 0.71), 0.0, 0.88, {
+		"wear": 0.72, "metal_wear": 0.0, "bare_metal": Color(0.20, 0.205, 0.215), "scratches": 0.15,
+		"dust": 0.26, "panel_scale": 0.0, "use_albedo_tex": 1.0, "albedo_tex": A.world_tex("asphalt_a.png"),
+		"albedo_tex_scale": 0.38, "albedo_tex_strength": 0.45, "normal_tex": A.world_tex("asphalt_n.png"), "normal_strength": 0.72,
+	})
 	var st_a := SurfaceTool.new()
 	var st_b := SurfaceTool.new()
 	var st_ar := SurfaceTool.new()
@@ -4736,47 +6603,56 @@ func _build_roads() -> void:
 	var st_c := SurfaceTool.new()
 	for st in [st_a, st_b, st_ar, st_d, st_r, st_w, st_c]:
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lim_r := Rect2(-EXT_HALF - 40.0, -EXT_HALF - 40.0, EXT_HALF * 2.0 + 80.0, EXT_HALF * 2.0 + 80.0)
+	var bellmouths := _compute_junction_bellmouths(lim_r)
+	var pg := _paved_seg_grid()
 	var polys_a: Array = []
 	var polys_b: Array = []
 	var polys_ar: Array = []
 	var polys_d: Array = []
-	var polys_r: Array = []
 	var dashes: Array = []
 	var xwalks: Array = []
+	var nr := 0
 	for ci in curves.size():
 		var cv: Dictionary = curves[ci]
 		var d: PackedVector2Array = cv.d
 		var w: float = cv.w
+		var hw0: float = float(cv.get("w0", w)) * 0.5
+		var hw1: float = float(cv.get("w1", w)) * 0.5
 		var caps: Array = cv.get("caps", [false, false])
+		var mates: PackedInt32Array = cv.get("tangent_mates", PackedInt32Array())
 		if cv.dirt:
-			for ch: PackedVector2Array in _chunks(d):
-				polys_d.append_array(_offset_line(_ext_line(ch, 0.25), w * 0.5))
-			polys_d.append_array(_cap_polys(d, w * 0.5, caps))
-			# 土路与铺装路交汇处铺设碎石压实搭接过渡坪，消除土路端头断茬接缝
-			for e_idx in [0, d.size() - 1]:
-				if d.size() >= 2:
-					var ep: Vector2 = d[e_idx]
-					var en: Vector2 = d[1] if e_idx == 0 else d[d.size() - 2]
-					if _rg.edge_dist(ep, ci) < 2.2:
-						var ap_pts := PackedVector2Array([ep.lerp(en, minf(1.0, 2.8 / maxf(0.2, ep.distance_to(en)))), ep])
-						polys_b.append_array(_offset_line(ap_pts, w * 0.54))
-			for ch: PackedVector2Array in _chunks(d):
+			var sd_pts := _dense(d, 1.4)
+			for ch: PackedVector2Array in _chunks(sd_pts):
+				if lim_r.intersects(WC._poly_rect(ch).grow(w * 0.5 + 2.0)):
+					polys_d.append_array(_offset_line(_ext_line(ch, 0.25), w * 0.5))
+			polys_d.append_array(_cap_polys_ends(sd_pts, hw0, hw1, caps))
+			var rut_pts := PackedVector2Array()
+			for k in sd_pts.size():
+				var rp_pt := sd_pts[k]
+				if pg.edge_dist(rp_pt) >= -0.45 and _rail_dist(rp_pt) >= 2.6:
+					rut_pts.append(rp_pt)
+				else:
+					if rut_pts.size() >= 2:
+						for sd in [-1.3, 1.3]:
+							nr += _st_strip_soft(st_r, rut_pts, 0.40, 0.26, sd, 0.062)
+					rut_pts = PackedVector2Array()
+			if rut_pts.size() >= 2:
 				for sd in [-1.3, 1.3]:
-					polys_r.append_array(_offset_line(_shift_line(ch, sd), 0.25))
+					nr += _st_strip_soft(st_r, rut_pts, 0.40, 0.26, sd, 0.062)
 			continue
-		# 宽路（主干道）略高一层，路口处压住支路；断头处画圆头（按分段偏移+逐层去重，交叉口/弯道绝不双层闪烁）
+		# 宽路（主干道）略高一层，路口处压住支路；断头画带路沿半圆头（按分段偏移+逐层去重，交叉口/弯道绝不双层闪烁）
 		if w >= 10.0:
-			for ch: PackedVector2Array in _chunks(d):
-				polys_a.append_array(_offset_line(_ext_line(ch, 0.04), w * 0.5))
-			polys_a.append_array(_cap_polys(d, w * 0.5, caps))
-			for ch: PackedVector2Array in _chunks(d):
-				for sd_r: float in [-2.1, 2.1]:
-					polys_ar.append_array(_offset_line(_shift_line(ch, sd_r), 0.675))
+			polys_a.append_array(_curve_band_polys(cv, 0.0, 0.04, lim_r, true))
+			polys_a.append_array(_cap_polys_ends(d, hw0, hw1, caps))
+			for sd_r: float in [-2.1, 2.1]:
+				for ch_r: PackedVector2Array in _chunks(_shift_line(d, sd_r)):
+					if lim_r.intersects(WC._poly_rect(ch_r).grow(1.5)):
+						polys_ar.append_array(_offset_line(ch_r, 0.675))
 		else:
-			for ch: PackedVector2Array in _chunks(d):
-				polys_b.append_array(_offset_line(_ext_line(ch, 0.04), w * 0.5))
-			polys_b.append_array(_cap_polys(d, w * 0.5, caps))
-		# 道路中线虚线：按精确弧长等距插值，不随机缺段；主干道与次干道（w >= 6.5）统一标线，斑马线与虚线互斥
+			polys_b.append_array(_curve_band_polys(cv, 0.0, 0.04, lim_r, true))
+			polys_b.append_array(_cap_polys_ends(d, hw0, hw1, caps))
+		# 道路中线虚线：按精确弧长等距插值，不随机缺段；主干道与次干道（w >= 6.5）统一标线，斑马线仅画于铺装路口且避开桥面与平交道口
 		if w >= 6.5:
 			var dash_step := 5.2 if w >= 10.0 else 6.0
 			var next_s := 3.5
@@ -4793,9 +6669,9 @@ func _build_roads() -> void:
 				var perp := Vector2(-t.y, t.x)
 				while cur_s + seg >= next_s and next_s <= total_s - 3.5:
 					var p := a.lerp(b, (next_s - cur_s) / seg)
-					if absf(p.x) < EXT_HALF - 1.0 and absf(p.y) < EXT_HALF - 1.0 and not in_wet(p, 2.0):
-						var ed := _rg.edge_dist(p, ci)
-						var do_xw := w >= 8.5 and ed > 3.6 and ed < 6.4 and (next_s - last_xw) > 20.0
+					if absf(p.x) < EXT_HALF - 1.0 and absf(p.y) < EXT_HALF - 1.0 and not in_wet(p, 2.0) and not _on_bridge(p, 1.4) and _rail_dist(p) >= 3.4:
+						var ed_all := _rg_edge_dist_ignore(_rg, p, ci, mates)
+						var do_xw := w >= 8.5 and (next_s - last_xw) > 20.0 and _has_crossing_paved(pg, p, ci, mates, t, 4.4, 7.8)
 						if do_xw:
 							var n_stripes := int((w - 2.4) / 1.15)
 							var half_span := float(n_stripes - 1) * 0.5 * 1.15
@@ -4804,17 +6680,56 @@ func _build_roads() -> void:
 								var xp := p + perp * off
 								xwalks.append(Transform3D(Basis(Vector3.UP, atan2(t.x, t.y)).scaled_local(Vector3(0.46, 0.016, 2.4)), Vector3(xp.x, 0.100, xp.y)))
 							last_xw = next_s
-						elif ed > 1.8:
+						elif ed_all > 2.6:
 							dashes.append(Transform3D(Basis(Vector3.UP, atan2(t.x, t.y)).scaled_local(Vector3(0.22, 0.016, 2.2)), Vector3(p.x, 0.100, p.y)))
 					next_s += dash_step
 				cur_s += seg
+	for bm: Dictionary in bellmouths:
+		for ic: PackedVector2Array in bm.inner_clip:
+			var asph_ext := _offset_poly_smooth(ic, 0.35, bm.jp)
+			if bool(bm.wide):
+				polys_a.append_array(asph_ext)
+			else:
+				polys_b.append_array(asph_ext)
 	# 人行道（带立体侧壁）+ 浅色路沿石：沿所有路面并集的边缘走，路口转角自动连成一圈，断头路绕成 U 形
+	var clean_d: Array = []
+	if not polys_d.is_empty():
+		var dirt_r := WC._poly_rect(polys_d[0])
+		for di_p in range(1, polys_d.size()):
+			dirt_r = dirt_r.merge(WC._poly_rect(polys_d[di_p]))
+		dirt_r = dirt_r.grow(2.5)
+		var paved_cuts: Array = []
+		var paved_cgrid := {}
+		for ci in curves.size():
+			var cv_p: Dictionary = curves[ci]
+			if cv_p.dirt:
+				continue
+			var d_p: PackedVector2Array = cv_p.d
+			if not dirt_r.intersects(WC._poly_rect(d_p).grow(float(cv_p.w) * 0.5 + 2.0)):
+				continue
+			var caps_p: Array = cv_p.get("caps", [false, false])
+			for cp_poly: PackedVector2Array in _curve_band_polys(cv_p, WALK_W + 0.35, 0.05, dirt_r):
+				_add_cut(paved_cuts, paved_cgrid, cp_poly)
+			var cw0: float = maxf(1.0, float(cv_p.get("w0", cv_p.w)) * 0.5 - WALK_W - 0.35)
+			var cw1: float = maxf(1.0, float(cv_p.get("w1", cv_p.w)) * 0.5 - WALK_W - 0.35)
+			for cp_cap: PackedVector2Array in _cap_polys_ends(d_p, cw0, cw1, caps_p):
+				if dirt_r.intersects(WC._poly_rect(cp_cap)):
+					_add_cut(paved_cuts, paved_cgrid, cp_cap)
+		for bm: Dictionary in bellmouths:
+			if not dirt_r.intersects(Rect2(bm.jp, Vector2.ZERO).grow(24.0)):
+				continue
+			for ic: PackedVector2Array in bm.inner_clip:
+				if not dirt_r.intersects(WC._poly_rect(ic)):
+					continue
+				for bc_cut: PackedVector2Array in _offset_poly_smooth(ic, -0.25, bm.jp):
+					_add_cut(paved_cuts, paved_cgrid, bc_cut)
+		for dp: PackedVector2Array in _merge_polys(polys_d):
+			clean_d.append_array(_subtract_cuts(dp, paved_cuts, paved_cgrid, []))
 	var na := _emit_dedup_polys(st_a, polys_a, 0.079, 0.0)
 	var nb := _emit_dedup_polys(st_b, polys_b, 0.072, 0.0)
 	var nar := _emit_dedup_polys(st_ar, polys_ar, 0.086, 0.0)
-	var nd := _emit_dedup_polys(st_d, polys_d, 0.058, 0.0)
-	var nr := _emit_dedup_polys(st_r, polys_r, 0.065, 0.0)
-	var nw := _build_walks(st_w, st_c)
+	var nd := _emit_soft_polys(st_d, clean_d, 1.35, 0.058)
+	var nw := _build_walks(st_w, st_c, bellmouths)
 	_st_commit(st_a, ASPH, na)
 	_st_commit(st_b, ASPH2, nb)
 	_st_commit(st_ar, ARUT, nar)
@@ -4852,8 +6767,18 @@ func _dense(pts: PackedVector2Array, step: float) -> PackedVector2Array:
 func _strip_mesh(pts: PackedVector2Array, w: float, y: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for poly: PackedVector2Array in _outers(Geometry2D.offset_polyline(pts, w * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)):
+	for poly: PackedVector2Array in _offset_line(pts, w * 0.5, Geometry2D.END_ROUND):
 		_emit_poly(st, poly, y, 0.0)
+	st.index()
+	st.generate_tangents()
+	return st.commit()
+
+
+func _strip_mesh_soft(pts: PackedVector2Array, w: float, y: float, feather_w: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var polys := _offset_line(pts, w * 0.5, Geometry2D.END_ROUND, 8.0)
+	_emit_soft_polys(st, polys, feather_w, y)
 	st.index()
 	st.generate_tangents()
 	return st.commit()
@@ -4875,41 +6800,41 @@ func _build_river() -> void:
 
 func _build_one_river(r: Dictionary) -> void:
 	var rw: float = r.w
-	var rp: PackedVector2Array = r.pts if r.dry else _river_in_lake_pts(r.pts, rw * 0.5)
+	var rp: PackedVector2Array = _smooth_pts(r.pts, 1) if r.dry else _smooth_pts(_river_in_lake_pts(r.pts, rw * 0.5), 2)
 	var pts := _dense(rp, 2.0)
 	if r.dry:
-		# 干河床：三层自然冲积砂砾过渡（外沿风化淤泥砾石带 → 砂砾二级阶地 → 粗砂卵石主河槽）+ 道路过河漫水混凝土桥涵
-		var m_outer: ShaderMaterial = A.gravel_mat(Color(0.29, 0.25, 0.20)).duplicate()
-		m_outer.set_meta("no_outline", true)
+		# 干河床：三层柔边冲积砂砾过渡（外沿风化淤泥砾石带 → 砂砾二级阶地 → 粗砂卵石主河槽）+ 道路过河漫水混凝土桥涵
+		var rp_vis := _bezier_refine_polyline(r.pts, Vector2.ZERO, Vector2.ZERO, 0.75, 1.25, 1.8, 0.004, Rect2(-215.0, -215.0, 430.0, 430.0))
+		var m_outer: ShaderMaterial = _terrain_feather_mat(Color(0.28, 0.24, 0.19), 0.28, 0.94, 0.10, -12)
 		var mi0 := MeshInstance3D.new()
-		mi0.mesh = _strip_mesh(rp, rw + 9.5, 0.008)
+		mi0.mesh = _strip_mesh_soft(rp_vis, rw + 10.5, 0.008, 3.2)
 		mi0.material_override = m_outer
 		mi0.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(mi0)
-		var m_bank: ShaderMaterial = A.gravel_mat(Color(0.35, 0.30, 0.24)).duplicate()
-		m_bank.set_meta("no_outline", true)
+		var m_bank: ShaderMaterial = _terrain_feather_mat(Color(0.34, 0.29, 0.23), 0.30, 0.92, 0.12, -11)
 		var mi := MeshInstance3D.new()
-		mi.mesh = _strip_mesh(rp, rw + 4.2, 0.020)
+		mi.mesh = _strip_mesh_soft(rp_vis, rw + 4.6, 0.020, 1.8)
 		mi.material_override = m_bank
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(mi)
-		var m_bed: ShaderMaterial = A.gravel_mat(Color(0.45, 0.40, 0.32)).duplicate()
-		m_bed.set_meta("no_outline", true)
+		var m_bed: ShaderMaterial = _terrain_feather_mat(Color(0.43, 0.38, 0.30), 0.34, 0.90, 0.14, -10)
 		var bed := MeshInstance3D.new()
-		bed.mesh = _strip_mesh(rp, maxf(3.0, rw * 0.84), 0.032)
+		bed.mesh = _strip_mesh_soft(rp_vis, maxf(3.2, rw * 0.88), 0.032, 1.2)
 		bed.material_override = m_bed
 		bed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(bed)
-		# 道路跨越干河床处：铺设带泄洪波纹钢涵管与防撞路缘墩的工业漫水混凝土硬化路面，消除干河床与道路十字穿插缝
+		# 铺装路跨越干河床处：在路面下方筑混凝土护基并在路肩外侧设低矮防撞墩与侧排涵管口（土路直接柔边融合，不盖混凝土块）
 		var ford_hits: Array = []
 		var M_FORD := A.concrete(Color(0.42, 0.40, 0.37), true)
 		var M_CULV := A.metal(Color(0.18, 0.19, 0.21))
 		for cv: Dictionary in curves:
+			if cv.dirt:
+				continue
 			var cp: PackedVector2Array = cv.pts
 			for ci in cp.size() - 1:
 				for ki in rp.size() - 1:
 					var hit = Geometry2D.segment_intersects_segment(cp[ci], cp[ci + 1], rp[ki], rp[ki + 1])
-					if hit == null or absf(hit.x) > EXT_HALF - 4.0 or absf(hit.y) > EXT_HALF - 4.0:
+					if hit == null or absf(hit.x) > EXT_HALF + 48.0 or absf(hit.y) > EXT_HALF + 48.0:
 						continue
 					var dup_f := false
 					for fh: Vector2 in ford_hits:
@@ -4918,25 +6843,27 @@ func _build_one_river(r: Dictionary) -> void:
 							break
 					if dup_f:
 						continue
-					ford_hits.append(hit)
 					var cdir := (cp[ci + 1] - cp[ci]).normalized()
 					var rdir := (rp[ki + 1] - rp[ki]).normalized()
-					var fspan := (rw + 5.5) / maxf(absf(cdir.cross(rdir)), 0.42)
+					var sin_f := absf(cdir.cross(rdir))
+					if sin_f < 0.42:
+						continue
+					ford_hits.append(hit)
+					var fspan := clampf((rw + 3.0) / sin_f, 8.0, 24.0)
 					var fn := Node3D.new()
 					world.add_child(fn)
 					fn.position = Vector3(hit.x, 0.0, hit.y)
 					fn.rotation.y = atan2(cdir.x, cdir.y)
-					var fw := float(cv.w) + 1.2
-					A.add(fn, A.bevel_box(Vector3(fw, 0.12, fspan), 0.03), M_FORD, Vector3(0, 0.055, 0), Vector3.ZERO, Vector3.ONE, false)
+					var fw := float(cv.w) + 1.1
+					A.add(fn, A.bevel_box(Vector3(fw, 0.10, fspan), 0.03), M_FORD, Vector3(0, 0.010, 0), Vector3.ZERO, Vector3.ONE, false)
 					for sd_f in [-1.0, 1.0]:
-						for b_i in 3:
-							var bz_f := (float(b_i) - 1.0) * (fspan * 0.34)
-							A.add(fn, A.bevel_box(Vector3(0.32, 0.46, 0.38), 0.03), A.hazard() if b_i == 1 else M_FORD, Vector3(sd_f * (fw * 0.5 - 0.12), 0.24, bz_f))
-					for cz_f in [-1.1, 1.1]:
-						A.add(fn, A.cyl(0.28, fw + 0.8, 0.28, 12), M_CULV, Vector3(0, 0.12, cz_f), Vector3(0, 0, 90))
+						for bz_f in [-fspan * 0.34, fspan * 0.34]:
+							A.add(fn, A.bevel_box(Vector3(0.28, 0.40, 0.34), 0.03), M_FORD, Vector3(sd_f * (fw * 0.5 - 0.14), 0.20, bz_f))
+						for cz_f in [-1.1, 1.1]:
+							A.add(fn, A.cyl(0.14, 0.55, 0.14, 12), M_CULV, Vector3(sd_f * (fw * 0.5 + 0.06), 0.02, cz_f), Vector3(0, 0, 90))
 		var stones: Array = []
 		for i in pts.size():
-			if absf(pts[i].x) > EXT_HALF + 4.0 or absf(pts[i].y) > EXT_HALF + 4.0:
+			if absf(pts[i].x) > EXT_HALF + 48.0 or absf(pts[i].y) > EXT_HALF + 48.0 or (is_surface_map and pts[i].x + WC.origin(map_id).x > WC.coast_x(pts[i].y + WC.origin(map_id).y) - 3.0):
 				continue
 			for k in 3:
 				var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
@@ -4969,7 +6896,7 @@ func _build_one_river(r: Dictionary) -> void:
 	for sg: Array in segs:
 		for k in rp.size() - 1:
 			var hit = Geometry2D.segment_intersects_segment(sg[0], sg[1], rp[k], rp[k + 1])
-			if hit == null or absf(hit.x) > EXT_HALF + 6.0 or absf(hit.y) > EXT_HALF + 6.0:
+			if hit == null or absf(hit.x) > EXT_HALF + 48.0 or absf(hit.y) > EXT_HALF + 48.0:
 				continue
 			var dup := false
 			for eb: Array in bridges:
@@ -4997,7 +6924,7 @@ func _build_one_river(r: Dictionary) -> void:
 			var a: Vector2 = cpts[i] + Vector2(-t0.y, t0.x) * sd * (rw * 0.5 + 0.4)
 			var b: Vector2 = cpts[i + 1] + Vector2(-t1.y, t1.x) * sd * (rw * 0.5 + 0.4)
 			var m := (a + b) * 0.5
-			if border_dist(m) < -8.0:
+			if (absf(m.x) > EXT_HALF + 8.0 or absf(m.y) > EXT_HALF + 8.0) if is_surface_map else (border_dist(m) < -8.0):
 				continue
 			for piece: Array in _bank_pieces(a, b):
 				var pa: Vector2 = piece[0]
@@ -5020,7 +6947,7 @@ func _build_one_river(r: Dictionary) -> void:
 	for e in 2:
 		var p: Vector2 = rp[0] if e == 0 else rp[rp.size() - 1]
 		var q: Vector2 = rp[1] if e == 0 else rp[rp.size() - 2]
-		if border_dist(p) < -4.0 or absf(p.x) > EXT_HALF - 4.0 or absf(p.y) > EXT_HALF - 4.0 or in_lake(p, 1.0) or zone_at(Vector3(p.x, 0, p.y)) in ["A", "B"]:
+		if (not is_surface_map and border_dist(p) < -4.0) or absf(p.x) > EXT_HALF + 40.0 or absf(p.y) > EXT_HALF + 40.0 or in_lake(p, 1.0) or zone_at(Vector3(p.x, 0, p.y)) in ["A", "B"]:
 			continue
 		var t := (p - q).normalized()
 		var bs := Basis(Vector3.UP, atan2(-t.y, t.x))
@@ -5091,23 +7018,28 @@ func _bridge(hp: Vector2, dir: Vector2, w: float, span: float) -> void:
 	var GIRDER := A.metal(Color(0.18, 0.19, 0.20))
 	var RAIL := A.paint(Color(0.36, 0.34, 0.30), 0.62, 0.55, {"rust": 0.65, "wear": 0.48, "panel_scale": 0.0})
 	bridges.append([hp - dir * span * 0.5, hp + dir * span * 0.5, w])
+	var is_rail := w < 5.2
 	var ang := atan2(dir.x, dir.y)
 	var root := Node3D.new()
 	world.add_child(root)
 	root.position = Vector3(hp.x, 0, hp.y)
 	root.rotation.y = ang
-	# 混凝土主桥面板 + 两端缓坡桥头搭板与沥青斜坡顺接（消除桥头 20cm 垂直硬台阶接缝）+ 双侧马路牙子 + 桥底纵梁与桥墩
+	# 混凝土主桥面板 + 两端缓坡桥头搭板（公路桥铺沥青与标线；铁路桥改为钢混道槽桥面板）
 	A.add(root, A.bevel_box(Vector3(w + 0.9, 0.34, span + 0.4), 0.06), DECK, Vector3(0, 0.09, 0))
-	A.add(root, A.bevel_box(Vector3(maxf(2.0, w - 0.7), 0.05, span + 0.4), 0.01), ASPH, Vector3(0, 0.27, 0), Vector3.ZERO, Vector3.ONE, false)
 	for end_s in [-1.0, 1.0]:
 		A.add(root, A.bevel_box(Vector3(w + 0.85, 0.18, 2.2), 0.03), DECK, Vector3(0, 0.08, end_s * (span * 0.5 + 0.95)), Vector3(end_s * 5.8, 0, 0), Vector3.ONE, false)
-		A.add(root, A.bevel_box(Vector3(maxf(2.0, w - 0.65), 0.05, 2.3), 0.01), ASPH, Vector3(0, 0.165, end_s * (span * 0.5 + 1.02)), Vector3(end_s * 5.8, 0, 0), Vector3.ONE, false)
-	if w >= 6.5:
-		var d_step := 5.2 if w >= 10.0 else 6.0
-		var nd_br := maxi(1, int((span - 2.0) / d_step))
-		for di in nd_br:
-			var dz := -span * 0.5 + 1.8 + (float(di) + 0.5) * (span - 3.6) / float(nd_br)
-			A.add(root, A.bevel_box(Vector3(0.22, 0.02, 2.2), 0.0), LINE, Vector3(0, 0.302, dz), Vector3.ZERO, Vector3.ONE, false)
+	if is_rail:
+		A.add(root, A.bevel_box(Vector3(maxf(2.8, w - 0.9), 0.04, span + 0.3), 0.01), GIRDER, Vector3(0, 0.265, 0), Vector3.ZERO, Vector3.ONE, false)
+	else:
+		A.add(root, A.bevel_box(Vector3(maxf(2.0, w - 0.7), 0.05, span + 0.4), 0.01), ASPH, Vector3(0, 0.27, 0), Vector3.ZERO, Vector3.ONE, false)
+		for end_s in [-1.0, 1.0]:
+			A.add(root, A.bevel_box(Vector3(maxf(2.0, w - 0.65), 0.05, 2.3), 0.01), ASPH, Vector3(0, 0.165, end_s * (span * 0.5 + 1.02)), Vector3(end_s * 5.8, 0, 0), Vector3.ONE, false)
+		if w >= 6.5:
+			var d_step := 5.2 if w >= 10.0 else 6.0
+			var nd_br := maxi(1, int((span - 2.0) / d_step))
+			for di in nd_br:
+				var dz := -span * 0.5 + 1.8 + (float(di) + 0.5) * (span - 3.6) / float(nd_br)
+				A.add(root, A.bevel_box(Vector3(0.22, 0.02, 2.2), 0.0), LINE, Vector3(0, 0.302, dz), Vector3.ZERO, Vector3.ONE, false)
 	for sd_g in [-1.0, 1.0]:
 		A.add(root, A.bevel_box(Vector3(0.42, 0.16, span + 0.3), 0.03), CURB, Vector3(sd_g * (w * 0.5 - 0.05), 0.33, 0))
 		A.add(root, A.bevel_box(Vector3(0.32, 0.56, span - 0.4), 0.02), GIRDER, Vector3(sd_g * (w * 0.5 + 0.18), -0.28, 0))
@@ -5148,48 +7080,59 @@ func _water_mat() -> ShaderMaterial:
 		_water_shader = Shader.new()
 		_water_shader.code = """
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
-uniform sampler2D n_low : filter_linear_mipmap, repeat_enable;
-uniform sampler2D n_hi : filter_linear_mipmap, repeat_enable;
-uniform sampler2D n_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
-varying vec3 wp;
-void vertex() {
-	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-void fragment() {
-	vec2 p = wp.xz;
-	float t = TIME * 0.18;
-	float w1 = texture(n_low, p * 0.016 + vec2(t * 0.07, t * 0.04)).r;
-	float w2 = texture(n_low, p * 0.038 - vec2(t * 0.05, -t * 0.06) + 0.37).r;
-	float w3 = texture(n_hi, p * 0.085 + vec2(t * 0.09, -t * 0.07)).r;
-	float wave = w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
-	vec3 deep = vec3(0.04, 0.085, 0.105);
-	vec3 mid = vec3(0.075, 0.145, 0.165);
-	vec3 crest = vec3(0.18, 0.255, 0.27);
-	vec3 foam_col = vec3(0.52, 0.60, 0.62);
-	vec3 col = mix(deep, mid, smoothstep(0.28, 0.70, wave));
-	float fw = length(fwidth(p));
-	float fade = clamp(1.0 - fw * 1.6, 0.0, 1.0);
-	float ripple = smoothstep(0.56, 0.76, w2 * 0.55 + w3 * 0.45) * fade;
-	float foam = smoothstep(0.72, 0.85, w2 * 0.5 + w3 * 0.5) * fade;
-	col = mix(col, crest, ripple * 0.52);
-	col = mix(col, foam_col, foam * 0.35);
-	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
-	col = mix(col, vec3(0.22, 0.29, 0.32), fres * 0.38);
-	ALBEDO = col;
-	vec3 n1 = texture(n_nrm, p * 0.09 + vec2(t * 0.11, t * 0.07)).rgb;
-	vec3 n2 = texture(n_nrm, p * 0.21 - vec2(t * 0.08, -t * 0.09) + 0.41).rgb;
-	NORMAL_MAP = normalize(mix(n1, n2, 0.5) * 2.0 - 1.0 + vec3(0.0, 0.0, 1.6)) * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = (0.72 + ripple * 0.58) * fade;
-	ROUGHNESS = clamp(mix(0.22, 0.36, ripple) + foam * 0.35 + (1.0 - fade) * 0.22, 0.18, 0.85);
-	METALLIC = 0.04;
-	SPECULAR = 0.62;
-	CLEARCOAT = (1.0 - foam) * 0.32;
-	CLEARCOAT_ROUGHNESS = 0.24;
-}
+render_mode blend_mix, depth_draw_never, cull_back, diffuse_burley, specular_schlick_ggx;
+	uniform sampler2D n_low : filter_linear_mipmap, repeat_enable;
+	uniform sampler2D n_hi : filter_linear_mipmap, repeat_enable;
+	uniform sampler2D n_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+	global uniform float weather_rain;
+	global uniform vec3 sun_dir_world;
+	varying vec3 wp;
+	void vertex() {
+		wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	}
+	void fragment() {
+		vec2 p = wp.xz;
+		float t = TIME * 0.18;
+		float gust = smoothstep(0.26, 0.74, texture(n_low, p * 0.0052 + vec2(t * 0.028, -t * 0.019)).r);
+		float w1 = texture(n_low, p * 0.016 + vec2(t * 0.07, t * 0.04)).r;
+		float w2 = texture(n_low, p * 0.038 - vec2(t * 0.05, -t * 0.06) + 0.37).r;
+		float w3 = texture(n_hi, p * 0.085 + vec2(t * 0.09, -t * 0.07)).r;
+		float wave = w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
+		vec3 deep = vec3(0.032, 0.072, 0.092);
+		vec3 mid = vec3(0.068, 0.132, 0.152);
+		vec3 crest = vec3(0.165, 0.238, 0.255);
+		vec3 foam_col = vec3(0.52, 0.60, 0.62);
+		vec3 col = mix(deep, mid, smoothstep(0.26, 0.72, wave)) * mix(0.86, 1.06, gust);
+		float fw = length(fwidth(p));
+		float fade = clamp(1.0 - fw * 1.6, 0.0, 1.0);
+		float ripple = smoothstep(0.54, 0.76, w2 * 0.55 + w3 * 0.45) * (0.45 + 0.55 * gust) * fade;
+		float foam = smoothstep(0.74, 0.86, w2 * 0.5 + w3 * 0.5) * gust * fade;
+		float shore = smoothstep(0.02, 0.42, clamp(COLOR.a + (w1 - 0.5) * 0.32 * sin(COLOR.a * 3.14159), 0.0, 1.0));
+		float shore_foam = (1.0 - smoothstep(0.08, 0.65, shore)) * smoothstep(0.32, 0.78, w2 * 0.6 + w3 * 0.4);
+		col = mix(col, crest, ripple * 0.46);
+		col = mix(col, foam_col, clamp(foam * 0.32 + shore_foam * 0.30, 0.0, 0.68));
+		float fres = 0.03 + 0.97 * pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.5);
+		vec3 eye_dir = normalize(wp - INV_VIEW_MATRIX[3].xyz);
+		vec3 sun_d = length(sun_dir_world) > 1e-3 ? normalize(sun_dir_world) : normalize(vec3(0.45, 0.62, 0.64));
+		float sun_glint = pow(max(dot(reflect(eye_dir, vec3(0.0, 1.0, 0.0)), sun_d), 0.0), 12.0);
+		col = mix(col, vec3(0.20, 0.26, 0.30) + vec3(0.28, 0.25, 0.20) * sun_glint, fres * 0.42);
+		ALBEDO = col;
+		ALPHA = shore;
+		vec3 n1 = texture(n_nrm, p * 0.09 + vec2(t * 0.11, t * 0.07)).rgb;
+		vec3 n2 = texture(n_nrm, p * 0.21 - vec2(t * 0.08, -t * 0.09) + 0.41).rgb;
+		float rain_chop = clamp(weather_rain, 0.0, 1.0) * (texture(n_hi, p * 1.35 + vec2(TIME * 0.7, -TIME * 0.55)).r - 0.5) * 0.35 * fade;
+		NORMAL_MAP = normalize(mix(n1, n2, 0.5) * 2.0 - 1.0 + vec3(rain_chop, -rain_chop, mix(2.3, 1.35, gust))) * 0.5 + 0.5;
+		NORMAL_MAP_DEPTH = (0.48 + gust * 0.42 + ripple * 0.45) * fade;
+		ROUGHNESS = clamp(mix(0.065, 0.22, gust * 0.65 + ripple * 0.35) + foam * 0.32 + (1.0 - fade) * 0.16, 0.055, 0.78);
+		METALLIC = 0.02;
+		SPECULAR = 0.72;
+		CLEARCOAT = (1.0 - foam) * 0.58;
+		CLEARCOAT_ROUGHNESS = mix(0.06, 0.18, gust);
+	}
 """
 	var m := ShaderMaterial.new()
 	m.shader = _water_shader
+	m.render_priority = -6
 	m.set_shader_parameter("n_low", A.noise_tex("grime_raw", 512))
 	m.set_shader_parameter("n_hi", A.noise_tex("hi_raw", 512))
 	m.set_shader_parameter("n_nrm", A.noise_tex("ground_n", 512))
@@ -5245,16 +7188,17 @@ func _build_wet_surfaces() -> void:
 	var mud_polys: Array = []
 	var shingle_polys: Array = []
 	var water_polys: Array = []
+	var near_w := Rect2(-215.0, -215.0, 430.0, 430.0)
 	for r: Dictionary in wet_rivers:
 		var hw := float(r.w) * 0.5
-		var rp := _river_in_lake_pts(r.pts, hw)
-		shingle_polys.append_array(_outers(Geometry2D.offset_polyline(rp, hw + 5.2, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)))
-		mud_polys.append_array(_outers(Geometry2D.offset_polyline(rp, hw + 2.8, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)))
-		water_polys.append_array(_outers(Geometry2D.offset_polyline(rp, hw, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)))
+		var rp_soft := _bezier_refine_polyline(_river_in_lake_pts(r.pts, hw), Vector2.ZERO, Vector2.ZERO, 0.75, 1.25, 1.8, 0.004, near_w)
+		shingle_polys.append_array(_offset_line(rp_soft, hw + 5.6, Geometry2D.END_ROUND, 8.0))
+		mud_polys.append_array(_offset_line(rp_soft, hw + 2.9, Geometry2D.END_ROUND, 8.0))
+		water_polys.append_array(_offset_line(rp_soft, hw + 0.35, Geometry2D.END_ROUND, 8.0))
 	for l: Vector3 in lakes:
-		shingle_polys.append(WC.lake_poly(l, 64, 5.6))
-		mud_polys.append(WC.lake_poly(l, 64, 3.0))
-		water_polys.append(WC.lake_poly(l, 64, 0.0))
+		shingle_polys.append(WC.lake_poly(l, 180, 5.8))
+		mud_polys.append(WC.lake_poly(l, 180, 3.0))
+		water_polys.append(WC.lake_poly(l, 180, 0.35))
 	var st_shingle := SurfaceTool.new()
 	var st_mud := SurfaceTool.new()
 	var st_water := SurfaceTool.new()
@@ -5262,27 +7206,18 @@ func _build_wet_surfaces() -> void:
 	var st_lip := SurfaceTool.new()
 	for st in [st_shingle, st_mud, st_water, st_bank, st_lip]:
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var ns := 0
-	for poly: PackedVector2Array in _merge_polys(shingle_polys):
-		_emit_poly(st_shingle, poly, 0.015, 0.0)
-		ns += 1
-	var nm := 0
-	for poly: PackedVector2Array in _merge_polys(mud_polys):
-		_emit_poly(st_mud, poly, 0.028, 0.0)
-		nm += 1
-	var nw := 0
-	for poly: PackedVector2Array in _merge_polys(water_polys):
-		_emit_poly(st_water, poly, 0.052, 0.0)
-		nw += 1
+	var ns := _emit_soft_polys(st_shingle, _merge_polys(shingle_polys), 2.6, 0.015)
+	var nm := _emit_soft_polys(st_mud, _merge_polys(mud_polys), 1.6, 0.028)
+	var nw := _emit_soft_polys(st_water, _merge_polys(water_polys), 0.95, 0.052)
 	# 岸线区分硬化城区驳岸与自然生态缓坡岸：城区/港区/工业区（D/R/I/H/Y/M）砌筑连续混凝土防洪堤；郊野/林地/湿地/湖湾保持自然砂砾卵石缓坡，彻底消除荒野水体套水泥圈的生硬感
-	var lim := Rect2(-EXT_HALF - 16.0, -EXT_HALF - 16.0, EXT_HALF * 2.0 + 32.0, EXT_HALF * 2.0 + 32.0)
+	var lim := Rect2(-EXT_HALF - 56.0, -EXT_HALF - 56.0, EXT_HALF * 2.0 + 112.0, EXT_HALF * 2.0 + 112.0)
 	var cuts: Array = []
 	var cgrid := {}
 	var r_bands: Array = []
 	var r_ends: Array = []
 	for r: Dictionary in wet_rivers:
 		var hw := float(r.w) * 0.5
-		var rp := _river_in_lake_pts(r.pts, hw)
+		var rp := _bezier_refine_polyline(_river_in_lake_pts(r.pts, hw), Vector2.ZERO, Vector2.ZERO, 0.45, 0.75, 1.15, 0.0022, near_w)
 		for ch: PackedVector2Array in _chunks(rp):
 			if not lim.intersects(WC._poly_rect(ch).grow(hw + 2.0)):
 				continue
@@ -5294,10 +7229,10 @@ func _build_wet_surfaces() -> void:
 		for e in 2:
 			var p: Vector2 = orig[0] if e == 0 else orig[orig.size() - 1]
 			var q: Vector2 = orig[1] if e == 0 else orig[orig.size() - 2]
-			if absf(p.x) <= EXT_HALF - 4.0 and absf(p.y) <= EXT_HALF - 4.0 and not in_lake(p, 4.0) and not (zone_at(Vector3(p.x, 0, p.y)) in ["A", "B"]):
+			if absf(p.x) <= EXT_HALF + 40.0 and absf(p.y) <= EXT_HALF + 40.0 and not in_lake(p, 4.0) and not (zone_at(Vector3(p.x, 0, p.y)) in ["A", "B"]):
 				r_ends.append([p, (p - q).normalized(), hw])
 	for l: Vector3 in lakes:
-		_add_cut(cuts, cgrid, WC.lake_poly(l, 64, -0.03))
+		_add_cut(cuts, cgrid, WC.lake_poly(l, 180, -0.03))
 	for br: Array in bridges:
 		for poly: PackedVector2Array in _offset_line(_ext_line(PackedVector2Array([br[0], br[1]]), 0.1), float(br[2]) * 0.5 + 0.2):
 			_add_cut(cuts, cgrid, poly)
@@ -5319,7 +7254,7 @@ func _build_wet_surfaces() -> void:
 						nb += 1
 		for e: Array in r_ends:
 			var hw: float = e[2]
-			var ring := _half_ring(e[0], e[1], hw, hw + w_bank, 16)
+			var ring := _half_ring(e[0], e[1], hw, hw + w_bank, 32)
 			for piece: PackedVector2Array in _subtract_cuts(ring, lcuts, lcgrid, []):
 				var pc := WC.centroid(piece)
 				if zone_at(Vector3(pc.x, 0, pc.y)) in urban_zones:
@@ -5327,17 +7262,15 @@ func _build_wet_surfaces() -> void:
 					_add_cut(lcuts, lcgrid, piece)
 					nb += 1
 		for l: Vector3 in lakes:
-			for ring: PackedVector2Array in _lake_ring_halves(l, w_bank, 56):
+			for ring: PackedVector2Array in _lake_ring_halves(l, w_bank, 180):
 				for piece: PackedVector2Array in _subtract_cuts(ring, lcuts, lcgrid, []):
 					var pc := WC.centroid(piece)
 					if zone_at(Vector3(pc.x, 0, pc.y)) in urban_zones:
 						_emit_poly(st, piece, layer[2], layer[3])
 						_add_cut(lcuts, lcgrid, piece)
 						nb += 1
-	var SHINGLE: ShaderMaterial = A.concrete(Color(0.28, 0.26, 0.22), false).duplicate()
-	SHINGLE.set_meta("no_outline", true)
-	var MUD: ShaderMaterial = A.concrete(Color(0.18, 0.17, 0.15), false).duplicate()
-	MUD.set_meta("no_outline", true)
+	var SHINGLE: ShaderMaterial = _terrain_feather_mat(Color(0.28, 0.25, 0.21), 0.30, 0.90, 0.14, -8)
+	var MUD: ShaderMaterial = _terrain_feather_mat(Color(0.17, 0.16, 0.14), 0.36, 0.62, 0.32, -7)
 	var BANK := A.concrete(Color(0.46, 0.44, 0.41), true)
 	var LIP := A.concrete(Color(0.55, 0.53, 0.48), false)
 	_st_commit(st_shingle, SHINGLE, ns)
@@ -5380,7 +7313,7 @@ func _build_lakes() -> void:
 	world.add_child(bank)
 	# 自然分湾湖岸碰撞：沿 WC.lake_poly 精确围合封闭多边形岸墙（加湖心圆柱兜底），机甲可贴近不规则湖湾且 0 漏水
 	for l: Vector3 in lakes:
-		if border_dist(Vector2(l.x, l.y)) < -l.z * 1.4 - 12.0:
+		if (absf(l.x) > EXT_HALF + l.z + 12.0 or absf(l.y) > EXT_HALF + l.z + 12.0) if is_surface_map else (border_dist(Vector2(l.x, l.y)) < -l.z * 1.4 - 12.0):
 			continue
 		var cs_core := CollisionShape3D.new()
 		var sh_core := CylinderShape3D.new()
@@ -5389,13 +7322,13 @@ func _build_lakes() -> void:
 		cs_core.shape = sh_core
 		cs_core.position = Vector3(l.x, 1.5, l.y)
 		bank.add_child(cs_core)
-		var lpoly := WC.lake_poly(l, 64, 0.45)
+		var lpoly := WC.lake_poly(l, 160, 0.45)
 		var m := lpoly.size()
 		for i in m:
 			var pa := lpoly[i]
 			var pb := lpoly[(i + 1) % m]
 			var pm := (pa + pb) * 0.5
-			if border_dist(pm) < -10.0 or _on_bridge(pm, -0.1):
+			if ((absf(pm.x) > EXT_HALF + 8.0 or absf(pm.y) > EXT_HALF + 8.0) if is_surface_map else (border_dist(pm) < -10.0)) or _on_bridge(pm, -0.1):
 				continue
 			var ln := pa.distance_to(pb)
 			if ln < 0.05:
@@ -5439,20 +7372,98 @@ func _strip_off(pts: PackedVector2Array, w: float, off: float, y: float) -> Arra
 		q.append(pts[i] + Vector2(-t.y, t.x) * off)
 	return _strip_mesh(q, w, y)
 
+func _rail_bridge_lift(p: Vector2) -> float:
+	var best := 0.0
+	for br: Array in bridges:
+		var b0: Vector2 = br[0]
+		var b1: Vector2 = br[1]
+		var span := b0.distance_to(b1)
+		if span < 0.2:
+			continue
+		var hw := float(br[2]) * 0.5 + 0.6
+		var u := (b1 - b0) / span
+		var v := Vector2(-u.y, u.x)
+		var q := p - (b0 + b1) * 0.5
+		if absf(q.dot(v)) > hw:
+			continue
+		var au := absf(q.dot(u))
+		var half := span * 0.5
+		if au <= half:
+			best = maxf(best, 0.175)
+		elif au < half + 2.2:
+			best = maxf(best, 0.175 * (1.0 - (au - half) / 2.2))
+	return best
+
+
 # ---------- 铁轨 ----------
 func _build_rails() -> void:
 	rng.seed = _map_seed(5)
 	if rail_polys.is_empty():
 		return
+	var lim_rail := Rect2(-EXT_HALF - 48.0, -EXT_HALF - 48.0, EXT_HALF * 2.0 + 96.0, EXT_HALF * 2.0 + 96.0)
+	var near_rail := Rect2(-215.0, -215.0, 430.0, 430.0)
+	var rail_rs: Array[Rect2] = []
+	for rl: PackedVector2Array in rail_polys:
+		var rr := WC._poly_rect(rl).grow(4.0)
+		if lim_rail.intersects(rr):
+			rail_rs.append(rr.intersection(lim_rail))
+	if rail_rs.is_empty():
+		return
+	var touches_rail := func(rc: Rect2) -> bool:
+		for rr: Rect2 in rail_rs:
+			if rc.intersects(rr):
+				return true
+		return false
+	var pg := _paved_seg_grid()
+	var cut_polys: Array = []
+	var cut_cgrid := {}
+	for cv: Dictionary in curves:
+		if cv.dirt:
+			continue
+		var cw := float(cv.w) * 0.5 + 0.15
+		if not touches_rail.call(WC._poly_rect(cv.pts).grow(cw + 1.0)):
+			continue
+		var cd: PackedVector2Array = cv.d
+		for ch: PackedVector2Array in _chunks(cd):
+			if not touches_rail.call(WC._poly_rect(ch).grow(cw + 0.5)):
+				continue
+			for cp_poly: PackedVector2Array in _offset_line(_ext_line(ch, 0.05), cw, Geometry2D.END_BUTT, 8.0):
+				_add_cut(cut_polys, cut_cgrid, cp_poly)
+		for cp_cap: PackedVector2Array in _cap_polys(cd, cw, cv.get("caps", [false, false])):
+			if touches_rail.call(WC._poly_rect(cp_cap)):
+				_add_cut(cut_polys, cut_cgrid, cp_cap)
+	for br: Array in bridges:
+		var b0: Vector2 = br[0]
+		var b1: Vector2 = br[1]
+		var bln := b0.distance_to(b1)
+		if bln < 0.1:
+			continue
+		var bw := float(br[2]) * 0.5 + 0.5
+		if not touches_rail.call(Rect2(b0, Vector2.ZERO).expand(b1).grow(bw + 0.5)):
+			continue
+		var bdir := (b1 - b0) / bln
+		for bp_poly: PackedVector2Array in _offset_line(PackedVector2Array([b0 - bdir * 0.4, b1 + bdir * 0.4]), bw, Geometry2D.END_BUTT, 8.0):
+			_add_cut(cut_polys, cut_cgrid, bp_poly)
 	var ties: Array = []
 	var rails: Array = []
-	var ballast_polys: Array = []
-	var tie_pts: Array = []
+	var x_slabs: Array = []
+	var x_guards: Array = []
+	var x_haz: Array = []
+	var raw_ballast: Array = []
+	var tie_grid := {}
+	const T_CELL := 2.0
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for line: PackedVector2Array in rail_polys:
-		for ch: PackedVector2Array in _chunks(line):
-			ballast_polys.append_array(_offset_line(_ext_line(ch, 0.05), 1.8))
+	for raw_line: PackedVector2Array in rail_polys:
+		if not lim_rail.intersects(WC._poly_rect(raw_line).grow(4.0)):
+			continue
+		var smooth_rail := _bezier_refine_polyline(raw_line, Vector2.ZERO, Vector2.ZERO, 0.50, 0.85, 1.2, 0.0025, near_rail)
+		for ch: PackedVector2Array in _chunks(smooth_rail):
+			if lim_rail.intersects(WC._poly_rect(ch).grow(2.5)):
+				raw_ballast.append_array(_offset_line(_ext_line(ch, 0.05), 1.8, Geometry2D.END_BUTT, 8.0))
+		var line := _dense(smooth_rail, 1.2)
+		var cur_ts := 0.0
+		var next_ts := 0.45
 		for k in line.size() - 1:
 			var a := line[k]
 			var b := line[k + 1]
@@ -5460,29 +7471,111 @@ func _build_rails() -> void:
 			if seg < 0.05:
 				continue
 			var t := (b - a) / seg
+			var nrm := Vector2(-t.y, t.x)
 			var ang := atan2(t.x, t.y)
-			var bs := Basis(Vector3.UP, ang)
-			var n := maxi(1, int(seg / 0.9))
-			for i in n:
-				var p := a.lerp(b, (i + 0.5) / n)
+			var m := (a + b) * 0.5
+			if not lim_rail.has_point(m):
+				cur_ts += seg
+				while next_ts <= cur_ts:
+					next_ts += 0.90
+				continue
+			var on_paved := pg.edge_dist(m) < 0.35
+			var lift_a := _rail_bridge_lift(a)
+			var lift_b := _rail_bridge_lift(b)
+			var lift_m := (lift_a + lift_b) * 0.5
+			var d3 := Vector3(b.x, lift_b, b.y) - Vector3(a.x, lift_a, a.y)
+			var len3 := maxf(0.05, d3.length())
+			var z_ax := d3 / len3
+			var x_ax := Vector3.UP.cross(z_ax).normalized()
+			if x_ax.length_squared() < 1e-4:
+				x_ax = Vector3(nrm.x, 0.0, nrm.y)
+			var y_ax := z_ax.cross(x_ax).normalized()
+			var bs3 := Basis(x_ax, y_ax, z_ax)
+			while next_ts <= cur_ts + seg:
+				var p := a.lerp(b, (next_ts - cur_ts) / seg)
+				next_ts += 0.90
+				if on_paved or pg.edge_dist(p) < 0.2:
+					continue
+				var gx := floori(p.x / T_CELL)
+				var gz := floori(p.y / T_CELL)
 				var dup_t := false
-				for tp: Vector2 in tie_pts:
-					if tp.distance_squared_to(p) < 0.75 * 0.75:
-						dup_t = true
+				for dx in range(-1, 2):
+					for dz in range(-1, 2):
+						var bucket = tie_grid.get(Vector2i(gx + dx, gz + dz))
+						if bucket != null:
+							for tp: Vector2 in bucket:
+								if tp.distance_squared_to(p) < 0.75 * 0.75:
+									dup_t = true
+									break
+						if dup_t:
+							break
+					if dup_t:
 						break
 				if not dup_t:
-					tie_pts.append(p)
-					ties.append(Transform3D(bs.scaled_local(Vector3(2.6, 0.12, 0.28)), Vector3(p.x, 0.135, p.y)))
-			var m := (a + b) * 0.5
+					var cell_k := Vector2i(gx, gz)
+					if tie_grid.has(cell_k):
+						tie_grid[cell_k].append(p)
+					else:
+						tie_grid[cell_k] = [p]
+					var plift := _rail_bridge_lift(p)
+					ties.append(Transform3D(Basis(Vector3.UP, ang).scaled_local(Vector3(2.6, 0.12, 0.28)), Vector3(p.x, 0.135 + plift, p.y)))
+			cur_ts += seg
 			for sd in [-0.72, 0.72]:
-				var q: Vector2 = m + Vector2(-t.y, t.x) * sd
-				rails.append(Transform3D(bs.scaled_local(Vector3(0.1, 0.12, maxf(0.1, seg - 0.01))), Vector3(q.x, 0.225, q.y)))
+				var q: Vector2 = m + nrm * sd
+				if on_paved and lift_m < 0.01:
+					rails.append(Transform3D(bs3.scaled_local(Vector3(0.08, 0.036, maxf(0.1, len3 - 0.01))), Vector3(q.x, 0.086, q.y)))
+				else:
+					rails.append(Transform3D(bs3.scaled_local(Vector3(0.1, 0.12, maxf(0.1, len3 - 0.01))), Vector3(q.x, 0.225 + lift_m, q.y)))
+	var ballast_polys: Array = []
+	for bp: PackedVector2Array in raw_ballast:
+		ballast_polys.append_array(_subtract_cuts(bp, cut_polys, cut_cgrid, []))
+	# 公路与铁路平交道口：铺设预制重工混凝土道口铺面板、钢制护轮轨与迎车警示护边
+	var crossing_hits: Array = []
+	for cv: Dictionary in curves:
+		if cv.dirt:
+			continue
+		var cp: PackedVector2Array = cv.pts
+		for line: PackedVector2Array in rail_polys:
+			for ci in cp.size() - 1:
+				for ri in line.size() - 1:
+					var hit = Geometry2D.segment_intersects_segment(cp[ci], cp[ci + 1], line[ri], line[ri + 1])
+					if hit == null or absf(hit.x) > EXT_HALF + 48.0 or absf(hit.y) > EXT_HALF + 48.0:
+						continue
+					if in_wet(hit, 2.0) or _on_bridge(hit, 1.0):
+						continue
+					var dup_x := false
+					for eh: Vector2 in crossing_hits:
+						if eh.distance_to(hit) < 9.0:
+							dup_x = true
+							break
+					if dup_x:
+						continue
+					crossing_hits.append(hit)
+					var cdir := (cp[ci + 1] - cp[ci]).normalized()
+					var rdir := (line[ri + 1] - line[ri]).normalized()
+					var rperp := Vector2(-rdir.y, rdir.x)
+					var sin_a := clampf(absf(rdir.cross(cdir)), 0.45, 1.0)
+					var pad_len := clampf((float(cv.w) - 1.6) / sin_a, maxf(2.4, float(cv.w) - 1.6), float(cv.w) + 5.0)
+					var xbs := Basis(Vector3.UP, atan2(rdir.x, rdir.y))
+					x_slabs.append(Transform3D(xbs.scaled_local(Vector3(1.18, 0.026, pad_len)), Vector3(hit.x, 0.077, hit.y)))
+					for sd_x in [-1.20, 1.20]:
+						var ox: Vector2 = hit + rperp * sd_x
+						x_slabs.append(Transform3D(xbs.scaled_local(Vector3(0.80, 0.026, pad_len)), Vector3(ox.x, 0.077, ox.y)))
+					for sd_g in [-0.56, 0.56]:
+						var gx: Vector2 = hit + rperp * sd_g
+						x_guards.append(Transform3D(xbs.scaled_local(Vector3(0.07, 0.036, pad_len)), Vector3(gx.x, 0.085, gx.y)))
+					for sd_h in [-1.56, 1.56]:
+						var hx: Vector2 = hit + rperp * sd_h
+						x_haz.append(Transform3D(xbs.scaled_local(Vector3(0.14, 0.028, pad_len)), Vector3(hx.x, 0.077, hx.y)))
 	var BALLAST: ShaderMaterial = A.gravel_mat(Color(0.36, 0.34, 0.32)).duplicate()
 	BALLAST.set_meta("no_outline", true)
 	var nb := _emit_dedup_polys(st, ballast_polys, 0.110, 0.05)
 	_st_commit(st, BALLAST, nb)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.02), A.paint(Color(0.3, 0.24, 0.18), 0.0, 0.9, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0}), ties, false)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.0), A.metal(Color(0.42, 0.38, 0.34)), rails, false)
+	_multimesh(A.bevel_box(Vector3.ONE, 0.008), A.concrete(Color(0.37, 0.37, 0.36), true), x_slabs, false)
+	_multimesh(A.bevel_box(Vector3.ONE, 0.0), A.metal(Color(0.28, 0.28, 0.29)), x_guards, false)
+	_multimesh(A.bevel_box(Vector3.ONE, 0.004), A.hazard(), x_haz, false)
 
 
 func _wagon(p: Vector3, horiz: bool) -> void:
@@ -5573,7 +7666,7 @@ func _build_blocks() -> void:
 	# 建筑（轮廓来自城市群布局，与大地图一致）
 	for b: Dictionary in layout.bldgs:
 		_layout_building(b)
-	# 外围连续城市群远景建筑群、林带、海岸与断崖（纯视觉 MultiMesh 合批，无物理碰撞，呈现从城市群大地图截取的不规则战区实感）
+	# 外围连续城市群远景建筑群、林带、海岸与断崖（MultiMesh 合批 + 4 象限轻量静态碰撞与东湾水岸阻挡）
 	_build_backdrop()
 	# 街块里的杂物与围合（仅限不规则战区内部）
 	for blk: Dictionary in layout.blocks:
@@ -5595,6 +7688,29 @@ func _build_backdrop() -> void:
 		return
 	var brng := RandomNumberGenerator.new()
 	brng.seed = _map_seed(801)
+	var bd_bodies: Array[StaticBody3D] = []
+	for qi in 4:
+		var sb := StaticBody3D.new()
+		sb.name = "BackdropStatic_%d" % qi
+		sb.collision_layer = 1
+		sb.collision_mask = 0
+		sb.set_meta("backdrop_static", true)
+		world.add_child(sb)
+		bd_bodies.append(sb)
+	var add_bd_col := func(pos_2d: Vector2, shape: Shape3D, xf: Transform3D) -> void:
+		var qidx := (1 if pos_2d.x >= 0.0 else 0) + (2 if pos_2d.y >= 0.0 else 0)
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.transform = xf
+		bd_bodies[qidx].add_child(cs)
+	var gate_pts: Array = []
+	for e_key: String in WorldLinkScript.LINKS.get(map_id, {}):
+		gate_pts.append(WC.gate_info(map_id, e_key).pos)
+	var near_any_gate := func(pos_2d: Vector2, rad: float) -> bool:
+		for gp: Vector2 in gate_pts:
+			if pos_2d.distance_to(gp) < rad:
+				return true
+		return false
 	var hull_con0: Array = []
 	var hull_con1: Array = []
 	var hull_brick: Array = []
@@ -5624,6 +7740,9 @@ func _build_backdrop() -> void:
 		bd_polys_only.append(WC.obb_corners(c, ang, sx + 2.4, sz + 2.4))
 		var bs := Basis(Vector3.UP, -ang)
 		var p0 := Vector3(c.x, 0.0, c.y)
+		var b_sh := BoxShape3D.new()
+		b_sh.size = Vector3(sx, h, sz)
+		add_bd_col.call(c, b_sh, Transform3D(bs, p0 + Vector3(0.0, h * 0.5, 0.0)))
 		trim_dark.append(Transform3D(bs.scaled_local(Vector3(sx + 0.24, 0.64, sz + 0.24)), p0 + Vector3(0.0, 0.32, 0.0)))
 		if BuildingsExt.add_backdrop(kind, bs, p0, sx, sz, h, brng, hull_con0, hull_con1, hull_brick, hull_wh, hull_mil,
 				trim_dark, roof_dark, win_dark, gable_slate, gable_rust, barrel_wh, saw_shed, tank_cyls):
@@ -5684,7 +7803,7 @@ func _build_backdrop() -> void:
 					var bh_p := bs * Vector3(sx * 0.22, h + 0.68, -sz * 0.18)
 					trim_dark.append(Transform3D(bs.scaled_local(Vector3(minf(2.6, sx * 0.34), 1.35, minf(2.4, sz * 0.34))), p0 + bh_p))
 
-	# 外围工业区储罐与港区堆场集装箱（严格避让 backdrop 建筑多边形，确保 0 重叠穿模）
+	# 外围工业区储罐与港区堆场集装箱（严格避让 backdrop 建筑多边形与转场口，确保 0 重叠穿模）
 	for blk: Dictionary in layout.blocks:
 		var poly: PackedVector2Array = blk.poly
 		var bc := WC.centroid(poly)
@@ -5695,21 +7814,28 @@ func _build_backdrop() -> void:
 			var rad := brng.randf_range(2.6, 3.8)
 			var th := brng.randf_range(5.2, 8.6)
 			var t_obb := WC.obb_corners(bc, 0.0, rad * 2.4, rad * 2.4)
-			if not on_road(bc, rad + 1.5) and not in_river(bc, rad + 2.0) and not WC._hits(bd_polys_only, t_obb, 1.2):
+			if not near_any_gate.call(bc, rad + 14.0) and not on_road(bc, rad + 1.5) and not in_river(bc, rad + 2.0) and not WC._hits(bd_polys_only, t_obb, 1.2):
 				tank_cyls.append(Transform3D(Basis.IDENTITY.scaled(Vector3(rad * 2.0, th, rad * 2.0)), Vector3(bc.x, th * 0.5, bc.y)))
 				bd_polys_only.append(t_obb)
+				var t_sh := CylinderShape3D.new()
+				t_sh.radius = rad
+				t_sh.height = th
+				add_bd_col.call(bc, t_sh, Transform3D(Basis.IDENTITY, Vector3(bc.x, th * 0.5, bc.y)))
 		elif ch_b == "H" and brng.randf() < 0.8:
 			var c_bs := Basis(Vector3.UP, -float(blk.ang) + PI * 0.5)
 			for ci in 2:
 				var cq := bc + Vector2(cos(float(blk.ang)), sin(float(blk.ang))) * (float(ci) - 0.5) * 7.2
 				var c_obb := WC.obb_corners(cq, float(blk.ang) - PI * 0.5, 3.0, 6.8)
-				if border_dist(cq) < -7.0 and not on_road(cq, 3.5) and not in_river(cq, 3.5) and not WC._hits(bd_polys_only, c_obb, 1.2):
+				if border_dist(cq) < -7.0 and not near_any_gate.call(cq, 16.0) and not on_road(cq, 3.5) and not in_river(cq, 3.5) and not WC._hits(bd_polys_only, c_obb, 1.2):
 					var c_tf := Transform3D(c_bs.scaled_local(Vector3(2.4, 2.4, 6.0)), Vector3(cq.x, 1.2, cq.y))
 					if brng.randf() < 0.5:
 						cont_blue.append(c_tf)
 					else:
 						cont_rust.append(c_tf)
 					bd_polys_only.append(c_obb)
+					var c_sh := BoxShape3D.new()
+					c_sh.size = Vector3(2.4, 2.4, 6.0)
+					add_bd_col.call(cq, c_sh, Transform3D(c_bs, Vector3(cq.x, 1.2, cq.y)))
 
 	# 外围林带、公园树木与远景断崖岩层
 	var bd_trunks: Array = []
@@ -5741,8 +7867,14 @@ func _build_backdrop() -> void:
 			elif zt == "K" and brng.randf() < 0.45:
 				var kh := brng.randf_range(6.5, 13.5)
 				var kw := brng.randf_range(6.2, 9.4)
+				if near_any_gate.call(q, kw * 0.5 + 14.0):
+					continue
 				var kbs := Basis(Vector3.UP, brng.randf() * TAU)
 				bd_cliffs.append(Transform3D(kbs.scaled_local(Vector3(kw * 0.86, kh * 0.58, kw * 0.82)), Vector3(q.x, kh * 0.36, q.y)))
+				var k_sh := CylinderShape3D.new()
+				k_sh.radius = kw * 0.34
+				k_sh.height = kh * 0.65
+				add_bd_col.call(q, k_sh, Transform3D(Basis.IDENTITY, Vector3(q.x, kh * 0.32, q.y)))
 		gz += 6.5
 
 	# 东湾连续自然海岸线与潮间带滩涂（2.5 米高密平滑采样，彻底消除 12 米锯齿台阶海岸接缝，配潮湿砂滩、砾石滩与防浪块石）
@@ -5760,6 +7892,33 @@ func _build_backdrop() -> void:
 		coast_line.append(Vector2(clampf(lcx, -EXT_HALF - 50.0, x_far - 4.0), z_s))
 		z_s += 2.5
 	if has_coast and coast_line.size() >= 2:
+		var coast_bank := StaticBody3D.new()
+		coast_bank.name = "CoastWaterBank"
+		coast_bank.collision_layer = 8
+		coast_bank.collision_mask = 0
+		coast_bank.set_meta("water_bank", true)
+		world.add_child(coast_bank)
+		for ci_b in coast_line.size() - 1:
+			var ca := coast_line[ci_b] + Vector2(0.8, 0.0)
+			var cb := coast_line[ci_b + 1] + Vector2(0.8, 0.0)
+			var cm := (ca + cb) * 0.5
+			if absf(cm.x) > EXT_HALF + 8.0 or absf(cm.y) > EXT_HALF + 8.0:
+				continue
+			for piece: Array in _bank_pieces(ca, cb):
+				var pa: Vector2 = piece[0]
+				var pb: Vector2 = piece[1]
+				var pm := (pa + pb) * 0.5
+				var ln := pa.distance_to(pb)
+				if ln < 0.05:
+					continue
+				var tt := (pb - pa) / ln
+				var cbs := Basis(Vector3.UP, atan2(tt.x, tt.y))
+				var cs_cb := CollisionShape3D.new()
+				var sh_cb := BoxShape3D.new()
+				sh_cb.size = Vector3(1.0, 3.0, ln + 0.3)
+				cs_cb.shape = sh_cb
+				cs_cb.transform = Transform3D(cbs, Vector3(pm.x, 1.5, pm.y))
+				coast_bank.add_child(cs_cb)
 		var bay_poly := PackedVector2Array()
 		for cp_pt: Vector2 in coast_line:
 			bay_poly.append(Vector2(cp_pt.x + 1.2, cp_pt.y))

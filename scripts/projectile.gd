@@ -20,6 +20,10 @@ var tail: Node3D = null      ## 曳光尾迹：从弹尾向后延伸到 tail_len
 var tail_len := 0.0
 var tail_offset := 0.0
 var traveled := 0.0
+var flight_dist := 0.0        ## 已飞行距离（米），用于距离伤害衰减
+var falloff_near := 0.0       ## 满伤距离；超过后线性衰减
+var falloff_far := 1.0e9
+var falloff_min := 1.0        ## 最远距离的最低伤害倍率
 var body_node: Node3D = null ## 3D 实体弹头/导弹/酸囊节点（用于膛线自旋或脉动翻滚）
 var spin_spd := 0.0          ## 沿弹轴 (-Z) 的自旋角速度（弧度/秒）
 var tumble := Vector3.ZERO   ## 三轴翻滚角速度（用于酸液团/火焰团）
@@ -46,6 +50,10 @@ func reset_state() -> void:
 	grow = 0.0
 	tail_offset = 0.0
 	traveled = 0.0
+	flight_dist = 0.0
+	falloff_near = 0.0
+	falloff_far = 1.0e9
+	falloff_min = 1.0
 	hit_sfx = ""
 	source = null
 	scale = Vector3.ONE
@@ -57,6 +65,24 @@ func _retire() -> void:
 	if pool_key != "" and raid != null and is_instance_valid(raid) and raid.recycle_projectile(self):
 		return
 	queue_free()
+
+
+## 应用距离衰减参数
+func apply_falloff(fo: Dictionary) -> void:
+	falloff_near = float(fo.get("near", 0.0))
+	falloff_far = float(fo.get("far", 1.0e9))
+	falloff_min = float(fo.get("min", 1.0))
+
+
+## 距离伤害倍率：near 内 100%，far 外最低 min%，中间线性
+func damage_mult(at_dist := -1.0) -> float:
+	var d: float = flight_dist if at_dist < 0.0 else at_dist
+	if d <= falloff_near:
+		return 1.0
+	if d >= falloff_far:
+		return falloff_min
+	var t: float = (d - falloff_near) / maxf(falloff_far - falloff_near, 0.01)
+	return lerpf(1.0, falloff_min, clampf(t, 0.0, 1.0))
 
 
 func _physics_process(delta: float) -> void:
@@ -86,14 +112,19 @@ func _physics_tick(delta: float) -> void:
 			vel = vel.lerp(want, clamp(4.0 * delta, 0.0, 1.0))
 		else:
 			vel.y = lerp(vel.y, 0.0, 3.0 * delta)
+	var prev_dist := flight_dist
+	flight_dist += vel.length() * delta
 	var from := global_position
 	var to := from + vel * delta
 	var q := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	if not r.is_empty():
 		var c = r.collider
+		var hit_dist := prev_dist + from.distance_to(r.position)
+		var hit_dmg: float = dmg * damage_mult(hit_dist)
+		var is_local_hit: bool = source != null and is_instance_valid(source) and source.has_method("_is_local_actor") and bool(source._is_local_actor())
 		if aoe > 0.0:
-			raid.explode(r.position, aoe, dmg)
+			raid.explode(r.position, aoe, hit_dmg, "explosion", is_local_hit)
 			_retire()
 			return
 		var organic: bool = c.is_in_group("bugs") or c.is_in_group("nests")
@@ -101,11 +132,14 @@ func _physics_tick(delta: float) -> void:
 			c.aggressor = source
 		if c.has_method("take_damage"):
 			if c.is_in_group("bugs"):
-				c.take_damage(dmg, from, ap)
+				c.set_meta("last_hit_pos", r.position)
+				c.take_damage(hit_dmg, from, ap)
 			else:
-				c.take_damage(dmg)
-			if source != null and is_instance_valid(source) and source.has_method("_is_local_actor") and source._is_local_actor():
-				Growth.record_skill_xp("ab_firearm", clampf(dmg * 0.025, 0.14, 1.15))
+				c.take_damage(hit_dmg)
+			if is_local_hit:
+				Growth.record_skill_xp("ab_firearm", clampf(hit_dmg * 0.025, 0.14, 1.15))
+				if raid != null and raid.hud != null and raid.hud.has_method("notify_hit"):
+					raid.hud.notify_hit()
 		raid.impact(r.position, r.normal, color, c.has_method("take_damage"), vel, organic)
 		if hit_sfx != "-":
 			Audio.play_sfx(hit_sfx if hit_sfx != "" else ("hit_chitin" if organic else "hit_metal"), r.position)

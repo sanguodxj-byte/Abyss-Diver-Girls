@@ -10,7 +10,7 @@ const SLOT_NAMES_EN := {
 	"gen": "Reactor",
 }
 
-const RARITY_NAMES_EN := ["Common", "Uncommon", "Rare", "Legendary"]
+const RARITY_NAMES_EN := ["Common", "Uncommon", "Rare", "Legendary", "Prototype"]
 
 const CAT_NAMES_EN := {
 	"food": "Food",
@@ -57,6 +57,72 @@ const MODULES_EN := {
 	"core_std": {
 		"name": "MK-II Medium Frame",
 		"desc": "Balanced Class 3 rolled homogeneous steel standard frame offering a solid mix of durability, cargo, and handling.",
+	},
+	"core_m1a2_sepv3": {
+		"name": "SEP-V3 Depleted Uranium Composite Wedge Frame",
+		"desc": "M1A2 SEPv3-derived heavy frame with asymmetric depleted-uranium cheek armor, TUSK ARAT-2 tiles and blow-out panels.",
+	},
+	"core_t90m_proryv": {
+		"name": "PRV-90 Breakthrough Wedge-Armor Frame",
+		"desc": "T-90M Proryv-derived low-profile octagonal turret with Relikt twin wedge ERA, ruby EO jammers and rear cage armor.",
+	},
+	"core_merkava_mk4m": {
+		"name": "MRK-4M Trophy APS Heavy Frame",
+		"desc": "Merkava Mk.4M-derived front-engine wedge hull with four Trophy APS radar plates and rear ball-chain curtains.",
+	},
+	"core_puma_spz": {
+		"name": "SPZ-30 Puma Hedgehog Spaced-Armor Frame",
+		"desc": "Puma-derived heavy IFV frame with anti-top-attack rubber hedgehog strips, AMAP modular side armor and MUSS warning heads.",
+	},
+	"core_bmpt_terminator": {
+		"name": "BMPT-72 Terminator Twin Grenade-Cheek Frame",
+		"desc": "Terminator-derived urban fire-support frame with twin AGS-30 grenade launcher cheek bays and Kontakt-5 tiles.",
+	},
+	"core_bradley_busk": {
+		"name": "M2A4-BK Bradley Urban ERA Frame",
+		"desc": "Bradley BUSK III-derived urban frame with full BRAT box ERA coverage, ballast plating and ISU sight box.",
+	},
+	"core_ka52_alligator": {
+		"name": "KA-52M Alligator Coaxial Gunship Frame",
+		"tags": ["Recon"],
+		"desc": "Ka-52M-derived gunship frame with radar nose, side-by-side ejection cockpit and coaxial rotor hub.",
+	},
+	"core_mi24_hind": {
+		"name": "MI-24P Hind Twin-Step Gunship Frame",
+		"tags": ["Recon"],
+		"desc": "Mi-24P-derived armored gunship frame with tandem stepped cockpit and twin dust-filtered turboshaft intakes.",
+	},
+	"core_fennek_recon": {
+		"name": "FNK-4 Fennek Low-Profile Recon Frame",
+		"tags": ["Recon"],
+		"desc": "Fennek LGS-derived low-profile recon frame with faceted radar-scattering hull and BAA retractable mast.",
+	},
+	"core_pantsir_s1": {
+		"name": "96K6-M Pantsir Twin-Array AA Frame",
+		"tags": ["Recon"],
+		"desc": "Pantsir-S1-derived radar command cabin with twin phased-array faces and missile/gun engagement suite.",
+	},
+	"core_patriot_mpq65": {
+		"name": "MPQ-65 Patriot Phased-Array Core",
+		"tags": ["Recon"],
+		"desc": "Patriot PAC-3-derived phased-array fire-control radar cabin with high-power search and guidance arrays.",
+	},
+	"core_krasukha_ew": {
+		"name": "1RL257 Krasukha Heavy EW Cabin Frame",
+		"tags": ["Recon"],
+		"desc": "Krasukha-4-derived wideband electronic-warfare cabin with heavy jamming arrays and generator housing.",
+	},
+	"core_trieste_bathy": {
+		"name": "DSV-11K Trieste Abyssal Pressure Hull",
+		"desc": "Trieste / Limiting Factor-derived deep-sea pressure hull with conical viewport and syntactic buoyancy blocks.",
+	},
+	"core_abv_shredder": {
+		"name": "M1150-B Assault Breacher Plow Frame",
+		"desc": "M1150 ABV-derived breacher frame with stowed V-plow, lane-marking launchers and armored cab.",
+	},
+	"core_pionier_dach": {
+		"name": "PIO-2A Dachs Armored Engineer Frame",
+		"desc": "Pionierpanzer 2A1-derived engineer frame with folding box-beam crane, 35-ton winch and dozer blade.",
 	},
 	# ---- Chassis: Tread ----
 	"legs_tread_light": {
@@ -129,7 +195,7 @@ const MODULES_EN := {
 	# ---- Back Mount ----
 	"back_rack": {
 		"name": "RK-4 External Cargo Rack",
-		"desc": "Modular alloy quick-release external rack adding 14kg of salvage cargo capacity.",
+		"desc": "Modular alloy quick-release external rack adding 18kg of salvage cargo capacity.",
 	},
 	"back_rocket": {
 		"name": "RP-7 Rocket Pod",
@@ -143,7 +209,7 @@ const MODULES_EN := {
 	},
 	"back_cargo": {
 		"name": "CG-10 Light Cargo Pack",
-		"desc": "Shockproof waterproof salvage container providing 10kg of extra cargo capacity.",
+		"desc": "Shockproof waterproof salvage container weighing only 2kg and providing 12kg of extra cargo capacity.",
 	},
 	"back_missile": {
 		"name": "MS-6 Medium Missile Rack",
@@ -152,7 +218,7 @@ const MODULES_EN := {
 	},
 	"back_shield": {
 		"name": "SH-3 Medium Field Shield",
-		"desc": "Active Defense Interceptor generating a 3.5s omnidirectional electromagnetic deflection screen against incoming fire.",
+		"desc": "Active Defense Interceptor generating a 4s omnidirectional electromagnetic deflection screen and sealing 35% of limb damage with repair compound.",
 	},
 	# ---- Reactor ----
 	"gen_diesel": {
@@ -178,6 +244,46 @@ const MODULES_EN := {
 	"gen_reactor": {
 		"name": "RT-1 Prototype Fission Reactor",
 		"desc": "Compact liquid-metal cooled fission reactor delivering 300 Energy and 10% power efficiency; standard medium core power.",
+	},
+	"gen_agt1500_turbine": {
+		"name": "AGT-1500 Recuperated Gas Turbine",
+		"desc": "Honeywell AGT1500-derived multi-fuel recuperated turbine with dust-filter intake and IR-suppressed exhaust louvers.",
+	},
+	"gen_mtu_mb873_v12": {
+		"name": "MB-873 Twin-Turbo V12 Diesel",
+		"desc": "MTU MB 873 Ka-501-derived 47.6L twin-turbo V12 diesel powerpack.",
+	},
+	"gen_twin_apu_gtcp": {
+		"name": "GTCP-85 Twin-Rotor APU Turbogenerator",
+		"desc": "Twin redundant Garrett GTCP85 auxiliary power turbine generators.",
+	},
+	"gen_naval_pwr_s9g": {
+		"name": "S9G-PWR Submarine Pressurized Reactor",
+		"desc": "GE S9G-derived natural-circulation pressurized water reactor primary loop.",
+	},
+	"gen_lfr_lead_bismuth": {
+		"name": "SVBR-10 Lead-Bismuth Fast Reactor",
+		"desc": "SVBR / BM-40A-derived lead-bismuth eutectic cooled fast reactor.",
+	},
+	"gen_stirling_aip": {
+		"name": "MK3-AIP Stirling Air-Independent Generator",
+		"desc": "Kockums V4-275R Stirling Mk.3-derived air-independent propulsion generator.",
+	},
+	"gen_pem_fuelcell": {
+		"name": "PEM-600 Hydrogen Fuel-Cell Stack",
+		"desc": "Siemens BZM / SINAVY 212A-derived solid-hydrogen PEM fuel-cell system.",
+	},
+	"gen_homopolar_pulse": {
+		"name": "HPG-90 Homopolar Pulse Capacitor Plant",
+		"desc": "General Atomics Blitzer-derived high-energy pulse capacitor bank for railgun-class loads.",
+	},
+	"gen_mhd_plasma_gen": {
+		"name": "MHD-40 Magnetohydrodynamic Generator",
+		"desc": "Pamir-3U-derived vehicular pulsed magnetohydrodynamic generator.",
+	},
+	"gen_hydrothermal_hx": {
+		"name": "HTX-12 Abyssal Hydrothermal Heat Exchanger",
+		"desc": "Sandia sCO2 closed Brayton cycle shell-and-tube heat exchanger generator.",
 	},
 	# ---- Arm Weapons ----
 	"arm_hmg": {
@@ -242,6 +348,158 @@ const MODULES_EN := {
 		"tags": ["Recon"],
 		"caliber": "20×110mm HEAP Anti-Materiel",
 		"desc": "Heavy 20mm anti-materiel cannon with extreme long-range optical scope (RMB scope zoom) capable of punching through Class 6 armor.",
+	},
+	"arm_rh120": {
+		"name": "L55-120 Rheinmetall 120mm Smoothbore Tank Cannon",
+		"caliber": "120×570mm Rh-120 APFSDS",
+		"desc": "Mech-scale Leopard 2A7 main gun with wedge composite mantlet, three-stage thermal sleeve, bore evacuator and MRS muzzle reference sight.",
+	},
+	"arm_2a46": {
+		"name": "2A46-125 Breakthrough 125mm Autoloaded Smoothbore",
+		"caliber": "125×575mm 2A46M APFSDS",
+		"desc": "T-90M-pattern smoothbore with 4S23 ERA shield, five-band thermal sleeve and bustle ejection port.",
+	},
+	"arm_m68": {
+		"name": "M68-105 Stryker 105mm Rifled Assault Gun",
+		"caliber": "105×617mmR M68 HEAT",
+		"desc": "M1128-pattern unmanned gun pod with bustle autoloader drum, accordion dust cover and pepperbox muzzle brake.",
+	},
+	"arm_ags152": {
+		"name": "AGS-152 Stealth Naval 152mm Gun Cupola",
+		"caliber": "152mm AGS Guided HE",
+		"desc": "Zumwalt AGS-inspired faceted stealth cupola with copper water-cooling loops and twin-chamber brake.",
+	},
+	"arm_cg84": {
+		"name": "CG84-X2 Twin 84mm Recoilless Rifle",
+		"caliber": "84×246mmR Tandem HEAT",
+		"desc": "Carl-Gustaf M4 twin-tube recoilless rifle on an Ontos-style cradle.",
+	},
+	"arm_gau8": {
+		"name": "GAU-8/30 Avenger Seven-Barrel Gatling",
+		"caliber": "30×173mm GAU-8 DU AP",
+		"desc": "Hydraulic seven-barrel 30mm rotary cannon with magazine drum and feed chute.",
+	},
+	"arm_m242": {
+		"name": "M242-25 Bushmaster Chain Gun",
+		"caliber": "25×137mm M242 APDS",
+		"desc": "Dual-feed 25mm chain gun with linked belt box and thermal shroud.",
+	},
+	"arm_2a72": {
+		"name": "2A72-30 Trunnion-Stabilized Autocannon",
+		"caliber": "30×165mm 2A72 AP",
+		"desc": "Long-recoil 30mm autocannon with truss barrel brace and brass catcher.",
+	},
+	"arm_phalanx": {
+		"name": "MK15-20 Phalanx Block 1B CIWS",
+		"caliber": "20×102mm M61A1 APDS",
+		"desc": "Radar-directed 20mm close-in weapon with white radome and gun-gas scavenging.",
+	},
+	"arm_bofors40": {
+		"name": "L70-40 Bofors Top-Feed Autocannon",
+		"caliber": "40×365mmR Bofors 3P",
+		"desc": "40mm high-velocity AA cannon with top-mounted clip guide and muzzle brake.",
+	},
+	"arm_m82": {
+		"name": "M82-35 Barrett 35mm Anti-Materiel Cannon",
+		"tags": ["Recon"],
+		"caliber": "12.7×99mm M33 AP",
+		"desc": "Mech-scaled Barrett with muzzle brake, monopod and high-power optic.",
+	},
+	"arm_ntw57": {
+		"name": "NTW-57 Denel 57mm Long-Range Anti-Armor Rifle",
+		"tags": ["Recon"],
+		"caliber": "20×110mm NTW HE-AP",
+		"desc": "Side-insert box-magazine anti-materiel rifle with long recoil cradle and muzzle brake.",
+	},
+	"arm_m45": {
+		"name": "M45-50X4 Quad Browning AA Mount",
+		"caliber": "12.7×99mm M2HB API",
+		"desc": "Maxson quadmount with four M2HB receivers, ammo cans and elevation gear.",
+	},
+	"arm_aa12": {
+		"name": "AA12-40 Auto Frag Shotgun",
+		"caliber": "FRAG-12 40mm Frag Shell (8 pellets)",
+		"desc": "Constant-recoil drum-fed automatic shotgun throwing eight FRAG-12 pellets per shot.",
+	},
+	"arm_ks60": {
+		"name": "KS-60 Flechette Riot Shotgun",
+		"caliber": "23×75mmR Rifled Flechette",
+		"desc": "Sawn-off heavy rifled shotgun firing a dense flechette load.",
+	},
+	"arm_tow2b": {
+		"name": "TOW-2B Twin Heavy ATGM Launcher",
+		"caliber": "BGM-71F TOW-2B Top-Attack",
+		"desc": "Twin armored TOW launcher with optronic sight head and top-attack missiles.",
+	},
+	"arm_kornet": {
+		"name": "9M133-X4 Kornet-EM Quad Launcher",
+		"caliber": "9M133M-2 Kornet-EM",
+		"desc": "Four-cell laser-beam-riding ATGM rack with elevation actuator and thermal sight.",
+	},
+	"arm_lau61": {
+		"name": "LAU-61 Hydra 19-Tube Rocket Pod",
+		"caliber": "70mm Hydra 70 HE",
+		"desc": "Nineteen-tube 70mm rocket pod with blast deflector ring and intervalometer.",
+	},
+	"arm_m299": {
+		"name": "M299-HF4 Hellfire Quad Rail Launcher",
+		"caliber": "AGM-114L Longbow Hellfire",
+		"desc": "M299 four-rail launcher with millimeter-wave radome and Hellfire missiles.",
+	},
+	"arm_ram116": {
+		"name": "MK49-RAM Rolling Airframe Missile Box",
+		"caliber": "RIM-116 Rolling Airframe Missile",
+		"desc": "Eleven-cell RAM launcher with rolling-airframe interceptors for close defense.",
+	},
+	"arm_m777": {
+		"name": "M777-155 Ultralight Towed Howitzer",
+		"caliber": "155mm M777A2 Excalibur",
+		"desc": "Titanium trail howitzer with muzzle brake and digital fire-control mast.",
+	},
+	"arm_tos220": {
+		"name": "TOS-220 Solntsepek Thermobaric MLRS",
+		"caliber": "220mm TOS-1A Thermobaric Rocket",
+		"desc": "Six-cell 220mm thermobaric rocket launcher with blast shields and elevation cradle.",
+	},
+	"arm_rpo93": {
+		"name": "RPO-93X4 Shmel Thermobaric Assault Pack",
+		"caliber": "93mm RPO-M FAE",
+		"desc": "Four-tube 93mm fuel-air explosive assault pack with ignition box.",
+	},
+	"arm_m10flm": {
+		"name": "M10-FLM Zippo Napalm Projector",
+		"caliber": "40mm Pressurized Napalm",
+		"desc": "Armored high-pressure napalm projector with twin fuel tanks and ignition torch.",
+	},
+	"arm_mk108": {
+		"name": "MK108-4X Short-Barrel HE Assault Pod",
+		"caliber": "30×90mmR MK108 Mine Shell",
+		"desc": "Quad 30mm short-barrel mine-shell pod with recoil springs and blast cone.",
+	},
+	"arm_pb09": {
+		"name": "PB-09 Propellant Hydraulic Pile Driver",
+		"caliber": "PB-09 Captive-Bolt Spike",
+		"desc": "Captive-bolt propellant ram for siege breaching.",
+	},
+	"arm_hc40": {
+		"name": "HC-40 Hydraulic Jaw Cutter",
+		"caliber": "HC-40 Shear Jaw",
+		"desc": "Genesis-grade hydraulic steel shear for cutting armor plate.",
+	},
+	"arm_cs88": {
+		"name": "CS-88 Tungsten Carbide Trench Saw",
+		"caliber": "CS-88 Carbide Chain Teeth",
+		"desc": "Rock-trencher chain boom with carbide teeth for grinding armor.",
+	},
+	"arm_th60": {
+		"name": "TH-60 Boxed Hydraulic Breaker",
+		"caliber": "TH-60 Chisel Impact",
+		"desc": "Krupp-pattern boxed hydraulic hammer for seismic armor crushing.",
+	},
+	"arm_miclic": {
+		"name": "M58-CLC MICLIC Breacher Arm",
+		"caliber": "M58 MICLIC Line Charge",
+		"desc": "Assault-breacher arm with rocket line charge and spaced ERA siege shield.",
 	},
 }
 
@@ -331,4 +589,6 @@ const LOOT_TABLES_EN := {
 	"boss_titan": {"name": "Excavator Titan Remains"},
 	"boss_overlord": {"name": "Core Overlord Remains"},
 	"boss_behemoth": {"name": "Drydock Behemoth Remains"},
+	"boss_citadel": {"name": "Landcruiser Wreckage"},
+	"boss_carrier": {"name": "Sky Carrier Wreckage"},
 }

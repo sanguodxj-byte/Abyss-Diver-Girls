@@ -110,13 +110,8 @@ static func ensure_defaults() -> Dictionary:
 		var p: Dictionary = pilots.get(id) if typeof(pilots.get(id)) == TYPE_DICTIONARY else {}
 		p["level"] = clampi(int(p.get("level", 1)), 1, PILOT_MAX)
 		p["xp"] = maxi(0, int(p.get("xp", 0)))
-		p["points"] = maxi(0, int(p.get("points", 0)))
-		var learned: Array = p.get("talents") if typeof(p.get("talents")) == TYPE_ARRAY else []
-		var keep: Array = []
-		for t in pdata[id].get("talents", []):
-			if learned.has(t.id) and not keep.has(t.id):
-				keep.append(t.id)
-		p["talents"] = keep
+		p.erase("points")
+		p.erase("talents")
 		pilots[id] = p
 	s["pilots"] = pilots
 	if not pdata.has(str(s.get("active_pilot", ""))):
@@ -499,10 +494,6 @@ static func pilot_xp(id: String) -> int:
 	return int(pilot_state(id).get("xp", 0))
 
 
-static func pilot_points(id: String) -> int:
-	return int(pilot_state(id).get("points", 0))
-
-
 ## 当前等级升到下一级所需经验；满级返回 0
 static func pilot_xp_next(level: int) -> int:
 	if level >= PILOT_MAX:
@@ -525,7 +516,7 @@ static func set_active_pilot(id: String) -> bool:
 	return true
 
 
-## 加经验并结算升级；返回 {"levels": 升了几级, "level": 新等级, "points": 当前天赋点}
+## 加经验并结算升级；返回 {"levels": 升了几级, "level": 新等级}
 static func add_pilot_xp(id: String, amount: int) -> Dictionary:
 	if not _table("PILOTS").has(id) or amount <= 0:
 		return {}
@@ -535,7 +526,7 @@ static func add_pilot_xp(id: String, amount: int) -> Dictionary:
 		Audio.play_ui("grow_level")
 		Events.emit_custom("pilot_leveled", {"id": id, "level": lv, "gained": gained})
 	_save()
-	return {"levels": gained, "level": lv, "points": pilot_points(id)}
+	return {"levels": gained, "level": lv}
 
 
 ## 不发声音、不存档的升级结算，供一次行动里给三位驾驶员统一结算。
@@ -548,49 +539,10 @@ static func _add_pilot_xp_raw(id: String, amount: int) -> int:
 	while int(p.level) < PILOT_MAX and int(p.xp) >= pilot_xp_next(int(p.level)):
 		p["xp"] = int(p.xp) - pilot_xp_next(int(p.level))
 		p["level"] = int(p.level) + 1
-		p["points"] = int(p.get("points", 0)) + 1
 		gained += 1
 	if int(p.level) >= PILOT_MAX:
 		p["xp"] = 0
 	return gained
-
-
-static func _talent(pid: String, tid: String) -> Dictionary:
-	for t in _table("PILOTS").get(pid, {}).get("talents", []):
-		if str(t.id) == tid:
-			return t
-	return {}
-
-
-static func talent_learned(pid: String, tid: String) -> bool:
-	return (pilot_state(pid).get("talents", []) as Array).has(tid)
-
-
-## 空串表示可以习得；否则是拒绝原因
-static func can_learn_talent(pid: String, tid: String) -> String:
-	var t := _talent(pid, tid)
-	if t.is_empty():
-		return "未知天赋"
-	if talent_learned(pid, tid):
-		return "已习得"
-	if pilot_level(pid) < int(t.get("level", 1)):
-		return "等级不足"
-	if pilot_points(pid) < int(t.get("points", 1)):
-		return "天赋点不足"
-	return ""
-
-
-static func learn_talent(pid: String, tid: String) -> bool:
-	if can_learn_talent(pid, tid) != "":
-		return false
-	var t := _talent(pid, tid)
-	var p := pilot_state(pid)
-	p["points"] = int(p.get("points", 0)) - int(t.get("points", 1))
-	(p["talents"] as Array).append(tid)
-	Audio.play_ui("grow_level")
-	Events.emit_custom("talent_learned", {"pilot": pid, "talent": tid})
-	_save()
-	return true
 
 
 # ---------------------------------------------------------------- 船员好感
@@ -901,10 +853,6 @@ static func stat_hook(stats: Dictionary, _loadout: Dictionary) -> void:
 	var p: Dictionary = pilots.get(pid, {})
 	if not pd.is_empty() and not p.is_empty():
 		_add_stats(stats, pd.get("level_stat", {}), float(int(p.get("level", 1)) - 1))
-		for tid in p.get("talents", []):
-			var t := _talent(pid, str(tid))
-			if not t.is_empty():
-				_add_stats(stats, t.get("stat", {}), 1.0)
 	var crew: Dictionary = s.get("crew", {})
 	for cid in _table("CREW"):
 		var lv := int((crew.get(cid, {}) as Dictionary).get("level", 0))

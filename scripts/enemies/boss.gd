@@ -9,6 +9,8 @@ extends "res://scripts/enemies/enemy.gd"
 ## HUD 血条：用 get_tree().get_first_node_in_group("boss") 找节点，读 boss_id / title / hp_ratio() / phase。
 
 const BossModels = preload("res://scripts/enemies/boss_models.gd")
+const BossGlb = preload("res://scripts/enemies/boss_glb.gd")
+const BossModularGlb = preload("res://scripts/enemies/boss_modular_glb.gd")
 
 var boss_id := ""
 var title := ""
@@ -21,6 +23,7 @@ var summoned := 0
 var summon_cap := 8
 var pattern_i := 0
 var _weak_flash := 0.0
+var _armor_spark_cd := 0.0
 ## 晶核暴露程度 0~1：开合护板与核心辉光都跟着它走，玩家能直接看出弱点窗口的开与合
 var core_vis := 0.0
 
@@ -33,6 +36,20 @@ func setup(k: String, r, tgt) -> void:
 	rise_depth = 3.0
 	add_to_group("boss")
 	data["boss"] = true
+
+
+func _batch_static() -> void:
+	if has_meta("glb_rig") or has_meta("modular_glb"):
+		return
+	super._batch_static()
+
+
+func _cancel_act() -> void:
+	super._cancel_act()
+	if has_meta("glb_rig"):
+		BossGlb.on_cancel_act(self)
+	elif has_meta("modular_glb"):
+		BossModularGlb.on_cancel_act(self)
 
 
 func _build_visual() -> void:
@@ -67,6 +84,8 @@ func _physics_tick(delta: float) -> void:
 		core_open = maxf(0.0, core_open - delta)
 	if _weak_flash > 0.0:
 		_weak_flash = maxf(0.0, _weak_flash - delta)
+	if _armor_spark_cd > 0.0:
+		_armor_spark_cd = maxf(0.0, _armor_spark_cd - delta)
 	_check_phase()
 
 
@@ -79,7 +98,15 @@ func take_damage(dmg: float, from := Vector3.ZERO, ap := 0.0) -> void:
 		var max_wake_d: float = maxf(raid.lose_range() * 1.35, 56.0) if raid.has_method("lose_range") else 56.0
 		if global_position.distance_to(raid.mech.global_position) > max_wake_d:
 			return
+	var hp_prev := hp
 	super.take_damage(dmg, from, ap)
+	# 用命中点局部装甲火星与黑烟替代整机惨白过曝，完整保留重工业 PBR 钢铁质感
+	if hp < hp_prev and raid != null and is_instance_valid(raid.fx) and _armor_spark_cd <= 0.0:
+		_armor_spark_cd = 0.055
+		var sp_pos: Vector3 = get_meta("last_hit_pos") if has_meta("last_hit_pos") else (global_position + Vector3(0.0, 1.4 * float(data.scale), 0.0))
+		var out_dir: Vector3 = (from - sp_pos).normalized() if from != Vector3.ZERO and from.distance_to(sp_pos) > 0.2 else Vector3.UP
+		ART.burst(raid.fx, sp_pos, {"amount": 7, "life": 0.24, "size": 0.16, "dir": out_dir, "spread": 68.0, "vmin": 4.5, "vmax": 11.5,
+			"gravity": Vector3(0, -18.0, 0), "c0": Color(1.0, 0.86, 0.42, 0.98), "c1": Color(1.0, 0.36, 0.08, 0.0), "grow0": 1.0, "grow1": 0.2})
 	if not awake and not dying and hp > 0.0:
 		_awaken()
 
@@ -103,8 +130,12 @@ func _awaken() -> void:
 	if (target == null or not is_instance_valid(target) or target.dead) and raid and is_instance_valid(raid.mech):
 		target = raid.mech
 	guard_t = 2.2
-	spawn_t = 1.3
+	spawn_t = 0.0 if (has_meta("glb_rig") or has_meta("modular_glb")) else 1.3
 	atk_cd = 1.4
+	if has_meta("glb_rig"):
+		BossGlb.on_awaken(self)
+	elif has_meta("modular_glb"):
+		BossModularGlb.on_awaken(self)
 	Audio.play_sfx(roar_id(), global_position + Vector3(0, 2.0, 0))
 	if raid:
 		raid.shake = maxf(raid.shake, 0.85)
@@ -134,10 +165,10 @@ func _ground_burst(radius: float, c: Color) -> void:
 func _ground_ring(p: Vector3, radius: float, c: Color) -> void:
 	if raid == null:
 		return
-	var rc := Color(c.r, c.g, c.b, 0.8)
-	var ring := ART.ground_vfx(raid.fx, ART.ring_tex(), rc, radius * 0.5, Vector3(p.x, 0.07, p.z), true, 0.44, true, 4)
+	var rc := Color(c.r, c.g, c.b, 0.68)
+	var ring := ART.ground_vfx(raid.fx, ART.shockwave_tex(), rc, radius * 0.65, Vector3(p.x, 0.07, p.z), false, 0.44, true, 4)
 	var tw := ring.create_tween()
-	tw.tween_property(ring, "scale", Vector3.ONE * 4.0, 0.6)
+	tw.tween_property(ring, "scale", Vector3.ONE * 3.4, 0.6)
 	tw.parallel().tween_property(ring.material_override, "shader_parameter/col", Color(rc.r, rc.g, rc.b, 0.0), 0.7)
 	tw.tween_callback(ring.queue_free)
 
@@ -248,7 +279,12 @@ func _on_wind() -> void:
 ## 晶核暴露时护板向两侧打开、核心辉光抬升；合拢后恢复原状。
 ## 这一段只改外观，伤害倍率仍由 core_open 与 _weak_scale 决定。
 func _animate(delta: float, mv: float) -> void:
-	super._animate(delta, mv)
+	if has_meta("glb_rig"):
+		BossGlb.animate(self, delta, mv)
+	elif has_meta("modular_glb"):
+		BossModularGlb.animate(self, delta, mv)
+	else:
+		super._animate(delta, mv)
 	core_vis = move_toward(core_vis, 1.0 if core_open > 0.0 else 0.0, delta * 3.0)
 	for pl in plates:
 		if not is_instance_valid(pl):
@@ -436,15 +472,23 @@ func _die() -> void:
 	if body == null:
 		queue_free()
 		return
+	if BossGlb.on_die(self, body):
+		return
+	if BossModularGlb.on_die(self, body):
+		return
 	var sc := float(data.scale)
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(body, "position:y", -0.9 * sc, 1.4).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	tw.tween_property(body, "rotation:z", randf_range(-0.35, 0.35), 1.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(body, "rotation:x", randf_range(-0.2, 0.3), 1.6)
 	for hip in legs:
-		var sd: float = float(hip.get_meta("side"))
+		var sd: float = float(hip.get_meta("side", 1.0))
 		tw.tween_property(hip, "rotation:z", -sd * randf_range(0.4, 0.8), randf_range(0.6, 1.2)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw.tween_property(hip, "rotation:y", float(hip.get_meta("base_y")) + randf_range(-0.5, 0.5), 1.0)
+		tw.tween_property(hip, "rotation:y", float(hip.get_meta("base_y", hip.rotation.y)) + randf_range(-0.5, 0.5), 1.0)
+		if hip.has_meta("knee"):
+			var kj: Node3D = hip.get_meta("knee")
+			if is_instance_valid(kj):
+				tw.tween_property(kj, "rotation:z", sd * randf_range(0.35, 0.72), randf_range(0.6, 1.2)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	for w in wings:
 		if is_instance_valid(w):
 			tw.tween_property(w, "rotation:z", float(w.get_meta("side", 1.0)) * 1.2, 1.2)

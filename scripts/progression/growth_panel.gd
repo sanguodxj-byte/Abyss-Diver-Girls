@@ -97,6 +97,7 @@ func _build() -> void:
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.add_theme_stylebox_override("panel", UI.px9("panel9", 16, 16, 16, 14))
 	center.add_child(panel)
+	UI.bind_fit_panel(panel)
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	panel.add_child(root)
@@ -475,7 +476,7 @@ func _build_pilots() -> void:
 		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		r.add_child(eff)
 		r.add_child(_label(Loc.t("满级", "Max") if need <= 0.0 else "%.1f/%d" % [Growth.ability_xp(str(aid)), int(need)], 12, UI.MUTED))
-	_body.add_child(UI.header(Loc.t("驾驶员", "Pilots"), Loc.t("经验与天赋", "XP & Talents"), 18))
+	_body.add_child(UI.header(Loc.t("驾驶员", "Pilots"), Loc.t("经验", "XP"), 18))
 	for id in Growth.pilot_ids():
 		_build_pilot(str(id))
 
@@ -495,7 +496,6 @@ func _build_pilot(id: String) -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
-	h.add_child(_label(Loc.t("天赋点 %d", "Talent Pts %d") % Growth.pilot_points(id), 13, UI.INFO))
 	var setb := _button(Loc.t("出击中", "Active") if is_active else Loc.t("设为出击机体", "Set Active Pilot"), _set_pilot.bind(id))
 	setb.custom_minimum_size = Vector2(136, 34)
 	setb.disabled = is_active
@@ -512,40 +512,12 @@ func _build_pilot(id: String) -> void:
 	var per := _stat_line(d.get("level_stat", {}))
 	if per != "":
 		v.add_child(_label(Loc.t("每级：", "Per Level: ") + per, 13, Color(0.80, 0.82, 0.80)))
-	var th := _row(v, 8)
-	th.add_child(_label(Loc.t("天赋", "Talents"), 14, UI.MUTED))
-	var tl := ColorRect.new()
-	tl.color = Color(1, 1, 1, 0.08)
-	tl.custom_minimum_size = Vector2(0, 1)
-	v.add_child(tl)
-	for t in d.get("talents", []):
-		var tid := str(t.id)
-		var reason: String = Growth.can_learn_talent(id, tid)
-		var learned := reason == "已习得"
-		var tr := _row(v, 8)
-		tr.add_child(_label(str(t.get("name", tid)), 15, UI.ACCENT if learned else UI.TEXT))
-		tr.add_child(_label(Loc.lv(int(t.get("level", 1))), 12, UI.MUTED))
-		var eff := _label(str(t.get("effect", "")), 12, Color(0.80, 0.82, 0.80))
-		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tr.add_child(eff)
-		tr.add_child(_label(Loc.t("天赋点 %d", "Pts %d") % int(t.get("points", 1)), 12, UI.MUTED))
-		var tb := _button(Loc.t("已习得", "Learned") if learned else Loc.t("习得", "Learn"), _learn_talent.bind(id, tid))
-		tb.custom_minimum_size = Vector2(80, 30)
-		tb.disabled = reason != ""
-		tr.add_child(tb)
 
 
 func _set_pilot(id: String) -> void:
 	if Growth.set_active_pilot(id):
 		Audio.play_ui("grow_level")
 		refresh()
-
-
-func _learn_talent(pid: String, tid: String) -> void:
-	if Growth.learn_talent(pid, tid):
-		refresh()
-	else:
-		Audio.play_ui("ui_denied")
 
 
 # ============================================================ 船员

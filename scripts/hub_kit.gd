@@ -555,6 +555,54 @@ static func short_name(id: String) -> String:
 	return n.substr(0, 5 if en else 3)
 
 
+## 拖起预览：琥珀描边底板 + 物品图标（中心对在指针上），count > 1 时右下角带数量角标
+static func drag_preview(id: String, count := 1) -> Control:
+	var gd: Node = Engine.get_main_loop().root.get_node("GameData")
+	var gsz: Vector2i = gd.item_grid_size(id)
+	var sz := Vector2(clampf(36.0 * float(gsz.x), 44.0, 148.0), clampf(36.0 * float(gsz.y), 44.0, 104.0))
+	var root := Control.new()
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var inner := Control.new()
+	inner.position = -sz * 0.5
+	inner.size = sz
+	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(inner)
+	var fr := PanelContainer.new()
+	fr.add_theme_stylebox_override("panel", px9("card9_on", 6))
+	fr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner.add_child(fr)
+	var tr := TextureRect.new()
+	tr.texture = load("res://scripts/item_icons.gd").icon(id)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	tr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tr.offset_left = 4.0
+	tr.offset_top = 4.0
+	tr.offset_right = -4.0
+	tr.offset_bottom = -4.0
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(tr)
+	if count > 1:
+		var lb := Label.new()
+		lb.text = "×%d" % int(count)
+		lb.add_theme_font_size_override("font_size", 12)
+		lb.add_theme_color_override("font_color", AMBER_HI)
+		lb.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		lb.add_theme_constant_override("shadow_offset_x", 1)
+		lb.add_theme_constant_override("shadow_offset_y", 1)
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		lb.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		lb.offset_left = -44.0
+		lb.offset_top = -20.0
+		lb.offset_right = -3.0
+		lb.offset_bottom = -3.0
+		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		inner.add_child(lb)
+	return root
+
+
 ## 按像素宽度裁字（不加省略号：格子里宁可少一个字也不压到邻格）
 static func fit_text(font: Font, text: String, width: float, fs := 12) -> String:
 	var t := text
@@ -696,7 +744,8 @@ class Avatar extends Control:
 # ---------------------------------------------------------------- 物品格
 ## 画一个物品格：e = {id, count, price, dim, bad, label}；e 为空时画空格。state：0 普通 / 1 悬停 / 2 选中
 ## 底板按稀有度取 cell9_r0..r3；bad（不满足要求，如钱不够）叠红色斜纹框；选中 / 悬停叠琥珀 / 米白角框。
-static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state := 0) -> void:
+## name_top = true 时物品名以稀有度色画在格子顶部居中（左右居中、上对齐），图标在名称条下方的剩余区域居中。
+static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state := 0, name_top := false) -> void:
 	if e.is_empty():
 		ci.draw_style_box(px9("cell9_empty", 6), r)
 		if state == 1:
@@ -709,6 +758,14 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 	ci.draw_style_box(px9("cell9_r%d" % rar, 6), r)
 	var gsz: Vector2i = e["grid_size"] if e.has("grid_size") and e["grid_size"] is Vector2i else gd.item_grid_size(id)
 	var show_grid: bool = not bool(e.get("compact", false)) and (gsz.x > 1 or gsz.y > 1) and (r.size.x >= 72.0 or r.size.y >= 72.0)
+	var name_h := 0.0
+	if name_top:
+		var nm := fit_text(font, str(it.get("name", id)), r.size.x - 4.0, 10)
+		var na := r.position.y + 2.0 + font.get_ascent(10)
+		ci.draw_string(font, Vector2(r.position.x + 2.0, na + 1.0), nm, HORIZONTAL_ALIGNMENT_CENTER, r.size.x - 4.0, 10, Color(0, 0, 0, 0.9))
+		ci.draw_string(font, Vector2(r.position.x + 1.0, na), nm, HORIZONTAL_ALIGNMENT_CENTER, r.size.x - 4.0, 10, GameData.RARITY_COLORS[rar])
+		name_h = 13.0
+	var icon_r := Rect2(r.position.x, r.position.y + name_h, r.size.x, r.size.y - name_h)
 	if show_grid:
 		var cw_g: float = r.size.x / float(gsz.x)
 		var ch_g: float = r.size.y / float(gsz.y)
@@ -720,20 +777,26 @@ static func draw_cell(ci: CanvasItem, r: Rect2, e: Dictionary, font: Font, state
 			ci.draw_line(Vector2(r.position.x + 3.0, ly), Vector2(r.end.x - 3.0, ly), Color(1, 1, 1, 0.06), 1.0)
 	var tex: Texture2D = load("res://scripts/item_icons.gd").icon(id)
 	if tex:
-		var pad_x: float = clampf(r.size.x * 0.06, 3.0, 8.0)
-		var pad_y: float = clampf(r.size.y * 0.06, 3.0, 8.0)
-		var avail := Vector2(maxf(8.0, r.size.x - pad_x * 2.0), maxf(8.0, r.size.y - pad_y * 2.0))
+		var pad_x: float = clampf(icon_r.size.x * 0.06, 3.0, 8.0)
+		var pad_y: float = clampf(icon_r.size.y * 0.06, 3.0, 8.0)
+		var avail := Vector2(maxf(8.0, icon_r.size.x - pad_x * 2.0), maxf(8.0, icon_r.size.y - pad_y * 2.0))
 		var tw: float = maxf(1.0, float(tex.get_width()))
 		var th: float = maxf(1.0, float(tex.get_height()))
 		var sc_f: float = minf(avail.x / tw, avail.y / th)
 		var isz := Vector2(tw * sc_f, th * sc_f)
-		var ip := r.position + (r.size - isz) * 0.5
+		var ip := icon_r.position + (icon_r.size - isz) * 0.5
 		ci.draw_texture_rect(tex, Rect2(ip, isz), false, Color(1, 1, 1, 0.45 if e.get("dim", false) else 1.0))
 	if show_grid:
 		var sz_txt := "%d×%d" % [gsz.x, gsz.y]
-		var ta := r.position.y + 2.0 + font.get_ascent(11)
-		ci.draw_string(font, Vector2(r.position.x + 6.0, ta + 1.0), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0, 0, 0, 0.85))
-		ci.draw_string(font, Vector2(r.position.x + 5.0, ta), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0.78, 0.80, 0.81, 0.92))
+		if name_top:
+			# 名称占顶行时，尺寸角标让位到左下角
+			var bs := r.end.y - 3.0 - font.get_descent(11)
+			ci.draw_string(font, Vector2(r.position.x + 4.0, bs + 1.0), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0, 0, 0, 0.85))
+			ci.draw_string(font, Vector2(r.position.x + 3.0, bs), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0.78, 0.80, 0.81, 0.92))
+		else:
+			var ta := r.position.y + 2.0 + font.get_ascent(11)
+			ci.draw_string(font, Vector2(r.position.x + 6.0, ta + 1.0), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0, 0, 0, 0.85))
+			ci.draw_string(font, Vector2(r.position.x + 5.0, ta), sz_txt, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10.0, 11, Color(0.78, 0.80, 0.81, 0.92))
 	var by := r.end.y - 3 - font.get_descent(12)
 	if e.has("price"):
 		var pt := "¥%s" % _money_text(int(e.price))
@@ -782,6 +845,10 @@ class ItemGrid extends Control:
 	var accept_drop: Callable
 	var on_drop: Callable
 	var empty_text := ""
+	var show_names := false
+	var _drag_kind := ""    ## 正在进行的全局拖曳 kind（空 = 无拖曳）
+	var _drag_valid := false ## 本网格接受当前拖曳（整格描边示可放置）
+	var _drop_hot := false   ## 指针悬停在本网格上且可放置
 	var _ox := 0.0
 	var _rects: Array = []
 	var _cell_map := PackedInt32Array()
@@ -816,8 +883,26 @@ class ItemGrid extends Control:
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
 			_relayout()
-		elif what == NOTIFICATION_MOUSE_EXIT and hover != -1:
-			hover = -1
+		elif what == NOTIFICATION_MOUSE_EXIT:
+			if hover != -1:
+				hover = -1
+				queue_redraw()
+			_set_hot(false)
+		elif what == NOTIFICATION_DRAG_BEGIN:
+			var d = get_viewport().gui_get_drag_data()
+			_drag_kind = str(d.get("kind", "")) if d is Dictionary else ""
+			_drag_valid = accept_drop.is_valid() and _drag_kind != "" and bool(accept_drop.call(d))
+			_set_hot(false)
+			queue_redraw()
+		elif what == NOTIFICATION_DRAG_END:
+			_drag_kind = ""
+			_drag_valid = false
+			_set_hot(false)
+			queue_redraw()
+
+	func _set_hot(v: bool) -> void:
+		if _drop_hot != v:
+			_drop_hot = v
 			queue_redraw()
 
 	func _entry_size(e: Dictionary) -> Vector2i:
@@ -890,10 +975,15 @@ class ItemGrid extends Control:
 				continue
 			var r := Rect2(_ox + float(rc.position.x * cell) + 1.0, float(rc.position.y * cell) + 1.0, float(rc.size.x * cell) - 1.0, float(rc.size.y * cell) - 1.0)
 			var st: int = 2 if i == selected else (1 if i == hover else 0)
-			load("res://scripts/hub_kit.gd").draw_cell(self, r, entries[i], font, st)
+			load("res://scripts/hub_kit.gd").draw_cell(self, r, entries[i], font, st, show_names)
 			if cap_rows > 0 and rc.position.y + rc.size.y > cap_rows:
 				draw_rect(r.grow(-2), Color(0.85, 0.15, 0.15, 0.25))
 		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), LINE, false, 1.0)
+		if _drag_valid:
+			# 拖曳落点反馈：可放置时整格琥珀描边，悬停时加强
+			var gr := Rect2(_ox, 0, float(cols * cell), float(rows * cell))
+			draw_rect(gr, Color(AMBER.r, AMBER.g, AMBER.b, 0.14 if _drop_hot else 0.05), true)
+			draw_rect(gr, AMBER if _drop_hot else Color(AMBER.r, AMBER.g, AMBER.b, 0.45), false, 2.0 if _drop_hot else 1.0)
 		if entries.is_empty() and empty_text != "":
 			draw_string(font, Vector2(_ox + 8, cell * 0.5 + 4), empty_text, HORIZONTAL_ALIGNMENT_LEFT, float(cols * cell - 16), 12, CREAM_DIM)
 
@@ -940,22 +1030,16 @@ class ItemGrid extends Control:
 		if i < 0:
 			return null
 		var e: Dictionary = entries[i]
-		var gsz: Vector2i = _entry_size(e)
-		var pv := TextureRect.new()
-		pv.texture = load("res://scripts/item_icons.gd").icon(str(e.id))
-		var psz := Vector2(clampf(28.0 * float(gsz.x), 32.0, 120.0), clampf(28.0 * float(gsz.y), 32.0, 96.0))
-		pv.custom_minimum_size = psz
-		pv.size = psz
-		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		set_drag_preview(pv)
+		set_drag_preview(load("res://scripts/hub_kit.gd").drag_preview(str(e.id), int(e.get("count", 1))))
 		return {"kind": drag_kind, "id": str(e.id), "index": i}
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return accept_drop.is_valid() and data is Dictionary and bool(accept_drop.call(data))
+		var ok := accept_drop.is_valid() and data is Dictionary and bool(accept_drop.call(data))
+		_set_hot(ok)
+		return ok
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		_set_hot(false)
 		if on_drop.is_valid():
 			on_drop.call(data)
 

@@ -132,6 +132,10 @@ class RaidGrid extends Control:
 	var entries: Array = [] # [{id, real_idx, mystery, quest, upgrade, is_mod}]
 	var selected := -1
 	var hover := -1
+	var show_names := false
+	var _drag_kind := ""     ## 正在进行的全局拖曳 kind（空 = 无拖曳）
+	var _drag_valid := false ## 本网格接受当前拖曳（整格描边示可放置）
+	var _drop_hot := false   ## 指针悬停在本网格上且可放置
 	var _ox := 0.0
 	var _rects: Array = []
 	var _cell_map := PackedInt32Array()
@@ -172,8 +176,26 @@ class RaidGrid extends Control:
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
 			_relayout()
-		elif what == NOTIFICATION_MOUSE_EXIT and hover != -1:
-			hover = -1
+		elif what == NOTIFICATION_MOUSE_EXIT:
+			if hover != -1:
+				hover = -1
+				queue_redraw()
+			_set_hot(false)
+		elif what == NOTIFICATION_DRAG_BEGIN:
+			var d = get_viewport().gui_get_drag_data()
+			_drag_kind = str(d.get("kind", "")) if d is Dictionary else ""
+			_drag_valid = _drag_kind != "" and _accepts(d)
+			_set_hot(false)
+			queue_redraw()
+		elif what == NOTIFICATION_DRAG_END:
+			_drag_kind = ""
+			_drag_valid = false
+			_set_hot(false)
+			queue_redraw()
+
+	func _set_hot(v: bool) -> void:
+		if _drop_hot != v:
+			_drop_hot = v
 			queue_redraw()
 
 	func _entry_size(e: Dictionary) -> Vector2i:
@@ -268,22 +290,6 @@ class RaidGrid extends Control:
 				for gy_s: int in range(1, gsz.y):
 					var ly: float = inner.position.y + ch_g * float(gy_s)
 					draw_line(Vector2(inner.position.x + 3.0, ly), Vector2(inner.end.x - 3.0, ly), Color(1, 1, 1, 0.06), 1.0)
-			var tex: Texture2D = Icons.icon(id)
-			if tex:
-				var pad: float = 4.0
-				var avail := Vector2(maxf(12.0, inner.size.x - pad * 2.0), maxf(12.0, inner.size.y - pad * 2.0))
-				var tsz: Vector2 = tex.get_size()
-				if tsz.x < 1.0 or tsz.y < 1.0:
-					tsz = Vector2(maxf(1.0, float(gsz.x)), maxf(1.0, float(gsz.y)))
-				var sc: float = minf(avail.x / tsz.x, avail.y / tsz.y)
-				var isz: Vector2 = tsz * sc
-				var ip: Vector2 = inner.position + (inner.size - isz) * 0.5
-				draw_texture_rect(tex, Rect2(ip, isz), false)
-			var asc := font.get_ascent(12)
-			if gsz.x > 1 or gsz.y > 1:
-				var sz_s := "%d×%d" % [gsz.x, gsz.y]
-				draw_string(font, Vector2(inner.position.x + 5.0, inner.position.y + 3.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0, 0, 0, 0.85))
-				draw_string(font, Vector2(inner.position.x + 4.0, inner.position.y + 2.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0.84, 0.85, 0.82, 0.92))
 			# 右上角：任务 / 基建 / 模块标记
 			var badge := ""
 			var badge_c := K.AMBER
@@ -296,6 +302,38 @@ class RaidGrid extends Control:
 			elif bool(e.get("is_mod", false)):
 				badge = "⚙"
 				badge_c = K.AMBER
+			# 物品名：格子顶部左右居中、上对齐；图标在名称条下方的剩余区域居中
+			var name_h := 0.0
+			if show_names:
+				var nm_w := inner.size.x - (16.0 if badge != "" else 4.0) - 2.0
+				var nm := K.fit_text(font, str(it.get("name", id)), nm_w, 11)
+				var na := inner.position.y + 2.0 + font.get_ascent(11)
+				draw_string(font, Vector2(inner.position.x + 2.0, na + 1.0), nm, HORIZONTAL_ALIGNMENT_CENTER, nm_w, 11, Color(0, 0, 0, 0.9))
+				draw_string(font, Vector2(inner.position.x + 1.0, na), nm, HORIZONTAL_ALIGNMENT_CENTER, nm_w, 11, K.CREAM)
+				name_h = 14.0
+			var icon_r := Rect2(inner.position.x, inner.position.y + name_h, inner.size.x, inner.size.y - name_h)
+			var tex: Texture2D = Icons.icon(id)
+			if tex:
+				var pad: float = 4.0
+				var avail := Vector2(maxf(12.0, icon_r.size.x - pad * 2.0), maxf(12.0, icon_r.size.y - pad * 2.0))
+				var tsz: Vector2 = tex.get_size()
+				if tsz.x < 1.0 or tsz.y < 1.0:
+					tsz = Vector2(maxf(1.0, float(gsz.x)), maxf(1.0, float(gsz.y)))
+				var sc: float = minf(avail.x / tsz.x, avail.y / tsz.y)
+				var isz: Vector2 = tsz * sc
+				var ip: Vector2 = icon_r.position + (icon_r.size - isz) * 0.5
+				draw_texture_rect(tex, Rect2(ip, isz), false)
+			var asc := font.get_ascent(12)
+			if gsz.x > 1 or gsz.y > 1:
+				var sz_s := "%d×%d" % [gsz.x, gsz.y]
+				if show_names:
+					# 名称占顶行时，尺寸角标让位到左下角（右下角是价值）
+					var by_sz := inner.end.y - 2.0 - font.get_descent(12)
+					draw_string(font, Vector2(inner.position.x + 4.0, by_sz + 1.0), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0, 0, 0, 0.85))
+					draw_string(font, Vector2(inner.position.x + 3.0, by_sz), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0.84, 0.85, 0.82, 0.92))
+				else:
+					draw_string(font, Vector2(inner.position.x + 5.0, inner.position.y + 3.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0, 0, 0, 0.85))
+					draw_string(font, Vector2(inner.position.x + 4.0, inner.position.y + 2.0 + asc), sz_s, HORIZONTAL_ALIGNMENT_LEFT, inner.size.x - 8.0, 12, Color(0.84, 0.85, 0.82, 0.92))
 			if badge != "":
 				draw_string(font, Vector2(inner.position.x, inner.position.y + 3 + asc), badge, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 3, 12, Color(0, 0, 0, 0.9))
 				draw_string(font, Vector2(inner.position.x - 1, inner.position.y + 2 + asc), badge, HORIZONTAL_ALIGNMENT_RIGHT, inner.size.x - 3, 12, badge_c)
@@ -314,6 +352,11 @@ class RaidGrid extends Control:
 				draw_style_box(K.px9("cell9_hover", 8), inner)
 				_draw_corners(inner, K.STEEL, 5.0, 1.5)
 		draw_rect(Rect2(_ox, 0, float(cols * cell), float(rows * cell)), K.LINE, false, 1.0)
+		if _drag_valid:
+			# 拖曳落点反馈：可放置时整格琥珀描边，悬停时加强
+			var gr := Rect2(_ox, 0, float(cols * cell), float(rows * cell))
+			draw_rect(gr, Color(K.AMBER.r, K.AMBER.g, K.AMBER.b, 0.14 if _drop_hot else 0.05), true)
+			draw_rect(gr, K.AMBER if _drop_hot else Color(K.AMBER.r, K.AMBER.g, K.AMBER.b, 0.45), false, 2.0 if _drop_hot else 1.0)
 
 	func _gui_input(ev: InputEvent) -> void:
 		if ev is InputEventMouseMotion:
@@ -345,19 +388,10 @@ class RaidGrid extends Control:
 			return null
 		var e: Dictionary = entries[i]
 		var id := str(e.get("id", ""))
-		var gsz: Vector2i = _entry_size(e)
-		var pv := TextureRect.new()
-		pv.texture = Icons.icon(id)
-		var psz := Vector2(clampf(36.0 * float(gsz.x), 40.0, 152.0), clampf(36.0 * float(gsz.y), 40.0, 112.0))
-		pv.custom_minimum_size = psz
-		pv.size = psz
-		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		set_drag_preview(pv)
+		set_drag_preview(load("res://scripts/hub_kit.gd").drag_preview(id, 1))
 		return {"kind": grid_kind, "id": id, "real_idx": int(e.get("real_idx", i))}
 
-	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+	func _accepts(data: Variant) -> bool:
 		if typeof(data) != TYPE_DICTIONARY:
 			return false
 		var k := str(data.get("kind", ""))
@@ -367,7 +401,13 @@ class RaidGrid extends Control:
 			return inv.raid.open_box != null
 		return false
 
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		var ok := _accepts(data)
+		_set_hot(ok)
+		return ok
+
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		_set_hot(false)
 		var k := str(data.get("kind", ""))
 		var ridx := int(data.get("real_idx", -1))
 		if grid_kind == "cargo" and k == "box":
@@ -390,6 +430,7 @@ class SlotCard extends PanelContainer:
 	var status_lbl: Label
 	var _selected := false
 	var _hover := false
+	var _drop_hot := false
 
 	func _init(owner_inv, s: String) -> void:
 		inv = owner_inv
@@ -450,6 +491,7 @@ class SlotCard extends PanelContainer:
 			_apply_style())
 		mouse_exited.connect(func():
 			_hover = false
+			_set_hot(false)
 			_apply_style())
 
 	func set_selected(on: bool) -> void:
@@ -459,7 +501,7 @@ class SlotCard extends PanelContainer:
 		_apply_style()
 
 	func _apply_style() -> void:
-		add_theme_stylebox_override("panel", K.card_style(_selected or _hover, 6))
+		add_theme_stylebox_override("panel", K.card_style(_selected or _hover or _drop_hot, 6))
 
 	func _gui_input(ev: InputEvent) -> void:
 		if ev is InputEventMouseButton and ev.pressed:
@@ -469,13 +511,26 @@ class SlotCard extends PanelContainer:
 				inv.select_slot(slot_id)
 				inv.open_slot_context(slot_id, ev.global_position)
 
+	func _set_hot(v: bool) -> void:
+		if _drop_hot != v:
+			_drop_hot = v
+			_apply_style()
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_DRAG_END:
+			_set_hot(false)
+
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
 		if typeof(data) != TYPE_DICTIONARY:
+			_set_hot(false)
 			return false
 		var id := str(data.get("id", ""))
-		return GameData.slot_accepts(slot_id, id)
+		var ok := GameData.slot_accepts(slot_id, id)
+		_set_hot(ok)
+		return ok
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		_set_hot(false)
 		var k := str(data.get("kind", ""))
 		var ridx := int(data.get("real_idx", -1))
 		if k == "cargo":
@@ -512,6 +567,7 @@ func _build_ui() -> void:
 	var root_frame := K.frame(10)
 	root_frame.custom_minimum_size = Vector2(PANEL_W, PANEL_H)
 	center.add_child(root_frame)
+	UI.bind_fit_panel(root_frame)
 
 	var root_v := K.vbox(8)
 	root_frame.add_child(root_v)
@@ -687,6 +743,7 @@ func _build_center_col(parent: Container) -> void:
 	body.add_child(sc)
 
 	cargo_grid = RaidGrid.new(self, "cargo", 58, GameData.CARGO_COLS, 4)
+	cargo_grid.show_names = true
 	cargo_grid.cell_selected.connect(_on_cargo_selected)
 	cargo_grid.cell_activated.connect(_on_cargo_activated)
 	cargo_grid.cell_context.connect(_on_cargo_context)
@@ -1169,18 +1226,26 @@ func _format_slot_spec(slot: String, mid: String, mit: Dictionary) -> String:
 			]
 		"arm_l", "arm_r":
 			var wtype := str(mit.get("weapon", "mg"))
-			var mag_cap := int(GameData.AMMO.get(wtype, {}).get("mag", 0))
-			var cur_ammo: int = int(raid.mech.ammo.get(slot, mag_cap)) if raid and raid.mech else mag_cap
 			var pel := int(mit.get("pellets", 1))
 			var dmg_txt := "%d×%d" % [int(mit.get("dmg", 0)), pel] if pel > 1 else str(int(mit.get("dmg", 0)))
 			var pen_cls := GameData.pen_class(float(mit.get("pen", 22.0)))
 			var rng_v := int(round(float(mit.get("range", GameData.STD_RANGE))))
-			return Loc.t("穿深 %s · 射程 %d · 伤 %s · 弹 %d/%d", "Pen C%d · Rng %d · Dmg %s · %d/%d") % [
+			if GameData.weapon_uses_ammo(wtype):
+				var mag_cap := int(GameData.AMMO.get(wtype, {}).get("mag", 0))
+				var cur_ammo: int = int(raid.mech.ammo.get(slot, mag_cap)) if raid and raid.mech else mag_cap
+				return Loc.t("穿深 %s · 射程 %d · 伤 %s · 弹 %d/%d", "Pen C%d · Rng %d · Dmg %s · %d/%d") % [
+					(Loc.armor_tier(pen_cls) if not Loc.is_en() else pen_cls),
+					rng_v,
+					dmg_txt,
+					cur_ammo,
+					mag_cap
+				]
+			return Loc.t("穿深 %s · 射程 %d · 伤 %s · %s %d/发", "Pen C%d · Rng %d · Dmg %s · %s %d/shot") % [
 				(Loc.armor_tier(pen_cls) if not Loc.is_en() else pen_cls),
 				rng_v,
 				dmg_txt,
-				cur_ammo,
-				mag_cap
+				Loc.t("能耗", "Energy"),
+				int(round(GameData.shot_energy_cost(mit)))
 			]
 		"back":
 			var bsk_info := GameData.module_skill_info(mid)

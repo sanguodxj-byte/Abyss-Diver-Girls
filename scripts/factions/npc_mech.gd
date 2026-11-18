@@ -146,7 +146,7 @@ func _paint() -> void:
 						d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.30, 0.22), 0.42)
 				_tint_cache[key] = d
 			mi.material_override = _tint_cache[key]
-		elif m is ShaderMaterial and m.shader != null and m.shader.resource_path == "res://shaders/mech_paint.gdshader":
+		elif m is ShaderMaterial and m.shader != null and (m.shader.resource_path == "res://shaders/mech_paint.gdshader" or m.shader.resource_path == "res://shaders/mech_paint_mobile.gdshader"):
 			if not _tint_cache.has(key):
 				var sm: ShaderMaterial = m.duplicate()
 				sm.set_shader_parameter("takes_damage", 0.0)
@@ -505,14 +505,17 @@ func _npc_fire(slot: String) -> void:
 	if id == "" or arm_cd[slot] > 0.0 or reload_t[slot] > 0.0 or parts[slot] <= 0.0:
 		return
 	var m: Dictionary = GameData.module(id)
-	if ammo[slot] <= 0:
+	var w := str(m.get("weapon", "mg"))
+	var uses_ammo := GameData.weapon_uses_ammo(w)
+	if uses_ammo and ammo[slot] <= 0:
 		_reload(slot)
 		return
 	arm_cd[slot] = 1.0 / maxf(float(m.get("rate", 1.0)), 0.05) * (1.3 if faction == "rover" else 1.0)
 	recoil[slot] = 1.0
-	ammo[slot] -= 1
-	if ammo[slot] <= 0:
-		_reload(slot)
+	if uses_ammo:
+		ammo[slot] -= 1
+		if ammo[slot] <= 0:
+			_reload(slot)
 	var muzzle: Node3D = muzzles.get(slot)
 	var origin: Vector3 = muzzle.global_position if muzzle else global_position + Vector3(0, 2.0, 0)
 	origin.y = clampf(origin.y, 1.2, 2.6)
@@ -522,9 +525,11 @@ func _npc_fire(slot: String) -> void:
 	_shot(m, origin, dir)
 	if lod == 0:
 		_sfx_gap[slot] += 1
-		var w := str(m.get("weapon", "mg"))
-		if float(m.get("rate", 1.0)) < 4.0 or _sfx_gap[slot] % 3 == 0:
-			Audio.play_sfx("wpn_%s_fire" % w if not bool(GameData.AMMO.get(w, {}).get("fire_loop", false)) else "wpn_%s_ignite" % w, origin)
+		var am: Dictionary = GameData.AMMO.get(w, {})
+		if bool(am.get("fire_loop", false)):
+			Audio.play_sfx("wpn_%s_ignite" % w, origin)
+		elif float(m.get("rate", 1.0)) < 4.0 or _sfx_gap[slot] % 3 == 0:
+			Audio.play_sfx(str(am.get("sfx", "wpn_%s_fire" % w)), origin)
 		raid.muzzle_flash(origin, m.get("color", Color(1, 0.7, 0.3)), dir, w, float(m.get("dmg", 10.0)))
 
 
@@ -533,6 +538,8 @@ func _reload(slot: String) -> void:
 	if id == "" or reload_t[slot] > 0.0:
 		return
 	var w: String = str(GameData.module(id).get("weapon", "mg"))
+	if not GameData.weapon_uses_ammo(w):
+		return
 	reload_t[slot] = float(GameData.AMMO.get(w, {}).get("reload", 2.0)) * 1.2
 
 
@@ -544,30 +551,39 @@ func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
 	var rng_m: float = GameData.weapon_range_m(m)
 	var speed: float = float(m.get("speed", 40.0))
 	var c: Color = m.get("color", Color(1, 0.7, 0.3))
+	var fo := GameData.weapon_falloff(m)
 	match w:
 		"laser", "arc":
 			var is_rail := raw_dmg >= 60.0
 			var spd_l := maxf(speed, 135.0 if is_rail else 96.0)
-			var p_l = raid._tracer(origin, dir * spd_l, dmg, rng_m / spd_l, Color(0.76, 0.74, 0.70), 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
+			var col_l := Color(0.55, 0.52, 1.0) if faction == "rover" else (Color(0.30, 0.86, 1.0) if is_rail else Color(0.24, 0.82, 1.0))
+			var p_l = raid._tracer(origin, dir * spd_l, dmg, clampf(rng_m / maxf(spd_l, 20.0) * 6.0, 2.5, 6.0), col_l, 0.14 if is_rail else 0.10, 0.095 if is_rail else 0.072, "apfsds" if is_rail else "coil")
 			p_l.mask = mask
 			p_l.source = self
+			p_l.apply_falloff(fo)
 		"flamer", "cryo":
-			var p = raid._proj(origin, dir * maxf(speed, 12.0) * randf_range(0.86, 1.12), dmg, rng_m / maxf(speed, 12.0), mask, c, 0.34, false, w)
+			var life_f := clampf(rng_m / maxf(speed, 12.0) * 6.0, 2.5, 6.0)
+			var p = raid._proj(origin, dir * maxf(speed, 12.0) * randf_range(0.86, 1.12), dmg, life_f, mask, c, 0.34, false, w)
 			p.pierce = true
 			p.grow = 0.0
 			p.hit_sfx = "-"
 			p.source = self
+			p.apply_falloff(fo)
 		_:
 			if speed <= 0.0:
 				speed = 60.0
 			var n: int = int(m.get("pellets", 1))
-			var wake_c := Color(0.76, 0.70, 0.66) if faction == "rover" else Color(0.78, 0.75, 0.70)
 			for i in n:
 				var a := deg_to_rad(randf_range(-float(m.get("spread", 2.0)), float(m.get("spread", 2.0))) * 0.5)
-				var cal := "sniper_ap" if (w == "sniper" and raw_dmg >= 100.0) else ("sniper" if w == "sniper" else ("cannon" if (w == "shotgun" and raw_dmg >= 55.0) else ("slug" if (w == "shotgun" and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else "mg")))))
-				var p = raid._tracer(origin, dir.rotated(Vector3.UP, a) * speed, dmg, rng_m / speed, wake_c, 0.12, 0.065, cal)
+				var cal := "sniper_ap" if (w == "sniper" and raw_dmg >= 100.0) else ("sniper" if w == "sniper" else ("cannon" if (w in ["shotgun", "cannon", "launcher", "melee"] and raw_dmg >= 55.0) else ("slug" if (w in ["shotgun", "cannon", "launcher", "melee"] and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else ("hmg" if raw_dmg >= 12.0 else "mg"))))))
+				var wake_c := Color(1.0, 0.24, 0.14) if faction == "rover" else (
+					Color(1.0, 0.74, 0.24) if w == "sniper" else (
+					Color(1.0, 0.38, 0.12) if (cal == "cannon" or cal == "ac30") else (
+					Color(1.0, 0.54, 0.16) if (cal == "hmg" or cal == "slug") else Color(1.0, 0.66, 0.20))))
+				var p = raid._tracer(origin, dir.rotated(Vector3.UP, a) * speed, dmg, clampf(rng_m / maxf(speed, 20.0) * 6.0, 2.5, 6.0), wake_c, 0.12, 0.065, cal)
 				p.mask = mask
 				p.source = self
+				p.apply_falloff(fo)
 
 
 # ================================================================ 受击 / 死亡
@@ -576,7 +592,10 @@ func take_damage(amount: float) -> void:
 		return
 	var armor: float = clampf(float(stats.get("armor", 0.0)), 0.0, 0.6)
 	var eff := amount * (1.0 - armor)
+	var prev_hp := hp
 	hp -= eff
+	if faction == "rover" and raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit"):
+		raid.hud.notify_enemy_hit(self, prev_hp, hp, max_hp)
 	hurt_flash = 0.13
 	_update_hit_flash()
 	kick_v += Vector3(randf_range(0.8, 1.6), randf_range(-1.0, 1.0), randf_range(-1.2, 1.2)) * clampf(eff / 14.0, 0.3, 1.2)
@@ -668,14 +687,14 @@ func die(_reason: String) -> void:
 	npc_died.emit(self)
 
 
-## 流浪者残骸：一个军械箱，内容来自 rover 掉落表，身上每件已装备模块各有 15% 概率爆出
+## 流浪者残骸：一个军械箱，内容来自 rover 掉落表，身上每件已装备模块各有 80% 概率爆出
 func _drop_loot(p: Vector3) -> void:
 	var items: Array = []
 	if GameData.LOOT_TABLES.has("rover"):
 		items = GameData.roll_loot("rover", raid.rng)
 	for slot in ["core", "legs", "arm_l", "arm_r", "back", "gen"]:
 		var mid := str(loadout.get(slot, ""))
-		if mid != "" and GameData.is_module(mid) and raid.rng.randf() < 0.15:
+		if mid != "" and GameData.is_module(mid) and raid.rng.randf() < 0.80:
 			items.append(mid)
 	if items.is_empty():
 		items = ["bolts"]
@@ -711,7 +730,7 @@ func _footfall(leg: Node3D, i: int) -> void:
 	Audio.play_sfx("step_biped", aj.global_position, {"vol": -13.5})
 
 
-func _quad_footfall() -> void:
+func _quad_footfall(_leg_node: Node3D = null, _idx: int = -1) -> void:
 	if lod != 0 or raid == null or not is_instance_valid(raid.mech):
 		return
 	if global_position.distance_to(raid.mech.global_position) > 26.0:

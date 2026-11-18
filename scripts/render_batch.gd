@@ -10,12 +10,18 @@ extends Node3D
 
 const CHUNK := 48.0
 const STREAM_R := 70.0
+const STREAM_R_FP := 165.0
+const STREAM_FWD_FP := 76.0
 const HYST := 8.0
 const VIS_END := 140.0
+const VIS_END_FP_MESH := 280.0
+const VIS_END_FP_INST := 165.0
 const CAM_DIST_REF := 44.0
 const PAINT_PATH := "res://shaders/mech_paint.gdshader"
+const PAINT_MOB_PATH := "res://shaders/mech_paint_mobile.gdshader"
 const GLASS_PATH := "res://shaders/ind_glass.gdshader"
 const FOLIAGE_PATH := "res://shaders/foliage.gdshader"
+const FOLIAGE_MOB_PATH := "res://shaders/foliage_mobile.gdshader"
 const BUILDS_PER_FRAME := 2
 const MM_MIN := 8
 
@@ -25,6 +31,8 @@ static var _raw_surfs := {}   ## 网格 RID|表面 → 原始顶点/法线/顶�
 
 var _chunks := {}
 var _pending := false
+var _fp_vis := false
+var _all_shown := false
 var stats := {"mesh_parts": 0, "inst": 0, "built": 0}
 
 
@@ -37,11 +45,21 @@ static func _sp_f(sm: ShaderMaterial, pname: String, def_v: float) -> float:
 	return float(v) if v != null else def_v
 
 
+static func _is_paint_shader(m: Material) -> bool:
+	if not (m is ShaderMaterial):
+		return false
+	var sm: ShaderMaterial = m
+	if sm.shader == null:
+		return false
+	var rp: String = sm.shader.resource_path
+	return rp == PAINT_PATH or rp == PAINT_MOB_PATH
+
+
 ## 写实涂装材质拆成「去色共享材质 + 底色」，完整保留法线贴图、反照率贴图、面板密度与锈蚀做旧参数
 static func split_tint(m: Material, mode: int) -> Array:
 	if m is StandardMaterial3D:
 		return _split_std(m, mode)
-	if not (m is ShaderMaterial) or m.shader == null or m.shader.resource_path != PAINT_PATH:
+	if not _is_paint_shader(m):
 		return [m, Color.WHITE]
 	var sm: ShaderMaterial = m
 	var col: Color = sm.get_shader_parameter("base_color")
@@ -52,31 +70,41 @@ static func split_tint(m: Material, mode: int) -> Array:
 	var atex = sm.get_shader_parameter("albedo_tex") if use_tex > 0.5 else null
 	var ntex = sm.get_shader_parameter("normal_tex")
 	var ascale := snappedf(_sp_f(sm, "albedo_tex_scale", 0.24), 0.04) if use_tex > 0.5 else 0.0
-	var astr := snappedf(_sp_f(sm, "albedo_tex_strength", 0.78), 0.08) if use_tex > 0.5 else 0.0
-	var nstr := snappedf(_sp_f(sm, "normal_strength", 0.55), 0.10)
-	var mb := snappedf(_sp_f(sm, "metal_base", 0.15), 0.12)
-	var rb := snappedf(clampf(_sp_f(sm, "rough_base", 0.60), 0.12, 0.98), 0.08)
+	var astr := snappedf(_sp_f(sm, "albedo_tex_strength", 0.78), 0.06) if use_tex > 0.5 else 0.0
+	var nstr := snappedf(_sp_f(sm, "normal_strength", 0.55), 0.08)
+	var mb := snappedf(_sp_f(sm, "metal_base", 0.15), 0.08)
+	var rb := snappedf(clampf(_sp_f(sm, "rough_base", 0.60), 0.12, 0.98), 0.06)
 	var ps := snappedf(_sp_f(sm, "panel_scale", 0.0), 0.20)
-	var wr := snappedf(_sp_f(sm, "wear", 0.45), 0.15)
-	var ru := snappedf(_sp_f(sm, "rust", 0.25), 0.15)
-	var gr := snappedf(_sp_f(sm, "grime", 0.50), 0.20)
+	var wr := snappedf(_sp_f(sm, "wear", 0.45), 0.12)
+	var sc := snappedf(_sp_f(sm, "scratches", 0.25), 0.15)
+	var ru := snappedf(_sp_f(sm, "rust", 0.25), 0.12)
+	var gr := snappedf(_sp_f(sm, "grime", 0.50), 0.15)
 	var du := snappedf(_sp_f(sm, "dust", 0.25), 0.15)
 	var ds := snappedf(_sp_f(sm, "detail_scale", 1.0), 0.15)
 	var ruv := 1.0 if _sp_f(sm, "roof_uv", 0.0) > 0.5 else 0.0
 	var stp := 1.0 if _sp_f(sm, "stripes", 0.0) > 0.5 else 0.0
 	var tdmg := 1.0 if _sp_f(sm, "takes_damage", 0.0) > 0.5 else 0.0
 	var mw := 1.0 if _sp_f(sm, "metal_wear", 1.0) > 0.5 else 0.0
-	var key := "%d|%.0f|%d|%d|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.0f|%.0f|%.0f|%.0f" % [
+	var key := "%d|%.0f|%d|%d|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.0f|%.0f|%.0f|%.0f" % [
 		mode, use_tex,
 		atex.get_instance_id() if atex else 0,
 		ntex.get_instance_id() if ntex else 0,
-		ascale, astr, nstr, mb, rb, ps, wr, ru, gr, du, ds, ruv, stp, tdmg, mw
+		ascale, astr, nstr, mb, rb, ps, wr, sc, ru, gr, du, ds, ruv, stp, tdmg, mw
 	]
 	var out: ShaderMaterial = _tint_mats.get(key)
 	if out == null:
 		out = sm.duplicate()
 		out.set_shader_parameter("base_color", Color.WHITE)
 		out.set_shader_parameter("tint_mode", mode)
+		out.set_shader_parameter("metal_base", mb)
+		out.set_shader_parameter("rough_base", rb)
+		out.set_shader_parameter("panel_scale", ps)
+		out.set_shader_parameter("wear", wr)
+		out.set_shader_parameter("scratches", sc)
+		out.set_shader_parameter("rust", ru)
+		out.set_shader_parameter("grime", gr)
+		out.set_shader_parameter("dust", du)
+		out.set_shader_parameter("normal_strength", nstr)
 		_tint_mats[key] = out
 	sm.set_meta(mk, out)
 	return [out, col]
@@ -111,14 +139,17 @@ static func _uses_local_triplanar(m: Material) -> bool:
 	if sm.shader == null:
 		return false
 	var rp: String = sm.shader.resource_path
-	return rp == PAINT_PATH or rp == GLASS_PATH
+	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == GLASS_PATH
 
 
 static func _is_foliage(m: Material) -> bool:
 	if not (m is ShaderMaterial):
 		return false
 	var sm: ShaderMaterial = m
-	return sm.shader != null and sm.shader.resource_path == FOLIAGE_PATH
+	if sm.shader == null:
+		return false
+	var rp: String = sm.shader.resource_path
+	return rp == FOLIAGE_PATH or rp == FOLIAGE_MOB_PATH
 
 
 func _chunk(c: Vector2i) -> Dictionary:
@@ -161,14 +192,28 @@ func _add_part(ch: Dictionary, mesh: Mesh, mat: Material, xf: Transform3D, shado
 
 
 func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
+	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	var use_sh := shadow
+	var step_n := 1
+	if mob:
+		if _is_foliage(mat):
+			if not shadow:
+				step_n = 2
+			elif GameData.quality == 0:
+				use_sh = false
+		elif GameData.quality == 0 and mesh != null:
+			var ms := mesh.get_aabb().size
+			if maxf(ms.x, maxf(ms.y, ms.z)) < 0.75:
+				use_sh = false
 	var st := split_tint(mat, 1)
 	var tinted: bool = st[0] != mat
-	for t: Transform3D in xforms:
+	for idx in range(0, xforms.size(), step_n):
+		var t: Transform3D = xforms[idx]
 		var ch := _chunk(chunk_of(t.origin))
-		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if shadow else 0]
+		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if use_sh else 0]
 		var g = ch.inst.get(key)
 		if g == null:
-			g = {"mesh": mesh, "src": [], "mat": st[0], "shadow": shadow, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
+			g = {"mesh": mesh, "src": [], "mat": st[0], "shadow": use_sh, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
 			ch.inst[key] = g
 		g.src.append(mat)
 		g.xf.append(t)
@@ -382,6 +427,24 @@ static func _tinted_surface(mesh: Mesh, si: int, col: Color, tint: int) -> Array
 	return out
 
 
+static func _vis_end_mesh(fp: bool) -> float:
+	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	if mob:
+		if fp:
+			return 145.0 if GameData.quality == 0 else 185.0
+		return 78.0 if GameData.quality == 0 else 96.0
+	return VIS_END_FP_MESH if fp else VIS_END
+
+
+static func _vis_end_inst(fp: bool) -> float:
+	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	if mob:
+		if fp:
+			return 85.0 if GameData.quality == 0 else 115.0
+		return 64.0 if GameData.quality == 0 else 82.0
+	return VIS_END_FP_INST if fp else VIS_END
+
+
 func _build_chunk(c: Vector2i) -> void:
 	var ch: Dictionary = _chunks[c]
 	var root := Node3D.new()
@@ -413,7 +476,7 @@ func _build_chunk(c: Vector2i) -> void:
 		mi.mesh = am
 		mi.material_override = g.mat
 		mi.cast_shadow = g.shadow
-		mi.visibility_range_end = VIS_END
+		mi.visibility_range_end = 0.0 if _all_shown else _vis_end_mesh(_fp_vis)
 		root.add_child(mi)
 	for key in ch.inst:
 		var g: Dictionary = ch.inst[key]
@@ -437,7 +500,7 @@ func _build_chunk(c: Vector2i) -> void:
 		mmi.multimesh = mm
 		mmi.material_override = g.mat
 		mmi.custom_aabb = ab
-		mmi.visibility_range_end = VIS_END
+		mmi.visibility_range_end = 0.0 if _all_shown else _vis_end_inst(_fp_vis)
 		if not g.shadow:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mmi)
@@ -491,6 +554,7 @@ func update_focus(f: Vector3, r: float, limit := BUILDS_PER_FRAME) -> void:
 
 
 func show_all() -> void:
+	_all_shown = true
 	update_focus(Vector3.ZERO, 1e9, -1)
 	for c: Vector2i in _chunks:
 		var n: Node3D = _chunks[c].node
@@ -498,6 +562,23 @@ func show_all() -> void:
 			for ch in n.get_children():
 				if ch is GeometryInstance3D:
 					ch.visibility_range_end = 0.0
+
+
+func _apply_vis_mode(fp: bool) -> void:
+	if _fp_vis == fp:
+		return
+	_fp_vis = fp
+	if _all_shown:
+		return
+	for c: Vector2i in _chunks:
+		var n: Node3D = _chunks[c].node
+		if n == null:
+			continue
+		for ch in n.get_children():
+			if ch is MultiMeshInstance3D:
+				ch.visibility_range_end = _vis_end_inst(fp)
+			elif ch is GeometryInstance3D:
+				ch.visibility_range_end = _vis_end_mesh(fp)
 
 
 var _last_f := Vector3(INF, 0, INF)
@@ -511,11 +592,23 @@ func _process(_d: float) -> void:
 	var p := cam.global_position
 	var fwd := -cam.global_transform.basis.z
 	var f := p
-	if fwd.y < -0.05:
-		f = p + fwd * (-p.y / fwd.y)
-	var r := STREAM_R * maxf(1.0, p.distance_to(f) / CAM_DIST_REF)
-	if cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
-		r = maxf(r, cam.size * 0.75)
+	var r := STREAM_R
+	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	var horiz_view := fwd.y >= -0.25 and cam.projection != Camera3D.PROJECTION_ORTHOGONAL
+	_apply_vis_mode(horiz_view)
+	if horiz_view:
+		var f_xz := Vector3(fwd.x, 0.0, fwd.z)
+		f_xz = f_xz.normalized() if f_xz.length_squared() > 0.001 else Vector3.FORWARD
+		var mob_s := (0.58 if GameData.quality == 0 else 0.70) if mob else 1.0
+		f = p + f_xz * (STREAM_FWD_FP * mob_s)
+		r = STREAM_R_FP * mob_s
+	else:
+		if fwd.y < -0.05:
+			f = p + fwd * (-p.y / fwd.y)
+		var mob_s := (0.62 if GameData.quality == 0 else 0.74) if mob else 1.0
+		r = STREAM_R * mob_s * maxf(1.0, p.distance_to(f) / CAM_DIST_REF)
+		if cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
+			r = maxf(r, cam.size * 0.75)
 	if _pending or f.distance_squared_to(_last_f) > 4.0 or absf(r - _last_r) > 1.0:
 		_last_f = f
 		_last_r = r

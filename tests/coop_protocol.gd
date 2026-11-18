@@ -14,7 +14,7 @@ func run() -> void:
 	if not check(not P.valid_input(Vector2(NAN, 0), Vector3.ZERO), "NaN 输入未被拒绝"): return
 	if not check(not P.valid_input(Vector2.ZERO, Vector3(INF, 0, 0)), "无穷瞄准未被拒绝"): return
 	if not check(P.player_name(" [队员]\n") == "队员", "昵称清理失败"): return
-	var growth := P.growth_profile({"facilities": {"hangar": 9000}, "active_pilot": "missing", "research": ["unknown"], "pilots": {"nao": {"level": 99, "talents": []}}})
+	var growth := P.growth_profile({"facilities": {"hangar": 9000}, "active_pilot": "missing", "research": ["unknown"], "pilots": {"nao": {"level": 99}}})
 	if not check(growth.facilities.hangar == 5 and growth.active_pilot == "nao" and growth.research.is_empty() and growth.pilots.nao.level == 12, "成长数据边界失效"): return
 	if not check(Net.host("测试", 0) == ERR_INVALID_PARAMETER and not Net.active(), "无效端口改变会话"): return
 	if not check(Net.join("测试", "", 27847) == ERR_INVALID_PARAMETER, "空地址未被拒绝"): return

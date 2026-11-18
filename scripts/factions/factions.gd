@@ -292,7 +292,7 @@ static func rover_loadout(r: RandomNumberGenerator) -> Dictionary:
 			continue
 		if slot == "arm":
 			var w := str(m.get("weapon", ""))
-			if w in ["mortar", "grenade", "drill"] or GameData.weapon_range_m(m) < 12.0:
+			if w in ["melee", "launcher"] or GameData.weapon_range_m(m) < 12.0:
 				continue
 			if not GameData.AMMO.has(w):
 				continue

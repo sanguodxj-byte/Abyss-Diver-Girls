@@ -7,7 +7,7 @@ const OUT_DIR := "res://assets/icons/items"
 const CELL_OUT := 96
 const SUPERSAMPLE := 2
 const FOV_DEG := 18.0
-const FILL_RATIO := 0.84
+const FILL_RATIO := 0.94
 
 
 static func _gather_mesh_corners(node: Node, acc_xform: Transform3D, corners: Array[Vector3]) -> void:
@@ -90,7 +90,7 @@ static func _image_stats(img: Image) -> Dictionary:
 	return {"opaque": opaque, "max_a": max_a, "corner_a": corner_a}
 
 
-static func bake_all(host: Node, log_cb: Callable) -> Dictionary:
+static func bake_all(host: Node, log_cb: Callable, only_missing := false) -> Dictionary:
 	var abs_out: String = ProjectSettings.globalize_path(OUT_DIR)
 	var mk_err: Error = DirAccess.make_dir_recursive_absolute(abs_out)
 	if mk_err != OK:
@@ -166,6 +166,18 @@ static func bake_all(host: Node, log_cb: Callable) -> Dictionary:
 
 	var ids: Array = GameData.ITEMS.keys()
 	ids.sort()
+	# 增量烘焙：只补 assets/icons/items 下缺失的 <id>.png，新增模块无需手工维护清单
+	if only_missing:
+		var missing: Array = []
+		for mid in ids:
+			var p := ProjectSettings.globalize_path("%s/%s.png" % [OUT_DIR, str(mid)])
+			if not FileAccess.file_exists(p):
+				missing.append(mid)
+		ids = missing
+		if ids.is_empty():
+			log_cb.call("All icons present, nothing to bake")
+			return {"ok": true, "count": 0, "module_ids": [], "item_ids": [], "images": {}}
+		log_cb.call("Missing icons: %d" % ids.size())
 	var module_ids: Array[String] = []
 	var item_ids: Array[String] = []
 	var baked_images: Dictionary = {}

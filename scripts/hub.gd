@@ -349,11 +349,48 @@ class DropButton extends Button:
 	var drop_fn: Callable
 	var drag_fn: Callable
 	var tip_fn: Callable
+	var _drop_hot := false    ## 指针悬停在本槽且可放置
+	var _drag_valid := false  ## 本槽接受当前拖起中的物品（细描边示可装备位）
+
+	func _ready() -> void:
+		draw.connect(_hot_overlay)
+
+	func _set_hot(v: bool) -> void:
+		if _drop_hot != v:
+			_drop_hot = v
+			queue_redraw()
+
+	func _set_valid(v: bool) -> void:
+		if _drag_valid != v:
+			_drag_valid = v
+			queue_redraw()
+
+	func _hot_overlay() -> void:
+		var r := Rect2(Vector2(1, 1), size - Vector2(2, 2))
+		if _drop_hot:
+			draw_rect(r, Color(0.86, 0.62, 0.18, 0.13), true)
+			draw_rect(r, Color(0.86, 0.62, 0.18), false, 2.0)
+		elif _drag_valid:
+			draw_rect(r, Color(0.86, 0.62, 0.18, 0.45), false, 1.0)
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_MOUSE_EXIT:
+			_set_hot(false)
+		elif what == NOTIFICATION_DRAG_BEGIN:
+			var d = get_viewport().gui_get_drag_data()
+			_set_valid(can_fn.is_valid() and d is Dictionary and bool(can_fn.call(d)))
+			_set_hot(false)
+		elif what == NOTIFICATION_DRAG_END:
+			_set_valid(false)
+			_set_hot(false)
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return can_fn.is_valid() and data is Dictionary and bool(can_fn.call(data))
+		var ok := can_fn.is_valid() and data is Dictionary and bool(can_fn.call(data))
+		_set_hot(ok)
+		return ok
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		_set_hot(false)
 		if drop_fn.is_valid():
 			drop_fn.call(data)
 
@@ -363,15 +400,7 @@ class DropButton extends Button:
 		var d = drag_fn.call()
 		if d == null:
 			return null
-		var id_s := str(d.get("id", ""))
-		var gsz: Vector2i = GameData.item_grid_size(id_s)
-		var pv := TextureRect.new()
-		pv.texture = load("res://scripts/item_icons.gd").icon(id_s)
-		pv.size = Vector2(clampf(30.0 * float(gsz.x), 36.0, 128.0), clampf(30.0 * float(gsz.y), 36.0, 96.0))
-		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pv.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		set_drag_preview(pv)
+		set_drag_preview(K.drag_preview(str(d.get("id", "")), 1))
 		return d
 
 	func _get_tooltip(_at: Vector2) -> String:
@@ -738,6 +767,7 @@ func _open_hub_settings(initial_tab := "video") -> void:
 	_settings_panel.add_theme_stylebox_override("panel", UI.px9("panel9", 18, 18, 22, 18))
 	_settings_panel.custom_minimum_size = Vector2(640, 440)
 	center.add_child(_settings_panel)
+	UI.bind_fit_panel(_settings_panel)
 
 	var v := K.vbox(10)
 	_settings_panel.add_child(v)
@@ -819,6 +849,8 @@ func _open_hub_settings(initial_tab := "video") -> void:
 	q_opt.item_selected.connect(func(i):
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
+		if hangar_vp and is_instance_valid(hangar_vp):
+			GameData.apply_quality(hangar_vp)
 		GameData.save_game())
 	pg_v.add_child(q_opt)
 
@@ -857,6 +889,51 @@ func _open_hub_settings(initial_tab := "video") -> void:
 		_settings_tab = "other"
 		Loc.set_lang("zh" if i == 0 else "en"))
 	pg_o.add_child(lang_opt)
+
+	pg_o.add_child(UI.label(Loc.t("视角模式", "Camera Mode"), 12, K.CREAM_DIM))
+	var view_opt := OptionButton.new()
+	view_opt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	view_opt.add_item(Loc.t("第一人称", "First-Person"), 1)
+	view_opt.selected = GameData.view_mode
+	view_opt.item_selected.connect(func(i):
+		GameData.view_mode = i
+		GameData.save_game())
+	pg_o.add_child(view_opt)
+
+	pg_o.add_child(UI.label(Loc.t("鼠标灵敏度", "Mouse Sensitivity"), 12, K.CREAM_DIM))
+	var sens_sl := HSlider.new()
+	sens_sl.min_value = 0.2
+	sens_sl.max_value = 2.5
+	sens_sl.step = 0.05
+	sens_sl.value = GameData.mouse_sens
+	sens_sl.custom_minimum_size = Vector2(0, 22)
+	sens_sl.value_changed.connect(func(x):
+		GameData.mouse_sens = x
+		GameData.schedule_save())
+	pg_o.add_child(sens_sl)
+
+	# 存档位：把当前进度写入对应位做快照，不改变后续自动存档的活动位
+	pg_o.add_child(UI.label(Loc.t("存档位", "Save Slots"), 12, K.CREAM_DIM))
+	var slot_row := K.hbox(10)
+	pg_o.add_child(slot_row)
+	for i in range(1, GameData.SAVE_SLOT_COUNT + 1):
+		var sv := K.vbox(3)
+		slot_row.add_child(sv)
+		var sb := Button.new()
+		sb.text = "%d" % i
+		sb.custom_minimum_size = Vector2(96, 30)
+		sb.focus_mode = Control.FOCUS_NONE
+		sb.set_meta("sfx", "")
+		var st := UI.label("", 11, K.CREAM_DIM)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sv.add_child(sb)
+		sv.add_child(st)
+		var slot_i := i
+		sb.pressed.connect(func():
+			GameData.save_to_slot(slot_i)
+			st.text = GameData.fmt_save_time(int(Time.get_unix_time_from_system()))
+			Audio.play_ui("ui_confirm"))
+		st.text = GameData.fmt_save_time(int(GameData.slot_info(i).get("saved_at", 0)))
 
 	var foot := K.hbox(8)
 	v.add_child(foot)
@@ -979,11 +1056,17 @@ func _item_tip(e: Dictionary) -> Control:
 		if slot_s == "arm":
 			var wpn := str(m.get("weapon", ""))
 			var am: Dictionary = GameData.AMMO.get(wpn, {})
+			v.add_child(K.kv(Loc.t("武器类型", "Weapon Type"), GameData.weapon_type_name(wpn), UI.ACCENT if wpn == "laser" else UI.INFO))
 			if m.has("speed"):
 				v.add_child(K.kv(Loc.t("弹道初速", "Muzzle Vel"), "%.0f m/s" % float(m.speed), K.CREAM_DIM))
-			if not am.is_empty():
-				v.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1fs", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
-			v.add_child(K.kv(Loc.t("火控功耗", "FCS Drain"), Loc.t("%.2f 能源/发", "%.2f EN/shot") % float(m.get("cost", 0.0)), K.CREAM_DIM))
+			if GameData.weapon_uses_ammo(wpn):
+				if not am.is_empty():
+					v.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1fs", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
+			else:
+				var mode := GameData.weapon_mode(wpn)
+				var en := int(round(GameData.shot_energy_cost(m)))
+				var res_txt := (Loc.t("能量 %d/发", "Energy %d/shot") % en) if mode == "energy" else (Loc.t("液压能量 %d/击", "Hydraulic %d/hit") % en)
+				v.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), res_txt, K.CREAM))
 		elif m.has("eff"):
 			v.add_child(K.kv(Loc.t("供电效率", "Power Eff."), Loc.t("耗电 %d%%", "%d%% Load") % int(round(float(m.eff) * 100.0)), UI.GOOD if float(m.eff) < 1.0 else K.CREAM))
 		var sk := GameData.module_skill_info(id)
@@ -1126,6 +1209,7 @@ func _build_maintenance_view(parent: Control) -> void:
 			_populate_maint_grid())
 		fh.add_child(fb)
 	maint_grid = _grid_widget(K.CELL, "stash")
+	maint_grid.show_names = true
 	maint_grid.item_activated.connect(func(i):
 		if i < maint_ids.size():
 			_quick_equip(str(maint_ids[i])))
@@ -1271,6 +1355,7 @@ func _build_trade_view(parent: Control) -> void:
 	# ---- 我的仓库
 	var pp := _tpanel(trade_deal_root, Loc.t("我的仓库", "My Stash"), "Stash", [0.5, 0.0, 1.0, 1.0], [K.GAP * 0.5, gt, -K.M, gb])
 	trade_stash_grid = _grid_widget(60, "tstash")
+	trade_stash_grid.show_names = true
 	trade_stash_grid.item_selected.connect(func(i):
 		if i < trade_stash_ids.size():
 			_trade_pick_sell(str(trade_stash_ids[i])))
@@ -1543,6 +1628,7 @@ func _build_deploy_view(parent: Control) -> void:
 	gh.add_child(gl)
 	_sec(gl, Loc.t("备战物资", "Supplies"), "Supplies")
 	deploy_stash_list = _grid_widget(K.CELL, "dstash")
+	deploy_stash_list.show_names = true
 	deploy_stash_list.item_activated.connect(func(i):
 		if i >= 0 and i < deploy_stash_ids.size():
 			selected_stash = deploy_stash_ids[i]
@@ -1567,6 +1653,7 @@ func _build_deploy_view(parent: Control) -> void:
 	gh.add_child(gr)
 	cargo_lbl = _sec(gr, Loc.t("出击货舱", "Sortie Cargo"), "Cargo")
 	cargo_list = _grid_widget(K.CELL, "cargo")
+	cargo_list.show_names = true
 	cargo_list.fixed_cols = GameData.CARGO_COLS
 	cargo_list.item_activated.connect(func(i):
 		if i >= 0 and i < cargo_ids.size():
@@ -1666,9 +1753,9 @@ func _map_quest(id: String) -> String:
 const MAP_BOSS_IDS := {
 	"greyport": ["terminus_warden", "grey_brood", "harbor_reaper"],
 	"ironbelt": ["foundry_dreadnought", "iron_warden", "slag_colossus"],
-	"dustfield": ["silo_warhead", "dust_matriarch", "dune_devourer"],
+	"dustfield": ["silo_warhead", "dust_matriarch", "dune_devourer", "citadel_behemoth"],
 	"redlake": ["spillway_leviathan", "broodmother", "prism_archon"],
-	"bayport": ["drydock_behemoth", "harbor_reaper", "slag_colossus"],
+	"bayport": ["drydock_behemoth", "harbor_reaper", "slag_colossus", "sky_carrier"],
 	"canyon": ["excavator_titan", "king_beetle", "gorge_tyrant"],
 	"abyss_maw": ["core_overlord", "abyss_queen", "abyss_harbinger"],
 }
@@ -1900,7 +1987,7 @@ func _rebuild_skills() -> void:
 
 
 ## 设施卡片：图标 + 名称 + 等级刻度；效果文字；「需求」列表（■ 绿 = 满足 / 红 = 不足）；操作按钮
-## extra：额外需求 [[文字, 右侧文字, 是否满足], ...]（研究室等级、前置研究、天赋点……）
+## extra：额外需求 [[文字, 右侧文字, 是否满足], ...]（研究室等级、前置研究……）
 func _skill_card(title: String, lv: int, mx: int, lines: Array, cost: Dictionary, btn_text: String, reason: String, cb: Callable, on := false, icon := "", extra: Array = []) -> PanelContainer:
 	var c := K.card(on, 8)
 	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2039,7 +2126,7 @@ func _skills_pilot() -> void:
 	nh.add_child(UI.label(Growth.player_name(), 20, UI.ACCENT))
 	var lvl := Growth.pilot_level(pid)
 	nh.add_child(K.tag(Loc.lv(lvl)))
-	var sub := UI.label(Loc.t("主力机甲驾驶员 · 天赋点 %d", "Lead Mech Pilot · Talent Pts %d") % Growth.pilot_points(pid), 12, UI.INFO)
+	var sub := UI.label(Loc.t("主力机甲驾驶员", "Lead Mech Pilot"), 12, UI.INFO)
 	sub.size_flags_vertical = Control.SIZE_SHRINK_END
 	nh.add_child(sub)
 	var sp_nh := Control.new()
@@ -2097,17 +2184,6 @@ func _skills_pilot() -> void:
 	skills_body.add_child(g)
 	for id in Growth.ability_ids():
 		g.add_child(_proficiency_card(str(id)))
-
-	_sec(skills_body, Loc.t("驾驶天赋", "Pilot Talents"), "Talents", Loc.t("实战升级获得天赋点 · 零物资消耗", "Earn Talent Points by leveling up · zero material cost"))
-	var tg := _grid(4)
-	skills_body.add_child(tg)
-	var pts := Growth.pilot_points(pid)
-	for t in Growth.pilot_data(pid).get("talents", []):
-		var tid := str(t.id)
-		var learned := Growth.talent_learned(pid, tid)
-		var why := "已习得" if learned else Growth.can_learn_talent(pid, tid)
-		var extra: Array = [] if learned else [[Loc.t("驾驶员等级", "Pilot Level"), Loc.t("%d / %d级", "Lv.%d / %d") % [lvl, int(t.level)], lvl >= int(t.level)], [Loc.t("天赋点", "Talent Pts"), "%d / %d" % [pts, int(t.points)], pts >= int(t.points)]]
-		tg.add_child(_skill_card(str(t.name), 0, 0, [[str(t.effect), UI.INFO]], {}, Loc.t("习得", "Learn"), why, func(): return Growth.learn_talent(pid, tid), learned, "talent", extra))
 
 
 func _proficiency_card(id: String) -> PanelContainer:
@@ -2293,6 +2369,7 @@ func _build_stash_view(parent: Control) -> void:
 		fh.add_child(b)
 
 	stash_list = _grid_widget(56, "stash")
+	stash_list.show_names = true
 	stash_list.empty_text = Loc.t("货架空空荡荡，暂无该类物资。", "No items in this category.")
 	stash_list.item_selected.connect(_on_stash_selected)
 	stash_list.item_activated.connect(func(_i): _move_to_cargo())
@@ -2611,8 +2688,9 @@ func _show_codex(tab: String, id: String) -> void:
 						v_txt = "%d%%" % int(round(float(m[stat_k]) * 100.0))
 					_stat_cell(name_map[stat_k], v_txt, UI.INFO)
 			if str(m.get("slot", "")) == "arm":
-				var am: Dictionary = GameData.AMMO.get(str(m.get("weapon", "")), {})
-				if not am.is_empty():
+				var wpn := str(m.get("weapon", ""))
+				var am: Dictionary = GameData.AMMO.get(wpn, {})
+				if GameData.weapon_uses_ammo(wpn) and not am.is_empty():
 					_stat_cell(Loc.t("弹匣", "Mag"), Loc.t("%d发", "%d rds") % int(am.get("mag", 0)), UI.INFO)
 					_stat_cell(Loc.t("装填", "Reload"), Loc.t("%.1f秒", "%.1fs") % float(am.get("reload", 0.0)), UI.INFO)
 		"enemy":
@@ -2623,7 +2701,10 @@ func _show_codex(tab: String, id: String) -> void:
 			var name_map := {"hp": Loc.t("生命", "Hull"), "speed": Loc.t("移动速度", "Speed"), "armor": Loc.t("护甲值", "Armor"), "dmg": Loc.t("近战杀伤", "Damage")}
 			for stat_k in ["hp", "speed", "armor", "dmg"]:
 				if e.has(stat_k):
-					_stat_cell(name_map[stat_k], str(e[stat_k]), UI.BAD)
+					var v_txt := str(e[stat_k])
+					if stat_k == "armor":
+						v_txt = "%d%%" % int(round(float(e[stat_k]) * 100.0))
+					_stat_cell(name_map[stat_k], v_txt, UI.BAD)
 		"map":
 			var md: Dictionary = GameData.MAPS.get(id, {})
 			codex_title_lbl.text = str(md.get("name", id))
@@ -2661,7 +2742,9 @@ func _build_hangar() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 1.12
-	env.glow_enabled = true
+	var mob := OS.has_feature("mobile")
+	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
+	env.glow_enabled = (not mob) or GameData.quality >= 2
 	env.glow_normalized = true
 	env.glow_intensity = 0.68
 	env.glow_strength = 0.92
@@ -2670,7 +2753,7 @@ func _build_hangar() -> void:
 	env.set_glow_level(1, 0.85)
 	env.set_glow_level(2, 0.7)
 	env.set_glow_level(3, 0.45)
-	env.ssao_enabled = GameData.quality >= 1
+	env.ssao_enabled = (not mob) and (not mob_ren) and GameData.quality >= 1
 	env.ssao_radius = 1.15
 	env.ssao_intensity = 2.4
 	env.ssao_detail = 0.85
@@ -2758,12 +2841,13 @@ func _build_hangar() -> void:
 		A.add(preview_root, A.bevel_box(Vector3(3.15, 0.15, 0.30), 0.02), M_DARK, Vector3(x, 4.66, -9.20))
 		for lv in 3:
 			A.add(preview_root, A.bevel_box(Vector3(2.95, 0.05, 0.22), 0.008), M_GUN, Vector3(x, 4.94 + lv * 0.34, -9.18), Vector3(18, 0, 0))
-		var wl := OmniLight3D.new()
-		wl.light_color = Color(1.0, 0.68, 0.40)
-		wl.light_energy = 1.25
-		wl.omni_range = 9.5
-		wl.position = Vector3(x, 5.2, -7.6)
-		preview_root.add_child(wl)
+		if not mob and not mob_ren:
+			var wl := OmniLight3D.new()
+			wl.light_color = Color(1.0, 0.68, 0.40)
+			wl.light_energy = 1.25
+			wl.omni_range = 9.5
+			wl.position = Vector3(x, 5.2, -7.6)
+			preview_root.add_child(wl)
 
 	# 后舱门楣工业铭牌横匾（精确落在顶部状态栏下方、机甲背包上方 y = 4.85..5.65 净空窗内）
 	A.add(preview_root, A.bevel_box(Vector3(4.2, 0.88, 0.18), 0.03), M_DARK, Vector3(0, 5.28, -9.12))
@@ -2816,29 +2900,33 @@ func _build_hangar() -> void:
 	key.light_energy = 9.2
 	key.spot_range = 20.0
 	key.spot_angle = 32.0
-	key.shadow_enabled = true
+	key.shadow_enabled = (not mob and not mob_ren) or GameData.quality >= 1
 	key.shadow_bias = 0.02
 	key.shadow_normal_bias = 1.0
-	key.shadow_blur = 1.15
+	key.shadow_blur = 0.0 if (mob or mob_ren) else 1.15
 	key.light_color = Color(1.0, 0.95, 0.88)
 	preview_root.add_child(key)
 	key.look_at_from_position(key.position, Vector3(0, 1.5, 0))
 
-	var rp := ReflectionProbe.new()
-	rp.update_mode = ReflectionProbe.UPDATE_ONCE
-	rp.box_projection = true
-	rp.size = Vector3(28, 12, 22)
-	rp.position = Vector3(0, 4.0, -1.0)
-	rp.intensity = 0.72
-	rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
-	preview_root.add_child(rp)
+	if (not mob and not mob_ren) or GameData.quality >= 1:
+		var rp := ReflectionProbe.new()
+		rp.update_mode = ReflectionProbe.UPDATE_ONCE
+		rp.box_projection = true
+		rp.size = Vector3(28, 12, 22)
+		rp.position = Vector3(0, 4.0, -1.0)
+		rp.intensity = 0.72
+		rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		preview_root.add_child(rp)
 
-	for c in [
+	var h_lights := [
 		[Vector3(-5.0, 3.5, -2.0), Color(0.32, 0.75, 1.0), 3.0, 9.5],
 		[Vector3(5.0, 2.5, -2.5), Color(1.0, 0.56, 0.22), 2.5, 9.5],
 		[Vector3(-2.6, 3.4, -6.6), Color(0.56, 0.72, 0.92), 1.65, 10.5],
 		[Vector3(2.6, 4.4, -5.6), Color(1.0, 0.74, 0.42), 1.95, 10.5],
-	]:
+	]
+	var max_hl := 2 if ((mob or mob_ren) and GameData.quality == 0) else h_lights.size()
+	for hi in max_hl:
+		var c: Array = h_lights[hi]
 		var l := OmniLight3D.new()
 		l.position = c[0]
 		l.light_color = c[1]
@@ -3030,7 +3118,7 @@ func _refresh_crew() -> void:
 		if cid == Growth.PROTAGONIST:
 			var lv := Growth.pilot_level(cid)
 			var need := Growth.pilot_xp_next(lv)
-			tip += "\n%s · %s · %s" % [Loc.lv(lv), Loc.t("满级", "MAX") if need <= 0 else Loc.t("%d/%d 经验", "%d/%d EXP") % [Growth.pilot_xp(cid), need], Loc.t("天赋点 %d", "Talent Pts %d") % Growth.pilot_points(cid)]
+			tip += "\n%s · %s" % [Loc.lv(lv), Loc.t("满级", "MAX") if need <= 0 else Loc.t("%d/%d 经验", "%d/%d EXP") % [Growth.pilot_xp(cid), need]]
 		for pid in Growth.pod_ids():
 			if Growth.pod_pilot(pid) == cid:
 				av.dim = Growth.pod_tier(pid) == 0
@@ -3357,11 +3445,18 @@ func _on_stash_selected(i: int) -> void:
 					v_txt = "%.0f%s" % [rv, Loc.t("（远距视距）", " (Long)") if rv > 10.0 else (Loc.t("（标准视距）", " (Standard)") if is_equal_approx(rv, 10.0) else Loc.t("（近距）", " (Short)"))]
 				stash_kv_box.add_child(K.kv(names[k], v_txt, UI.GOOD if (k == "range" and float(m.range) > 10.0) else UI.INFO))
 		if slot_s == "arm":
-			var am: Dictionary = GameData.AMMO.get(str(m.get("weapon", "")), {})
+			var wpn := str(m.get("weapon", ""))
+			var am: Dictionary = GameData.AMMO.get(wpn, {})
 			if m.has("speed"):
 				stash_kv_box.add_child(K.kv(Loc.t("弹道初速", "Muzzle Vel."), "%.0f m/s" % float(m.speed), K.CREAM_DIM))
-			if not am.is_empty():
-				stash_kv_box.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1f秒", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
+			if GameData.weapon_uses_ammo(wpn):
+				if not am.is_empty():
+					stash_kv_box.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1f秒", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
+			else:
+				var mode := GameData.weapon_mode(wpn)
+				var en := int(round(GameData.shot_energy_cost(m)))
+				var res_txt := (Loc.t("能量 %d/发", "Energy %d/shot") % en) if mode == "energy" else (Loc.t("液压能量 %d/击", "Hydraulic %d/hit") % en)
+				stash_kv_box.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), res_txt, K.CREAM))
 		var sk := GameData.module_skill_info(selected_stash)
 		if not sk.is_empty():
 			stash_kv_box.add_child(K.kv(Loc.t("车载分系统 [%s]", "Subsystem [%s]") % str(sk.key), str(sk.name), UI.ACCENT))

@@ -1,5 +1,5 @@
 extends "res://tests/lib/test_base.gd"
-## 局外成长：默认值、设施升级、研究解锁与商店筛选、驾驶员经验与天赋、船员好感与赠礼、后勤委托、
+## 局外成长：默认值、设施升级、研究解锁与商店筛选、驾驶员经验升级、船员好感与赠礼、后勤委托、
 ## 出击食堂、行动结算与章节推进、失败模块回收、存档再读档、旧存档补默认值、成长面板构建。
 ## godot --headless --path . -- --progress
 const START := "none"
@@ -89,16 +89,14 @@ func run() -> void:
 	if not check(Growth.shop_allowed("arm_laser") and GameData.shop_items().has("arm_laser"), "研究完成后聚焦激光没有上架"):
 		return
 
-	# ---- 驾驶员：经验升级、天赋点、天赋生效、切换出击机体 ----
+	# ---- 驾驶员：经验升级生效、切换出击机体 ----
+	var pre_lv := GameData.compute_stats(GameData.STARTER)
 	var xp := Growth.add_pilot_xp("nao", 500)
-	log_line("nao xp: levels=%d level=%d points=%d" % [int(xp.get("levels", 0)), int(xp.get("level", 1)), int(xp.get("points", 0))])
+	log_line("nao xp: levels=%d level=%d" % [int(xp.get("levels", 0)), int(xp.get("level", 1))])
 	if not check(int(xp.get("levels", 0)) >= 3 and Growth.pilot_level("nao") >= 4, "500 经验没有把奈绪升到 4 级"):
 		return
-	var pre_talent := GameData.compute_stats(GameData.STARTER)
-	if not check(Growth.learn_talent("nao", "t_nao_rig"), "载重桁架习得失败：%s" % Growth.can_learn_talent("nao", "t_nao_rig")):
-		return
-	var after_talent := GameData.compute_stats(GameData.STARTER)
-	if not check(is_equal_approx(after_talent.load, pre_talent.load + 8.0), "载重桁架没有加 8 承重（%.1f→%.1f）" % [pre_talent.load, after_talent.load]):
+	var after_lv := GameData.compute_stats(GameData.STARTER)
+	if not check(is_equal_approx(after_lv.load, pre_lv.load + 1.5 * 3.0), "奈绪升级的每级承重加成没有生效（%.1f→%.1f）" % [pre_lv.load, after_lv.load]):
 		return
 	if not check(Growth.set_active_pilot("rei") and Growth.active_pilot() == "rei", "切换出击机体失败"):
 		return

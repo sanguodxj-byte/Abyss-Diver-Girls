@@ -4,13 +4,13 @@ shader_type spatial;
 render_mode unshaded, shadows_disabled, fog_disabled;
 #include "res://shaders/menu_common.gdshaderinc"
 uniform float ground_y = -260.0;
-varying vec3 wp;
+varying highp vec3 wp;
 varying vec3 wn;
 varying vec3 ln;
-varying vec3 lp;
+varying highp vec3 lp;
 varying vec3 bsz;
 varying vec4 cus;
-varying vec2 bldg_seed;
+varying highp vec2 bldg_seed;
 
 void vertex() {
 	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;

@@ -38,37 +38,40 @@ class HoloPortrait extends SubViewportContainer:
 	const HOLO := """
 shader_type spatial;
 render_mode unshaded, cull_back;
-uniform vec3 col = vec3(0.76, 0.82, 0.80);
+uniform vec3 col = vec3(0.74, 0.80, 0.78);
 uniform float flash = 0.0;
 void fragment() {
-	float fr = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 1.6);
-	float band = 0.82 + 0.18 * step(0.5, fract(FRAGCOORD.y * 0.25));
-	vec3 c = col * (0.34 + fr * 1.2) * band;
-	ALBEDO = mix(c, vec3(1.0), flash * 0.7);
+	vec3 n = normalize(NORMAL);
+	vec3 v = normalize(VIEW);
+	vec3 key_l = normalize(vec3(0.55, 0.74, 0.42));
+	vec3 fill_l = normalize(vec3(-0.62, 0.22, 0.68));
+	float ndl = clamp(dot(n, key_l) * 0.5 + 0.5, 0.0, 1.0);
+	float fill = max(dot(n, fill_l), 0.0);
+	float rim = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.1);
+	float spec = pow(max(dot(reflect(-key_l, n), v), 0.0), 12.0) * 0.30;
+	float seam = clamp(length(fwidth(n)) * 0.65, 0.0, 0.48);
+	vec3 base = (col * (0.14 + 0.76 * pow(ndl, 1.9) + 0.16 * fill + rim * 0.48) + vec3(spec)) * (1.0 - seam * 0.52);
+	ALBEDO = mix(base, vec3(1.0, 0.92, 0.76), flash * 0.75);
 }
 """
 	const POST := """
 shader_type canvas_item;
 uniform vec3 tint = vec3(1.0);
 void fragment() {
-	vec2 uv = UV;
-	float t = TIME;
-	float jitter = step(0.985, fract(sin(floor(t * 14.0)) * 43758.5)) * 0.006;
-	uv.x += jitter * sin(uv.y * 60.0);
-	vec4 c = texture(TEXTURE, uv);
-	float r = texture(TEXTURE, uv + vec2(0.003, 0.0)).r;
-	c.r = max(c.r, r * 0.8);
-	float scan = 0.75 + 0.25 * sin((uv.y * 170.0 - t * 6.0));
-	float roll = smoothstep(0.0, 0.08, abs(fract(uv.y - t * 0.25) - 0.5));
-	float flick = 0.92 + 0.08 * sin(t * 37.0);
-	c.rgb *= scan * flick * (0.85 + 0.15 * roll);
-	c.a *= 0.95;
+	vec4 c = texture(TEXTURE, UV);
+	float vig = 1.0 - dot(UV - 0.5, UV - 0.5) * 0.42;
+	float micro = 0.97 + 0.03 * sin(UV.y * 280.0 - TIME * 2.5);
+	c.rgb *= tint * vig * micro;
+	c.a *= 0.96;
 	COLOR = c;
 }
 """
 
 	func _on_resized() -> void:
 		if vp != null and is_instance_valid(vp):
+			var cap := 220 if OS.has_feature("mobile") else 360
+			var mult := 1.5 if OS.has_feature("mobile") else 2.2
+			vp.size = Vector2i(maxi(int(round(size.x * mult)), cap), maxi(int(round(size.y * mult)), cap))
 			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 	func setup(m) -> void:
@@ -90,8 +93,10 @@ void fragment() {
 		vp = SubViewport.new()
 		vp.own_world_3d = true
 		vp.transparent_bg = true
-		vp.msaa_3d = Viewport.MSAA_2X
-		vp.size = Vector2i(maxi(int(round(size.x)), 64), maxi(int(round(size.y)), 64))
+		vp.msaa_3d = Viewport.MSAA_DISABLED if OS.has_feature("mobile") else Viewport.MSAA_4X
+		var cap := 220 if OS.has_feature("mobile") else 360
+		var mult := 1.5 if OS.has_feature("mobile") else 2.2
+		vp.size = Vector2i(maxi(int(round(size.x * mult)), cap), maxi(int(round(size.y * mult)), cap))
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 		add_child(vp)
 		if not resized.is_connected(_on_resized):
@@ -101,6 +106,7 @@ void fragment() {
 		env.environment.background_mode = Environment.BG_CLEAR_COLOR
 		vp.add_child(env)
 		model = MV.build(m.loadout, false, false)
+		model.rotation.y = -0.48
 		vp.add_child(model)
 		var sh := Shader.new()
 		sh.code = HOLO
@@ -112,11 +118,25 @@ void fragment() {
 			flash[slot] = 0.0
 		_assign(model, "core")
 		_merge_slots()
+		var box := AABB()
+		var has_box := false
+		for slot in meshes:
+			for mmi: MeshInstance3D in meshes[slot]:
+				if mmi.mesh != null:
+					var b := mmi.mesh.get_aabb()
+					box = b if not has_box else box.merge(b)
+					has_box = true
+		if not has_box:
+			box = AABB(Vector3(-1.3, 0.0, -1.0), Vector3(2.6, 3.2, 2.0))
+		var center := box.get_center() + Vector3(0.0, box.size.y * 0.02, 0.0)
+		var rad := maxf(maxf(box.size.x, box.size.z) * 0.62, box.size.y * 0.56)
+		var fov := 26.0
+		var dist := maxf((rad / tan(deg_to_rad(fov * 0.5))) * 1.12, 5.2)
+		var cam_pos := center + Vector3(0.0, box.size.y * 0.42, -dist)
 		var cam := Camera3D.new()
-		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		cam.size = 4.1
-		cam.position = Vector3(0, 1.95, -12)
-		cam.rotation_degrees = Vector3(0, 180, 0)
+		cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+		cam.fov = fov
+		cam.transform = Transform3D(Basis.looking_at((center - cam_pos).normalized(), Vector3.UP), cam_pos)
 		vp.add_child(cam)
 		cam.current = true
 
@@ -223,7 +243,7 @@ void fragment() {
 
 	func _col(f: float) -> Color:
 		if f > 0.75:
-			return Color(0.76, 0.82, 0.80)
+			return Color(0.64, 0.72, 0.72)
 		if f > 0.5:
 			return Color(0.84, 0.58, 0.22)
 		if f > 0.25:
@@ -241,7 +261,7 @@ void fragment() {
 		t += delta
 		_rt_acc += delta
 		var dirty := _rt_acc >= 0.05
-		model.rotation.y = sin(t * 0.6) * 0.12
+		model.rotation.y = -0.48 + sin(t * 0.55) * 0.14
 		for slot in mats:
 			var f := part_frac(slot)
 			var band := 4 if f > 0.75 else (3 if f > 0.5 else (2 if f > 0.25 else (1 if f > 0.0 else 0)))
@@ -287,9 +307,16 @@ class AmmoColumn extends Control:
 		font = PixelUI.pixel_font()
 		var id: String = m.loadout.get(s, "")
 		if id == "":
+			visible = false
 			return
-		var a: Dictionary = GameData.AMMO[GameData.module(id).weapon]
-		tex = load("res://assets/ui/%s.png" % a.tex)
+		var w := str(GameData.module(id).get("weapon", "mg"))
+		if not GameData.weapon_uses_ammo(w):
+			# 激光 / 近战工程臂不占弹匣，由能量条与技能槽反馈
+			visible = false
+			return
+		visible = true
+		var a: Dictionary = GameData.AMMO.get(w, {})
+		tex = load("res://assets/ui/%s.png" % str(a.get("tex", "ammo_mg")))
 		mag = int(m.mag[s])
 		bh = bw * float(tex.get_height()) / float(tex.get_width())
 		yoff.clear()
@@ -524,34 +551,49 @@ class CargoStrip extends Control:
 # ====================================================================== 工业风双虚拟摇杆
 class TouchStick extends Control:
 	var title := "MOVE"
-	var fire_mode := false       ## true = 右摇杆（推开超过阈值时亮起开火琥珀/橙红圈）
+	var fire_mode := false       ## true = 右摇杆（三称推开超过阈值开火；一称按住即开火且支持拖移压枪）
+	var fp_mode := false         ## true = 第一人称模式（按下即开火 + 拖移增量转动视角）
 	var value := Vector2.ZERO    ## 归一化输出（模长 0..1）
 	var touch_id := -1           ## >=0 多点触控 index；-2 鼠标拖拽；-1 空闲
-	var outer_r := 64.0
-	var knob_r := 25.0
-	var deadzone := 0.12
-	var fire_zone := 0.28
+	var outer_r := 116.0
+	var knob_r := 48.0
+	var deadzone := 0.10
+	var fire_zone := 0.45
 	var font: Font
+	var _drag_delta := Vector2.ZERO
+	var _last_pt := Vector2.ZERO
+	var _touch_seen_ms := -10000
 
 	func _init(lbl := "MOVE", is_fire := false) -> void:
 		title = lbl
 		fire_mode = is_fire
-		custom_minimum_size = Vector2(156, 156)
-		size = Vector2(156, 156)
+		custom_minimum_size = Vector2(268, 268)
+		size = Vector2(268, 268)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		font = PixelUI.pixel_font()
 
 	func is_active() -> bool:
 		return touch_id != -1
 
+	func is_firing() -> bool:
+		if not fire_mode or not is_active():
+			return false
+		return true if fp_mode else value.length() >= fire_zone
+
+	func consume_drag_delta() -> Vector2:
+		var d := _drag_delta
+		_drag_delta = Vector2.ZERO
+		return d
+
 	func release() -> void:
 		touch_id = -1
 		value = Vector2.ZERO
+		_drag_delta = Vector2.ZERO
 		queue_redraw()
 
 	func _hit(global_pt: Vector2) -> bool:
 		var c := get_global_rect().get_center()
-		return global_pt.distance_to(c) <= outer_r + 20.0
+		return global_pt.distance_to(c) <= outer_r + 12.0
 
 	func _update_from_global(global_pt: Vector2) -> void:
 		var c := get_global_rect().get_center()
@@ -563,93 +605,131 @@ class TouchStick extends Control:
 		value = raw if raw.length() >= deadzone else Vector2.ZERO
 		queue_redraw()
 
+	func _notification(what: int) -> void:
+		if what in [NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_EXIT_TREE]:
+			if touch_id != -1:
+				release()
+		elif what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+			if touch_id != -1:
+				release()
+
+	func _process(_delta: float) -> void:
+		if touch_id == -1:
+			return
+		if not is_visible_in_tree():
+			release()
+			return
+		if touch_id == -2 and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			release()
+
 	func _input(ev: InputEvent) -> void:
 		if not is_visible_in_tree():
 			if touch_id != -1:
 				release()
 			return
 		if ev is InputEventScreenTouch:
-			if ev.pressed:
-				if touch_id == -1 and _hit(ev.position):
-					touch_id = ev.index
-					_update_from_global(ev.position)
-					get_viewport().set_input_as_handled()
-			elif ev.index == touch_id:
-				release()
+			if not ev.pressed or ev.canceled:
+				if ev.index == touch_id or touch_id == -2:
+					release()
+				return
+			if touch_id != -2:
+				_touch_seen_ms = Time.get_ticks_msec()
+			if touch_id == -1 and _hit(ev.position):
+				touch_id = ev.index
+				_last_pt = ev.position
+				_drag_delta = Vector2.ZERO
+				_update_from_global(ev.position)
 				get_viewport().set_input_as_handled()
 		elif ev is InputEventScreenDrag:
 			if ev.index == touch_id:
+				_touch_seen_ms = Time.get_ticks_msec()
+				_drag_delta += ev.position - _last_pt
+				_last_pt = ev.position
 				_update_from_global(ev.position)
 				get_viewport().set_input_as_handled()
 		elif ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
-			if ev.pressed:
-				if touch_id == -1 and _hit(ev.position):
-					touch_id = -2
-					_update_from_global(ev.position)
-					get_viewport().set_input_as_handled()
-			elif touch_id == -2:
-				release()
+			if not ev.pressed:
+				if touch_id == -2:
+					release()
+				return
+			if Time.get_ticks_msec() - _touch_seen_ms < 500:
+				return
+			if touch_id == -1 and _hit(ev.position):
+				touch_id = -2
+				_last_pt = ev.position
+				_drag_delta = Vector2.ZERO
+				_update_from_global(ev.position)
 				get_viewport().set_input_as_handled()
 		elif ev is InputEventMouseMotion:
 			if touch_id == -2:
+				if (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0 and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+					release()
+					return
+				_drag_delta += ev.position - _last_pt
+				_last_pt = ev.position
 				_update_from_global(ev.position)
 				get_viewport().set_input_as_handled()
 
 	func _draw() -> void:
 		var c := size * 0.5
 		var active := is_active()
-		var firing := fire_mode and value.length() >= fire_zone
+		var firing := is_firing()
 		var amber := Color(0.84, 0.40, 0.16) if firing else Color(0.78, 0.48, 0.16)
-		var ring_a := 0.88 if active else 0.58
-		# 装甲暗底盘 + 双层金属刻度环
-		draw_circle(c, outer_r + 4.0, Color(0.03, 0.035, 0.04, 0.58 if active else 0.42))
-		draw_arc(c, outer_r + 2.0, 0, TAU, 56, Color(0.18, 0.19, 0.22, ring_a), 5.0)
-		draw_arc(c, outer_r - 1.5, 0, TAU, 56, Color(amber.r, amber.g, amber.b, 0.65 if active else 0.35), 1.6)
+		var ring_a := 0.56 if active else 0.30
+		# 半透明底盘 + 双层金属刻度环（不遮挡下方战场画面）
+		draw_circle(c, outer_r + 5.0, Color(0.03, 0.035, 0.04, 0.28 if active else 0.16))
+		draw_arc(c, outer_r + 2.5, 0, TAU, 64, Color(0.18, 0.19, 0.22, ring_a), 6.0)
+		draw_arc(c, outer_r - 2.0, 0, TAU, 64, Color(amber.r, amber.g, amber.b, 0.52 if active else 0.26), 2.0)
 		# 四角琥珀强化弧段
 		for q in 4:
 			var a0 := q * PI * 0.5 + 0.32
-			draw_arc(c, outer_r + 2.0, a0, a0 + PI * 0.5 - 0.64, 12, Color(amber.r, amber.g, amber.b, 0.72 if active else 0.4), 3.0)
+			draw_arc(c, outer_r + 2.5, a0, a0 + PI * 0.5 - 0.64, 14, Color(amber.r, amber.g, amber.b, 0.60 if active else 0.30), 3.6)
 		# 刻度线与十字基准线
 		for k in 16:
 			var a := k * TAU / 16.0
 			var d := Vector2(cos(a), sin(a))
 			var major := k % 4 == 0
-			draw_line(c + d * (outer_r - (8.0 if major else 4.0)), c + d * (outer_r + 1.0), Color(amber.r, amber.g, amber.b, 0.68 if major else 0.28), 2.0 if major else 1.0)
+			draw_line(c + d * (outer_r - (11.0 if major else 5.5)), c + d * (outer_r + 1.5), Color(amber.r, amber.g, amber.b, 0.52 if major else 0.20), 2.2 if major else 1.2)
 		# 内圈死区 / 开火阈值环
-		var inner_r := outer_r * (fire_zone if fire_mode else deadzone * 1.8)
-		draw_arc(c, inner_r, 0, TAU, 36, Color(amber.r, amber.g, amber.b, 0.36 if firing else 0.18), 1.2)
+		if not (fire_mode and fp_mode):
+			var inner_r := outer_r * (fire_zone if fire_mode else deadzone * 1.8)
+			draw_arc(c, inner_r, 0, TAU, 44, Color(amber.r, amber.g, amber.b, 0.28 if firing else 0.14), 1.4)
 		# 四向箭头导引
 		for d: Vector2 in [Vector2(0, -1), Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0)]:
-			var p: Vector2 = c + d * (outer_r - 13.0)
+			var p: Vector2 = c + d * (outer_r - 22.0)
 			var s := Vector2(-d.y, d.x)
-			draw_colored_polygon(PackedVector2Array([p + d * 4.5, p - d * 2.5 + s * 4.0, p - d * 2.5 - s * 4.0]), Color(amber.r, amber.g, amber.b, 0.55 if active else 0.32))
-		# 摇杆推杆连线与帽头
-		var max_r := maxf(outer_r - knob_r * 0.45, 24.0)
-		var kp := c + value * max_r
-		if value.length() > 0.02:
-			draw_line(c, kp, Color(amber.r, amber.g, amber.b, 0.55), 3.0)
-		draw_circle(kp + Vector2(0, 2), knob_r + 2.0, Color(0, 0, 0, 0.55))
-		draw_circle(kp, knob_r, Color(0.14, 0.15, 0.17, 0.94))
-		draw_arc(kp, knob_r, 0, TAU, 32, Color(amber.r, amber.g, amber.b, 0.95 if active else 0.68), 2.4)
-		draw_circle(kp, knob_r * 0.42, Color(amber.r, amber.g, amber.b, 0.85 if active else 0.45))
+			draw_colored_polygon(PackedVector2Array([p + d * 8.0, p - d * 4.5 + s * 7.2, p - d * 4.5 - s * 7.2]), Color(amber.r, amber.g, amber.b, 0.48 if active else 0.24))
+		# 摇杆推杆连线与半透明帽头
+		var max_r := maxf(outer_r - knob_r * 0.45, 42.0)
+		var kp := c if (fire_mode and fp_mode) else c + value * max_r
+		if not (fire_mode and fp_mode) and value.length() > 0.02:
+			draw_line(c, kp, Color(amber.r, amber.g, amber.b, 0.46), 4.0)
+		var kr := knob_r * (1.16 if (fire_mode and fp_mode) else 1.0)
+		draw_circle(kp + Vector2(0, 2.5), kr + 2.5, Color(0, 0, 0, 0.28 if active else 0.16))
+		draw_circle(kp, kr, Color(0.18, 0.12, 0.09, 0.54) if firing else Color(0.14, 0.15, 0.17, 0.48 if active else 0.32))
+		draw_arc(kp, kr, 0, TAU, 44, Color(amber.r, amber.g, amber.b, 0.78 if active else 0.46), 3.0)
+		draw_circle(kp, kr * 0.42, Color(amber.r, amber.g, amber.b, 0.68 if active else 0.34))
 		if fire_mode:
-			# 右摇杆准星小十字
 			for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-				draw_line(kp + dv * 4.0, kp + dv * 9.0, Color(0.90, 0.90, 0.86, 0.85), 1.5)
+				draw_line(kp + dv * 6.8, kp + dv * (19.0 if fp_mode else 16.0), Color(0.94, 0.90, 0.84, 0.72 if active else 0.46), 2.4 if fp_mode else 2.0)
 
 
-# ====================================================================== 战术触控圆钮（纯图标：冲刺 / 机能 / 换弹）
+# ====================================================================== 战术触控圆钮（纯图标：冲刺 / 机能 / 换弹 / 瞄准 / 开火 / 视角）
 class TouchBtn extends Control:
 	var mech
-	var kind := "dash"           ## "dash" / "ability" / "reload"
+	var hud
+	var kind := "dash"           ## "dash" / "ability" / "reload" / "aim" / "fire" / "view"
 	var press_t := 0.0
 	var font: Font
 	var _last_ms := -1000
 	var _icon_id := ""
 	var _icon: Texture2D
+	var _hold_touch_id := -1
+	var _touch_seen_ms := -10000
 
-	func setup(m, k: String, _t: String, _s: String, rad := 29.0) -> void:
+	func setup(m, k: String, _t: String, _s: String, rad := 29.0, h = null) -> void:
 		mech = m
+		hud = h
 		kind = k
 		custom_minimum_size = Vector2(rad * 2.0, rad * 2.0)
 		size = Vector2(rad * 2.0, rad * 2.0)
@@ -659,6 +739,26 @@ class TouchBtn extends Control:
 		font = PixelUI.pixel_font()
 		_icon_id = ""
 		_icon = null
+
+	func is_held() -> bool:
+		return _hold_touch_id != -1
+
+	func release() -> void:
+		_hold_touch_id = -1
+		queue_redraw()
+
+	func _hit_pt(global_pt: Vector2) -> bool:
+		var c := get_global_rect().get_center()
+		var r := minf(size.x, size.y) * 0.5 + 4.0
+		return global_pt.distance_to(c) <= r
+
+	func _notification(what: int) -> void:
+		if what in [NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_EXIT_TREE]:
+			if _hold_touch_id != -1:
+				release()
+		elif what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+			if _hold_touch_id != -1:
+				release()
 
 	func _sync_icon(icon_name: String) -> void:
 		if _icon_id == icon_name:
@@ -676,18 +776,71 @@ class TouchBtn extends Control:
 		press_t = 1.0
 		match kind:
 			"dash":
+				if hud != null and hud.has_method("clear_touch_aim"):
+					hud.clear_touch_aim()
 				mech.try_dash(mech.move_vec())
 			"ability":
 				mech.try_ability()
 			"reload":
 				mech.reload_all()
+			"aim":
+				if hud != null and hud.has_method("toggle_touch_aim"):
+					hud.toggle_touch_aim()
+			"view":
+				if mech.raid != null and mech.raid.has_method("toggle_view_mode"):
+					mech.raid.toggle_view_mode()
+
+	func _input(ev: InputEvent) -> void:
+		if not is_visible_in_tree():
+			if _hold_touch_id != -1:
+				release()
+			return
+		if kind != "fire":
+			if ev is InputEventScreenTouch and ev.pressed and not ev.canceled and _hit_pt(ev.position):
+				_touch_seen_ms = Time.get_ticks_msec()
+				_trigger()
+				get_viewport().set_input_as_handled()
+			return
+		if ev is InputEventScreenTouch:
+			if not ev.pressed or ev.canceled:
+				if ev.index == _hold_touch_id or _hold_touch_id == -2:
+					release()
+				return
+			if _hold_touch_id != -2:
+				_touch_seen_ms = Time.get_ticks_msec()
+			if _hold_touch_id == -1 and _hit_pt(ev.position):
+				_hold_touch_id = ev.index
+				press_t = 1.0
+				get_viewport().set_input_as_handled()
+		elif ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+			if not ev.pressed:
+				if _hold_touch_id == -2:
+					release()
+				return
+			if Time.get_ticks_msec() - _touch_seen_ms < 500:
+				return
+			if _hold_touch_id == -1 and _hit_pt(ev.position):
+				_hold_touch_id = -2
+				press_t = 1.0
+				get_viewport().set_input_as_handled()
 
 	func _gui_input(ev: InputEvent) -> void:
-		if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
+		if kind == "fire":
+			return
+		if ev is InputEventScreenTouch:
+			if ev.pressed and not ev.canceled:
+				_touch_seen_ms = Time.get_ticks_msec()
+				_trigger()
+				accept_event()
+		elif ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			if Time.get_ticks_msec() - _touch_seen_ms < 500:
+				return
 			_trigger()
 			accept_event()
 
 	func _process(delta: float) -> void:
+		if _hold_touch_id == -2 and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			release()
 		press_t = maxf(0.0, press_t - delta * 5.0)
 		queue_redraw()
 
@@ -698,6 +851,7 @@ class TouchBtn extends Control:
 		var r := minf(size.x, size.y) * 0.5 - 2.0
 		var cd_frac := 0.0
 		var ok := true
+		var active_state := false
 		if kind in ["dash", "ability"]:
 			var sk_k := "space" if kind == "dash" else "f"
 			var info: Dictionary = mech.skill_info(sk_k)
@@ -707,18 +861,47 @@ class TouchBtn extends Control:
 				cd_frac = clampf(float(info.cd) / maxf(float(info.cd_max), 0.01), 0.0, 1.0)
 		elif kind == "reload":
 			cd_frac = maxf(mech.reload_frac("arm_l"), mech.reload_frac("arm_r"))
-		var amber := Color(0.78, 0.48, 0.16) if ok else Color(0.42, 0.44, 0.46)
-		draw_circle(c + Vector2(0, 2), r + 1.0, Color(0, 0, 0, 0.55))
-		draw_circle(c, r, Color(0.085, 0.092, 0.098, 0.92).lerp(amber, press_t * 0.42))
-		draw_arc(c, r, 0, TAU, 40, Color(amber.r, amber.g, amber.b, 0.88 if cd_frac <= 0.0 else 0.35), 2.0, true)
+		elif kind == "aim":
+			active_state = hud != null and bool(hud.get("touch_aim_on"))
+		elif kind == "fire":
+			active_state = is_held()
+		elif kind == "view":
+			active_state = mech.raid != null and mech.raid.has_method("is_first_person") and mech.raid.is_first_person()
+		var boost := maxf(press_t, 1.0 if active_state else 0.0)
+		var amber := Color(0.92, 0.52, 0.16) if active_state else (Color(0.78, 0.48, 0.16) if ok else Color(0.42, 0.44, 0.46))
+		draw_circle(c + Vector2(0, 2), r + 1.0, Color(0, 0, 0, lerpf(0.16, 0.30, boost)))
+		var bg_col := Color(0.085, 0.092, 0.098).lerp(amber, 0.24 if active_state else press_t * 0.42)
+		draw_circle(c, r, Color(bg_col.r, bg_col.g, bg_col.b, lerpf(0.26, 0.46, boost)))
+		var border_a := lerpf(0.42 if cd_frac <= 0.0 else 0.22, 0.72, boost)
+		draw_arc(c, r, 0, TAU, 44, Color(amber.r, amber.g, amber.b, border_a), 2.6 if active_state else 2.2, true)
 		if cd_frac > 0.0:
-			draw_arc(c, r - 3.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - cd_frac), 28, Color(0.84, 0.56, 0.22, 0.92), 3.0, true)
+			draw_arc(c, r - 3.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - cd_frac), 32, Color(0.84, 0.56, 0.22, 0.56), 3.0, true)
+		var icon_a := lerpf(0.50 if ok else 0.26, 0.80, boost)
+		var ic := Color(0.94, 0.92, 0.86, icon_a) if ok else Color(0.45, 0.45, 0.48, icon_a)
 		if kind in ["dash", "ability"] and _icon != null:
 			var isz := Vector2(r * 1.1, r * 1.1)
-			draw_texture_rect(_icon, Rect2(c - isz * 0.5, isz), false, Color(0.90, 0.90, 0.86) if ok else Color(0.45, 0.45, 0.48))
+			var tex_c := Color(0.90, 0.90, 0.86, icon_a) if ok else Color(0.45, 0.45, 0.48, icon_a)
+			draw_texture_rect(_icon, Rect2(c - isz * 0.5, isz), false, tex_c)
 		elif kind == "reload":
 			var rr := r * 0.46
-			var ic := Color(0.90, 0.90, 0.86, 0.92)
-			draw_arc(c, rr, -0.4, TAU - 1.15, 20, ic, 2.2)
+			draw_arc(c, rr, -0.4, TAU - 1.15, 24, ic, 2.4)
 			var tip := c + Vector2(cos(-0.4), sin(-0.4)) * rr
-			draw_colored_polygon(PackedVector2Array([tip + Vector2(2, 4), tip + Vector2(4, -3), tip + Vector2(-4, -1)]), ic)
+			draw_colored_polygon(PackedVector2Array([tip + Vector2(2.5, 4.8), tip + Vector2(4.8, -3.5), tip + Vector2(-4.8, -1.2)]), ic)
+		elif kind == "aim":
+			var rr := r * 0.44
+			draw_arc(c, rr, 0, TAU, 28, ic, 2.0, true)
+			for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				draw_line(c + dv * (rr * 0.45), c + dv * (rr * 1.38), ic, 2.0)
+			draw_circle(c, 2.6, Color(amber.r, amber.g, amber.b, icon_a) if active_state else ic)
+		elif kind == "fire":
+			var rr := r * 0.42
+			draw_arc(c, rr, 0, TAU, 28, ic, 2.2, true)
+			for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				draw_line(c + dv * (rr * 0.35), c + dv * (rr * 1.32), ic, 2.2)
+			draw_circle(c, 3.6, Color(amber.r, amber.g, amber.b, icon_a))
+		elif kind == "view":
+			var ew := r * 0.54
+			var eh := r * 0.32
+			draw_arc(c + Vector2(0, eh * 0.25), ew, -PI * 0.85, -PI * 0.15, 18, ic, 2.0, true)
+			draw_arc(c - Vector2(0, eh * 0.25), ew, PI * 0.15, PI * 0.85, 18, ic, 2.0, true)
+			draw_circle(c, r * 0.18, Color(amber.r, amber.g, amber.b, icon_a) if active_state else ic)

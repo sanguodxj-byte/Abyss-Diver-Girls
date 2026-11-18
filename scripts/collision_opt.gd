@@ -245,7 +245,7 @@ static func collect(world: Node) -> Array:
 	var out: Array = []
 	for b: Node in world.find_children("*", "StaticBody3D", true, false):
 		var sb := b as StaticBody3D
-		if (sb.collision_layer & 1) == 0 or sb.is_in_group("lootboxes") or sb.is_in_group("nests") or sb.is_in_group("bugs"):
+		if (sb.collision_layer & 1) == 0 or sb.is_in_group("lootboxes") or sb.is_in_group("nests") or sb.is_in_group("bugs") or sb.has_meta("backdrop_static"):
 			continue
 		var fixed := sb.get_script() != null
 		for ch in sb.get_children():

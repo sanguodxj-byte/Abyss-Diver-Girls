@@ -34,6 +34,7 @@ func _ready() -> void:
 	panel.add_theme_stylebox_override("panel", K.px9("panel9", 16, 16, 16, 14))
 	panel.custom_minimum_size = Vector2(820, 0)
 	center.add_child(panel)
+	UI.bind_fit_panel(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	panel.add_child(col)
@@ -194,7 +195,8 @@ func refresh() -> void:
 	address_edit.editable = not active
 	password_edit.editable = not active
 	port_edit.editable = not active
-	map_select.disabled = not Net.is_host() or Net.state != "lobby"
+	var is_leader: bool = Net.is_host() or (Net.is_dedicated_client() and Net.local_id() == Net.leader_id())
+	map_select.disabled = (not is_leader) or Net.state != "lobby"
 	map_select.select(maxi(0, _maps.find(Net.room_map)))
 	ready_button.disabled = Net.state != "lobby"
 	ready_button.text = Loc.t("取消准备", "Unready") if Net.players.get(Net.local_id(), {}).get("ready", false) else Loc.t("准备", "Ready")
@@ -207,6 +209,7 @@ func refresh() -> void:
 	if ids.is_empty():
 		var empty := UI.label(Loc.t("尚未连接任何小队节点", "No squad nodes connected"), 12, K.CREAM_DIM)
 		roster.add_child(empty)
+	var leader_pid := Net.leader_id()
 	for id in ids:
 		var is_ready := bool(Net.players[id].ready)
 		var card := K.card(is_ready, 8)
@@ -214,7 +217,9 @@ func refresh() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		card.add_child(row)
-		var role_tag := K.tag(Loc.t("★ 房主", "★ Host") if id == 1 else Loc.t("队员", "Member"), id == 1)
+		var is_top: bool = (id == 1) or (Net.dedicated and id == leader_pid)
+		var role_txt := (Loc.t("★ 房主", "★ Host") if id == 1 else Loc.t("★ 队长", "★ Leader")) if is_top else Loc.t("队员", "Member")
+		var role_tag := K.tag(role_txt, is_top)
 		row.add_child(role_tag)
 		var lab := UI.label(str(Net.players[id].name), 12, K.CREAM)
 		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -227,10 +232,13 @@ func refresh() -> void:
 		"offline": status.text = Net.last_error if Net.last_error != "" else Loc.t("先在机库装备完整机甲并装好货舱，再创建或加入房间。", "Equip a complete mech and cargo in the hangar before hosting or joining.")
 		"connecting": status.text = Loc.t("正在连接 %s:%d…（可点击离开取消）", "Connecting to %s:%d... (click Leave to cancel)") % [Net.address, Net.port]
 		"lobby":
-			var ips: PackedStringArray = []
-			for ip in IP.get_local_addresses():
-				if ip.contains(".") and not ip.begins_with("127.") and not ip.begins_with("169.254."): ips.append(ip)
-			status.text = ((Loc.t("房主地址：%s  ·  端口 %d\n", "Host: %s  ·  UDP %d\n") % [", ".join(ips), Net.port]) if Net.is_host() else Loc.t("已连接房主。\n", "Connected to host.\n")) + Loc.t("至少两人，全员准备后出击。返回整备会取消准备。", "Requires 2+ pilots ready to deploy. Returning to hangar clears ready.")
+			if Net.dedicated:
+				status.text = Loc.t("已连接专用服务器 · 1–4 人全员准备后自动出击，队长也可切换战区或立即开局。", "Connected to dedicated server · Auto-deploys when all 1-4 pilots ready; leader can pick sector.")
+			else:
+				var ips: PackedStringArray = []
+				for ip in IP.get_local_addresses():
+					if ip.contains(".") and not ip.begins_with("127.") and not ip.begins_with("169.254."): ips.append(ip)
+				status.text = ((Loc.t("房主地址：%s  ·  端口 %d\n", "Host: %s  ·  UDP %d\n") % [", ".join(ips), Net.port]) if Net.is_host() else Loc.t("已连接房主。\n", "Connected to host.\n")) + Loc.t("至少两人，全员准备后出击。返回整备会取消准备。", "Requires 2+ pilots ready to deploy. Returning to hangar clears ready.")
 		"results": status.text = Loc.t("等待其他队员确认结算并返回机库…", "Waiting for squadmates to confirm results...")
 		_: status.text = Loc.t("正在同步小队状态…", "Syncing squad state...")
 	_refreshing = false

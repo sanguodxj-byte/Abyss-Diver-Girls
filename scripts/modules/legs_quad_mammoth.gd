@@ -61,21 +61,23 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.cy(leg, 0.26, 0.42, M_DARK, Vector3(0, 0.0, 0.04), Vector3.ZERO, 0.28, 20)
 		K.bolt_ring(leg, 0.21, 8, 0.016, Vector3(0, 0.215, 0.04), Vector3.ZERO)
 
-		# 水平粗壮悬臂梁（H -> KN）+ 顶部斜拉液压油缸
-		var up := K.bone(leg, H, KN)
+		# 水平粗壮悬臂梁枢轴（H -> KN）+ 顶部斜拉液压油缸
+		var fm := K.node(leg, H, Vector3.ZERO, "Femur")
+		var up := K.bone(fm, H, KN)
 		var l1 := H.distance_to(KN)
 		K.bb(up, Vector3(0.42, l1 * 0.96, 0.36), M_LEG2, Vector3(0, -l1 * 0.5, 0.0), Vector3.ZERO, 0.04)
 		K.plate(up, K.crect(0.46, l1 * 0.82, [0.06, 0.06, 0.06, 0.06]), 0.12, M_LEG, Vector3(0, -l1 * 0.5, 0.18), Vector3.ZERO, 0.025)
 		K.plate(up, K.crect(0.38, 0.065), 0.13, M_ACC, Vector3(0, -l1 * 0.5, 0.19), Vector3.ZERO, 0.005)
-		K.piston(leg, Vector3(0, 0.22, 0.12), KN + Vector3(0, 0.24, -0.06), 0.044)
+		K.piston(fm, Vector3(0, 0.22, 0.12), KN + Vector3(0, 0.24, -0.06), 0.044)
 
 		# 柱顶方形套筒耳轴箱（KN）+ 顶部高压油封端盖
-		K.bb(leg, Vector3(0.48, 0.42, 0.48), M_GUN, KN + Vector3(0, 0.04, 0.02), Vector3.ZERO, 0.04)
+		K.bb(fm, Vector3(0.48, 0.42, 0.48), M_GUN, KN + Vector3(0, 0.04, 0.02), Vector3.ZERO, 0.04)
 		for cx_p in [-0.13, 0.13]:
-			K.cy(leg, 0.075, 0.16, K.brass(), KN + Vector3(cx_p, 0.28, 0.02), Vector3.ZERO, -1.0, 12)
+			K.cy(fm, 0.075, 0.16, K.brass(), KN + Vector3(cx_p, 0.28, 0.02), Vector3.ZERO, -1.0, 12)
 
-		# 垂直重型套筒液压打桩柱（KN -> FT）：上段厚装甲导套 + 下段双粗镀铬主油缸杆 + 侧面防撞护板
-		var lo := K.bone(leg, KN, FT)
+		# 垂直重型套筒液压打桩柱枢轴（KN -> FT）：上段厚装甲导套 + 下段双粗镀铬主油缸杆 + 侧面防撞护板
+		var kj := K.node(fm, KN, Vector3.ZERO, "Knee")
+		var lo := K.bone(kj, Vector3.ZERO, FT - KN)
 		var l2 := KN.distance_to(FT)
 		K.bb(lo, Vector3(0.46, l2 * 0.56, 0.44), M_LEG, Vector3(0, -l2 * 0.28, 0.0), Vector3.ZERO, 0.045)
 		A.rivets(lo, Vector3(0.24, -0.12, 0.14), Vector3(0.24, -l2 * 0.52, 0.14), 4, 0.018, Vector3(0, 0, 90))
@@ -85,10 +87,11 @@ static func build(ctx: Dictionary) -> Node3D:
 		for cx_r in [-0.13, 0.13]:
 			K.cy(lo, 0.068, l2 * 0.88, A.chrome(), Vector3(cx_r, -l2 * 0.52, 0.04), Vector3.ZERO, -1.0, 14)
 			K.cy(lo, 0.088, 0.06, K.brass(), Vector3(cx_r, -l2 * 0.56, 0.04), Vector3.ZERO, -1.0, 14)
-		A.hose(leg, Vector3(0.20, 0.16, 0.34), KN + Vector3(0.22, -0.36, 0.10), Vector3(0.10, 0.06, 0.10), 0.028)
+		A.hose(kj, Vector3(0.20, 0.06, -0.40), Vector3(0.22, -0.36, 0.10), Vector3(0.10, 0.06, 0.10), 0.028)
 
-		# 八角重型工程调平驻锄圆盘巨足 + 四向钢制抓地齿块
-		var pad := K.node(leg, FT + Vector3(0, 0.02, 0))
+		# 踝枢轴与八角重型工程调平驻锄圆盘巨足 + 四向钢制抓地齿块
+		var aj := K.node(kj, FT - KN, Vector3.ZERO, "Ankle")
+		var pad := K.node(aj, Vector3(0, 0.02, 0))
 		K.cy(pad, 0.18, 0.14, M_DARK, Vector3(0, 0.08, 0), Vector3.ZERO, 0.22, 16)
 		K.plate(pad, K.crect(0.62, 0.62, [0.16, 0.16, 0.16, 0.16]), 0.09, M_LEG2, Vector3(0, 0.01, 0), Vector3(90, 0, 0), 0.022)
 		K.cy(pad, 0.31, 0.05, A.rubber(), Vector3(0, -0.055, 0), Vector3.ZERO, 0.33, 18)
@@ -96,6 +99,12 @@ static func build(ctx: Dictionary) -> Node3D:
 			var ca := ci * 90.0 + 45.0
 			var cl := K.node(pad, Vector3.ZERO, Vector3(0, ca, 0))
 			K.bb(cl, Vector3(0.12, 0.08, 0.16), M_GUN, Vector3(0, -0.01, 0.28), Vector3(16, 0, 0), 0.012)
+		leg.set_meta("femur", fm)
+		leg.set_meta("knee", kj)
+		leg.set_meta("ankle", aj)
+		leg.set_meta("KN", KN)
+		leg.set_meta("AN", FT)
+		leg.set_meta("base_yaw", leg.rotation.y)
 		leg_parts.append(leg)
 
 	K.socket(root, "core", Vector3(0, hip + 0.56, 0), Vector3.UP)

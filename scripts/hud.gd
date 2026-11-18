@@ -9,6 +9,7 @@ const Icons = preload("res://scripts/item_icons.gd")
 const HL = preload("res://scripts/hud_l.gd")
 const RadioWindow = preload("res://scripts/story/radio_window.gd")
 const RaidInv = preload("res://scripts/raid_inv.gd")
+const EnemyHpBars = preload("res://scripts/hud_enemy_bars.gd")
 
 var raid
 var root: Control
@@ -43,8 +44,15 @@ var extract_lbl: Label
 var prompt_panel: PanelContainer
 var prompt_lbl: Label
 var log_box: VBoxContainer
+var status_root: Control
+var ammo_rail: Control
+var sys_clip: Control
+var sys_col: VBoxContainer
+var coop_bar: PanelContainer
+var coop_lbl: Label
 var vignette: TextureRect
 var markers := {}
+var enemy_bars
 var crosshair
 var bigmap
 # 局内战术整备与搜刮面板
@@ -52,6 +60,7 @@ var loot_panel: Control
 var pause_dim: ColorRect
 var pause_panel: PanelContainer
 var settings_panel: PanelContainer
+var _view_opt: OptionButton
 var hurt_t := 0.0
 var smoke_rect: ColorRect
 var scope_rect: ColorRect
@@ -61,6 +70,11 @@ var radio                       ## 无线电通讯小窗：剧情流程在行动
 var touch_layer: Control        ## 手机端双摇杆与触控快捷按键层
 var joy_left                    ## 左虚拟摇杆（移动）
 var joy_right                   ## 右虚拟摇杆（瞄准 + 射击）
+var joy_fire                    ## 左手辅助开火钮（第一人称模式）
+var touch_aim_btn               ## 触控开镜/精密瞄准开关
+var touch_view_btn              ## 触控 1/3 人称切换钮
+var touch_aim_on := false
+var _last_touch_btn_ms := -1000
 var _touch_revealed := false
 
 
@@ -71,6 +85,24 @@ static func style(bg := UI.BG, border := UI.LINE) -> StyleBox:
 
 static func label(text := "", size := 16, c := UI.TEXT) -> Label:
 	return UI.label(text, size, c, true)
+
+
+static func _hud_glass_box(bg: Color, accent: Color, left_w := 3, pad_h := 9, pad_v := 4) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = accent
+	sb.set_border_width_all(0)
+	sb.border_width_left = left_w
+	sb.corner_radius_top_left = 0
+	sb.corner_radius_bottom_left = 0
+	sb.corner_radius_top_right = 2
+	sb.corner_radius_bottom_right = 2
+	sb.content_margin_left = pad_h + left_w
+	sb.content_margin_right = pad_h
+	sb.content_margin_top = pad_v
+	sb.content_margin_bottom = pad_v
+	sb.anti_aliasing = true
+	return sb
 
 
 func setup(r) -> void:
@@ -103,8 +135,8 @@ func setup(r) -> void:
 	vignette.modulate.a = 0.0
 	# 常驻暗角（压暗四周，把视线收到画面中央），放在受伤暗角之下
 	var g2 := Gradient.new()
-	g2.offsets = PackedFloat32Array([0.0, 0.68, 1.0])
-	g2.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.0), Color(0.02, 0.02, 0.02, 0.45)])
+	g2.offsets = PackedFloat32Array([0.0, 0.72, 1.0])
+	g2.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.0), Color(0.02, 0.02, 0.02, 0.22)])
 	var gt2 := GradientTexture2D.new()
 	gt2.gradient = g2
 	gt2.fill = GradientTexture2D.FILL_RADIAL
@@ -130,7 +162,7 @@ shader_type canvas_item;
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 uniform vec2 cam_off = vec2(0.0);
 uniform vec4 tint : source_color = vec4(0.66, 0.63, 0.56, 1.0);
-uniform float strength = 0.018;
+uniform float strength = 0.005;
 void fragment(){
 	vec2 uv = (UV * vec2(1.78, 1.0) * 2.2 + cam_off) * 0.12;
 	float t = TIME * 0.003;
@@ -215,7 +247,12 @@ void fragment(){
 			visor.draw_line(pt, pt + Vector2(0, arm * sy), col, 1.5))
 	root.add_child(visor)
 
-	_touch_revealed = OS.has_feature("mobile")
+	enemy_bars = EnemyHpBars.new()
+	enemy_bars.raid = raid
+	enemy_bars.hud = self
+	root.add_child(enemy_bars)
+
+	_touch_revealed = OS.has_feature("mobile") or "--mobile" in OS.get_cmdline_user_args() or "--mobile" in OS.get_cmdline_args()
 	_build_status()
 	_build_radar()
 	_build_weapons()
@@ -254,6 +291,16 @@ void fragment(){
 	_update_cursor()
 
 
+func notify_hit() -> void:
+	if crosshair != null and is_instance_valid(crosshair) and crosshair.has_method("trigger_hit"):
+		crosshair.trigger_hit()
+
+
+func notify_enemy_hit(node: Node3D, prev_hp: float, cur_hp: float, max_hp: float) -> void:
+	if enemy_bars != null and is_instance_valid(enemy_bars):
+		enemy_bars.notify_hit(node, prev_hp, cur_hp, max_hp)
+
+
 func _exit_tree() -> void:
 	if radio != null and is_instance_valid(radio):
 		Story.detach_radio(radio)
@@ -273,6 +320,7 @@ func _build_status() -> void:
 	L.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	L.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	root.add_child(L)
+	status_root = L
 	var CH := 168.0  # 拐角面板边长
 	var base_y := 560.0 - CH
 	# 竖轨（子弹栏）：贴在拐角上方（HD2 扁平战术装甲背板）
@@ -282,6 +330,7 @@ func _build_status() -> void:
 	rv.position = Vector2(10, base_y - rail_h - 14)
 	rv.size = Vector2(rail_w, rail_h + 20)
 	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ammo_rail = rv
 	rv.draw.connect(func():
 		var sz := rv.size
 		var ch := 10.0
@@ -464,15 +513,19 @@ func _build_radar() -> void:
 	radar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	radar.gui_input.connect(func(ev: InputEvent):
 		if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
-			toggle_map()
+			if _touch_btn_ok():
+				toggle_map()
 			radar.accept_event())
 	v.add_child(radar)
-	transport_panel = UI.panel(8)
+	transport_panel = PanelContainer.new()
+	transport_panel.add_theme_stylebox_override("panel", _hud_glass_box(Color(0.062, 0.068, 0.076, 0.36), UI.ACCENT, 3, 8, 4))
 	transport_panel.size_flags_horizontal = Control.SIZE_SHRINK_END
+	transport_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	transport_panel.visible = false
 	v.add_child(transport_panel)
 	transport_lbl = UI.label("", 12, UI.EN_C, true)
 	transport_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	transport_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	transport_panel.add_child(transport_lbl)
 
 
@@ -525,7 +578,7 @@ func _build_weapons() -> void:
 		c.panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		c.panel.gui_input.connect(func(ev: InputEvent):
 			if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
-				if raid and raid.mech and not raid.mech.input_locked:
+				if _touch_btn_ok() and raid and raid.mech and not raid.mech.input_locked:
 					if item_id == "beacon":
 						raid.call_transport()
 					else:
@@ -535,57 +588,124 @@ func _build_weapons() -> void:
 		item_cards[item_id] = c
 
 
+func _touch_btn_ok() -> bool:
+	var now := Time.get_ticks_msec()
+	if now - _last_touch_btn_ms < 80:
+		return false
+	_last_touch_btn_ms = now
+	return true
+
+
 func _build_touch_controls() -> void:
 	touch_layer = Control.new()
+	touch_layer.z_index = 22
 	touch_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if OS.has_feature("mobile"):
+		var safe: Rect2i = DisplayServer.get_display_safe_area()
+		var win_sz: Vector2i = DisplayServer.window_get_size()
+		var vis_sz: Vector2 = get_viewport().get_visible_rect().size
+		if win_sz.x > 0 and win_sz.y > 0 and safe.size.x > 0 and safe.size.y > 0 and vis_sz.x > 0.0 and vis_sz.y > 0.0:
+			var sx := vis_sz.x / float(win_sz.x)
+			var sy := vis_sz.y / float(win_sz.y)
+			touch_layer.offset_left = maxf(0.0, float(safe.position.x) * sx)
+			touch_layer.offset_top = maxf(0.0, float(safe.position.y) * sy)
+			touch_layer.offset_right = -maxf(0.0, float(win_sz.x - (safe.position.x + safe.size.x)) * sx)
+			touch_layer.offset_bottom = -maxf(0.0, float(win_sz.y - (safe.position.y + safe.size.y)) * sy)
 	touch_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(touch_layer)
 	# 左摇杆：左下子弹轨右侧、SPACE/F 技能栏上方（左手拇指舒适区）
 	joy_left = HL.TouchStick.new(Loc.t("移动", "Move"), false)
 	joy_left.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	joy_left.offset_left = 148
-	joy_left.offset_right = 148 + 156
-	joy_left.offset_bottom = -176
-	joy_left.offset_top = -176 - 156
+	joy_left.offset_left = 176
+	joy_left.offset_right = 176 + 268
+	joy_left.offset_bottom = -146
+	joy_left.offset_top = -146 - 268
 	touch_layer.add_child(joy_left)
-	# 右摇杆：右下消耗品卡上方（右手拇指瞄准与推到底自动射击）
+	# 右摇杆：三称下为瞄准/射击双摇杆；一称下为按住开火+拖移压枪触发区
 	joy_right = HL.TouchStick.new(Loc.t("瞄准 / 射击", "Aim / Fire"), true)
 	joy_right.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	joy_right.offset_right = -32
-	joy_right.offset_left = -32 - 156
-	joy_right.offset_bottom = -94
-	joy_right.offset_top = -94 - 156
+	joy_right.offset_right = -20
+	joy_right.offset_left = -20 - 268
+	joy_right.offset_bottom = -82
+	joy_right.offset_top = -82 - 268
 	touch_layer.add_child(joy_right)
-	# 右摇杆外弧快捷触控键：右手拇指不离开右半屏即可触发 SPACE 冲刺、F 机能与手动换弹
+	# 右摇杆外弧快捷触控键：右手拇指不离开右半屏即可触发 SPACE 冲刺、F 机能、换弹与开镜瞄准
 	var m = raid.mech
 	var b_dash := HL.TouchBtn.new()
-	b_dash.setup(m, "dash", Loc.t("冲刺", "Dash"), Loc.space_key(), 28.0)
+	b_dash.setup(m, "dash", Loc.t("冲刺", "Dash"), Loc.space_key(), 45.0, self)
 	b_dash.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	b_dash.offset_right = -204
-	b_dash.offset_left = -204 - 56
+	b_dash.offset_right = -298
+	b_dash.offset_left = -298 - 90
 	b_dash.offset_bottom = -162
-	b_dash.offset_top = -162 - 56
+	b_dash.offset_top = -162 - 90
 	touch_layer.add_child(b_dash)
 	var b_ab := HL.TouchBtn.new()
-	b_ab.setup(m, "ability", Loc.t("机能", "Ability"), "F", 28.0)
+	b_ab.setup(m, "ability", Loc.t("机能", "Ability"), "F", 45.0, self)
 	b_ab.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	b_ab.offset_right = -158
-	b_ab.offset_left = -158 - 56
-	b_ab.offset_bottom = -232
-	b_ab.offset_top = -232 - 56
+	b_ab.offset_right = -274
+	b_ab.offset_left = -274 - 90
+	b_ab.offset_bottom = -268
+	b_ab.offset_top = -268 - 90
 	touch_layer.add_child(b_ab)
 	var b_rld := HL.TouchBtn.new()
-	b_rld.setup(m, "reload", Loc.t("换弹", "Reload"), "R", 25.0)
+	b_rld.setup(m, "reload", Loc.t("换弹", "Reload"), "R", 42.0, self)
 	b_rld.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	b_rld.offset_right = -212
-	b_rld.offset_left = -212 - 50
-	b_rld.offset_bottom = -96
-	b_rld.offset_top = -96 - 50
+	b_rld.offset_right = -264
+	b_rld.offset_left = -264 - 84
+	b_rld.offset_bottom = -64
+	b_rld.offset_top = -64 - 84
 	touch_layer.add_child(b_rld)
+	touch_aim_btn = HL.TouchBtn.new()
+	touch_aim_btn.setup(m, "aim", Loc.t("瞄准", "Scope"), "RMB", 42.0, self)
+	touch_aim_btn.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	touch_aim_btn.offset_right = -196
+	touch_aim_btn.offset_left = -196 - 84
+	touch_aim_btn.offset_bottom = -346
+	touch_aim_btn.offset_top = -346 - 84
+	touch_layer.add_child(touch_aim_btn)
+	# 左手开火辅钮：第一人称模式下位于左摇杆右上方，避开系统日志区与左侧弹药轨
+	joy_fire = HL.TouchBtn.new()
+	joy_fire.setup(m, "fire", Loc.t("开火", "Fire"), "LMB", 46.0, self)
+	joy_fire.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	joy_fire.offset_left = 432
+	joy_fire.offset_right = 432 + 92
+	joy_fire.offset_bottom = -356
+	joy_fire.offset_top = -356 - 92
+	joy_fire.visible = false
+	touch_layer.add_child(joy_fire)
+	# 顶部右侧 1/3 人称切换快捷触控钮（位于原顶栏左侧空白区）
+	touch_view_btn = HL.TouchBtn.new()
+	touch_view_btn.setup(m, "view", Loc.t("视角", "View"), "F5", 26.0, self)
+	touch_view_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	touch_view_btn.offset_right = -146
+	touch_view_btn.offset_left = -146 - 52
+	touch_view_btn.offset_top = 6
+	touch_view_btn.offset_bottom = 6 + 52
+	touch_layer.add_child(touch_view_btn)
+
+
+func toggle_touch_aim() -> void:
+	touch_aim_on = not touch_aim_on
+
+
+func clear_touch_aim() -> void:
+	touch_aim_on = false
+
+
+func is_touch_aiming() -> bool:
+	return _touch_revealed and touch_aim_on
+
+
+func is_touch_firing() -> bool:
+	if not _touch_revealed:
+		return false
+	var r_fire: bool = joy_right != null and joy_right.is_firing()
+	var l_fire: bool = joy_fire != null and joy_fire.visible and joy_fire.is_held()
+	return r_fire or l_fire
 
 
 func is_touch_busy() -> bool:
-	return (joy_left != null and joy_left.is_active()) or (joy_right != null and joy_right.is_active())
+	return (joy_left != null and joy_left.is_active()) or (joy_right != null and joy_right.is_active()) or (joy_fire != null and joy_fire.is_held())
 
 
 func _build_center() -> void:
@@ -606,7 +726,7 @@ func _build_center() -> void:
 			var t := (float(k) + 0.5) / float(slices)
 			var w := pow(sin(t * PI), 1.4)
 			var x := float(k) * sw
-			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, sz.y), Color(0.056, 0.060, 0.066, 0.88 * w))
+			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, sz.y), Color(0.056, 0.060, 0.066, 0.42 * w))
 			zone_banner.draw_rect(Rect2(x, 0.0, sw + 0.6, 2.0), Color(0.28, 0.31, 0.34, 0.94 * w))
 			zone_banner.draw_rect(Rect2(x, sz.y - 2.0, sw + 0.6, 2.0), Color(0.78, 0.48, 0.16, 0.82 * w))
 		var cx := sz.x * 0.5
@@ -626,7 +746,8 @@ func _build_center() -> void:
 	zone_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	zv.add_child(zone_title_lbl)
 
-	boss_panel = UI.panel(10)
+	boss_panel = PanelContainer.new()
+	boss_panel.add_theme_stylebox_override("panel", _hud_glass_box(Color(0.068, 0.062, 0.066, 0.40), UI.BAD, 3, 10, 6))
 	boss_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	boss_panel.offset_top = 24
 	boss_panel.custom_minimum_size = Vector2(460, 0)
@@ -653,21 +774,26 @@ func _build_center() -> void:
 	boss_bar.add_theme_stylebox_override("fill", UI.flat_bar(Color(0.86, 0.2, 0.28), Color(1.0, 0.45, 0.52), 1, 0))
 	bv.add_child(boss_bar)
 
-	extract_panel = UI.panel(12)
+	extract_panel = PanelContainer.new()
+	extract_panel.add_theme_stylebox_override("panel", _hud_glass_box(Color(0.058, 0.072, 0.064, 0.38), UI.GOOD, 3, 12, 6))
 	extract_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	extract_panel.offset_top = 116
 	extract_panel.custom_minimum_size = Vector2(420, 0)
 	extract_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	extract_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	extract_panel.visible = false
 	root.add_child(extract_panel)
 	var ev := VBoxContainer.new()
+	ev.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	extract_panel.add_child(ev)
-	extract_lbl = UI.label("", 17, UI.GOOD)
+	extract_lbl = UI.label("", 15, UI.GOOD, true)
 	extract_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	extract_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ev.add_child(extract_lbl)
 	extract_bar = ProgressBar.new()
 	extract_bar.show_percentage = false
 	extract_bar.custom_minimum_size = Vector2(0, 10)
+	extract_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	extract_bar.add_theme_stylebox_override("fill", UI.flat_bar(UI.GOOD, Color(0, 0, 0, 0), 0, 0))
 	ev.add_child(extract_bar)
 
@@ -680,7 +806,7 @@ func _build_center() -> void:
 	prompt_panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	prompt_panel.gui_input.connect(func(ev: InputEvent):
 		if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
-			if raid:
+			if _touch_btn_ok() and raid:
 				raid.interact_nearest()
 			prompt_panel.accept_event())
 	prompt_panel.visible = false
@@ -692,17 +818,43 @@ func _build_center() -> void:
 	prompt_lbl = UI.label("", 16, Color(1, 0.92, 0.75))
 	ph.add_child(prompt_lbl)
 
+	sys_clip = Control.new()
+	sys_clip.anchor_left = 0.0
+	sys_clip.anchor_right = 0.0
+	sys_clip.anchor_top = 0.0
+	sys_clip.anchor_bottom = 1.0
+	sys_clip.offset_left = 18.0
+	sys_clip.offset_right = 374.0
+	sys_clip.offset_top = 134.0
+	sys_clip.offset_bottom = -433.0
+	sys_clip.clip_contents = true
+	sys_clip.z_index = 18
+	sys_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(sys_clip)
+
+	sys_col = VBoxContainer.new()
+	sys_col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sys_col.add_theme_constant_override("separation", 4)
+	sys_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sys_clip.add_child(sys_col)
+
+	coop_bar = PanelContainer.new()
+	coop_bar.add_theme_stylebox_override("panel", _sys_msg_style("normal"))
+	coop_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	coop_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coop_bar.visible = false
+	coop_lbl = UI.label("", 12, UI.TEXT, true)
+	coop_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coop_bar.add_child(coop_lbl)
+	sys_col.add_child(coop_bar)
+
 	log_box = VBoxContainer.new()
-	log_box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	log_box.offset_left = 18
-	log_box.offset_left = 140
-	log_box.offset_bottom = -420
-	log_box.offset_top = -620
-	log_box.offset_right = 700
+	log_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	log_box.alignment = BoxContainer.ALIGNMENT_END
 	log_box.add_theme_constant_override("separation", 4)
 	log_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(log_box)
+	sys_col.add_child(log_box)
 
 
 func _build_loot_panel() -> void:
@@ -760,6 +912,7 @@ func _build_settings_panel(initial_tab := "video") -> void:
 	settings_panel.offset_bottom = 225
 	settings_panel.visible = false
 	root.add_child(settings_panel)
+	UI.bind_fit_panel(settings_panel)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	settings_panel.add_child(v)
@@ -834,6 +987,14 @@ func _build_settings_panel(initial_tab := "video") -> void:
 	q.item_selected.connect(func(i):
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
+		if raid != null and is_instance_valid(raid):
+			var r_we: WorldEnvironment = null
+			for c in raid.get_children():
+				if c is WorldEnvironment:
+					r_we = c
+					break
+			if r_we != null and r_we.environment != null:
+				GameData.apply_env_quality(r_we.environment, raid._sun_light)
 		GameData.save_game())
 	pgv.add_child(q)
 
@@ -862,6 +1023,31 @@ func _build_settings_panel(initial_tab := "video") -> void:
 		Loc.set_lang("zh" if i == 0 else "en")
 		call_deferred("refresh_lang", true, "other"))
 	pgv3.add_child(lang_opt)
+
+	pgv3.add_child(UI.label(Loc.t("视角模式", "Camera Mode"), 14, UI.MUTED))
+	_view_opt = OptionButton.new()
+	_view_opt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	_view_opt.add_item(Loc.t("第一人称", "First-Person"), 1)
+	_view_opt.selected = raid.view_mode if (raid != null and "view_mode" in raid) else GameData.view_mode
+	_view_opt.item_selected.connect(func(i):
+		if raid != null and raid.has_method("set_view_mode"):
+			raid.set_view_mode(i, true)
+		else:
+			GameData.view_mode = i
+			GameData.save_game())
+	pgv3.add_child(_view_opt)
+
+	pgv3.add_child(UI.label(Loc.t("鼠标灵敏度", "Mouse Sensitivity"), 14, UI.MUTED))
+	var sens := HSlider.new()
+	sens.min_value = 0.2
+	sens.max_value = 2.5
+	sens.step = 0.05
+	sens.value = GameData.mouse_sens
+	sens.custom_minimum_size = Vector2(0, 22)
+	sens.value_changed.connect(func(x):
+		GameData.mouse_sens = x
+		GameData.schedule_save())
+	pgv3.add_child(sens)
 
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
@@ -980,29 +1166,58 @@ func toggle_map() -> void:
 	_update_cursor()
 
 
+func sync_view_mode_ui() -> void:
+	if _view_opt != null and is_instance_valid(_view_opt) and raid != null and "view_mode" in raid:
+		_view_opt.select(clampi(int(raid.view_mode), 0, 1))
+	var fp_on: bool = raid != null and raid.has_method("is_first_person") and raid.is_first_person()
+	if joy_right != null and is_instance_valid(joy_right):
+		joy_right.fp_mode = fp_on
+		joy_right.queue_redraw()
+	if joy_fire != null and is_instance_valid(joy_fire):
+		joy_fire.visible = fp_on
+		if not fp_on and joy_fire.is_held():
+			joy_fire.release()
+
+
 func _update_cursor() -> void:
+	var story_open: bool = Story.get("flow") != null and Story.flow.is_playing()
 	var menu_open: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible)
-	var ui_open: bool = menu_open or loot_panel.visible or raid.ended or map_open()
+	var ui_open: bool = menu_open or loot_panel.visible or raid.ended or map_open() or story_open
 	if pause_dim != null:
 		pause_dim.visible = menu_open
 	if zone_banner != null:
 		zone_banner.visible = _zone_active and not ui_open
-	if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var want_capture: bool = (not ui_open) and (not get_tree().paused) and raid != null and raid.has_method("should_capture_mouse") and raid.should_capture_mouse()
+	var target_mode := Input.MOUSE_MODE_CAPTURED if want_capture else Input.MOUSE_MODE_VISIBLE
+	if Input.mouse_mode != target_mode:
+		Input.mouse_mode = target_mode
 	crosshair.visible = not ui_open and _scope_alpha < 0.35
 	if touch_layer != null:
 		touch_layer.visible = _touch_revealed and not ui_open
+		var fp_on: bool = raid != null and raid.has_method("is_first_person") and raid.is_first_person()
+		if joy_right != null and is_instance_valid(joy_right):
+			joy_right.fp_mode = fp_on
+		if joy_fire != null and is_instance_valid(joy_fire):
+			joy_fire.visible = fp_on
 		if ui_open:
+			touch_aim_on = false
 			if joy_left != null and joy_left.is_active():
 				joy_left.release()
 			if joy_right != null and joy_right.is_active():
 				joy_right.release()
+			if joy_fire != null and joy_fire.is_held():
+				joy_fire.release()
 
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and not _touch_revealed:
 		_touch_revealed = true
 		_update_cursor()
+	if event.is_action_pressed("toggle_view") and not event.is_echo():
+		var menu_open: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible)
+		if not menu_open and raid != null and not raid.ended and raid.has_method("toggle_view_mode"):
+			raid.toggle_view_mode()
+			get_viewport().set_input_as_handled()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1013,29 +1228,98 @@ func _unhandled_input(event: InputEvent) -> void:
 	if pause_panel.visible and event.is_action_pressed("pause"):
 		toggle_pause()
 		get_viewport().set_input_as_handled()
+		return
+
+
+static func _sys_msg_style(tier: String) -> StyleBoxFlat:
+	match tier:
+		"warn":
+			return _hud_glass_box(Color(0.13, 0.052, 0.045, 0.36), Color(0.86, 0.34, 0.22, 0.82), 3, 9, 4)
+		"skill":
+			return _hud_glass_box(Color(0.105, 0.085, 0.052, 0.35), Color(0.87, 0.59, 0.25, 0.84), 3, 9, 4)
+		_:
+			return _hud_glass_box(Color(0.062, 0.068, 0.076, 0.32), Color(0.78, 0.48, 0.16, 0.78), 3, 9, 4)
+
+
+func _trim_log_box() -> void:
+	if log_box == null:
+		return
+	var vp_h: float = get_viewport().get_visible_rect().size.y if get_viewport() != null else 720.0
+	var top_off: float = sys_clip.offset_top if sys_clip != null else 134.0
+	var avail_h: float = sys_clip.size.y if (sys_clip != null and sys_clip.size.y > 40.0) else (vp_h - 433.0 - top_off)
+	if coop_bar != null and coop_bar.visible:
+		avail_h -= maxf(26.0, coop_bar.get_combined_minimum_size().y) + 4.0
+	while log_box.get_child_count() > 1:
+		var total_h := 0.0
+		var cnt := 0
+		for c in log_box.get_children():
+			if c.is_queued_for_deletion():
+				continue
+			var ch := maxf(float(c.get_meta("est_h", 26.0)), (c as Control).get_combined_minimum_size().y)
+			total_h += ch
+			cnt += 1
+		if cnt > 1:
+			total_h += 4.0 * float(cnt - 1)
+		if cnt <= 5 and total_h <= avail_h:
+			break
+		var old: Node = log_box.get_child(0)
+		log_box.remove_child(old)
+		old.free()
+
+
+func set_coop_status(t: String, warn := false) -> void:
+	if coop_bar == null:
+		return
+	var clean := t.strip_edges()
+	var want_vis := clean != ""
+	var prev_warn: bool = bool(coop_bar.get_meta("warn", false))
+	if coop_bar.visible == want_vis and coop_lbl.text == clean and prev_warn == warn:
+		return
+	coop_bar.visible = want_vis
+	if want_vis:
+		coop_lbl.text = clean
+		_set_font_color(coop_lbl, Color(0.96, 0.78, 0.72, 0.97) if warn else UI.TEXT)
+		if prev_warn != warn:
+			coop_bar.set_meta("warn", warn)
+			coop_bar.add_theme_stylebox_override("panel", _sys_msg_style("warn" if warn else "normal"))
+	_trim_log_box()
 
 
 func msg(t: String) -> void:
-	if log_box == null:
+	var clean := t.strip_edges()
+	if log_box == null or clean == "":
 		return
+	var tier := "warn" if clean.begins_with("▲") else ("skill" if clean.begins_with("◆") else "normal")
+	var tc := Color(0.96, 0.78, 0.72, 0.97) if tier == "warn" else (Color(0.95, 0.85, 0.64, 0.97) if tier == "skill" else Color(0.90, 0.90, 0.87, 0.96))
 	var p := PanelContainer.new()
-	var sb := UI.tex9("strip9" if not t.begins_with("▲") else "strip9_warn", 8, 10)
-	sb.content_margin_left = 16
-	sb.content_margin_top = 5
-	sb.content_margin_bottom = 5
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", _sys_msg_style(tier))
 	p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var l := UI.label(t, 15, UI.TEXT)
+	var l := UI.label(clean, 13, tc, true)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var f := PixelUI.pixel_font()
+	var fs := PixelUI.snap(13)
+	var raw_w := f.get_string_size(clean, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x if f != null else float(clean.length() * 13)
+	const MAX_TW := 326.0
+	if raw_w > MAX_TW:
+		l.custom_minimum_size = Vector2(MAX_TW, 0)
+		l.size = Vector2(MAX_TW, 0)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.max_lines_visible = 2
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.add_theme_constant_override("line_spacing", 2)
+		p.set_meta("est_h", 44.0)
+	else:
+		p.set_meta("est_h", 26.0)
 	p.add_child(l)
 	log_box.add_child(p)
-	while log_box.get_child_count() > 5:
-		log_box.get_child(0).free()
+	_trim_log_box()
 	p.modulate.a = 0.0
 	var tw := p.create_tween()
-	tw.tween_property(p, "modulate:a", 1.0, 0.15)
-	tw.tween_interval(6.0)
-	tw.tween_property(p, "modulate:a", 0.0, 0.8)
+	tw.tween_property(p, "modulate:a", 1.0, 0.14)
+	tw.tween_interval(4.2)
+	tw.tween_property(p, "modulate:a", 0.0, 0.65)
 	tw.tween_callback(p.queue_free)
 
 
@@ -1138,16 +1422,26 @@ func _refresh_fast(m) -> void:
 	vignette.modulate.a = max(danger * 0.45, hurt_t * 1.2)
 	if smoke_rect and raid.camera:
 		var cp: Vector3 = raid.camera.global_position
-		(smoke_rect.material as ShaderMaterial).set_shader_parameter("cam_off", Vector2(cp.x, cp.z) * 0.045)
+		var cam_off := Vector2(cp.x, cp.z) * 0.045
+		if raid.has_method("is_first_person") and raid.is_first_person():
+			cam_off += Vector2(-raid.fp_yaw * 0.35, raid.fp_pitch * 0.25)
+		(smoke_rect.material as ShaderMaterial).set_shader_parameter("cam_off", cam_off)
 	if scope_rect != null:
-		var ui_open_sc: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible) or loot_panel.visible or raid.ended or map_open()
+		var story_sc: bool = Story.get("flow") != null and Story.flow.is_playing()
+		var ui_open_sc: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible) or loot_panel.visible or raid.ended or map_open() or story_sc
 		var want_scope: bool = not ui_open_sc and m.is_scoping()
 		_scope_alpha = move_toward(_scope_alpha, 1.0 if want_scope else 0.0, maxf(get_process_delta_time(), 0.016) * 9.0)
 		scope_rect.visible = _scope_alpha > 0.005
 		if scope_rect.visible:
 			var vp_sz := get_viewport().get_visible_rect().size
 			var cpx := vp_sz * 0.5
-			if raid.aim_override != null or raid._joy_aim_active or is_touch_busy():
+			var fp_on: bool = raid.has_method("is_first_person") and raid.is_first_person()
+			if fp_on:
+				if raid.aim_override != null and raid.camera != null and not raid.camera.is_position_behind(m.aim_point):
+					cpx = raid.camera.unproject_position(m.aim_point).clamp(Vector2.ZERO, vp_sz)
+				else:
+					cpx = vp_sz * 0.5
+			elif raid.aim_override != null or raid._joy_aim_active or is_touch_busy():
 				if raid.camera != null:
 					cpx = raid.camera.unproject_position(m.aim_point)
 			else:
@@ -1157,6 +1451,13 @@ func _refresh_fast(m) -> void:
 			scm.set_shader_parameter("vp_size", vp_sz)
 			scm.set_shader_parameter("center_px", cpx)
 			scm.set_shader_parameter("radius_px", minf(vp_sz.x, vp_sz.y) * 0.34)
+	if sys_clip != null:
+		var min_top := 134.0
+		if radio != null and is_instance_valid(radio) and radio.size.y > 0.0:
+			min_top = maxf(min_top, radio.position.y + radio.size.y + 7.0)
+		if not is_equal_approx(sys_clip.offset_top, min_top):
+			sys_clip.offset_top = min_top
+			_trim_log_box()
 	_update_markers()
 	_update_cursor()
 
@@ -1185,7 +1486,7 @@ func _process(_d: float) -> void:
 
 
 func _process_impl(_d: float) -> void:
-	pass
+	_update_cursor()
 
 
 func refresh_loot() -> void:

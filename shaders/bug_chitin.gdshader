@@ -23,8 +23,8 @@ void vertex() {
 }
 
 vec3 tri_w(vec3 n) {
-	vec3 w = pow(abs(n), vec3(4.0));
-	return w / (w.x + w.y + w.z + 1e-5);
+	vec3 w = pow(max(abs(n), vec3(0.0)), vec3(4.0));
+	return w / max(w.x + w.y + w.z, 1e-4);
 }
 
 float tri(sampler2D t, vec3 p, vec3 w) {
@@ -57,7 +57,7 @@ void fragment() {
 	METALLIC = 0.0;
 	float rough = mix(0.55, 0.14, wet * smoothstep(0.3, 0.75, n1 + n2 * 0.3));
 	vec3 dn = fwidth(NORMAL);
-	ROUGHNESS = clamp(sqrt(rough * rough + min(2.0 * dot(dn, dn), 0.25)), 0.1, 1.0);
+		ROUGHNESS = clamp(sqrt(max(rough * rough + min(2.0 * dot(dn, dn), 0.25), 0.0)), 0.1, 1.0);
 	SPECULAR = 0.68;
 	AO = clamp(1.0 - vein * 0.55 - smoothstep(0.62, 0.75, n2) * 0.2, 0.28, 1.0);
 	AO_LIGHT_AFFECT = 0.5;

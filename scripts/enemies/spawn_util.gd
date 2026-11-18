@@ -140,16 +140,16 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 			glow_c = Color(0.78, 0.28, 1.0)
 		"grey_brood":
 			glow_c = Color(0.45, 0.9, 0.35)
-		"harbor_reaper", "spillway_leviathan", "drydock_behemoth":
+		"harbor_reaper", "spillway_leviathan", "drydock_behemoth", "sky_carrier":
 			glow_c = Color(0.22, 0.92, 0.85)
-		"dust_matriarch", "dune_devourer", "silo_warhead":
+		"dust_matriarch", "dune_devourer", "silo_warhead", "citadel_behemoth":
 			glow_c = Color(0.95, 0.58, 0.18)
 		"prism_archon":
 			glow_c = Color(0.55, 0.82, 1.0)
-	var is_lm_boss := boss_id in ["terminus_warden", "foundry_dreadnought", "silo_warhead", "spillway_leviathan", "excavator_titan", "core_overlord", "drydock_behemoth"]
+	var is_lm_boss := boss_id in ["terminus_warden", "foundry_dreadnought", "silo_warhead", "spillway_leviathan", "excavator_titan", "core_overlord", "drydock_behemoth", "citadel_behemoth", "sky_carrier"]
 	A.ground_vfx(lair, A.blob_tex(), Color(0.12, 0.12, 0.13, 0.76) if is_lm_boss else Color(0.16, 0.08, 0.18, 0.82), 16.0 if is_lm_boss else 18.0, Vector3(0, 0.092, 0), false, 0.44, false, 2)
-	A.ground_vfx(lair, A.ring_tex(), Color(glow_c.r, glow_c.g, glow_c.b, 0.34), 14.0 if is_lm_boss else 15.0, Vector3(0, 0.114, 0), true, 0.44, false, 3)
 	if is_lm_boss:
+		A.add(lair, A.quad(14.0, 14.0), A.extract_pad_mat(Color(glow_c.r, glow_c.g, glow_c.b, 0.30), 0.44, 3), Vector3(0, 0.114, 0), Vector3.ZERO, Vector3.ONE, false)
 		var mat_st: Material = A.paint(Color(0.24, 0.25, 0.27), 0.65, 0.50, {"rust": 0.68, "wear": 0.55})
 		var mat_hz: Material = A.hazard()
 		var mat_lamp: Material = A.emit(glow_c, 1.8)
@@ -170,7 +170,7 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 			var r: float = raid.rng.randf_range(0.32, 0.52)
 			var tilt := Vector3(sin(ang) * 16.0, raid.rng.randf_range(0.0, 360.0), -cos(ang) * 16.0)
 			A.add(lair, A.cyl(r * 0.18, h, r, 6), mat_chitin, sp + Vector3(0, h * 0.45, 0), tilt)
-			A.add(lair, A.sphere(r * 0.55, -1, 8), mat_glow, sp + Vector3(0, 0.38, 0), Vector3.ZERO, Vector3(1.0, 0.7, 1.0), false)
+			A.add(lair, A.rock_mesh(0.28, 70 + k * 13), mat_glow, sp + Vector3(0, 0.36, 0), tilt * 0.5, Vector3(r * 1.4, r * 1.8, r * 1.4), false)
 	var light := OmniLight3D.new()
 	light.light_color = glow_c
 	light.light_energy = 1.6

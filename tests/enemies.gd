@@ -15,7 +15,7 @@ const BOSSES := [
 	"broodmother", "prism_archon", "spillway_leviathan",
 	"king_beetle", "gorge_tyrant", "excavator_titan",
 	"abyss_queen", "abyss_harbinger", "core_overlord",
-	"drydock_behemoth",
+	"drydock_behemoth", "citadel_behemoth", "sky_carrier",
 ]
 const ARENA_AI := {"mantis": "lancer", "bomber": "bomber", "crystal_bug": "shell", "burrower": "burrower",
 	"mech_beetle": "jammer", "wasp": "flyer", "shielder": "support", "mortar": "artillery", "ironjaw": "juggernaut"}

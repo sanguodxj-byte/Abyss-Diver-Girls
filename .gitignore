@@ -5,6 +5,7 @@ export/
 
 # 本地工具与运行时数据
 .zcode/
+.opencode/
 tools/__pycache__/
 __pycache__/
 *.log

@@ -156,23 +156,24 @@ func _resolve(id: String) -> Array:
 	for p: String in Reg.sfx_paths(id, sfx_table()):
 		if ResourceLoader.exists(p) and not paths.has(p):
 			paths.append(p)
-	for ext: String in SFX_EXT:
-		var p := "%s/%s%s" % [SFX_DIR, id, ext]
-		if ResourceLoader.exists(p):
-			if not paths.has(p):
-				paths.append(p)
-			break
-	for i in range(1, MAX_VARIANTS + 1):
-		var found := false
+	if paths.is_empty():
 		for ext: String in SFX_EXT:
-			var p := "%s/%s_%02d%s" % [SFX_DIR, id, i, ext]
+			var p := "%s/%s%s" % [SFX_DIR, id, ext]
 			if ResourceLoader.exists(p):
 				if not paths.has(p):
 					paths.append(p)
-				found = true
 				break
-		if not found:
-			break
+		for i in range(1, MAX_VARIANTS + 1):
+			var found := false
+			for ext: String in SFX_EXT:
+				var p := "%s/%s_%02d%s" % [SFX_DIR, id, i, ext]
+				if ResourceLoader.exists(p):
+					if not paths.has(p):
+						paths.append(p)
+					found = true
+					break
+			if not found:
+				break
 	var out: Array = []
 	for p: String in paths:
 		var s = load(p)
@@ -180,6 +181,19 @@ func _resolve(id: String) -> Array:
 			out.append(s)
 	_streams[id] = out
 	return out
+
+
+func warm_combat_sfx() -> void:
+	for id: String in [
+		"wpn_mg_fire", "wpn_shotgun_fire", "wpn_laser_fire", "wpn_railgun_fire",
+		"wpn_flamer_ignite", "wpn_reload_done", "wpn_empty",
+		"hit_metal", "hit_chitin", "hit_spit", "explosion",
+		"step_biped", "step_quad", "mech_hurt", "shield_hit",
+		"bug_ling_appear", "bug_ling_windup", "bug_ling_attack", "bug_ling_hurt", "bug_ling_death",
+		"bug_spitter_appear", "bug_spitter_windup", "bug_spitter_attack", "bug_spitter_hurt", "bug_spitter_death",
+		"bug_beetle_appear", "bug_beetle_windup", "bug_beetle_attack", "bug_beetle_hurt", "bug_beetle_death",
+	]:
+		_resolve(id)
 
 
 func _pick(id: String, streams: Array) -> AudioStream:
@@ -203,6 +217,8 @@ func _take_player(d3: bool) -> Node:
 		if d3:
 			var p3 := AudioStreamPlayer3D.new()
 			p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+			p3.attenuation_filter_cutoff_hz = 3400.0
+			p3.attenuation_filter_db = -18.0
 			n = p3
 		else:
 			n = AudioStreamPlayer.new()
@@ -243,6 +259,8 @@ func loop_start(key: String, id: String, host: Node = null, opts := {}) -> Node:
 	if d3:
 		var p3 := AudioStreamPlayer3D.new()
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		p3.attenuation_filter_cutoff_hz = 3400.0
+		p3.attenuation_filter_db = -18.0
 		p3.unit_size = float(inf.unit)
 		p3.max_distance = float(inf.dist)
 		p = p3
@@ -492,12 +510,39 @@ func _load_state(d: Dictionary) -> void:
 
 func _ensure_buses() -> void:
 	for b: String in BUSES:
-		if AudioServer.get_bus_index(b) >= 0:
-			continue
-		AudioServer.add_bus()
-		var i := AudioServer.bus_count - 1
-		AudioServer.set_bus_name(i, b)
-		AudioServer.set_bus_send(i, "Master")
+		if AudioServer.get_bus_index(b) < 0:
+			AudioServer.add_bus()
+			var i := AudioServer.bus_count - 1
+			AudioServer.set_bus_name(i, b)
+			AudioServer.set_bus_send(i, "Master")
+	_ensure_bus_fx("SFX", true, true)
+	_ensure_bus_fx("UI", false, true)
+	_ensure_bus_fx("Master", false, true)
+
+
+func _ensure_bus_fx(bus_name: String, add_lp: bool, add_lim: bool) -> void:
+	var idx := AudioServer.get_bus_index(bus_name)
+	if idx < 0:
+		return
+	var has_lp := false
+	var has_lim := false
+	for k in AudioServer.get_bus_effect_count(idx):
+		var fx := AudioServer.get_bus_effect(idx, k)
+		if fx is AudioEffectLowPassFilter:
+			has_lp = true
+		elif fx is AudioEffectHardLimiter:
+			has_lim = true
+	if add_lp and not has_lp:
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = 7500.0
+		lp.resonance = 0.5
+		AudioServer.add_bus_effect(idx, lp)
+	if add_lim and not has_lim:
+		var lim := AudioEffectHardLimiter.new()
+		lim.ceiling_db = -1.0
+		lim.pre_gain_db = 0.0
+		lim.release = 0.08
+		AudioServer.add_bus_effect(idx, lim)
 
 
 # ====================================================================== 界面自动接线

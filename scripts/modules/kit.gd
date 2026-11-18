@@ -57,11 +57,11 @@ static func real(id: String, c: Color) -> Color:
 
 # ---------------------------------------------------------------- 材质
 static func armor(c: Color, wear := 0.44) -> ShaderMaterial:
-	return A.paint(c, 0.16, 0.54, {"wear": wear, "panel_scale": 0.65, "takes_damage": 1.0})
+	return A.paint(c, 0.16, 0.54, {"wear": wear, "panel_scale": 0.0, "takes_damage": 1.0})
 
 
 static func armor_sub(c: Color, wear := 0.48) -> ShaderMaterial:
-	return A.paint(c.darkened(0.20), 0.18, 0.52, {"wear": wear, "panel_scale": 0.65, "takes_damage": 1.0})
+	return A.paint(c.darkened(0.20), 0.18, 0.52, {"wear": wear, "panel_scale": 0.0, "takes_damage": 1.0})
 
 
 static func frame() -> ShaderMaterial:

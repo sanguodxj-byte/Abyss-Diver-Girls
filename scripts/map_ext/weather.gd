@@ -61,12 +61,13 @@ const PRESETS := {
 var raid
 var preset := "clear"
 var env: Environment
-var sky_mat: ProceduralSkyMaterial
+var sky_mat: Material
 var sun: DirectionalLight3D
 var fill: DirectionalLight3D
 var emitters: Array = []
 var _base := {}
 var _storm := false
+var _storm_vis := 0.0
 var _cycle := 0.0
 var _fog_now := 0.0
 var _fog_want := 0.0
@@ -98,35 +99,87 @@ func _find() -> void:
 			fill = c
 		elif c is DirectionalLight3D and sun == null:
 			sun = c
-	if env and env.sky and env.sky.sky_material is ProceduralSkyMaterial:
+	if env and env.sky and env.sky.sky_material != null:
 		sky_mat = env.sky.sky_material
 
 
 func _apply() -> void:
 	if env:
-		env.ambient_light_energy = float(_base.ambient)
+		env.ambient_light_energy = float(_base.ambient) * (1.28 if preset == "spore_abyss" else 1.04)
 		env.fog_light_color = _base.fog_color
-		env.fog_density = float(_base.fog_density)
+		env.fog_density = float(_base.fog_density) * 0.85
+		if preset == "spore_abyss":
+			env.fog_aerial_perspective = 0.0
+			env.fog_sun_scatter = 0.05
+			env.fog_height = 2.0
+			env.fog_height_density = 0.025
+		elif preset == "rain":
+			env.fog_aerial_perspective = 0.52
+			env.fog_sun_scatter = 0.22
+			env.fog_height = 3.2
+			env.fog_height_density = 0.075
+		elif preset == "lake_mist":
+			env.fog_aerial_perspective = 0.48
+			env.fog_sun_scatter = 0.26
+			env.fog_height = 4.0
+			env.fog_height_density = 0.095
+		elif preset == "dusk_gloom":
+			env.fog_aerial_perspective = 0.45
+			env.fog_sun_scatter = 0.30
+			env.fog_height = 2.8
+			env.fog_height_density = 0.065
+		elif preset == "sandstorm":
+			env.fog_aerial_perspective = 0.22
+			env.fog_sun_scatter = 0.28
+			env.fog_height = 5.5
+			env.fog_height_density = 0.050
+		else:
+			env.fog_aerial_perspective = 0.38
+			env.fog_sun_scatter = 0.16
+			env.fog_height = 2.0
+			env.fog_height_density = 0.040
 		env.volumetric_fog_density = float(_base.fog_vol)
 		env.volumetric_fog_albedo = _base.fog_color.lightened(0.25)
-		env.tonemap_exposure = float(_base.exposure)
-		env.adjustment_saturation = float(_base.saturation)
+		env.tonemap_exposure = float(_base.exposure) * 1.04
+		env.adjustment_saturation = clampf(float(_base.saturation) + 0.08, 0.90, 1.04)
 		env.background_mode = Environment.BG_SKY
-		env.fog_sky_affect = 0.65 if preset == "spore_abyss" else 0.38
-	if sky_mat:
-		sky_mat.sky_top_color = _base.sky_top
-		sky_mat.sky_horizon_color = _base.sky_horizon
-		sky_mat.ground_horizon_color = _base.sky_ground
-		sky_mat.ground_bottom_color = _base.sky_bottom
-		var ct: Color = _base.get("cloud_tint", Color(0.92, 0.90, 0.86, 0.58))
-		sky_mat.sky_cover_modulate = ct
+		env.fog_sky_affect = 0.65 if preset == "spore_abyss" else 0.34
+	var ct: Color = _base.get("cloud_tint", Color(0.92, 0.90, 0.86, 0.58))
+	if sky_mat is ShaderMaterial:
+		var sm := sky_mat as ShaderMaterial
+		sm.set_shader_parameter("sky_top", _base.sky_top)
+		sm.set_shader_parameter("sky_horizon", _base.sky_horizon)
+		sm.set_shader_parameter("sky_ground", _base.sky_ground)
+		sm.set_shader_parameter("sky_bottom", _base.sky_bottom)
+		sm.set_shader_parameter("cloud_tint", ct)
+		sm.set_shader_parameter("sun_tint", _base.sun_color)
+		sm.set_shader_parameter("fog_tint", _base.fog_color)
+		sm.set_shader_parameter("cavern_mode", 1.0 if preset == "spore_abyss" else 0.0)
+		var urban_w := 0.72 if (raid != null and str(raid.map_id) in ["greyport", "ironbelt", "bayport"]) else 0.16
+		sm.set_shader_parameter("urban_horizon", urban_w)
+		var drift_spd := 0.0055 if preset == "sandstorm" else (0.0036 if preset == "rain" else 0.0022)
+		sm.set_shader_parameter("cloud_drift", drift_spd)
+		_storm_vis = 0.22 if preset == "sandstorm" else 0.0
+		sm.set_shader_parameter("storm_amount", _storm_vis)
+	elif sky_mat is ProceduralSkyMaterial:
+		var pm := sky_mat as ProceduralSkyMaterial
+		pm.sky_top_color = _base.sky_top
+		pm.sky_horizon_color = _base.sky_horizon
+		pm.ground_horizon_color = _base.sky_ground
+		pm.ground_bottom_color = _base.sky_bottom
+		pm.sky_cover_modulate = ct
 	if sun:
 		sun.light_color = _base.sun_color
-		sun.light_energy = float(_base.sun_energy)
+		sun.light_energy = float(_base.sun_energy) * 1.05
 		sun.rotation_degrees = _base.sun_rot
+		RenderingServer.global_shader_parameter_set("sun_dir_world", sun.transform.basis.z.normalized())
 	if fill:
 		fill.light_color = _base.fill_color
-		fill.light_energy = float(_base.fill_energy)
+		fill.light_energy = maxf(float(_base.fill_energy) * 1.45, 0.22)
+	var wet_v := 1.0 if preset == "rain" else (0.42 if preset == "lake_mist" else (0.18 if preset == "dusk_gloom" else 0.0))
+	var rain_v := 1.0 if preset == "rain" else 0.0
+	RenderingServer.global_shader_parameter_set("weather_wet", wet_v)
+	RenderingServer.global_shader_parameter_set("weather_rain", rain_v)
 	var gm: ShaderMaterial = A.ground()
 	if gm:
 		gm.set_shader_parameter("dirt_a", _base.dirt_a)
@@ -134,7 +187,7 @@ func _apply() -> void:
 		gm.set_shader_parameter("mud", _base.mud)
 		gm.set_shader_parameter("grass", _base.grass)
 		gm.set_shader_parameter("grass2", _base.grass2)
-		gm.set_shader_parameter("wet_amt", 1.0 if preset == "rain" else (0.35 if preset == "lake_mist" else 0.0))
+		gm.set_shader_parameter("wet_amt", wet_v)
 
 
 func _build_particles() -> void:
@@ -145,7 +198,7 @@ func _build_particles() -> void:
 		"spore_abyss": _spores()
 		"dusk_gloom": _mist(0.45)
 		"canyon_noon": _dust_lite()
-	if preset == "spore_abyss":
+	if preset == "spore_abyss" and (not A.is_mobile_perf() or GameData.quality >= 1):
 		_spore_light = OmniLight3D.new()
 		_spore_light.light_color = Color(0.55, 0.3, 0.9)
 		_spore_light.light_energy = 4.0
@@ -155,7 +208,12 @@ func _build_particles() -> void:
 
 func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
 	var p := CPUParticles3D.new()
-	p.amount = int(opts.get("amount", 200))
+	var base_amt := int(opts.get("amount", 200))
+	if A.is_mobile_perf():
+		var m_mul := 0.16 if GameData.quality == 0 else (0.26 if GameData.quality == 1 else 0.38)
+		p.amount = maxi(8, int(round(float(base_amt) * m_mul)))
+	else:
+		p.amount = base_amt
 	p.lifetime = float(opts.get("life", 2.0))
 	p.local_coords = false
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -195,9 +253,9 @@ func _emit(kind: String, opts: Dictionary) -> CPUParticles3D:
 
 
 func _rain() -> void:
-	_emit("rain", {"amount": 1200, "life": 1.15, "size": Vector2(0.018, 0.95), "dir": Vector3(0.24, -1.0, 0.1), "spread": 2.5,
+	_emit("rain", {"amount": 1200, "life": 1.15, "size": Vector2(0.016, 0.88), "dir": Vector3(0.24, -1.0, 0.1), "spread": 2.5,
 		"vmin": 34.0, "vmax": 42.0, "gravity": Vector3(0.6, -6.0, 0.3), "box": Vector3(34, 16, 30), "additive": false,
-		"align_y": true, "prox_fade": 0.08, "c0": Color(0.76, 0.84, 0.92, 0.34), "c1": Color(0.65, 0.76, 0.88, 0.06)})
+		"align_y": true, "prox_fade": 1.45, "c0": Color(0.76, 0.84, 0.92, 0.30), "c1": Color(0.65, 0.76, 0.88, 0.05)})
 	_emit("rain_splash", {"amount": 460, "life": 0.24, "size": Vector2(0.08, 0.18), "dir": Vector3.UP, "spread": 32.0,
 		"vmin": 1.4, "vmax": 2.6, "gravity": Vector3(0, -14.0, 0), "box": Vector3(28, 0.15, 24), "additive": false,
 		"align_y": true, "prox_fade": 0.04, "ground_fx": true, "c0": Color(0.80, 0.88, 0.96, 0.54), "c1": Color(0.68, 0.78, 0.88, 0.0)})
@@ -236,6 +294,11 @@ func _process(delta: float) -> void:
 	var cam: Camera3D = raid.camera
 	var focus := cam.global_position + Vector3(0, -16.0, -12.0)
 	var ground_focus := Vector3(cam.global_position.x, 0.12, cam.global_position.z - 8.0)
+	if raid.has_method("is_first_person") and raid.is_first_person():
+		var f_xz: Vector3 = raid.fp_forward_xz()
+		var bp: Vector3 = raid.mech.global_position if raid.mech != null else cam.global_position
+		focus = bp + f_xz * 12.0 + Vector3(0.0, 6.5, 0.0)
+		ground_focus = Vector3(bp.x + f_xz.x * 10.0, bp.y + 0.12, bp.z + f_xz.z * 10.0)
 	for e in emitters:
 		if is_instance_valid(e):
 			e.global_position = ground_focus if e.has_meta("ground_fx") else focus
@@ -256,14 +319,20 @@ func _process(delta: float) -> void:
 			_cycle = 0.0
 			Events.emit_custom("sandstorm", {"active": true, "map": raid.map_id})
 		_fog_want = want
+		var storm_target := 0.92 if _storm else 0.22
+		_storm_vis = lerpf(_storm_vis, storm_target, clampf(delta * 0.8, 0.0, 1.0))
+		if sky_mat is ShaderMaterial:
+			(sky_mat as ShaderMaterial).set_shader_parameter("storm_amount", _storm_vis)
 	# 雾密度平滑过渡，沙暴起落不会突然糊住画面
 	_fog_now = lerpf(_fog_now, _fog_want, clampf(delta * 0.8, 0.0, 1.0))
 	if env:
 		env.fog_density = _fog_now
 		env.volumetric_fog_enabled = false
 
-## 地表材质是全局共享的：行动结束把色调还原成默认值，机库与主菜单的地面不会带着上一局的颜色。
+## 地表材质与全局天气参数都是跨场景共享的：行动结束还原默认值，避免机库与主菜单残留湿润状态。
 func _exit_tree() -> void:
+	RenderingServer.global_shader_parameter_set("weather_wet", 0.0)
+	RenderingServer.global_shader_parameter_set("weather_rain", 0.0)
 	var gm: ShaderMaterial = A.ground()
 	if gm == null:
 		return

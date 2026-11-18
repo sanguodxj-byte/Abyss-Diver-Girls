@@ -159,7 +159,10 @@ func _update_flash() -> void:
 func take_damage(amount: float) -> void:
 	if hp <= 0.0:
 		return
+	var prev_hp := hp
 	hp -= amount
+	if raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit"):
+		raid.hud.notify_enemy_hit(self, prev_hp, hp, 260.0)
 	pulse.scale = Vector3.ONE * 1.4
 	flash_t = 0.13
 	_update_flash()

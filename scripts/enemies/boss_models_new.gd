@@ -11,6 +11,7 @@ const ART = preload("res://scripts/art.gd")
 const HS = preload("res://scripts/hs.gd")
 const Bugs2 = preload("res://scripts/bugs2.gd")
 const Models = preload("res://scripts/enemies/models.gd")
+const BossGlb = preload("res://scripts/enemies/boss_glb.gd")
 
 
 static func _core_doors(h, body: Node3D, pos: Vector3, s: float, sh_mat: Material, hz_mat: Material, glow_c: Color) -> void:
@@ -284,6 +285,8 @@ static func build_spillway_leviathan(h, body: Node3D, s: float) -> void:
 
 # ---------------------------------------------------------------- 5. 斗轮泰坦·裂岩掘进兽 (excavator_titan)
 static func build_excavator_titan(h, body: Node3D, s: float) -> void:
+	if BossGlb.build(h, body, "excavator_titan", s):
+		return
 	var SH: Material = h._vmat_matte(Color(0.46, 0.35, 0.15))
 	var SH2: Material = h._vmat_solid(Color(0.34, 0.34, 0.36))
 	var DK: Material = h._vmat_solid(Color(0.11, 0.11, 0.12))

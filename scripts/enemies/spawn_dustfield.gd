@@ -13,4 +13,7 @@ static func spawn(raid, drop: Vector3) -> void:
 	var b2 = Util.place_boss(raid, "dune_devourer", ["C", "K", "M", "W", "F"], 85.0, drop, ["burrower", "burrower", "bomber", "lancer"], avoid)
 	if b2 != null:
 		avoid.append(b2.position)
-	Util.place_boss_at_landmark(raid, "silo_warhead", "missile_silo", ["M", "C", "F"], drop, ["lancer", "mech_beetle", "bomber"], avoid)
+	var b3 = Util.place_boss_at_landmark(raid, "silo_warhead", "missile_silo", ["M", "C", "F"], drop, ["lancer", "mech_beetle", "bomber"], avoid)
+	if b3 != null:
+		avoid.append(b3.position)
+	Util.place_boss(raid, "citadel_behemoth", ["F", "W", "M", "C"], 92.0, drop, ["mech_beetle", "shielder", "lancer"], avoid)
