@@ -15,6 +15,7 @@ const MV = preload("res://scripts/mech_visual.gd")
 const A = preload("res://scripts/art.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 const BuildingsExt = preload("res://scripts/buildings_ext.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
 const HALF := 230.0            ## 不规则战区多边形的本地包围半宽（与 world_city.gd ZONE_HALF 一致）
 var EXT_HALF := 290.0          ## 地表战区外围连续城市群远景半宽（地下竖井战区收回到 HALF）
@@ -99,7 +100,7 @@ class ServerHud extends RefCounted:
 	var last_toggle_frame := -100
 	var _touch_revealed := false
 	func msg(t: String) -> void: print("[server] ", t)
-	func show_zone_banner(_t: String, _d := 0.0) -> void: pass
+	func show_zone_banner(_t: String, _d := 0.0, _sub := "") -> void: pass
 	func refresh() -> void: pass
 	func refresh_loot() -> void: pass
 	func open_loot(_b) -> void: pass
@@ -119,7 +120,11 @@ class ServerHud extends RefCounted:
 	func sync_view_mode_ui() -> void: pass
 var transit := {}     ## 从相邻战区转场进来时携带的状态（空 = 正常空投出击）
 var visited_maps: Array = []
-var drop_points: Array = []   ## 本战区候选空投出生点列表（每局从中随机选取一处）
+var drop_points: Array = []   ## 本战区候选空投出生点列表（[0] 为固定主降落点）
+var primary_drop := Vector3.ZERO   ## 本战区固定主空投点（锚定撤离点、首领与虫群分布，确保全图固定化）
+var _loot_anchors: Array = []      ## 情境化固定物资箱候选锚点（来自建筑门廊、装卸台、掩体、集装箱、地标与残骸）
+var _cam_attr: CameraAttributesPractical
+var _contact_shadows: Array = []   ## 全图静态物件（集装箱/载具/暗堡/货车/油罐/雕塑）单批次接地软阴影变换队列
 
 
 const MAP_SEEDS := {
@@ -149,6 +154,8 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	fx = Node3D.new()
 	add_child(fx)
 	map_id = GameData.map_id
+	_loot_anchors.clear()
+	_contact_shadows.clear()
 	if Net.active(): seed(_map_seed(99))
 	rng.seed = _map_seed(0)
 	var t_build := Time.get_ticks_usec()
@@ -160,6 +167,7 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 	_build_ground()
 	_tmark("env+ground")
 	var drop := _build_map()
+	primary_drop = drop
 	world_link = WorldLinkScript.new()
 	world_link.name = "WorldLink"
 	add_child(world_link)
@@ -174,14 +182,17 @@ func start(lo: Dictionary, carry: Array, transit_state := {}) -> void:
 		world_link.paint_map(map_tex)
 		_build_zone_ground()
 	_tmark("map_tex+zone_ground")
-	_run_ext_build(drop)
+	_run_ext_build(primary_drop)
+	_place_contextual_loot()
 	_tmark("ext")
-	_spawn_extracts(drop)
+	_spawn_extracts(primary_drop)
 	preload("res://scripts/collision_opt.gd").optimize(self)   # 碰撞后处理：小件去碰撞、窄缝合并、防卡死（见脚本说明）
 	rebuild_nav()   # 导航网格：所有静态几何体与碰撞后处理就绪后立即栅格化，用于剔除死房刷怪与死房物资箱
 	if nav != null:
 		nav.set_seed(drop)
-	_spawn_initial_bugs(drop)
+	_spawn_initial_bugs(primary_drop)
+	if not transit.is_empty():
+		_clear_transit_spawn_bugs(drop)
 	_sanitize_spawns_and_loot(drop)
 	_tmark("extracts+bugs")
 	if not Net.is_dedicated_server():
@@ -205,6 +216,8 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 	fx = Node3D.new()
 	add_child(fx)
 	map_id = GameData.map_id
+	_loot_anchors.clear()
+	_contact_shadows.clear()
 	if Net.active(): seed(_map_seed(99))
 	rng.seed = _map_seed(0)
 	var t_build := Time.get_ticks_usec()
@@ -273,7 +286,9 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 		var p := _roadside_spot()
 		if p != Vector3.INF:
 			_fire_barrel(p)
+	_scatter_road_shoulders()
 	var drop := _drop_point()
+	primary_drop = drop
 	world_link = WorldLinkScript.new()
 	world_link.name = "WorldLink"
 	add_child(world_link)
@@ -293,14 +308,15 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 		world_link.paint_map(map_tex)
 		_build_zone_ground()
 	_tmark("map_tex+zone_ground")
-	_run_ext_build(drop)
+	_run_ext_build(primary_drop)
+	_place_contextual_loot()
 	_tmark("ext")
 
 	if loader != null and is_instance_valid(loader):
 		await loader.step(0.83, Loc.t("正在部署撤离信标与优化战场物理碰撞...", "Deploying extract beacons & optimizing collision..."))
 	elif Net.is_dedicated_server():
 		await get_tree().process_frame
-	_spawn_extracts(drop)
+	_spawn_extracts(primary_drop)
 	preload("res://scripts/collision_opt.gd").optimize(self)
 	rebuild_nav()
 	if nav != null:
@@ -310,7 +326,9 @@ func start_async(lo: Dictionary, carry: Array, transit_state := {}, loader = nul
 		await loader.step(0.91, Loc.t("正在侦测虫群活跃热区与战区首领信标...", "Scanning swarm hotspots & sector boss signals..."))
 	elif Net.is_dedicated_server():
 		await get_tree().process_frame
-	_spawn_initial_bugs(drop)
+	_spawn_initial_bugs(primary_drop)
+	if not transit.is_empty():
+		_clear_transit_spawn_bugs(drop)
 	_sanitize_spawns_and_loot(drop)
 	_tmark("extracts+bugs")
 
@@ -362,11 +380,16 @@ func _finish_setup(drop: Vector3) -> void:
 	camera.fov = 40.0
 	camera.near = 1.0
 	camera.far = 340.0
+	_cam_attr = CameraAttributesPractical.new()
+	_cam_attr.dof_blur_far_enabled = false
+	_cam_attr.dof_blur_near_enabled = false
+	camera.attributes = _cam_attr
 	add_child(camera)
 	camera.current = true
 	_apply_style.call_deferred()
 	camera.global_position = drop + CAM_OFFSET * _eff_zoom
 	camera.look_at(drop, Vector3.UP)
+	_update_cam_dof(false)
 	# 3D 音效的收听点：放在机甲上方、朝向与镜头一致（镜头离地 40 多米，直接用镜头收听会让近处的声音太小）
 	listener = AudioListener3D.new()
 	add_child(listener)
@@ -390,21 +413,21 @@ func _finish_setup(drop: Vector3) -> void:
 	_sanitize_npcs()
 	if Audio.has_method("warm_combat_sfx"):
 		Audio.warm_combat_sfx()
-	var zone_name := str(MAP.get("name", map_id))
+	_build_subregions()
 	if Net.active():
 		visited_maps = [map_id]
 		mech.position = drop + Vector3(0, 0.3, 0)
 		mech.input_locked = false
 		dropping = false
-		hud.show_zone_banner(zone_name, 0.12)
+		_init_subregion(drop, 0.12)
 		return
 	if transit.is_empty():
 		visited_maps = [map_id]
 		_drop_sequence(drop)
-		hud.show_zone_banner(zone_name, 0.45 if (not GameData.test_mode or force_async_load) else 0.08)
+		_init_subregion(drop, 0.45 if (not GameData.test_mode or force_async_load) else 0.08)
 	else:
 		world_link.arrive(transit, drop)
-		hud.show_zone_banner(zone_name, 0.25 if (GameData.test_mode and not force_async_load) else 0.45)
+		_init_subregion(drop, 0.25 if (GameData.test_mode and not force_async_load) else 0.45)
 
 
 func ground_dust_tint() -> Color:
@@ -620,47 +643,47 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_color = Color(0.56, 0.60, 0.66)
-	env.ambient_light_energy = 0.46
+	env.ambient_light_color = Color(0.44, 0.48, 0.54)
+	env.ambient_light_energy = 0.36
 	env.ambient_light_sky_contribution = 0.58
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.05
-	env.tonemap_white = 7.6
+	env.tonemap_exposure = 0.99
+	env.tonemap_white = 7.4
 	env.glow_enabled = true
 	env.glow_normalized = true
-	env.glow_intensity = 0.26
-	env.glow_strength = 0.86
+	env.glow_intensity = 0.28
+	env.glow_strength = 0.88
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.25
+	env.glow_hdr_threshold = 1.22
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
-	env.set_glow_level(0, 0.12)
-	env.set_glow_level(1, 0.62)
-	env.set_glow_level(2, 0.48)
-	env.set_glow_level(3, 0.28)
-	env.set_glow_level(4, 0.10)
+	env.set_glow_level(0, 0.14)
+	env.set_glow_level(1, 0.64)
+	env.set_glow_level(2, 0.50)
+	env.set_glow_level(3, 0.30)
+	env.set_glow_level(4, 0.12)
 	env.set_glow_level(5, 0.0)
 	env.ssr_fade_in = 0.045
 	env.ssr_fade_out = 2.0
 	env.ssr_depth_tolerance = 0.45
 	env.ssao_enabled = (not OS.has_feature("mobile")) and (RenderingServer.get_current_rendering_method() != "mobile") and (RenderingServer.get_current_rendering_method() != "gl_compatibility")
-	env.ssao_radius = 1.45
-	env.ssao_intensity = 1.85
-	env.ssao_power = 1.25
+	env.ssao_radius = 2.35
+	env.ssao_intensity = 2.05
+	env.ssao_power = 1.45
 	env.ssil_enabled = false
 	env.ssil_radius = 4.0
 	env.ssil_intensity = 0.8
-	env.ssao_detail = 0.85
-	env.ssao_horizon = 0.06
-	env.ssao_sharpness = 0.96
-	env.ssao_light_affect = 0.12
+	env.ssao_detail = 0.65
+	env.ssao_horizon = 0.08
+	env.ssao_sharpness = 0.88
+	env.ssao_light_affect = 0.26
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.52, 0.5, 0.44)
-	env.fog_density = 0.00075
-	env.fog_aerial_perspective = 0.40
-	env.fog_sun_scatter = 0.18
-	env.fog_height = 2.2
-	env.fog_height_density = 0.045
+	env.fog_light_color = Color(0.52, 0.54, 0.58)
+	env.fog_density = 0.00072
+	env.fog_aerial_perspective = 0.42
+	env.fog_sun_scatter = 0.22
+	env.fog_height = 2.4
+	env.fog_height_density = 0.042
 	env.fog_sky_affect = 0.34
 	env.volumetric_fog_enabled = false
 	env.volumetric_fog_density = 0.0
@@ -669,22 +692,22 @@ func _build_environment() -> void:
 	env.volumetric_fog_length = 80.0
 	env.volumetric_fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.04
-	env.adjustment_saturation = 0.98
-	if not A.is_mobile_perf():
-		env.adjustment_color_correction = A.cinematic_lut()
+	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 0.86
+	# 16^3 3D LUT 仅 1 次贴图查询，几乎零开销，低画质与移动端同样保留统一末世写实胶片调色
+	env.adjustment_color_correction = A.cinematic_lut()
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-37, 52, 0)
-	sun.light_color = Color(1.0, 0.92, 0.80)
-	sun.light_energy = 2.52
-	sun.light_angular_distance = 0.25
+	sun.rotation_degrees = Vector3(-34, 52, 0)
+	sun.light_color = Color(1.0, 0.90, 0.74)
+	sun.light_energy = 2.66
+	sun.light_angular_distance = 0.34
 	sun.shadow_enabled = true
-	sun.shadow_bias = 0.012
-	sun.shadow_normal_bias = 0.24
-	sun.shadow_blur = 0.42
+	sun.shadow_bias = 0.045
+	sun.shadow_normal_bias = 1.85
+	sun.shadow_blur = 1.05
 	sun.directional_shadow_max_distance = 84.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_split_1 = 0.16
@@ -696,14 +719,39 @@ func _build_environment() -> void:
 	_sun_light = sun
 	RenderingServer.global_shader_parameter_set("sun_dir_world", sun.transform.basis.z.normalized())
 	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-46, -135, 0)
-	fill.light_color = Color(0.58, 0.68, 0.82)
-	fill.light_energy = 0.24
+	fill.rotation_degrees = Vector3(-52, -128, 0)
+	fill.light_color = Color(0.46, 0.60, 0.90)
+	fill.light_energy = 0.28
 	fill.shadow_enabled = false
 	add_child(fill)
 	GameData.apply_env_quality(env, sun)
 	# 场景里所有点光/聚光都不参与体积雾（见 _no_fog_light）
 	get_tree().node_added.connect(_no_fog_light)
+
+
+## 写实长焦微景深：关闭“微缩模型感”近景虚化，仅在极远视野边缘施以极轻微空气景深，维持 1:1 重工写实质感
+func _update_cam_dof(scoping := false) -> void:
+	if _cam_attr == null or camera == null:
+		return
+	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	var want_dof := (not is_first_person()) and (not scoping) and (not compat) and (not mob) and GameData.quality >= 1
+	if not want_dof:
+		_cam_attr.dof_blur_far_enabled = false
+		_cam_attr.dof_blur_near_enabled = false
+		return
+	var d_focus := (CAM_OFFSET * _eff_zoom).length()
+	_cam_attr.dof_blur_far_enabled = true
+	_cam_attr.dof_blur_near_enabled = false
+	_cam_attr.dof_blur_far_distance = d_focus + 18.0 * _eff_zoom
+	_cam_attr.dof_blur_far_transition = 16.0 * _eff_zoom
+	_cam_attr.dof_blur_amount = 0.020
+
+
+## 登记一个静态物件的地面柔和接触阴影，由 _bake_static 合并为单次 Draw Call 的 MultiMesh
+func add_contact_shadow(pos: Vector3, sx: float, sz: float, yaw_deg := 0.0) -> void:
+	var bs := Basis(Vector3.UP, deg_to_rad(yaw_deg)).scaled_local(Vector3(sx, 1.0, sz))
+	_contact_shadows.append(Transform3D(bs, Vector3(pos.x, 0.025, pos.z)))
 
 
 func _static_box(size: Vector3, pos: Vector3, c: Color, parent: Node3D = null, m: Material = null) -> StaticBody3D:
@@ -1078,8 +1126,6 @@ func _build_perimeter() -> void:
 					A.add(seg_node, A.bevel_box(Vector3(sub_w - 0.06, 0.14, 0.58), 0.01), M_HAZ, Vector3(0.0, wh + 0.56, 0.0), Vector3.ZERO, Vector3.ONE, false)
 				for rx_s in [-sub_w * 0.48, sub_w * 0.48]:
 					A.add(seg_node, A.bevel_box(Vector3(0.36, wh + 0.35, 1.32), 0.03), M_STEEL, Vector3(rx_s, (wh + 0.35) * 0.5, 0.08))
-				if (i + k) % 5 == 0:
-					A.stencil(seg_node, "SECTOR-%02d" % ((i * 3 + k) % 18 + 1), Vector3(0.0, 2.35, 0.44), Vector3.ZERO, 0.024, Color(0.86, 0.80, 0.64, 0.62))
 			elif zt in ["K", "C", "S"]:
 				# 悬崖/弹坑/裂隙：层叠风化玄武岩断崖与崩塌岩堆
 				var rh := rng.randf_range(6.8, 12.6)
@@ -1316,6 +1362,8 @@ func _container(p: Vector3, rot: float, c: Color) -> void:
 	for vx in [-0.72, 0.72]:
 		_ibox(sb, Vector3(0.32, 0.42, 0.06), 0.01, M_FRM, Vector3(vx, 0.62, -3.02), Vector3.ZERO, Vector3.ONE, false)
 	_ibox(sb, Vector3(2.49, 0.18, 1.40), 0.02, A.hazard(), Vector3(0, -0.96, 2.28), Vector3.ZERO, Vector3.ONE, false)
+	if p.y < 0.5:
+		add_contact_shadow(p, 3.6, 7.2, rot)
 
 
 ## 遗迹 POI：类型来自 GameData.POIS（核心三类 + 扩展）。核心类型与 compound = true 的扩展类型建标准围墙院落；
@@ -1414,20 +1462,11 @@ func _build_pois() -> void:
 		_poi_lamp(c + Vector3(s - 1.6, 0, -s + 1.6), Color(1.0, 0.75, 0.45))
 		_poi_lamp(c + Vector3(-s + 1.6, 0, s - 1.6), Color(0.6, 0.85, 1.0))
 		_fire_barrel(c + Vector3(1.5, 0, 1.0))
-		_place_box("military", c + Vector3(3.5, 0, -3.5))
-		_place_box("military", c + Vector3(-4.5, 0, -4))
-		_place_box("safe", c + Vector3(4.5, 0, 4.5))
-		_place_box("tool", c + Vector3(-1, 0, 5.5))
-		var lbl := Label3D.new()
-		lbl.text = n
-		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		lbl.font_size = 64
-		lbl.pixel_size = 0.02
-		lbl.modulate = Color(1.0, 0.85, 0.6)
-		lbl.outline_size = 10
-		lbl.outline_modulate = Color(0.05, 0.03, 0.02, 0.9)
-		lbl.position = c + Vector3(0, 7.0, 0)
-		world.add_child(lbl)
+		_place_box("military", c + Vector3(3.5, 0, -3.5), [], 0.0)
+		_place_box("military", c + Vector3(-4.5, 0, -4), [], 90.0)
+		_place_box("safe", c + Vector3(4.5, 0, 4.5), [], 180.0)
+		_place_box("tool", c + Vector3(-1, 0, 5.5), [], 180.0)
+		# 遗迹不再在地图上悬挂 3D 漂浮文字，进入区域时由顶部横幅提示
 		spawn_bug("beetle", c + Vector3(0, 0.5, 0))
 
 
@@ -1491,7 +1530,6 @@ func _crashed_ship(c: Vector3) -> void:
 	for sx_t in [-1.0, 1.0]:
 		var tail_x: float = sx_t * 1.18
 		A.add(body, A.bevel_box(Vector3(0.20, 2.25, 1.65), 0.05, 0.62), M_HULL, Vector3(tail_x, 1.72, 4.55), Vector3(-18, 0, sx_t * -16.0))
-	A.stencil(body, "EGRET-04", Vector3(-1.60, 0.38, -1.65), Vector3(0, -90, 0), 0.016, Color(0.84, 0.82, 0.74, 0.62))
 	for k_d in 4:
 		A.add(hull, A.rock_mesh((k_d * 3 + 2) % 12), M_DIRT, Vector3(-1.4 + k_d * 0.95, 0.16, -4.5 + (k_d % 2) * 0.45), Vector3(0, k_d * 52.0, 0), Vector3(0.85, 0.34, 0.72))
 	A.emitter(world, c + Vector3(0.5, 2.5, 2.0), {"amount": 18, "life": 6.0, "size": 2.4, "tex": A.smoke_tex(), "additive": false, "vmin": 0.8, "vmax": 1.6,
@@ -1508,143 +1546,47 @@ func _crashed_ship(c: Vector3) -> void:
 
 
 func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
-	# 废弃城区楼房：预制模板混凝土 / 工业红砖砌体外墙 + 台阶基座 + 立面壁柱 + 钢框蒙尘玻璃窗 + 压顶女儿墙 + 楼梯间机房与屋顶设备
+	# 城区通用街角楼与高层母版：按地块体量与层高自动匹配精修硬表面建筑预制件（真内凹窗洞、阶梯勒脚、压顶女儿墙与屋顶机房）
 	var is_brick := rng.randf() < 0.36
-	var c := Color(0.52, 0.48, 0.42).lerp(Color(0.41, 0.38, 0.34), rng.randi_range(0, 3) / 3.0)
+	var c := Color(0.58, 0.54, 0.48).lerp(Color(0.47, 0.44, 0.40), rng.randi_range(0, 3) / 3.0)
 	if is_brick:
-		c = Color(0.46, 0.32, 0.25).lerp(Color(0.38, 0.26, 0.21), rng.randi_range(0, 2) / 2.0)
+		c = Color(0.54, 0.35, 0.25).lerp(Color(0.45, 0.29, 0.22), rng.randi_range(0, 2) / 2.0)
 	var M_WALL: ShaderMaterial = A.brick(c) if is_brick else A.concrete(c)
 	var sb := _bldg_body(size, p + Vector3(0, size.y * 0.5, 0))
 	sb.rotation.y = -yaw
-	_ibox(sb, size, 0.01, M_WALL)
 	var hy := size.y * 0.5
-	var hx := size.x * 0.5
 	var hz := size.z * 0.5
-	var M_DARK := A.concrete(Color(0.30, 0.29, 0.27) if is_brick else c.darkened(0.36), false)
-	var M_TRIM := A.concrete(Color(0.52, 0.49, 0.44) if is_brick else c.lightened(0.14), false)
-	var M_ROOF := A.tar_roof(Color(0.24, 0.25, 0.27))
-	# 底层散水台基 + 深色勒脚 + 四角壁柱
-	_ibox(sb, Vector3(size.x + 0.5, 0.14, size.z + 0.5), 0.02, M_TRIM, Vector3(0, -hy + 0.07, 0), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(size.x + 0.16, 0.62, size.z + 0.16), 0.03, M_DARK, Vector3(0, -hy + 0.31, 0))
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_ibox(sb, Vector3(0.4, size.y + 0.06, 0.4), 0.02, M_TRIM, Vector3(sx * (hx - 0.08), 0.02, sz * (hz - 0.08)))
-	# 楼层腰线与顶部挑檐
-	var floors := maxi(1, int(size.y / 1.65))
-	for f in range(1, floors + 1):
-		var y := -hy + f * 1.65 - 0.08
-		if y > hy - 0.25:
-			break
-		_ibox(sb, Vector3(size.x + 0.2, 0.16, size.z + 0.2), 0.02, M_DARK, Vector3(0, y, 0))
-	_ibox(sb, Vector3(size.x + 0.32, 0.18, size.z + 0.32), 0.02, M_TRIM, Vector3(0, hy - 0.06, 0))
-	# 窗：钢框分格反光蒙尘工业窗（内含微弱残存钠灯窗格）+ 少量木板封窗
-	var M_UNIT := A.paint(Color(0.55, 0.56, 0.54), 0.4, 0.6, {"wear": 0.6, "rust": 0.5})
-	if size.x > 2.5 and size.z > 2.5:
-		var M_WIN := A.window_mat(0.18, Vector2(0.42, 0.46))
-		var M_BOARD := A.paint(Color(0.34, 0.25, 0.17), 0.0, 0.92, {"wear": 0.55, "dust": 0.45})
-		for f in floors:
-			var y := -hy + f * 1.65 + 0.88
-			if y > hy - 0.42:
-				break
-			for axis: int in [0, 1]:
-				var length: float = size.x if axis == 0 else size.z
-				var depth: float = hz if axis == 0 else hx
-				var n := int(length / 1.85)
-				for i in n:
-					var t := -length * 0.5 + (i + 0.5) * length / n
-					for sd: float in [-1.0, 1.0]:
-						if rng.randf() > 0.86:
-							continue
-						var wm: Material = M_WIN if rng.randf() < 0.90 else M_BOARD
-						var o: float = sd * (depth + 0.02)
-						var pos := Vector3(t, y, o) if axis == 0 else Vector3(o, y, t)
-						var rot := Vector3.ZERO if axis == 0 else Vector3(0, 90, 0)
-						_ibox(sb, Vector3(0.84, 0.92, 0.08), 0.01, wm, pos, rot, Vector3.ONE, false)
-						var sill_p := Vector3(t, y - 0.49, sd * (depth + 0.05)) if axis == 0 else Vector3(sd * (depth + 0.05), y - 0.49, t)
-						_ibox(sb, Vector3(0.96, 0.08, 0.14), 0.01, M_TRIM, sill_p, rot, Vector3.ONE, false)
-		# 一层门厅雨棚与卷帘装甲门 + 侧墙双轨钢制护笼检修爬梯与立管
-		var d_sd := 1.0 if rng.randf() < 0.65 else -1.0
-		var dz := (hz + 0.03) * d_sd
-		var dw := minf(2.5, size.x * 0.42)
-		var dx := rng.randf_range(-hx, hx) * 0.3
-		var M_SHUT := A.corrugated(Color(0.20, 0.22, 0.24), 0.45, 0.42)
-		_ibox(sb, Vector3(dw, 1.48, 0.10), 0.02, M_DARK, Vector3(dx, -hy + 0.78, dz), Vector3.ZERO, Vector3.ONE, false)
-		for sl_i in 4:
-			_ibox(sb, Vector3(dw - 0.16, 0.26, 0.07), 0.01, M_SHUT, Vector3(dx, -hy + 0.28 + sl_i * 0.31, dz + d_sd * 0.04), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(dw + 0.65, 0.16, 0.82), 0.02, M_TRIM, Vector3(dx, -hy + 1.62, dz + d_sd * 0.36))
-		if size.y > 4.0:
-			var M_LAD := A.metal(Color(0.18, 0.19, 0.20))
-			var lx_s := -1.0 if dx > 0.0 else 1.0
-			var lad_h := size.y - 0.5
-			var lx_p := lx_s * (hx + 0.09)
-			for lz_r in [-0.21, 0.21]:
-				_ibox(sb, Vector3(0.05, lad_h, 0.06), 0.008, M_LAD, Vector3(lx_p, 0.15, lz_r), Vector3.ZERO, Vector3.ONE, false)
-			var n_rungs := int(lad_h / 0.46)
-			for ri in n_rungs:
-				var ry := 0.15 - lad_h * 0.5 + 0.24 + ri * 0.46
-				_ibox(sb, Vector3(0.04, 0.04, 0.42), 0.005, M_LAD, Vector3(lx_p, ry, 0.0), Vector3.ZERO, Vector3.ONE, false)
-				if ri >= 4 and ri % 3 == 1:
-					_ibox(sb, Vector3(0.32, 0.05, 0.54), 0.01, M_LAD, Vector3(lx_p + lx_s * 0.16, ry, 0.0), Vector3.ZERO, Vector3.ONE, false)
-			_imesh(sb, A.cyl(0.05, size.y - 0.2, 0.05, 6), M_LAD, Vector3(-lx_s * (hx - 0.32), 0.0, -d_sd * (hz + 0.06)), Vector3.ZERO, Vector3.ONE, false)
-	# 屋顶：深色防水屋面 + 带浅色压顶石的四周女儿墙
-	_ibox(sb, Vector3(size.x - 0.24, 0.1, size.z - 0.24), 0.02, M_ROOF, Vector3(0, hy + 0.04, 0), Vector3.ZERO, Vector3.ONE, false)
-	var ph := 0.52
-	for sd: float in [-1.0, 1.0]:
-		var segs := 3
-		for k in segs:
-			if rng.randf() < 0.12:
-				continue
-			var len_x := size.x / segs
-			var hh := ph * rng.randf_range(0.78, 1.0)
-			var px := -hx + (k + 0.5) * len_x
-			var pz := sd * (hz - 0.14)
-			_ibox(sb, Vector3(len_x, hh, 0.28), 0.02, M_DARK, Vector3(px, hy + hh * 0.5, pz))
-			_ibox(sb, Vector3(len_x + 0.08, 0.09, 0.34), 0.02, M_TRIM, Vector3(px, hy + hh + 0.04, pz), Vector3.ZERO, Vector3.ONE, false)
-			var span_z := maxf(0.8, size.z - 0.60)
-			var len_z := span_z / segs
-			hh = ph * rng.randf_range(0.78, 1.0)
-			var qx := sd * (hx - 0.14)
-			var qz := -span_z * 0.5 + (k + 0.5) * len_z
-			_ibox(sb, Vector3(0.28, hh, len_z), 0.02, M_DARK, Vector3(qx, hy + hh * 0.5, qz))
-			_ibox(sb, Vector3(0.34, 0.09, len_z + 0.04), 0.02, M_TRIM, Vector3(qx, hy + hh + 0.04, qz), Vector3.ZERO, Vector3.ONE, false)
-	# 屋顶楼梯间机房（带铁门与镀锌铁皮排风管道，63°俯视角最具立体感的核心构件）
 	var M_METAL_D := A.metal(Color(0.15, 0.155, 0.165))
-	var M_DUCT := A.corrugated(Color(0.50, 0.52, 0.51), 0.35, 0.42)
-	if size.x >= 5.2 and size.z >= 5.2:
-		var pw := clampf(size.x * 0.32, 1.8, 2.8)
-		var pd := clampf(size.z * 0.32, 1.6, 2.4)
-		var p_h := rng.randf_range(1.6, 2.2)
-		var sx_p := 1.0 if rng.randf() < 0.5 else -1.0
-		var sz_p := 1.0 if rng.randf() < 0.5 else -1.0
-		var pp := Vector3((hx - pw * 0.5 - 0.65) * sx_p, hy + p_h * 0.5, (hz - pd * 0.5 - 0.65) * sz_p)
-		_ibox(sb, Vector3(pw, p_h, pd), 0.02, M_WALL, pp)
-		_ibox(sb, Vector3(pw + 0.26, 0.16, pd + 0.26), 0.02, M_DARK, pp + Vector3(0, p_h * 0.5 + 0.08, 0))
-		_ibox(sb, Vector3(0.76, minf(1.35, p_h * 0.78), 0.08), 0.01, M_METAL_D, pp + Vector3(0, -p_h * 0.1, -sz_p * (pd * 0.5 + 0.03)), Vector3.ZERO, Vector3.ONE, false)
-		var duct_l := clampf(size.x * 0.44, 1.8, 4.4)
-		_ibox(sb, Vector3(duct_l, 0.34, 0.38), 0.02, M_DUCT, Vector3(-sx_p * hx * 0.15, hy + 0.28, -sz_p * hz * 0.22), Vector3.ZERO, Vector3.ONE, false)
-	# 屋顶设备：带深色风扇井的工业空调外机、带风帽通风管、高架锈蚀水箱
-	for k in rng.randi_range(1, 3):
-		var up := Vector3(rng.randf_range(-hx, hx) * 0.5, hy + 0.38, rng.randf_range(-hz, hz) * 0.5)
-		var u_yaw := rng.randi_range(0, 3) * 90.0
-		_ibox(sb, Vector3(1.18, 0.72, 0.84), 0.04, M_UNIT, up, Vector3(0, u_yaw, 0))
-		_imesh(sb, A.cyl(0.30, 0.08, 0.30, 12), M_METAL_D, up + Vector3(0, 0.36, 0), Vector3.ZERO, Vector3.ONE, false)
-	for k in rng.randi_range(1, 3):
-		var vp := Vector3(rng.randf_range(-hx, hx) * 0.62, hy + 0.38, rng.randf_range(-hz, hz) * 0.62)
-		_imesh(sb, A.cyl(0.13, 0.75, 0.13, 8), A.metal(Color(0.38, 0.39, 0.4)), vp)
-		_imesh(sb, A.cyl(0.20, 0.09, 0.10, 8), M_DUCT, vp + Vector3(0, 0.40, 0), Vector3.ZERO, Vector3.ONE, false)
-	if size.x * size.z > 30.0 and rng.randf() < 0.6:
-		var tp := Vector3(rng.randf_range(-hx, hx) * 0.42, hy, rng.randf_range(-hz, hz) * 0.42)
-		for lx in [-0.5, 0.5]:
-			for lz in [-0.5, 0.5]:
-				_imesh(sb, A.cyl(0.05, 0.8, 0.05, 6), A.metal(Color(0.2, 0.2, 0.2)), tp + Vector3(lx, 0.4, lz))
-		_imesh(sb, A.cyl(0.78, 1.15, 0.78, 16), A.paint(Color(0.5, 0.42, 0.32), 0.5, 0.6, {"rust": 0.8, "wear": 0.6}), tp + Vector3(0, 1.38, 0))
-		_imesh(sb, A.cyl(0.05, 0.25, 0.82, 16), A.metal(Color(0.3, 0.27, 0.24)), tp + Vector3(0, 2.06, 0))
+	if size.x < 4.2 or size.z < 4.2:
+		var M_DARK := A.concrete(Color(0.30, 0.29, 0.27) if is_brick else c.darkened(0.36), false)
+		var M_TRIM := A.concrete(Color(0.52, 0.49, 0.44) if is_brick else c.lightened(0.14), false)
+		_ibox(sb, size, 0.02, M_WALL)
+		_ibox(sb, Vector3(size.x + 0.22, 0.32, size.z + 0.22), 0.02, M_DARK, Vector3(0, -hy + 0.16, 0))
+		_ibox(sb, Vector3(size.x + 0.16, 0.14, size.z + 0.16), 0.02, M_TRIM, Vector3(0, hy - 0.04, 0))
+		return
+
+	var pf_id := "poi_generic_building"
+	var rr := rng.randf()
+	if size.y >= 11.8:
+		pf_id = "bldg_stepped_tower" if rr < 0.68 else "bldg_tenement"
+	elif size.y >= 9.6:
+		if rr < 0.46:
+			pf_id = "poi_generic_building"
+		elif rr < 0.80:
+			pf_id = "bldg_apartment"
+		else:
+			pf_id = "bldg_arcade_shop"
+	elif size.y >= 5.2:
+		pf_id = "poi_generic_building" if rr < 0.76 else "bldg_terrace"
 	else:
-		_ibox(sb, Vector3(0.95, 0.3, 0.95), 0.03, M_DARK, Vector3(rng.randf_range(-hx, hx) * 0.45, hy + 0.16, rng.randf_range(-hz, hz) * 0.45))
-	# 少数楼挂着带金属灯箱外框与支架的残存工业招牌
-	if size.y > 3.0 and rng.randf() < 0.3:
+		pf_id = "bldg_house" if rr < 0.65 else "poi_generic_building"
+
+	PrefabLib.place_on_body(self, sb, pf_id, size, true, M_WALL, -999.0, rng.randf() < 0.18)
+
+	# 少数高层街角楼挂着带金属灯箱外框与支架的残存工业招牌
+	if size.y > 4.8 and rng.randf() < 0.22:
 		var nc: Color = [Color(1.0, 0.48, 0.18), Color(0.32, 0.82, 0.96), Color(0.96, 0.72, 0.26)][rng.randi() % 3]
-		var sp := Vector3(0, hy - 0.8, hz + 0.16)
+		var sp := Vector3(0, hy - 0.9, hz + 0.22)
 		_ibox(sb, Vector3(1.56, 0.62, 0.12), 0.02, M_METAL_D, sp - Vector3(0, 0, 0.03), Vector3.ZERO, Vector3.ONE, false)
 		for bx_s in [-0.55, 0.55]:
 			_ibox(sb, Vector3(0.06, 0.08, 0.18), 0.01, M_METAL_D, sp + Vector3(bx_s, 0.22, -0.09), Vector3.ZERO, Vector3.ONE, false)
@@ -1693,58 +1635,55 @@ func _flush_inst() -> void:
 	_inst.clear()
 
 
-func _wreck_car(p: Vector3, yaw_deg := INF) -> void:
-	# 三种写实废弃机动车轮廓：0 三厢轿车、1 工程皮卡（开放货斗+防滚架）、2 厢式工具面包车
-	var vtype := rng.randi() % 3
-	var c: Color = [Color(0.46, 0.22, 0.16), Color(0.24, 0.32, 0.38), Color(0.50, 0.44, 0.30), Color(0.32, 0.34, 0.35), Color(0.27, 0.35, 0.27)][rng.randi() % 5]
-	var M_BODY := A.paint(c, 0.42, 0.62, {"wear": 0.62, "rust": 0.55})
-	var M_ROOF := A.paint(c.lightened(0.06), 0.42, 0.60, {"wear": 0.58, "rust": 0.52})
-	var M_GLASS := A.glass(Color(0.16, 0.22, 0.26))
-	var M_TRIM := A.metal(Color(0.15, 0.16, 0.17))
-	var M_DARK := A.paint(Color(0.06, 0.06, 0.07), 0.1, 0.85)
-	var sb := _bldg_body(Vector3(1.96, 1.35, 4.35), p + Vector3(0, 0.68, 0))
-	sb.rotation_degrees.y = yaw_deg if yaw_deg < INF else rng.randf_range(0, 180)
-	# 下车体底盘 + 前后防撞保险杠 + 散热中网与暗灯碗
-	_ibox(sb, Vector3(1.92, 0.62, 4.28), 0.04, M_BODY, Vector3(0, -0.08, 0))
-	_ibox(sb, Vector3(2.02, 0.22, 0.26), 0.03, M_TRIM, Vector3(0, -0.26, -2.14), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(2.02, 0.22, 0.26), 0.03, M_TRIM, Vector3(0, -0.26, 2.14), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(1.12, 0.28, 0.08), 0.01, M_DARK, Vector3(0, -0.04, -2.15), Vector3.ZERO, Vector3.ONE, false)
-	for lx in [-0.72, 0.72]:
-		_ibox(sb, Vector3(0.30, 0.16, 0.08), 0.01, M_GLASS, Vector3(lx, 0.02, -2.15), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(0.32, 0.15, 0.08), 0.01, A.paint(Color(0.28, 0.08, 0.06), 0.1, 0.5), Vector3(lx, 0.02, 2.15), Vector3.ZERO, Vector3.ONE, false)
-	if vtype == 0:
-		# 三厢轿车：微倾引擎盖 + 梯形乘员舱 + 后备箱盖
-		_ibox(sb, Vector3(1.74, 0.12, 1.24), 0.03, M_ROOF, Vector3(0, 0.26, -1.42), Vector3(4, 0, 0), Vector3.ONE, false)
-		_ibox(sb, Vector3(1.72, 0.09, 0.88), 0.02, M_ROOF, Vector3(0, 0.24, 1.62), Vector3(-3, 0, 0), Vector3.ONE, false)
-		A.add(sb, A.bevel_box(Vector3(1.72, 0.58, 2.05), 0.10, 0.82), M_ROOF, Vector3(0, 0.50, 0.08))
-		_ibox(sb, Vector3(1.54, 0.40, 2.10), 0.03, M_GLASS, Vector3(0, 0.48, 0.08), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(1.76, 0.38, 1.66), 0.03, M_GLASS, Vector3(0, 0.48, 0.08), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(1.78, 0.42, 0.13), 0.02, M_BODY, Vector3(0, 0.48, 0.12), Vector3.ZERO, Vector3.ONE, false)
-	elif vtype == 1:
-		# 工业工程皮卡：高车头 + 短驾驶楼 + 防滚龙门架 + 凹陷敞口货箱
-		_ibox(sb, Vector3(1.82, 0.18, 1.32), 0.03, M_ROOF, Vector3(0, 0.30, -1.42), Vector3(3, 0, 0), Vector3.ONE, false)
-		A.add(sb, A.bevel_box(Vector3(1.78, 0.66, 1.38), 0.08, 0.88), M_ROOF, Vector3(0, 0.54, -0.22))
-		_ibox(sb, Vector3(1.60, 0.44, 1.42), 0.02, M_GLASS, Vector3(0, 0.54, -0.22), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(1.82, 0.42, 0.96), 0.02, M_GLASS, Vector3(0, 0.54, -0.22), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(1.66, 0.08, 1.56), 0.01, M_DARK, Vector3(0, 0.18, 1.28), Vector3.ZERO, Vector3.ONE, false)
-		for bx in [-0.88, 0.88]:
-			_ibox(sb, Vector3(0.14, 0.34, 1.64), 0.02, M_BODY, Vector3(bx, 0.34, 1.28))
-		_ibox(sb, Vector3(1.74, 0.58, 0.09), 0.02, M_TRIM, Vector3(0, 0.56, 0.54), Vector3.ZERO, Vector3.ONE, false)
+func _wreck_car(p: Vector3, yaw_deg := INF, compact_scale := 1.0) -> void:
+	# 四种按 4m 机甲真实参照尺度（2.65m~2.90m 宽 × 6.1m~7.5m 长）重制的废弃军工重型载具残骸（P0-M2.1）：
+	# 矿山自卸重卡 / 八轮装甲运兵车 / 半挂重型油罐车 / 装甲工程推土机
+	var zc := zone_at(p)
+	var pf_id := "veh_dump_truck"
+	var rr := rng.randf()
+	if compact_scale < 0.92:
+		# 室内低净空车库（如停车楼 3.24m 层高）优先使用低矮宽体八轮装甲车与工程推土机
+		pf_id = "veh_apc_wreck" if rr < 0.65 else "veh_armored_dozer"
+	elif zc in ["M", "C"]:
+		pf_id = "veh_apc_wreck" if rr < 0.65 else "veh_armored_dozer"
+	elif zc in ["I", "H", "Y"]:
+		if rr < 0.36:
+			pf_id = "veh_dump_truck"
+		elif rr < 0.72:
+			pf_id = "veh_fuel_tanker"
+		else:
+			pf_id = "veh_armored_dozer"
 	else:
-		# 厢式勤务工具车：短鼻前脸 + 贯通高顶金属货厢 + 车顶行李钢架
-		_ibox(sb, Vector3(1.82, 0.22, 0.72), 0.03, M_ROOF, Vector3(0, 0.30, -1.74), Vector3(12, 0, 0), Vector3.ONE, false)
-		A.add(sb, A.bevel_box(Vector3(1.86, 0.84, 3.36), 0.08, 0.94), M_ROOF, Vector3(0, 0.62, 0.38))
-		_ibox(sb, Vector3(1.66, 0.46, 0.12), 0.02, M_GLASS, Vector3(0, 0.64, -1.28), Vector3(14, 0, 0), Vector3.ONE, false)
-		_ibox(sb, Vector3(1.90, 0.42, 0.86), 0.02, M_GLASS, Vector3(0, 0.64, -0.72), Vector3.ZERO, Vector3.ONE, false)
-		for rz in [-0.2, 0.8, 1.6]:
-			_ibox(sb, Vector3(1.68, 0.07, 0.09), 0.01, M_TRIM, Vector3(0, 1.07, rz), Vector3.ZERO, Vector3.ONE, false)
-	# 四轮暗色轮拱衬套 + 橡胶轮胎 + 钢制轮毂
-	for wx in [-0.94, 0.94]:
-		for wz in [-1.32, 1.32]:
-			_ibox(sb, Vector3(0.18, 0.48, 0.84), 0.02, M_DARK, Vector3(wx * 0.92, -0.22, wz), Vector3.ZERO, Vector3.ONE, false)
-			_imesh(sb, A.cyl(0.38, 0.26, 0.38, 12), A.rubber(), Vector3(wx, -0.30, wz), Vector3(0, 0, 90))
-			_imesh(sb, A.cyl(0.20, 0.28, 0.20, 10), M_TRIM, Vector3(wx, -0.30, wz), Vector3(0, 0, 90), Vector3.ONE, false)
-	blocks.append(_rect_for(p, Vector3(4, 1, 4)))
+		if rr < 0.32:
+			pf_id = "veh_dump_truck"
+		elif rr < 0.62:
+			pf_id = "veh_apc_wreck"
+		elif rr < 0.82:
+			pf_id = "veh_fuel_tanker"
+		else:
+			pf_id = "veh_armored_dozer"
+
+	var cols := [
+		Color(0.46, 0.42, 0.31),
+		Color(0.34, 0.41, 0.32),
+		Color(0.56, 0.43, 0.24),
+		Color(0.38, 0.44, 0.48),
+		Color(0.52, 0.31, 0.22),
+	]
+	var c: Color = cols[rng.randi() % cols.size()]
+	var M_BODY := A.paint(c, 0.28, 0.62, {"wear": 0.44, "rust": 0.36, "panel_scale": 0.0})
+	var bsz := PrefabLib.base_size(pf_id) * compact_scale
+	var col_sz := Vector3(bsz.x * 0.94, maxf(1.6, bsz.y * 0.88), bsz.z * 0.94)
+	var sb := _bldg_body(col_sz, p + Vector3(0, col_sz.y * 0.5, 0))
+	var use_yaw := yaw_deg if yaw_deg < INF else rng.randf_range(0.0, 360.0)
+	sb.rotation_degrees.y = use_yaw
+	PrefabLib.place_on_body(self, sb, pf_id, bsz, false, M_BODY, -col_sz.y * 0.5, rng.randf() < 0.30)
+	if p.y < 0.5:
+		add_contact_shadow(p, bsz.x * 1.48, bsz.z * 1.28, use_yaw)
+	var yr := deg_to_rad(use_yaw)
+	var ex := absf(cos(yr)) * bsz.x + absf(sin(yr)) * bsz.z
+	var ez := absf(sin(yr)) * bsz.x + absf(cos(yr)) * bsz.z
+	blocks.append(_rect_for(p, Vector3(ex + 0.4, 1.0, ez + 0.4)))
 
 
 func _build_ruins() -> void:
@@ -1780,13 +1719,127 @@ func _build_ruins() -> void:
 			_fire_barrel(p)
 
 
-func _place_box(kind: String, pos: Vector3, loot: Array = []):
+func _place_box(kind: String, pos: Vector3, loot: Array = [], yaw_deg := INF):
+	# 容器品质由所在区块的危险度决定：军事区/要塞出精英箱，野外补给出常规箱；位置与朝向、内容按箱体坐标固定化
+	var zw: Dictionary = LOOT_W.get(zone_at(pos), LOOT_W["W"]) as Dictionary
+	var tier: int = GameData.zone_tier(zw)
 	var b = LootScript.new()
 	world.add_child(b)
 	b.position = pos
-	b.rotation_degrees.y = rng.randf_range(-20, 20)
-	b.setup(kind, loot if not loot.is_empty() else GameData.roll_loot(kind, rng))
+	b.rotation_degrees.y = yaw_deg if yaw_deg < INF else 0.0
+	var items: Array = loot
+	if items.is_empty():
+		var lrng := RandomNumberGenerator.new()
+		lrng.seed = _map_seed(500) ^ (hash("%s|%.1f|%.1f" % [kind, pos.x, pos.z]) & 0x7fffffff)
+		items = GameData.roll_loot(kind, lrng, tier)
+	b.setup(kind, items, tier)
 	return b
+
+
+## 登记一个贴靠建筑/掩体/集装箱/地标/残骸的情境化固定物资箱锚点
+func register_loot_anchor(pos: Vector3, yaw_deg: float, kind: String, priority: int, tag := "", outward := Vector3.ZERO, host_pos := Vector3.INF) -> void:
+	_loot_anchors.append({
+		"pos": Vector3(pos.x, 0.0, pos.z),
+		"yaw": yaw_deg,
+		"kind": kind,
+		"priority": priority,
+		"tag": tag,
+		"outward": Vector3(outward.x, 0.0, outward.z),
+		"host_pos": host_pos,
+		"order": hash("%s|%s|%d|%d|%s" % [map_id, tag, roundi(pos.x * 2.0), roundi(pos.z * 2.0), kind]) & 0x7fffffff,
+	})
+
+
+func _near_scripted_poi(p: Vector3, rad: float) -> bool:
+	var p2 := Vector2(p.x, p.z)
+	for i in poi_centers.size():
+		if not GameData.POIS.get(str(poi_ids[i]), {}).has("script"):
+			continue
+		var c: Vector3 = poi_centers[i]
+		if p2.distance_to(Vector2(c.x, c.z)) < rad:
+			return true
+	return false
+
+
+## 统一落位全图情境化固定物资箱：取代 3m 随机网格空地撒箱，确保每只箱子贴靠合理设施、朝向齐整、无穿墙且分布均衡
+func _place_contextual_loot() -> void:
+	if _loot_anchors.is_empty():
+		return
+	var existing: Array = []
+	for bx in get_tree().get_nodes_in_group("lootboxes"):
+		if is_instance_valid(bx):
+			existing.append(Vector2(bx.global_position.x, bx.global_position.z))
+	var sorted := _loot_anchors.duplicate()
+	sorted.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.priority) != int(b.priority):
+			return int(a.priority) > int(b.priority)
+		return int(a.order) < int(b.order))
+	var placed := 0
+	var placed_pts: Array = []
+	var cell_cnt := {}
+	var max_total := 58 if is_surface_map else 32
+	for a: Dictionary in sorted:
+		if placed >= max_total:
+			break
+		var p: Vector3 = a.pos
+		var q := Vector2(p.x, p.z)
+		var prio: int = int(a.priority)
+		var tag := str(a.tag)
+		if not in_bounds(p, 5.0) or in_wet(q, 2.0) or on_road(q, 0.85):
+			continue
+		if _in_keep_clear(p, 0.5) and tag != "landmark":
+			continue
+		if tag in ["bldg", "military_bldg"]:
+			var hp: Vector3 = a.host_pos
+			if hp != Vector3.INF and _near_scripted_poi(hp, 17.5):
+				continue
+			if _near_scripted_poi(p, 16.5):
+				continue
+		if _blocked(p, 0.90, false):
+			continue
+		var out_v: Vector3 = a.outward
+		if out_v.length_squared() > 0.01:
+			var onrm := out_v.normalized()
+			# 斜俯视视角从 +Z 看向 -Z：建筑北侧窄缝容易被南侧高楼遮挡，优先摆在可见南/东/西临街面或开阔院坪
+			if tag in ["bldg", "military_bldg"] and onrm.z < -0.45 and _blocked(p + Vector3(0.0, 0.0, -3.2), 1.0, false):
+				continue
+			var stand := p + onrm * 1.65
+			var sq := Vector2(stand.x, stand.z)
+			if not in_bounds(stand, 3.0) or in_wet(sq, 1.5) or _blocked(stand, 0.70, false):
+				continue
+			if tag in ["bldg", "military_bldg"]:
+				var open_fg := p + onrm * 3.1
+				if _blocked(open_fg, 0.85, false) or _blocked(p + Vector3(0.0, 0.0, 3.6), 1.1, false):
+					continue
+		# 避免贴着 POI 既有箱子堆叠
+		var near_exist := false
+		for ep: Vector2 in existing:
+			if ep.distance_to(q) < 4.5:
+				near_exist = true
+				break
+		if near_exist:
+			continue
+		# 控制同片区箱子间距与 45m 网格均衡配额
+		var min_sep := 3.2 if prio >= 95 else (6.5 if prio >= 80 else 10.5)
+		var too_close := false
+		for pp: Vector2 in placed_pts:
+			if pp.distance_to(q) < min_sep:
+				too_close = true
+				break
+		if too_close:
+			continue
+		var cell := Vector2i(floori(p.x / 44.0), floori(p.z / 44.0))
+		var cur_c := int(cell_cnt.get(cell, 0))
+		var cell_cap := 3 if prio >= 92 else 2
+		if cur_c >= cell_cap:
+			continue
+		var b = _place_box(str(a.kind), p, [], float(a.yaw))
+		b.set_meta("contextual_loot", tag)
+		blocks.append(Rect2(p.x - 0.85, p.z - 0.85, 1.7, 1.7))
+		placed_pts.append(q)
+		cell_cnt[cell] = cur_c + 1
+		placed += 1
+	print("[raid] placed %d contextual loot boxes from %d anchors" % [placed, _loot_anchors.size()])
 
 
 func _scatter_loot() -> void:
@@ -1874,14 +1927,10 @@ func set_view_mode(mode: int, save := false) -> void:
 			camera.fov = _fp_fov
 			if _sun_light != null and is_instance_valid(_sun_light):
 				if A.is_mobile_perf():
-					_sun_light.directional_shadow_blend_splits = false
-					if GameData.quality <= 1:
-						_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-						_sun_light.directional_shadow_max_distance = 44.0 if GameData.quality == 0 else 56.0
-					else:
-						_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-						_sun_light.directional_shadow_split_1 = 0.22
-						_sun_light.directional_shadow_max_distance = 68.0
+					_sun_light.directional_shadow_blend_splits = GameData.quality >= 1
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.24
+					_sun_light.directional_shadow_max_distance = 56.0 if GameData.quality == 0 else (66.0 if GameData.quality == 1 else 78.0)
 				elif GameData.quality > 0:
 					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 					_sun_light.directional_shadow_split_1 = 0.08
@@ -1889,11 +1938,13 @@ func set_view_mode(mode: int, save := false) -> void:
 					_sun_light.directional_shadow_split_3 = 0.48
 					_sun_light.directional_shadow_max_distance = 120.0
 				else:
-					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-					_sun_light.directional_shadow_split_1 = 0.18
-					_sun_light.directional_shadow_max_distance = 75.0
-				_sun_light.shadow_bias = 0.010
-				_sun_light.shadow_normal_bias = 0.18
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.10
+					_sun_light.directional_shadow_split_2 = 0.26
+					_sun_light.directional_shadow_split_3 = 0.54
+					_sun_light.directional_shadow_max_distance = 86.0
+				_sun_light.shadow_bias = 0.055 if A.is_mobile_perf() else 0.035
+				_sun_light.shadow_normal_bias = 2.00 if A.is_mobile_perf() else 1.45
 			sync_fp_camera()
 		else:
 			camera.cull_mask = 0xFFFFF
@@ -1902,27 +1953,30 @@ func set_view_mode(mode: int, save := false) -> void:
 			camera.far = 340.0
 			if _sun_light != null and is_instance_valid(_sun_light):
 				if A.is_mobile_perf():
-					_sun_light.directional_shadow_blend_splits = false
-					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if GameData.quality <= 1 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-					_sun_light.directional_shadow_split_1 = 0.28
-					_sun_light.directional_shadow_max_distance = 40.0 if GameData.quality == 0 else (50.0 if GameData.quality == 1 else 62.0)
+					_sun_light.directional_shadow_blend_splits = GameData.quality >= 1
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.48
+					_sun_light.directional_shadow_max_distance = 52.0 if GameData.quality == 0 else (62.0 if GameData.quality == 1 else 74.0)
 				elif GameData.quality > 0:
 					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 					_sun_light.directional_shadow_split_1 = 0.16
 					_sun_light.directional_shadow_split_2 = 0.36
 					_sun_light.directional_shadow_split_3 = 0.62
-					_sun_light.directional_shadow_max_distance = 84.0
+					_sun_light.directional_shadow_max_distance = 84.0 if GameData.quality == 1 else 92.0
 				else:
-					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-					_sun_light.directional_shadow_split_1 = 0.28
-					_sun_light.directional_shadow_max_distance = 58.0
-				_sun_light.shadow_bias = 0.012
-				_sun_light.shadow_normal_bias = 0.24
+					_sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+					_sun_light.directional_shadow_split_1 = 0.16
+					_sun_light.directional_shadow_split_2 = 0.36
+					_sun_light.directional_shadow_split_3 = 0.62
+					_sun_light.directional_shadow_max_distance = 72.0
+				_sun_light.shadow_bias = (0.06 if GameData.quality == 0 else 0.05) if A.is_mobile_perf() else (0.04 if GameData.quality >= 2 else 0.045)
+				_sun_light.shadow_normal_bias = (2.25 if GameData.quality == 0 else 1.95) if A.is_mobile_perf() else (1.90 if GameData.quality == 1 else 1.85)
 			if mech != null and is_instance_valid(mech):
 				cam_focus = Vector3(mech.global_position.x, 0.0, mech.global_position.z)
 				_aim_pan = Vector3.ZERO
 				camera.global_position = cam_focus + CAM_OFFSET * _eff_zoom
 				camera.look_at(cam_focus, Vector3.UP)
+		_update_cam_dof(false)
 	if hud != null:
 		if hud.has_method("sync_view_mode_ui"):
 			hud.sync_view_mode_ui()
@@ -2106,6 +2160,7 @@ func _process_impl(delta: float) -> void:
 			shake = max(0.0, shake - delta)
 			camera.global_position += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.6
 		camera.look_at(camera.global_position - CAM_OFFSET * _eff_zoom, Vector3.UP)
+		_update_cam_dof(scoping)
 
 	var tt := Time.get_ticks_msec() * 0.001
 	for f in flicker_lights:
@@ -2137,11 +2192,7 @@ func _process_impl(delta: float) -> void:
 
 	if coop == null or Net.is_host():
 		time += delta
-	var dn := district_at(mech.global_position)
-	if dn != cur_district:
-		if cur_district != "":
-			_event("district_entered", [dn])
-		cur_district = dn
+	_update_subregion(mech.global_position)
 	_scan_t -= delta
 	if _scan_t <= 0.0:
 		_scan_t = 0.25
@@ -2354,7 +2405,6 @@ func _spawn_transport_ship() -> void:
 		transport_ship.add_child(l)
 	for sx in [-6.45, 6.45]:
 		A.add(transport_ship, A.bevel_box(Vector3(0.16, 0.16, 0.32), 0.03), A.emit(Color(1, 0.2, 0.2) if sx < 0 else Color(0.2, 1, 0.3), 4.5), Vector3(sx, 0.62, 0.45), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(transport_ship, "ALBATROSS-02", Vector3(-1.68, 0.36, -0.85), Vector3(0, -90, 0), 0.016, Color(0.90, 0.88, 0.78, 0.72))
 	var spot := SpotLight3D.new()
 	spot.light_color = Color(1.0, 0.95, 0.85)
 	spot.light_energy = 6.0
@@ -2413,7 +2463,11 @@ func _update_loot(delta: float) -> void:
 			return
 		if open_box.revealed < open_box.items.size():
 			open_box.reveal_t += delta
-			var reveal_step := 0.55 * maxf(0.5, 1.0 - 0.04 * float(Growth.ability_level("ab_search")))
+			var base_t: float = float(GameData.LOOT_TIER_TIME.get(int(open_box.tier), 0.55))
+			var skill_f := maxf(0.5, 1.0 - 0.04 * float(Growth.ability_level("ab_search")))
+			# 破拆能力看底盘承重：重型底盘有液压支撑，拆装甲锁具更快；轻型要一点点撬
+			var rig_f := clampf(1.60 - 0.70 * clampf(float(mech.stats.get("load", 48.0)) / 120.0, 0.0, 1.0), 0.90, 1.35)
+			var reveal_step := base_t * skill_f * rig_f
 			if open_box.reveal_t >= reveal_step:
 				open_box.reveal_t = 0.0
 				open_box.revealed += 1
@@ -2887,6 +2941,15 @@ func rebuild_nav() -> void:
 	print("[raid] nav grid %dx%d (%.1fm) from %d shapes in %.0f ms" % [nav.n, nav.n, nav.CELL, nav.shape_count, nav.build_ms])
 
 
+## 跨区转场入口防贴脸：只清除站在转场口 24 米内的普通小虫，不扰动全局固定首领与分布
+func _clear_transit_spawn_bugs(entry: Vector3) -> void:
+	for b in get_tree().get_nodes_in_group("bugs"):
+		if not is_instance_valid(b) or bool(b.data.get("boss", false)):
+			continue
+		if Vector2(b.global_position.x - entry.x, b.global_position.z - entry.z).length() < 24.0:
+			b.queue_free()
+
+
 ## 剔除或重定位落在死胡同/封闭房间内的敌人、虫巢与物资箱
 func _sanitize_spawns_and_loot(_drop: Vector3) -> void:
 	if nav == null:
@@ -2918,8 +2981,11 @@ func _sanitize_spawns_and_loot(_drop: Vector3) -> void:
 		if nav.is_reachable(p, true, 3.2):
 			kept_pos.append(p)
 			continue
-		var np: Vector3 = nav.nearest_reachable(p, true, 16.0)
-		if np != Vector3.INF and in_bounds(np, 3.0) and not in_wet(Vector2(np.x, np.z), 1.5):
+		# 情境化贴墙箱只允许极小幅微调（≤2.8m），避免被硬挪到空地或马路正中；POI/档案箱保留较大容错
+		var is_ctx := bx.has_meta("contextual_loot") and not bx.has_meta("poi")
+		var max_nudge := 2.8 if is_ctx else 16.0
+		var np: Vector3 = nav.nearest_reachable(p, true, max_nudge)
+		if np != Vector3.INF and in_bounds(np, 3.0) and not in_wet(Vector2(np.x, np.z), 1.5) and (not is_ctx or not on_road(Vector2(np.x, np.z), 0.9)):
 			var dup := false
 			for kp: Vector3 in kept_pos:
 				if Vector2(kp.x - np.x, kp.z - np.z).length() < 1.5:
@@ -3520,7 +3586,10 @@ func spawn_projectile(origin: Vector3, dir: Vector3, m: Dictionary, _friendly: b
 			A.emitter(p, Vector3(0, 0, 0.16), {"amount": 7, "life": 0.20, "size": 0.26, "tex": A.smoke_tex(), "additive": false, "spread": 32.0, "vmin": 0.2, "vmax": 0.6,
 				"gravity": Vector3(0, 1.2, 0), "c0": Color(1.0, 0.52, 0.12, 0.82), "c1": Color(0.22, 0.16, 0.14, 0.0), "grow0": 0.65, "grow1": 1.35})
 			proj = p
-		"shotgun", "cannon", "launcher", "melee":
+		"melee":
+			melee_strike(origin, dir, m)
+			return
+		"shotgun", "cannon", "launcher":
 			var speed: float = float(m.get("speed", 40.0))
 			var life: float = clampf(GameData.weapon_range_m(m) / maxf(speed, 20.0) * 6.0, 2.5, 6.0)
 			var pellets: int = int(m.get("pellets", 7))
@@ -3542,6 +3611,50 @@ func spawn_projectile(origin: Vector3, dir: Vector3, m: Dictionary, _friendly: b
 	if proj != null:
 		proj.ap = ap
 		proj.apply_falloff(GameData.weapon_falloff(m))
+
+
+func melee_strike(origin: Vector3, dir: Vector3, m: Dictionary) -> void:
+	var reach: float = maxf(float(m.get("reach_m", 3.0)), 1.0)
+	var dmg: float = float(m.get("dmg", 20.0))
+	var ap: float = clampf((float(m.get("pen", 20.0)) - 15.0) / 62.0, 0.0, 0.85)
+	var flat := Vector3(dir.x, 0.0, dir.z)
+	var c := origin
+	if mech != null and is_instance_valid(mech):
+		c = Vector3(mech.global_position.x, origin.y, mech.global_position.z)
+		var aimv: Vector3 = mech.aim_point
+		var a := Vector3(aimv.x - c.x, 0.0, aimv.z - c.z)
+		if a.length_squared() > 0.01:
+			flat = a.normalized()
+	if flat.length_squared() < 0.0001:
+		flat = Vector3.FORWARD
+	flat = flat.normalized()
+	var hit_any := false
+	for grp in ["bugs", "nests", "rovers"]:
+		for b in get_tree().get_nodes_in_group(grp):
+			if not is_instance_valid(b) or not (b is Node3D):
+				continue
+			var bp: Vector3 = (b as Node3D).global_position
+			var to: Vector3 = bp - c
+			to.y = 0.0
+			var d := to.length()
+			if d > reach + 1.0:
+				continue
+			if d > 0.05 and flat.dot(to / d) < 0.45:
+				continue
+			if not b.has_method("take_damage"):
+				continue
+			if grp == "bugs":
+				b.take_damage(dmg, origin, ap)
+			else:
+				b.take_damage(dmg)
+			hit_any = true
+			spark(bp + Vector3(0.0, 1.0, 0.0), Color(1.0, 0.72, 0.3), 8)
+	if hit_any:
+		shake = maxf(shake, clampf(dmg / 220.0, 0.04, 0.22))
+	A.burst(fx, origin + flat * minf(reach, 3.0) * 0.55 + Vector3(0.0, 1.2, 0.0), {
+		"amount": 10, "life": 0.22, "size": 0.17, "dir": flat, "spread": 52.0,
+		"vmin": 4.0, "vmax": 9.0, "gravity": Vector3(0, -12, 0), "damp": 2.0,
+		"c0": Color(1.0, 0.86, 0.55), "c1": Color(1.0, 0.3, 0.1, 0.0), "grow0": 1.0, "grow1": 0.2})
 
 
 func spawn_spit(origin: Vector3, dir: Vector3, dmg: float) -> void:
@@ -4087,6 +4200,11 @@ var _sdf_o := Vector2.ZERO
 var _sdf_n := 0
 const _SDF_STEP := 4.0
 var cur_district := ""
+var _districts: Array = []          ## 战区细分地区分片（Voronoi 分区，覆盖全图）
+var _sites: Array = []              ## 局部具名点位（遗迹 / 地标 / 撤离区 / 边界口）
+var _cur_district_id := ""
+var _cur_site_id := ""
+var _shown_regions := {}            ## region_id -> 上次触发横幅时的局内时间（防边界抖动）
 var _rg: WC.SegGrid              ## 道路线段索引
 var _wg: WC.SegGrid              ## 河道线段索引
 var _road_len := PackedFloat32Array()   ## 道路累计长度（随机取路面点用）
@@ -4250,14 +4368,268 @@ func zone_at(p: Vector3) -> String:
 	return char(layout.rast[y * n + x])
 
 
-## 当前所在地名：最近的地图标注
-func district_at(p: Vector3) -> String:
-	var best := ""
-	var bd := INF
+const _LM_ZH_NAMES := {
+	"broken_bridge": "灰港断桥", "radio_mast": "旧城广播塔", "elevated_road": "高架残段", "central_terminus": "中央穹顶总站",
+	"gantry": "运河龙门吊", "blast_furnace": "一号钢厂高炉", "gas_holder": "煤气罐区", "converter_foundry": "二号转炉钢厂",
+	"windmill": "风车阵", "pylon_row": "高压电塔列", "silo": "农场筒仓", "missile_silo": "洲际发射井阵地",
+	"boardwalk": "赤湖观景栈桥", "observation_tower": "环湖观景塔", "spillway_dam": "赤湖溢洪闸枢",
+	"submarine_drydock": "巨型潜艇干船坞",
+	"cable_tower": "峡谷缆车塔", "ore_silos": "矿场筒仓", "rope_bridge": "悬崖索桥", "bucket_excavator": "斗轮挖掘机平台",
+	"coolant_channel": "冷却渠", "crystal_cluster": "晶脉簇", "drill_derrick": "钻井残台", "geothermal_vault": "地热磁约束腔",
+}
+
+
+## 将当前战区细分为「局部具名点位（遗迹 / 地标 / 撤离区 / 边界口）」与「全图连续地区分片（Voronoi 分区）」
+func _build_subregions() -> void:
+	_districts.clear()
+	_sites.clear()
+	var zone_name := str(MAP.get("name", map_id))
+	var exclude_names := {"虫巢": true, "Swarm Hive": true, "Hive": true}
+
+	# 1. 重点遗迹 POI（包含核心 3 处与全部扩展遗迹）
+	for i in poi_centers.size():
+		var pc: Vector3 = poi_centers[i]
+		var pid: String = str(poi_ids[i]) if i < poi_ids.size() else str(i)
+		var pname := str(GameData.POIS.get(pid, {}).get("name", pid))
+		exclude_names[pname] = true
+		_sites.append({
+			"id": "poi:%s_%d" % [pid, i],
+			"kind": "poi",
+			"raw_name": pname,
+			"title": pname,
+			"sub": Loc.t("%s · 遗迹" % zone_name, "%s · RUIN" % zone_name),
+			"pos": Vector2(pc.x, pc.z),
+			"r_in": 22.0,
+			"r_out": 28.0,
+		})
+
+	# 2. 重要地标建筑
+	var lms: Array = get_meta("ext_landmarks", [])
+	for i in lms.size():
+		var lm: Dictionary = lms[i]
+		var ltype := str(lm.get("type", ""))
+		var zh_n := str(_LM_ZH_NAMES.get(ltype, ltype))
+		var lname := Loc.landmark_name(ltype, zh_n)
+		exclude_names[zh_n] = true
+		exclude_names[lname] = true
+		var clr := float(lm.get("clear", 8.0))
+		var r_in := maxf(18.0, clr + 8.0)
+		_sites.append({
+			"id": "lm:%s_%d" % [ltype, i],
+			"kind": "landmark",
+			"raw_name": zh_n,
+			"title": lname,
+			"sub": Loc.t("%s · 地标" % zone_name, "%s · LANDMARK" % zone_name),
+			"pos": Vector2(float(lm.get("x", 0.0)), float(lm.get("z", 0.0))),
+			"r_in": r_in,
+			"r_out": r_in + 6.0,
+		})
+
+	# 3. 撤离点
+	for i in extracts.size():
+		var z = extracts[i]
+		if z == null or not is_instance_valid(z):
+			continue
+		var r_in: float = float(z.radius) + 7.5
+		_sites.append({
+			"id": "ext:%d" % i,
+			"kind": "extract",
+			"raw_name": str(z.title),
+			"title": str(z.title),
+			"sub": Loc.t("%s · 撤离区" % zone_name, "%s · EXTRACTION" % zone_name),
+			"pos": Vector2(z.global_position.x, z.global_position.z),
+			"r_in": r_in,
+			"r_out": r_in + 5.0,
+		})
+
+	# 4. 战区边界转场口与隐藏深井升降台
+	if world_link != null and is_instance_valid(world_link):
+		if "gates" in world_link:
+			for edge_k in world_link.gates:
+				var g: Dictionary = world_link.gates[edge_k]
+				var gp: Vector2 = g.pos as Vector2
+				var gtitle := Loc.t("通往 %s" % g.name, "To %s" % g.name) if bool(g.get("open", false)) else Loc.t("%s · 尚未开放" % g.name, "%s · LOCKED" % g.name)
+				_sites.append({
+					"id": "gate:%s" % str(edge_k),
+					"kind": "gate",
+					"raw_name": gtitle,
+					"title": gtitle,
+					"sub": Loc.t("%s · 战区边界" % zone_name, "%s · BORDER" % zone_name),
+					"pos": gp,
+					"r_in": 15.0,
+					"r_out": 21.0,
+				})
+		if "shaft" in world_link and not (world_link.shaft as Dictionary).is_empty():
+			var sh: Dictionary = world_link.shaft
+			var sh_title := Loc.t("深井升降台 · %s" % sh.name, "Shaft Lift · %s" % sh.name)
+			_sites.append({
+				"id": "shaft:abyss_maw",
+				"kind": "gate",
+				"raw_name": sh_title,
+				"title": sh_title,
+				"sub": Loc.t("%s · 战区边界" % zone_name, "%s · BORDER" % zone_name),
+				"pos": sh.pos as Vector2,
+				"r_in": 11.0,
+				"r_out": 16.0,
+			})
+
+	# 5. 全图连续细分地区（从 map_labels 剔除 POI / 地标同名项，构成全战区 Voronoi 地区分片）
+	var seen_dist := {}
 	for l: Array in map_labels:
-		var d := Vector2(p.x, p.z).distance_squared_to(Vector2(l[1], l[2]))
-		if d < bd:
-			bd = d
+		var raw_n := str(l[0])
+		var loc_n := Loc.map_label(raw_n)
+		if exclude_names.has(raw_n) or exclude_names.has(loc_n) or seen_dist.has(raw_n):
+			continue
+		seen_dist[raw_n] = true
+		_districts.append({
+			"id": "dist:%s" % raw_n,
+			"raw_name": raw_n,
+			"title": loc_n,
+			"sub": Loc.t("进入地区 · %s" % zone_name, "ENTERING DISTRICT · %s" % zone_name),
+			"pos": Vector2(float(l[1]), float(l[2])),
+		})
+
+
+func _find_site_entry(q: Vector2, cur_id: String) -> Dictionary:
+	var best := {}
+	var best_d := INF
+	var cur_site := {}
+	var all_sites: Array = _sites
+	for s: Dictionary in all_sites:
+		var d := q.distance_to(s.pos as Vector2)
+		if str(s.id) == cur_id and d <= float(s.r_out):
+			cur_site = s
+		if d <= float(s.r_in) and d < best_d:
+			best_d = d
+			best = s
+	if transport_zone != null and is_instance_valid(transport_zone) and transport_zone.active:
+		var tzp := Vector2(transport_zone.global_position.x, transport_zone.global_position.z)
+		var td := q.distance_to(tzp)
+		var tr_in := float(transport_zone.radius) + 7.5
+		var zone_name := str(MAP.get("name", map_id))
+		var t_entry := {
+			"id": "ext:transport",
+			"kind": "extract",
+			"raw_name": str(transport_zone.title),
+			"title": str(transport_zone.title),
+			"sub": Loc.t("%s · 撤离区" % zone_name, "%s · EXTRACTION" % zone_name),
+			"pos": tzp,
+			"r_in": tr_in,
+			"r_out": tr_in + 5.0,
+		}
+		if cur_id == "ext:transport" and td <= tr_in + 5.0:
+			cur_site = t_entry
+		if td <= tr_in and td < best_d:
+			best_d = td
+			best = t_entry
+	if not best.is_empty():
+		return best
+	return cur_site
+
+
+func _find_district_entry(q: Vector2, cur_id: String) -> Dictionary:
+	if _districts.is_empty():
+		return {}
+	var best := {}
+	var best_d := INF
+	var cur_entry := {}
+	var cur_d := INF
+	for d_item: Dictionary in _districts:
+		var dist := q.distance_to(d_item.pos as Vector2)
+		if str(d_item.id) == cur_id:
+			cur_entry = d_item
+			cur_d = dist
+		if dist < best_d:
+			best_d = dist
+			best = d_item
+	# 8m 边界滞回：在两片地区交界处行进时不反复抖动切换
+	if not cur_entry.is_empty() and str(best.id) != cur_id and best_d + 8.0 >= cur_d:
+		return cur_entry
+	return best
+
+
+func _init_subregion(at: Vector3, delay: float) -> void:
+	var zone_name := str(MAP.get("name", map_id))
+	var q := Vector2(at.x, at.z)
+	var dist := _find_district_entry(q, "")
+	var site := _find_site_entry(q, "")
+	_cur_district_id = str(dist.get("id", ""))
+	_cur_site_id = str(site.get("id", ""))
+	cur_district = str(site.get("raw_name", dist.get("raw_name", "")))
+	_shown_regions.clear()
+	if _cur_district_id != "":
+		_shown_regions[_cur_district_id] = time
+	if _cur_site_id != "":
+		_shown_regions[_cur_site_id] = time
+	var title := str(site.get("title", dist.get("title", "")))
+	if title != "":
+		hud.show_zone_banner(title, delay, Loc.t("进入战区 · %s" % zone_name, "ENTERING SECTOR · %s" % zone_name))
+	else:
+		hud.show_zone_banner(zone_name, delay, Loc.t("进入战区", "ENTERING SECTOR"))
+
+
+## 实时检测玩家进入细分地区 / 遗迹 / 地标 / 撤离区：每次进入新分片时在顶部显示一次提示，停留期间不重复
+func _update_subregion(mp: Vector3) -> void:
+	var q := Vector2(mp.x, mp.z)
+	var site := _find_site_entry(q, _cur_site_id)
+	var dist := _find_district_entry(q, _cur_district_id)
+	var new_site_id := str(site.get("id", ""))
+	var new_dist_id := str(dist.get("id", ""))
+
+	var entered_site := new_site_id != "" and new_site_id != _cur_site_id
+	var entered_dist := new_dist_id != "" and new_dist_id != _cur_district_id
+	_cur_site_id = new_site_id
+	_cur_district_id = new_dist_id
+
+	var active_raw := str(site.get("raw_name", dist.get("raw_name", "")))
+	if active_raw != "" and active_raw != cur_district:
+		if cur_district != "":
+			_event("district_entered", [active_raw])
+		cur_district = active_raw
+
+	const COOLDOWN := 10.0
+	if entered_site:
+		if time - float(_shown_regions.get(new_site_id, -999.0)) >= COOLDOWN:
+			_shown_regions[new_site_id] = time
+			hud.show_zone_banner(str(site.title), 0.04, str(site.sub))
+	elif entered_dist and _cur_site_id == "":
+		if time - float(_shown_regions.get(new_dist_id, -999.0)) >= COOLDOWN:
+			_shown_regions[new_dist_id] = time
+			hud.show_zone_banner(str(dist.title), 0.04, str(dist.sub))
+
+
+## 当前所在地名：优先返回精确进入的遗迹/地标名，否则返回所属细分地区分片名
+func district_at(p: Vector3) -> String:
+	var q := Vector2(p.x, p.z)
+	if not _sites.is_empty():
+		var best_s := ""
+		var sd := INF
+		for s: Dictionary in _sites:
+			var k := str(s.get("kind", ""))
+			if k != "poi" and k != "landmark":
+				continue
+			var d := q.distance_to(s.pos as Vector2)
+			if d <= float(s.r_in) and d < sd:
+				sd = d
+				best_s = str(s.raw_name)
+		if best_s != "":
+			return best_s
+	if not _districts.is_empty():
+		var best_d := ""
+		var bd := INF
+		for d_item: Dictionary in _districts:
+			var dist2 := q.distance_squared_to(d_item.pos as Vector2)
+			if dist2 < bd:
+				bd = dist2
+				best_d = str(d_item.raw_name)
+		if best_d != "":
+			return best_d
+	var best := ""
+	var bd2 := INF
+	for l: Array in map_labels:
+		var d := q.distance_squared_to(Vector2(l[1], l[2]))
+		if d < bd2:
+			bd2 = d
 			best = l[0]
 	return best
 
@@ -4492,6 +4864,7 @@ func _build_map() -> Vector3:
 		var p := _roadside_spot()
 		if p != Vector3.INF:
 			_fire_barrel(p)
+	_scatter_road_shoulders()
 	return _drop_point()   # _keep_clear 保留到扩展脚本里的地标落位前（_run_ext_build）
 
 
@@ -4560,25 +4933,77 @@ func _curb_car_spot() -> Array:
 		var tg := (b - a).normalized()
 		var nrm := Vector2(-tg.y, tg.x)
 		var sd := 1.0 if rng.randf() < 0.5 else -1.0
-		var off := maxf(1.2, float(cv.w) * 0.5 - WALK_W - 1.15)
+		var off := maxf(1.45, float(cv.w) * 0.5 - WALK_W - 0.85)
 		var q := d[j] + nrm * sd * off
 		if not in_bounds_xz(q, 10.0):
 			continue
-		if _rg_edge_dist_ignore(_rg, q, i, cv.get("tangent_mates", PackedInt32Array())) < 7.5 or _on_bridge(q, 5.0) or in_river(q, 4.5):
+		if _rg_edge_dist_ignore(_rg, q, i, cv.get("tangent_mates", PackedInt32Array())) < 8.5 or _on_bridge(q, 5.0) or in_river(q, 4.5):
 			continue
 		var on_rail := false
 		for rl: PackedVector2Array in rail_polys:
-			if WC.poly_dist(rl, q) < 4.5:
+			if WC.poly_dist(rl, q) < 4.8:
 				on_rail = true
 				break
 		if on_rail:
 			continue
 		var p := Vector3(q.x, 0, q.y)
-		if _blocked(p, 3.6, false):
+		if _blocked(p, 4.3, false):
 			continue
 		var yaw := rad_to_deg(atan2(tg.x, tg.y)) + (0.0 if sd > 0.0 else 180.0) + rng.randf_range(-4.0, 4.0)
 		return [p, yaw]
 	return []
+
+
+## 公路与荒原/农田交界处的碎裂路缘石与风沙掩埋过渡段（P0-M2.2 ter_road_shoulder），打破路面直线硬切边
+func _scatter_road_shoulders() -> void:
+	if curves.is_empty() or _road_len.is_empty():
+		return
+	var saved_seed := rng.seed
+	rng.seed = _map_seed(21)
+	var placed_pts: Array = []
+	var total: float = _road_len[_road_len.size() - 1]
+	for attempt in 96:
+		if placed_pts.size() >= 34:
+			break
+		var x := rng.randf() * total
+		var ci := clampi(_road_len.bsearch(x), 0, curves.size() - 1)
+		var cv: Dictionary = curves[ci]
+		if bool(cv.get("dirt", false)) or float(cv.w) < 7.0:
+			continue
+		var d: PackedVector2Array = cv.d
+		if d.size() < 5:
+			continue
+		var j := rng.randi_range(2, d.size() - 3)
+		var a := d[j - 1]
+		var b := d[j + 1]
+		if (d[j] - a).normalized().dot((b - d[j]).normalized()) < 0.985:
+			continue
+		var tg := (b - a).normalized()
+		var sd := 1.0 if rng.randf() < 0.5 else -1.0
+		var out_n := Vector2(-tg.y, tg.x) * sd
+		var q_out := d[j] + out_n * (float(cv.w) * 0.5 + 2.6)
+		if not in_bounds_xz(q_out, 8.0):
+			continue
+		var zc := zone_at(Vector3(q_out.x, 0.0, q_out.y))
+		if not (zc in ["W", "F", "C"]):
+			continue
+		if _rg_edge_dist_ignore(_rg, d[j], ci, cv.get("tangent_mates", PackedInt32Array())) < 10.5 or _on_bridge(d[j], 6.0) or in_wet(q_out, 4.0):
+			continue
+		var p_out := Vector3(q_out.x, 0.0, q_out.y)
+		if _blocked(p_out, 4.2, false):
+			continue
+		var q_seg := d[j] + out_n * (float(cv.w) * 0.5 - 0.35)
+		var too_close := false
+		for prev: Vector2 in placed_pts:
+			if prev.distance_squared_to(q_seg) < 185.0:
+				too_close = true
+				break
+		if too_close:
+			continue
+		placed_pts.append(q_seg)
+		var yaw_deg := rad_to_deg(atan2(out_n.x, out_n.y))
+		PrefabLib.place_at_ground(self, world, "ter_road_shoulder", Vector3(q_seg.x, -0.145, q_seg.y), yaw_deg, Vector3(11.6, 0.58, 6.0))
+	rng.seed = saved_seed
 
 
 func _roadside_spot() -> Vector3:
@@ -4610,7 +5035,7 @@ func _roadside_spot() -> Vector3:
 
 func _drop_point() -> Vector3:
 	rng.seed = _map_seed(12)
-	# 空投点：沿不规则战区周界内侧（距边界 14~56 米）较安全的街区生成多个分散候选出生点，每局随机挑选一处
+	# 空投点：沿不规则战区周界内侧（距边界 14~56 米）较安全的街区生成固定候选列表，并固定取首号主空投点
 	drop_points.clear()
 	for min_sep: float in [72.0, 46.0, 26.0]:
 		for t in 140:
@@ -4643,10 +5068,9 @@ func _drop_point() -> Vector3:
 			break
 	if drop_points.is_empty():
 		drop_points.append(_free_spot(4.0, 12.0))
-	var pick_rng := RandomNumberGenerator.new()
-	if Net.active(): pick_rng.seed = Net.world_seed + _map_seed(98)
-	else: pick_rng.randomize()
-	return drop_points[pick_rng.randi() % drop_points.size()]
+	drop_points.sort_custom(func(a: Vector3, b: Vector3) -> bool:
+		return atan2(a.z, a.x) < atan2(b.z, b.x))
+	return drop_points[0]
 
 
 # ---------- 地形图（小地图 / 大地图共用） ----------
@@ -4963,9 +5387,8 @@ func _build_zone_ground() -> void:
 			elif in_river(q, 6.0):
 				c = Color(0, 0, 0, 0.2)
 			img.set_pixel(x, y, c)
-	img.resize(55, 55, Image.INTERPOLATE_BILINEAR)
-	img.resize(165, 165, Image.INTERPOLATE_CUBIC)
-	img.resize(360, 360, Image.INTERPOLATE_CUBIC)
+	img.resize(112, 112, Image.INTERPOLATE_BILINEAR)
+	img.resize(256, 256, Image.INTERPOLATE_CUBIC)
 	var t := ImageTexture.create_from_image(img)
 	var s_img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var rail_rects: Array = []
@@ -4977,7 +5400,7 @@ func _build_zone_ground() -> void:
 		var pts: PackedVector2Array = e[0]
 		if pts.size() < 3:
 			continue
-		var br: Rect2 = WC._poly_rect(pts).grow(3.8)
+		var br: Rect2 = WC._poly_rect(pts).grow(4.6)
 		var bidx: int = bldg_ao_list.size()
 		bldg_ao_list.append([pts, br])
 		var x0: int = floori(br.position.x / 24.0)
@@ -5022,9 +5445,12 @@ func _build_zone_ground() -> void:
 						var bd: float = INF
 						for k in psz:
 							bd = minf(bd, WC.seg_dist(q, pts[k], pts[(k + 1) % psz]))
-						if bd < 3.6:
-							bao = maxf(bao, clampf(1.0 - bd / 3.6, 0.0, 1.0))
+						if bd < 4.4:
+							var t_ao := clampf(1.0 - bd / 4.4, 0.0, 1.0)
+							bao = maxf(bao, t_ao * t_ao * (3.0 - 2.0 * t_ao))
 			s_img.set_pixel(x, y, Color(r_sec, rv, bao, 1.0))
+	s_img.resize(160, 160, Image.INTERPOLATE_BILINEAR)
+	s_img.resize(256, 256, Image.INTERPOLATE_CUBIC)
 	var s_tex := ImageTexture.create_from_image(s_img)
 	var gm: ShaderMaterial = A.ground()
 	gm.set_shader_parameter("zone_tex", t)
@@ -6575,15 +7001,15 @@ func _paved_seg_grid() -> WC.SegGrid:
 
 func _build_roads() -> void:
 	rng.seed = _map_seed(2)
-	var ASPH: ShaderMaterial = A.asphalt(Color(0.26, 0.265, 0.275)).duplicate()
-	var ASPH2: ShaderMaterial = A.asphalt(Color(0.29, 0.295, 0.305)).duplicate()
-	var ARUT: ShaderMaterial = A.asphalt(Color(0.20, 0.205, 0.215)).duplicate()
-	var DIRT: ShaderMaterial = _terrain_feather_mat(Color(0.36, 0.31, 0.23), 0.30, 0.92, 0.12, -9)
-	var RUT: ShaderMaterial = _terrain_feather_mat(Color(0.29, 0.25, 0.19), 0.34, 0.94, 0.10, -8)
+	var ASPH: ShaderMaterial = A.asphalt(Color(0.20, 0.205, 0.215)).duplicate()
+	var ASPH2: ShaderMaterial = A.asphalt(Color(0.23, 0.235, 0.245)).duplicate()
+	var ARUT: ShaderMaterial = A.asphalt(Color(0.15, 0.155, 0.162)).duplicate()
+	var DIRT: ShaderMaterial = _terrain_feather_mat(Color(0.28, 0.24, 0.19), 0.34, 0.92, 0.12, -9)
+	var RUT: ShaderMaterial = _terrain_feather_mat(Color(0.21, 0.18, 0.14), 0.38, 0.94, 0.10, -8)
 	for m in [ASPH, ASPH2, ARUT]:
 		m.set_meta("no_outline", true)
-	var WALK := A.concrete(Color(0.49, 0.47, 0.43), true)
-	var CURB := A.concrete(Color(0.6, 0.58, 0.53), false)
+	var WALK := A.concrete(Color(0.41, 0.39, 0.36), true)
+	var CURB := A.concrete(Color(0.49, 0.47, 0.43), false)
 	var LINE := A.paint(Color(0.82, 0.72, 0.42), 0.0, 0.85, {
 		"wear": 0.65, "metal_wear": 0.0, "bare_metal": Color(0.20, 0.205, 0.215), "scratches": 0.12,
 		"dust": 0.22, "panel_scale": 0.0, "use_albedo_tex": 1.0, "albedo_tex": A.world_tex("asphalt_a.png"),
@@ -7098,36 +7524,41 @@ render_mode blend_mix, depth_draw_never, cull_back, diffuse_burley, specular_sch
 		float w2 = texture(n_low, p * 0.038 - vec2(t * 0.05, -t * 0.06) + 0.37).r;
 		float w3 = texture(n_hi, p * 0.085 + vec2(t * 0.09, -t * 0.07)).r;
 		float wave = w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
-		vec3 deep = vec3(0.032, 0.072, 0.092);
-		vec3 mid = vec3(0.068, 0.132, 0.152);
-		vec3 crest = vec3(0.165, 0.238, 0.255);
-		vec3 foam_col = vec3(0.52, 0.60, 0.62);
-		vec3 col = mix(deep, mid, smoothstep(0.26, 0.72, wave)) * mix(0.86, 1.06, gust);
+		// 线性空间写实浑浊工业江水：深航道暗青灰 -> 浅滩橄榄淤泥青，避免粉蓝油漆感
+		vec3 deep = vec3(0.010, 0.024, 0.030);
+		vec3 mid = vec3(0.020, 0.044, 0.048);
+		vec3 shallow = vec3(0.036, 0.052, 0.042);
+		vec3 crest = vec3(0.055, 0.088, 0.094);
+		vec3 foam_col = vec3(0.28, 0.33, 0.35);
 		float fw = length(fwidth(p));
 		float fade = clamp(1.0 - fw * 1.6, 0.0, 1.0);
 		float ripple = smoothstep(0.54, 0.76, w2 * 0.55 + w3 * 0.45) * (0.45 + 0.55 * gust) * fade;
-		float foam = smoothstep(0.74, 0.86, w2 * 0.5 + w3 * 0.5) * gust * fade;
-		float shore = smoothstep(0.02, 0.42, clamp(COLOR.a + (w1 - 0.5) * 0.32 * sin(COLOR.a * 3.14159), 0.0, 1.0));
-		float shore_foam = (1.0 - smoothstep(0.08, 0.65, shore)) * smoothstep(0.32, 0.78, w2 * 0.6 + w3 * 0.4);
-		col = mix(col, crest, ripple * 0.46);
-		col = mix(col, foam_col, clamp(foam * 0.32 + shore_foam * 0.30, 0.0, 0.68));
-		float fres = 0.03 + 0.97 * pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.5);
-		vec3 eye_dir = normalize(wp - INV_VIEW_MATRIX[3].xyz);
-		vec3 sun_d = length(sun_dir_world) > 1e-3 ? normalize(sun_dir_world) : normalize(vec3(0.45, 0.62, 0.64));
-		float sun_glint = pow(max(dot(reflect(eye_dir, vec3(0.0, 1.0, 0.0)), sun_d), 0.0), 12.0);
-		col = mix(col, vec3(0.20, 0.26, 0.30) + vec3(0.28, 0.25, 0.20) * sun_glint, fres * 0.42);
-		ALBEDO = col;
-		ALPHA = shore;
+		float foam = smoothstep(0.76, 0.88, w2 * 0.5 + w3 * 0.5) * gust * fade;
+		float depth_m = smoothstep(0.04, 0.78, clamp(COLOR.a + (w1 - 0.5) * 0.22 * sin(COLOR.a * 3.14159), 0.0, 1.0));
+		float shore = smoothstep(0.02, 0.32, clamp(COLOR.a + (w1 - 0.5) * 0.28 * sin(COLOR.a * 3.14159), 0.0, 1.0));
+		float shore_foam = (1.0 - smoothstep(0.06, 0.52, shore)) * smoothstep(0.36, 0.80, w2 * 0.6 + w3 * 0.4);
+		vec3 col = mix(shallow, mix(deep, mid, smoothstep(0.26, 0.74, wave)), depth_m) * mix(0.88, 1.08, gust);
+		col = mix(col, crest, ripple * 0.36);
+		col = mix(col, foam_col, clamp(foam * 0.24 + shore_foam * 0.26, 0.0, 0.55));
 		vec3 n1 = texture(n_nrm, p * 0.09 + vec2(t * 0.11, t * 0.07)).rgb;
 		vec3 n2 = texture(n_nrm, p * 0.21 - vec2(t * 0.08, -t * 0.09) + 0.41).rgb;
 		float rain_chop = clamp(weather_rain, 0.0, 1.0) * (texture(n_hi, p * 1.35 + vec2(TIME * 0.7, -TIME * 0.55)).r - 0.5) * 0.35 * fade;
-		NORMAL_MAP = normalize(mix(n1, n2, 0.5) * 2.0 - 1.0 + vec3(rain_chop, -rain_chop, mix(2.3, 1.35, gust))) * 0.5 + 0.5;
-		NORMAL_MAP_DEPTH = (0.48 + gust * 0.42 + ripple * 0.45) * fade;
-		ROUGHNESS = clamp(mix(0.065, 0.22, gust * 0.65 + ripple * 0.35) + foam * 0.32 + (1.0 - fade) * 0.16, 0.055, 0.78);
-		METALLIC = 0.02;
-		SPECULAR = 0.72;
-		CLEARCOAT = (1.0 - foam) * 0.58;
-		CLEARCOAT_ROUGHNESS = mix(0.06, 0.18, gust);
+		vec3 wn = normalize(vec3((n1.x + n2.x - 1.0) * 0.35 + rain_chop, 1.0, (n1.y + n2.y - 1.0) * 0.35 - rain_chop));
+		float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.5);
+		vec3 eye_dir = normalize(wp - INV_VIEW_MATRIX[3].xyz);
+		vec3 sun_d = length(sun_dir_world) > 1e-3 ? normalize(sun_dir_world) : normalize(vec3(0.45, 0.62, 0.64));
+		float sun_glint = pow(max(dot(reflect(eye_dir, wn), sun_d), 0.0), 36.0);
+		col = mix(col, vec3(0.09, 0.13, 0.16), fres * 0.58);
+		col += vec3(0.26, 0.24, 0.20) * sun_glint * (0.45 + 0.55 * fade);
+		ALBEDO = col;
+		ALPHA = clamp(mix(0.72, 0.96, depth_m) * shore, 0.0, 0.97);
+		NORMAL_MAP = normalize(mix(n1, n2, 0.5) * 2.0 - 1.0 + vec3(rain_chop, -rain_chop, mix(2.2, 1.35, gust))) * 0.5 + 0.5;
+		NORMAL_MAP_DEPTH = (0.52 + gust * 0.44 + ripple * 0.45) * fade;
+		ROUGHNESS = clamp(mix(0.08, 0.22, gust * 0.65 + ripple * 0.35) + foam * 0.36 + (1.0 - fade) * 0.16, 0.075, 0.78);
+		METALLIC = 0.04;
+		SPECULAR = 0.68;
+		CLEARCOAT = (1.0 - foam) * 0.46;
+		CLEARCOAT_ROUGHNESS = mix(0.08, 0.20, gust);
 	}
 """
 	var m := ShaderMaterial.new()
@@ -7638,6 +8069,7 @@ func _wagon(p: Vector3, horiz: bool) -> void:
 			for sz_s in [-1.4, 1.4]:
 				_ibox(sb, Vector3(2.48, 2.00, 0.09), 0.01, M_DARK, Vector3(0, 0.58, cz + sz_s), Vector3.ZERO, Vector3.ONE, false)
 	blocks.append(_rect_for(p, fp + Vector3(1, 0, 1)))
+	add_contact_shadow(p, 4.2, 13.4, 90.0 if horiz else 0.0)
 
 # ---------- 山脊 ----------
 func _build_ridges() -> void:
@@ -8013,143 +8445,94 @@ func _layout_building(b: Dictionary) -> void:
 				_building(p, Vector3(sx, h, sz), ang)
 				_obb_blocks(c, ang, sx + 0.5, sz + 0.5)
 	bldg_polys.append([WC.obb_corners(c, ang, sx, sz), str(b.ch)])
+	_register_building_loot(c, ang, sx, sz, kind, str(b.ch))
+
+
+## 为每栋实体建筑按类型在门廊/装卸台/侧巷/后院登记对齐墙面的固定物资箱候选点
+func _register_building_loot(c: Vector2, ang: float, sx: float, sz: float, kind: String, ch: String) -> void:
+	var host := Vector3(c.x, 0.0, c.y)
+	if not in_bounds(host, 6.0):
+		return
+	# u 沿门脸宽度（本地 +x），v 指向临街正面（本地 +z）
+	var u := Vector3(cos(ang), 0.0, sin(ang))
+	var v := Vector3(-sin(ang), 0.0, cos(ang))
+	var yaw_front := rad_to_deg(-ang)
+	var yaw_side := yaw_front + 90.0
+	var yaw_back := yaw_front + 180.0
+	var off_f := sz * 0.5 + 1.55
+	var off_s := sx * 0.5 + 1.55
+	var shift_x := clampf(sx * 0.28, 0.9, 2.4)
+	var p_front := host + v * off_f + u * shift_x
+	var p_front2 := host + v * off_f - u * shift_x
+	var p_side := host + u * off_s + v * clampf(sz * 0.16, 0.0, 1.4)
+	var p_side2 := host - u * off_s + v * clampf(sz * 0.16, 0.0, 1.4)
+	var p_back := host - v * off_f + u * (shift_x * 0.6)
+	var vis_f := 4 if v.z >= 0.15 else 0
+	var vis_b := 4 if (-v.z) >= 0.15 else 0
+	var vis_s := 3 if u.z >= 0.15 else 0
+	var vis_s2 := 3 if (-u.z) >= 0.15 else 0
+	match kind:
+		"command_bunker":
+			register_loot_anchor(p_front, yaw_front, "military", 96 + vis_f, "military_bldg", v, host)
+			register_loot_anchor(p_back, yaw_back, "safe", 94 + vis_b, "military_bldg", -v, host)
+			register_loot_anchor(p_side, yaw_side, "military", 92 + vis_s, "military_bldg", u, host)
+		"barrack":
+			register_loot_anchor(p_front, yaw_front, "military", 90 + vis_f, "military_bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "military", 86 + vis_s, "military_bldg", u, host)
+			register_loot_anchor(p_side2, yaw_side + 180.0, "supply", 80 + vis_s2, "military_bldg", -u, host)
+		"wh", "cold_store", "loco_shed", "shed":
+			register_loot_anchor(p_front, yaw_front, "tool", 84 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_front2, yaw_front, "supply", 78 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "tool", 76 + vis_s, "bldg", u, host)
+		"foundry", "chem_plant", "substation":
+			register_loot_anchor(p_front, yaw_front, "tool", 85 + vis_f, "bldg", v, host)
+			if kind != "substation":
+				register_loot_anchor(p_back, yaw_back, "safe", 80 + vis_b, "bldg", -v, host)
+		"stepped_tower", "courtyard_blk":
+			register_loot_anchor(p_front, yaw_front, "supply", 76 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "safe", 82 + vis_s, "bldg", u, host)
+			register_loot_anchor(p_back, yaw_back, "safe", 78 + vis_b, "bldg", -v, host)
+		"arcade_shop":
+			register_loot_anchor(p_front, yaw_front, "supply", 78 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "safe", 72 + vis_s, "bldg", u, host)
+		"barn", "silo_barn", "farm":
+			register_loot_anchor(p_front, yaw_front, "supply", 84 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "tool", 80 + vis_s, "bldg", u, host)
+		"apt", "tenement", "terrace", "duplex", "house":
+			register_loot_anchor(p_front, yaw_front, "supply", 62 + vis_f, "bldg", v, host)
+			register_loot_anchor(p_side, yaw_side, "tool", 56 + vis_s, "bldg", u, host)
+		_:
+			var k_def := "military" if ch == "M" else ("tool" if ch in ["I", "H", "Y"] else "supply")
+			var tg_def := "military_bldg" if ch == "M" else "bldg"
+			register_loot_anchor(p_front, yaw_front, k_def, 72 + vis_f, tg_def, v, host)
+			if ch == "D":
+				register_loot_anchor(p_side, yaw_side, "safe", 74 + vis_s, "bldg", u, host)
 
 
 func _barrack(p: Vector3, sz: Vector3, rot := 0.0) -> void:
-	# 军事区加固营房：钢筋混凝土防爆墙裙与斜扶壁 + 军绿压型钢板墙身 + 外露拱肋波纹装甲顶 + 窄射孔观察窗 + 双扇防爆铁门 + 过滤新风机组
+	# 战区加固防爆拱肋军营（B1-05 bldg_barrack）：钢筋混凝土防爆墙裙扶壁 + 北约军绿装甲墙身 + 7 道铆接拱肋 + 深凹防弹观察孔 + 核生化新风机组
 	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
 	sb.rotation.y = -rot
-	var hx := sz.x * 0.5
-	var hz := sz.z * 0.5
-	var hy := sz.y * 0.5
-	var M_WALL := A.corrugated(Color(0.30, 0.34, 0.25), 0.42, 0.32)
-	var M_RIB := A.paint(Color(0.20, 0.23, 0.18), 0.48, 0.60, {"wear": 0.55, "rust": 0.48})
-	var M_CON := A.concrete(Color(0.44, 0.43, 0.40), false)
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
-	var M_WIN := A.window_mat(0.14, Vector2(0.58, 0.44))
-	_ibox(sb, sz, 0.02, M_WALL)
-	_ibox(sb, Vector3(sz.x + 0.28, 1.15, sz.z + 0.28), 0.04, M_CON, Vector3(0, -hy + 0.575, 0))
-	var arch_h := minf(1.25, sz.z * 0.20)
-	_imesh(sb, A.cyl(1.0, 1.0, 1.0, 28), M_WALL, Vector3(0, hy, 0), Vector3(0, 0, 90), Vector3(arch_h, sz.x + 0.24, hz + 0.06))
-	var n_bays := maxi(3, int(sz.x / 2.4))
-	for k in n_bays + 1:
-		var rx := -hx + k * sz.x / float(n_bays)
-		_imesh(sb, A.cyl(1.03, 0.16, 1.03, 24), M_RIB, Vector3(rx, hy, 0), Vector3(0, 0, 90), Vector3(arch_h, 1.0, hz + 0.09), false)
-		for sd in [-1.0, 1.0]:
-			_ibox(sb, Vector3(0.22, sz.y, 0.18), 0.02, M_RIB, Vector3(rx, 0.0, sd * (hz + 0.05)))
-			if absf(rx) > 1.6:
-				_ibox(sb, Vector3(0.28, 1.05, 0.34), 0.03, M_CON, Vector3(rx, -hy + 0.52, sd * (hz + 0.18)), Vector3(sd * -10.0, 0, 0))
-	for k in n_bays:
-		var wx := -hx + (float(k) + 0.5) * sz.x / float(n_bays)
-		for sd in [-1.0, 1.0]:
-			if sd > 0.0 and absf(wx) < 1.8:
-				continue
-			_ibox(sb, Vector3(1.18, 0.44, 0.08), 0.01, M_WIN, Vector3(wx, 0.38, sd * (hz + 0.03)), Vector3.ZERO, Vector3.ONE, false)
-			_ibox(sb, Vector3(1.32, 0.10, 0.22), 0.015, M_DARK, Vector3(wx, 0.64, sd * (hz + 0.09)), Vector3.ZERO, Vector3.ONE, false)
-	# 正门装甲气闸门框 + 黄黑警戒门槛 + 三防核生化过滤新风机组 + 通讯鞭状天线
-	_ibox(sb, Vector3(2.20, 2.35, 0.20), 0.03, M_CON, Vector3(0, -hy + 1.18, hz + 0.08))
-	for dx_s in [-0.46, 0.46]:
-		_ibox(sb, Vector3(0.86, 2.02, 0.08), 0.015, M_DARK, Vector3(dx_s, -hy + 1.04, hz + 0.16), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(2.15, 0.14, 0.24), 0.01, A.hazard(), Vector3(0, -hy + 0.08, hz + 0.16), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(2.55, 0.14, 0.72), 0.02, M_RIB, Vector3(0, -hy + 2.42, hz + 0.32), Vector3(6, 0, 0))
-	_ibox(sb, Vector3(1.65, 0.85, 1.25), 0.03, M_DARK, Vector3(-hx * 0.48, hy + arch_h * 0.72, 0))
-	_imesh(sb, A.cyl(0.035, 2.6, 0.055, 8), M_DARK, Vector3(hx * 0.62, hy + arch_h + 1.1, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(sb, "SEC-%02d" % rng.randi_range(1, 19), Vector3(-hx * 0.56, 0.36, hz + 0.16), Vector3.ZERO, 0.018, Color(0.86, 0.84, 0.70, 0.62))
+	var c: Color = [Color(0.36, 0.42, 0.30), Color(0.35, 0.39, 0.34), Color(0.42, 0.40, 0.31)][rng.randi() % 3]
+	PrefabLib.place_on_body(self, sb, "bldg_barrack", sz, true, A.corrugated(c, 0.36, 0.24), -999.0, rng.randf() < 0.55, "SEC-%02d" % rng.randi_range(1, 19))
 
 
 func _factory_shed(p: Vector3, sz: Vector3, rot := 0.0) -> void:
-	# 编组站/工矿机务段检修车库：红褐锈蚀工字钢立柱 + 压型钢板墙身 + 锯齿高侧天窗屋面 + 贯通卷帘机车检修门 + 悬挑工字钢行车梁与排烟管
-	var c: Color = [Color(0.38, 0.25, 0.19), Color(0.28, 0.32, 0.35), Color(0.36, 0.34, 0.28)][rng.randi() % 3]
-	var M_WALL := A.corrugated(c, 0.62, 0.30)
-	var M_STEEL := A.metal(Color(0.17, 0.18, 0.19))
-	var M_CON := A.concrete(Color(0.38, 0.37, 0.35), false)
-	var M_SHUT := A.corrugated(Color(0.22, 0.24, 0.26), 0.45, 0.44)
-	var M_GLS := A.glass(Color(0.26, 0.38, 0.44))
+	# 锯齿天窗工矿机务检修库（B1-04 bldg_factory_shed）：三跨北向锯齿高侧天窗 + 工字钢外框柱 + 悬挑单轨电葫芦行车梁 + 旋风除尘分离罐
+	var c: Color = [Color(0.48, 0.32, 0.24), Color(0.35, 0.42, 0.47), Color(0.46, 0.43, 0.34)][rng.randi() % 3]
 	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
 	sb.rotation.y = -rot
-	var hx := sz.x * 0.5
-	var hz := sz.z * 0.5
-	var hy := sz.y * 0.5
-	_ibox(sb, sz, 0.02, M_WALL)
-	_ibox(sb, Vector3(sz.x + 0.20, 0.68, sz.z + 0.20), 0.03, M_CON, Vector3(0, -hy + 0.34, 0))
-	var n_col := maxi(2, int(sz.x / 2.5))
-	for k in n_col + 1:
-		var cx := -hx + k * sz.x / float(n_col)
-		for sd in [-1.0, 1.0]:
-			_ibox(sb, Vector3(0.20, sz.y + 0.08, 0.22), 0.015, M_STEEL, Vector3(cx, 0.02, sd * (hz + 0.06)))
-	# 锯齿采光天窗气楼屋顶 + 排风烟囱
-	var mon_h := clampf(sz.z * 0.18, 0.72, 1.15)
-	var outline := PackedVector2Array([Vector2(-0.5, 0.0), Vector2(-0.18, 1.0), Vector2(0.5, 0.0)])
-	_imesh(sb, A.prism(outline, 1.0, 0.01), A.roof_mat(c.darkened(0.18), 0.65, true),
-		Vector3(0, hy, 0), Vector3(0, 90, 0), Vector3(sz.z + 0.32, mon_h, sz.x + 0.28))
-	_ibox(sb, Vector3(sz.x * 0.84, mon_h * 0.56, 0.10), 0.01, M_GLS, Vector3(0, hy + mon_h * 0.42, -hz * 0.16), Vector3(-16, 0, 0), Vector3.ONE, false)
-	_imesh(sb, A.cyl(0.18, 1.35, 0.20, 10), M_STEEL, Vector3(hx * 0.52, hy + mon_h * 0.5 + 0.55, -hz * 0.24))
-	_imesh(sb, A.cyl(0.28, 0.12, 0.16, 10), M_STEEL, Vector3(hx * 0.52, hy + mon_h * 0.5 + 1.26, -hz * 0.24), Vector3.ZERO, Vector3.ONE, false)
-	# 正脸宽幅检修卷帘门 + 门头悬挑单轨电葫芦工字钢梁 + 侧墙百叶散热窗
-	var bw := minf(sz.x * 0.58, 4.6)
-	var bh := sz.y * 0.76
-	_ibox(sb, Vector3(bw + 0.28, bh + 0.16, 0.16), 0.02, M_STEEL, Vector3(0, -hy + bh * 0.5, hz + 0.05))
-	for sl in 5:
-		_ibox(sb, Vector3(bw - 0.12, bh * 0.165, 0.08), 0.01, M_SHUT, Vector3(0, -hy + bh * (0.12 + sl * 0.185), hz + 0.11), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(0.18, 0.24, 0.92), 0.015, A.hazard(), Vector3(0, -hy + bh + 0.18, hz + 0.38))
-	for sx_v in [-1.0, 1.0]:
-		_ibox(sb, Vector3(0.10, 0.85, minf(1.8, sz.z * 0.38)), 0.01, M_STEEL, Vector3(sx_v * (hx + 0.03), 0.28, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	PrefabLib.place_on_body(self, sb, "bldg_factory_shed", sz, true, A.corrugated(c, 0.42, 0.24), -999.0, rng.randf() < 0.45)
 
 
 func _apartment(p: Vector3, sz: Vector3, rot := 0.0) -> void:
-	# 工业区职工公寓楼：预制混凝土板缝 / 红砖砌体墙面 + 凸出楼梯间采光核 + 半凹陷铁栏阳台与空调外机 + 屋顶水箱架
-	var is_brk := rng.randf() < 0.40
-	var c: Color = Color(0.45, 0.32, 0.26) if is_brk else [Color(0.53, 0.50, 0.45), Color(0.47, 0.46, 0.43), Color(0.50, 0.43, 0.37)][rng.randi() % 3]
+	# 预制板多层职工公寓楼（B1-03 bldg_apartment）：四层柱网真内凹窗格 + 中轴楼梯采光核 + 半挑铁栏阳台空调笼 + 女儿墙高架水箱与风冷机组
+	var is_brk := rng.randf() < 0.42
+	var c: Color = Color(0.54, 0.36, 0.26) if is_brk else [Color(0.60, 0.56, 0.50), Color(0.54, 0.52, 0.49), Color(0.58, 0.49, 0.41)][rng.randi() % 3]
+	var M_WALL: ShaderMaterial = A.brick(c) if is_brk else A.concrete(c)
 	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
 	sb.rotation.y = -rot
-	var hx := sz.x * 0.5
-	var hz := sz.z * 0.5
-	var hy := sz.y * 0.5
-	var M_WALL: ShaderMaterial = A.brick(c) if is_brk else A.concrete(c)
-	var M_DARK := A.concrete(Color(0.30, 0.29, 0.27) if is_brk else c.darkened(0.34), false)
-	var M_TRIM := A.concrete(Color(0.52, 0.49, 0.44) if is_brk else c.lightened(0.12), false)
-	var M_STEEL := A.metal(Color(0.17, 0.18, 0.19))
-	var M_WIN := A.window_mat(0.20, Vector2(0.56, 0.52))
-	var M_AC := A.paint(Color(0.54, 0.54, 0.51), 0.35, 0.62, {"wear": 0.62, "rust": 0.55})
-	_ibox(sb, sz, 0.02, M_WALL)
-	_ibox(sb, Vector3(sz.x + 0.30, 0.65, sz.z + 0.30), 0.03, M_DARK, Vector3(0, -hy + 0.325, 0))
-	_ibox(sb, Vector3(sz.x + 0.26, 0.22, sz.z + 0.26), 0.02, M_TRIM, Vector3(0, hy + 0.08, 0))
-	_ibox(sb, Vector3(sz.x - 0.32, 0.10, sz.z - 0.32), 0.02, A.tar_roof(Color(0.25, 0.26, 0.28)), Vector3(0, hy + 0.16, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 中央楼梯间竖向采光核与单元防盗门雨棚
-	_ibox(sb, Vector3(2.35, sz.y + 1.35, 0.42), 0.03, M_TRIM, Vector3(0, 0.65, hz + 0.16))
-	var sw_y0 := -hy + 2.28
-	var sw_y1 := hy + 1.05
-	if sw_y1 > sw_y0 + 0.4:
-		_ibox(sb, Vector3(0.76, sw_y1 - sw_y0, 0.08), 0.01, M_WIN, Vector3(0, (sw_y0 + sw_y1) * 0.5, hz + 0.38), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(1.45, 1.95, 0.10), 0.015, M_STEEL, Vector3(0, -hy + 0.98, hz + 0.38), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(2.45, 0.14, 0.78), 0.02, M_DARK, Vector3(0, -hy + 2.08, hz + 0.52))
-	var floors := maxi(2, int(sz.y / 2.35))
-	var n_cols := maxi(2, int((sz.x - 3.0) / 3.2))
-	for f in floors:
-		var fy := -hy + 0.75 + f * ((sz.y - 1.0) / float(floors))
-		if fy > hy - 0.8:
-			break
-		_ibox(sb, Vector3(sz.x + 0.14, 0.12, sz.z + 0.14), 0.015, M_DARK, Vector3(0, fy - 0.42, 0), Vector3.ZERO, Vector3.ONE, false)
-		for side_x in [-1.0, 1.0]:
-			for ci: int in maxi(1, int(n_cols / 2)):
-				var bx: float = side_x * (2.05 + float(ci) * 2.55)
-				if absf(bx) > hx - 1.25:
-					continue
-				# 正面外挑小阳台 + 铁艺护栏 + 空调外机；背面窗洞
-				if f >= 1:
-					_ibox(sb, Vector3(1.92, 0.12, 0.44), 0.02, M_TRIM, Vector3(bx, fy - 0.38, hz + 0.20))
-					_ibox(sb, Vector3(1.90, 0.52, 0.06), 0.01, M_STEEL, Vector3(bx, fy - 0.08, hz + 0.39), Vector3.ZERO, Vector3.ONE, false)
-				_ibox(sb, Vector3(1.16, 1.05, 0.08), 0.01, M_WIN, Vector3(bx, fy + 0.18, hz + 0.03), Vector3.ZERO, Vector3.ONE, false)
-				_ibox(sb, Vector3(1.02, 0.92, 0.08), 0.01, M_WIN, Vector3(bx, fy + 0.18, -hz - 0.03), Vector3.ZERO, Vector3.ONE, false)
-				if (f + ci) % 2 == 0:
-					_ibox(sb, Vector3(0.68, 0.48, 0.28), 0.02, M_AC, Vector3(bx + side_x * 0.82, fy + 0.12, -hz - 0.15))
-	# 屋顶女儿墙与热水器/水箱支架
-	for sd_p in [-1.0, 1.0]:
-		_ibox(sb, Vector3(sz.x, 0.46, 0.24), 0.02, M_DARK, Vector3(0, hy + 0.32, sd_p * (hz - 0.12)))
-		_ibox(sb, Vector3(0.24, 0.46, maxf(0.8, sz.z - 0.52)), 0.02, M_DARK, Vector3(sd_p * (hx - 0.12), hy + 0.32, 0))
-	_imesh(sb, A.cyl(0.56, 1.45, 0.56, 14), M_AC, Vector3(-hx * 0.45, hy + 0.72, -hz * 0.25), Vector3(0, 0, 90))
-	for lx_t in [-0.52, 0.52]:
-		_ibox(sb, Vector3(0.08, 0.65, 0.82), 0.01, M_STEEL, Vector3(-hx * 0.45 + lx_t, hy + 0.38, -hz * 0.25), Vector3.ZERO, Vector3.ONE, false)
+	PrefabLib.place_on_body(self, sb, "bldg_apartment", sz, true, M_WALL, -999.0, rng.randf() < 0.28)
 
 
 func _block_downtown(blk: Dictionary) -> void:
@@ -8209,10 +8592,12 @@ func _block_industrial(blk: Dictionary) -> void:
 		var p := _spot_in_poly(poly, 3.6)
 		if p != Vector3.INF:
 			var rot := rad_to_deg(-ang) + (0.0 if rng.randf() < 0.6 else 90.0)
-			_container(p, rot, [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35)][rng.randi() % 4])
+			_container(p, rot, [Color(0.28, 0.46, 0.62), Color(0.74, 0.36, 0.20), Color(0.40, 0.52, 0.34), Color(0.68, 0.58, 0.34), Color(0.70, 0.68, 0.62)][rng.randi() % 5])
 			_obb_blocks(Vector2(p.x, p.z), deg_to_rad(-rot) + PI * 0.5, 6.4, 2.8)
-	if rng.randf() < 0.45:
-		var p := _spot_in_poly(poly, 2.5)
+			var door_dir := Vector3(0.0, 0.0, 1.0).rotated(Vector3.UP, deg_to_rad(rot))
+			register_loot_anchor(p + door_dir * 4.35, rot, "tool", 82, "container", door_dir)
+	if rng.randf() < 0.55:
+		var p := _spot_in_poly(poly, 5.0)
 		if p != Vector3.INF:
 			_chimney(p)
 	_fence_poly(poly, 2.4, 0.35)
@@ -8221,7 +8606,7 @@ func _block_industrial(blk: Dictionary) -> void:
 func _block_harbor(blk: Dictionary) -> void:
 	var poly: PackedVector2Array = blk.poly
 	var ang: float = blk.ang
-	var cols := [Color(0.25, 0.38, 0.5), Color(0.62, 0.3, 0.18), Color(0.35, 0.45, 0.3), Color(0.55, 0.5, 0.35), Color(0.5, 0.2, 0.2)]
+	var cols := [Color(0.28, 0.46, 0.62), Color(0.74, 0.36, 0.20), Color(0.40, 0.52, 0.34), Color(0.72, 0.58, 0.28), Color(0.66, 0.26, 0.22), Color(0.72, 0.70, 0.64)]
 	# 集装箱堆场：顺着街块朝向按网格成排摆放、两层对齐
 	var core := WC.inset(poly, 3.2)
 	if core.size() >= 3:
@@ -8246,45 +8631,29 @@ func _block_harbor(blk: Dictionary) -> void:
 					if rng.randf() < 0.45:
 						_container(p + Vector3(0, 2.48, 0), rot, cols[rng.randi() % cols.size()])
 					_obb_blocks(q, deg_to_rad(-rot) + PI * 0.5, 6.4, 2.8)
+					var door_dir := Vector3(0.0, 0.0, 1.0).rotated(Vector3.UP, deg_to_rad(rot))
+					var flank_dir := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, deg_to_rad(rot))
+					var c_kind := "military" if (put % 5 == 0) else ("tool" if (put % 2 == 0) else "supply")
+					register_loot_anchor(p + door_dir * 4.35, rot, c_kind, 85, "harbor_container", door_dir)
+					register_loot_anchor(p - door_dir * 4.35, rot + 180.0, c_kind, 84, "harbor_container", -door_dir)
+					register_loot_anchor(p + flank_dir * 2.55, rot + 90.0, c_kind, 83, "harbor_container", flank_dir)
+					register_loot_anchor(p - flank_dir * 2.55, rot - 90.0, c_kind, 83, "harbor_container", -flank_dir)
 					put += 1
 				tu += 7.4
 			tv += 4.2
-	# 岸桥集装箱龙门吊机：四柱门架 + 横梁斜撑桁架 + A字拉索塔顶 + 司机室与悬吊集装箱吊具
-	if rng.randf() < 0.4:
-		var p := _spot_in_poly(poly, 5.0, 20)
+	# 重型集装箱龙门吊与钢轨堆场（B6-29 poi_gantry_rail）
+	if rng.randf() < 0.45:
+		var p := _spot_in_poly(poly, 6.6, 20)
 		if p != Vector3.INF:
-			var M := A.paint(Color(0.74, 0.45, 0.13), 0.5, 0.55, {"rust": 0.78, "wear": 0.6, "panel_scale": 0.8})
-			var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
-			var M_CAB := A.paint(Color(0.30, 0.32, 0.34), 0.4, 0.58, {"wear": 0.5, "rust": 0.45})
-			var root := Node3D.new()
-			world.add_child(root)
-			root.position = p
-			root.rotation.y = -ang
-			for lx in [-3.5, 3.5]:
-				A.add(root, A.bevel_box(Vector3(1.1, 0.65, 8.6), 0.04), M_DARK, Vector3(lx, 0.32, 0))
-				for lz in [-3.5, 3.5]:
-					_static_box(Vector3(0.72, 14.0, 0.72), Vector3(lx, 7.0, lz), Color.WHITE, root, M)
-				for by in [4.6, 9.4, 13.6]:
-					A.add(root, A.bevel_box(Vector3(0.45, 0.42, 7.2), 0.02), M, Vector3(lx, by, 0))
-				A.add(root, A.tube([Vector3(lx, 0.8, -3.4), Vector3(lx, 9.2, 3.4)], 0.11, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-				A.add(root, A.tube([Vector3(lx, 0.8, 3.4), Vector3(lx, 9.2, -3.4)], 0.11, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			for lz in [-3.5, 3.5]:
-				A.add(root, A.bevel_box(Vector3(7.6, 0.55, 0.55), 0.03), M, Vector3(0, 13.7, lz))
-			for bx in [-2.6, 2.6]:
-				A.add(root, A.bevel_box(Vector3(0.75, 1.25, 26.5), 0.05), M, Vector3(bx, 14.45, 4.0))
-				A.add(root, A.tube([Vector3(bx, 15.0, -3.2), Vector3(bx * 0.4, 19.2, -1.0)], 0.14, 6, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-				A.add(root, A.tube([Vector3(bx * 0.4, 19.2, -1.0), Vector3(bx, 14.9, 15.2)], 0.06, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-				A.add(root, A.tube([Vector3(bx * 0.4, 19.2, -1.0), Vector3(bx, 14.9, -8.5)], 0.06, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(root, A.bevel_box(Vector3(3.4, 2.1, 3.4), 0.08), M_CAB, Vector3(0, 13.1, -5.2))
-			A.add(root, A.bevel_box(Vector3(4.8, 0.75, 2.8), 0.05), M_DARK, Vector3(0, 13.8, 8.8))
-			A.add(root, A.bevel_box(Vector3(2.2, 1.65, 2.4), 0.06), M_CAB, Vector3(-1.4, 12.6, 8.8))
-			A.add(root, A.bevel_box(Vector3(1.8, 0.85, 2.46), 0.02), A.glass(Color(0.20, 0.30, 0.35)), Vector3(-1.4, 12.5, 8.8), Vector3.ZERO, Vector3.ONE, false)
-			# 悬吊钢索与集装箱锁具吊架
-			for cx_s in [-1.1, 1.1]:
-				for cz_s in [-2.4, 2.4]:
-					A.add(root, A.cyl(0.025, 6.2, 0.025, 6), M_DARK, Vector3(cx_s, 10.3, 8.8 + cz_s), Vector3.ZERO, Vector3.ONE, false)
-			A.add(root, A.bevel_box(Vector3(2.5, 0.38, 5.8), 0.03), A.hazard(), Vector3(0, 7.1, 8.8))
-			blocks.append(Rect2(p.x - 5.0, p.z - 5.0, 10.0, 10.0))
+			PrefabLib.place_at_ground(self, world, "poi_gantry_rail", p + Vector3(0.0, -0.04, 0.0), rad_to_deg(-ang), Vector3(15.8, 12.4, 10.2), false, null, true)
+			var u_g := Vector3(cos(ang), 0.0, sin(ang))
+			for lx_g in [-6.8, 6.8]:
+				var leg_sb := _bldg_body(Vector3(1.5, 11.6, 4.2), p + u_g * lx_g + Vector3(0.0, 5.8, 0.0))
+				leg_sb.rotation.y = -ang
+			blocks.append(Rect2(p.x - 6.8, p.z - 5.2, 13.6, 10.4))
+			var v_g := Vector3(-sin(ang), 0.0, cos(ang))
+			register_loot_anchor(p + u_g * 4.4 + v_g * 6.4, rad_to_deg(-ang), "tool", 88, "gantry", v_g)
+			register_loot_anchor(p - u_g * 4.4 - v_g * 6.4, rad_to_deg(-ang) + 180.0, "supply", 84, "gantry", -v_g)
 
 
 func _block_railyard(blk: Dictionary) -> void:
@@ -8302,6 +8671,10 @@ func _block_railyard(blk: Dictionary) -> void:
 			continue
 		var horiz := absf(t.x) > absf(t.y)
 		_wagon(p, horiz)
+		var side_v := Vector3(0.0, 0.0, 1.0) if horiz else Vector3(1.0, 0.0, 0.0)
+		var wyaw := 0.0 if horiz else 90.0
+		register_loot_anchor(p + side_v * 3.10, wyaw, "tool", 86, "wagon", side_v)
+		register_loot_anchor(p - side_v * 3.10, wyaw + 180.0, "supply", 82, "wagon", -side_v)
 	var q := _spot_in_poly(poly, 3.0, 20)
 	if q != Vector3.INF and rng.randf() < 0.5:
 		_watchtower(q)
@@ -8430,23 +8803,35 @@ func _build_fields() -> void:
 		for q in poly:
 			lo = Vector2(minf(lo.x, q.dot(u)), minf(lo.y, q.dot(v)))
 			hi = Vector2(maxf(hi.x, q.dot(u)), maxf(hi.y, q.dot(v)))
-		var t := lo.y + 2.0
+		var t := lo.y + 1.8
+		var ph_x := rng.randf() * TAU
+		var ph_z := rng.randf() * TAU
 		while t < hi.y:
 			var seg := _line_in_poly(poly, v * t, u)
 			if seg.size() == 2:
 				var L := seg[0].distance_to(seg[1])
-				var n := int(L / 0.7)
+				var n := int(L / 0.85)
 				for i in n:
-					if rng.randf() > 0.8:
+					var q0 := seg[0].lerp(seg[1], (i + 0.5) / n)
+					var q := q0 + u * rng.randf_range(-0.48, 0.48) + v * rng.randf_range(-0.68, 0.68)
+					var patch := 0.52 + 0.34 * sin(q.x * 0.11 + ph_x) * cos(q.y * 0.09 + ph_z) + 0.18 * sin((q.x - q.y) * 0.045)
+					if rng.randf() > patch:
 						continue
-					var q := seg[0].lerp(seg[1], (i + 0.5) / n)
 					if absf(q.x) > EXT_HALF or absf(q.y) > EXT_HALF:
 						continue
-					if zone_at(Vector3(q.x, 0, q.y)) != "F" or in_river(q, 1.0) or in_wet(q, 2.0) or on_road(q, 0.5):
+					if zone_at(Vector3(q.x, 0, q.y)) != "F" or in_river(q, 1.0) or in_wet(q, 2.0) or on_road(q, 0.7):
 						continue
-					var hh := rng.randf_range(0.48, 0.96)
-					stalks.append(Transform3D(_rand_basis(10).scaled_local(Vector3(hh * 0.9, hh, hh * 0.9)), Vector3(q.x, 0.0, q.y)))
-			t += 2.6
+					var hh := rng.randf_range(0.42, 1.12) * lerpf(0.82, 1.18, clampf(patch, 0.0, 1.0))
+					var hw := hh * rng.randf_range(0.78, 1.14)
+					stalks.append(Transform3D(_rand_basis(14).scaled_local(Vector3(hw, hh, hw)), Vector3(q.x, 0.0, q.y)))
+			t += rng.randf_range(2.05, 3.15)
+		# 田块边缘荒原枯木与耐旱沙棘生态群落（B5-25 ter_arid_flora_pylon）
+		if WC.poly_area(poly) > 420.0 and rng.randf() < 0.38:
+			var fp := _spot_in_poly(poly, 5.2)
+			if fp != Vector3.INF and zone_at(fp) == "F" and not on_road(Vector2(fp.x, fp.z), 4.5):
+				PrefabLib.place_at_ground(self, world, "ter_arid_flora_pylon", fp + Vector3(0.0, -0.10, 0.0), rng.randf() * 360.0, Vector3(8.4, 4.2, 6.4), false)
+				_bldg_body(Vector3(2.0, 2.2, 2.0), fp + Vector3(0.0, 1.1, 0.0))
+				blocks.append(Rect2(fp.x - 3.6, fp.z - 3.0, 7.2, 6.0))
 		# 圆柱捆扎干草垛（取代黄色直角方块：机械打捆圆草卷 + 深色捆绳箍 + 双捆堆叠变体）
 		var M_BALE := A.paint(Color(0.52, 0.44, 0.26), 0.0, 1.0, {"wear": 0.15, "dust": 0.55, "grime": 0.65, "panel_scale": 0.0})
 		var M_TWINE := A.paint(Color(0.18, 0.15, 0.12), 0.0, 0.95, {"panel_scale": 0.0})
@@ -8476,11 +8861,12 @@ func _build_fields() -> void:
 
 
 # ---------- 自然地表与散布物：按 3 米抖动格点逐点看区块字符决定摆什么 ----------
-## 每平方米的战利品容器密度（与旧版按格子 n / 4900 一致）
-const LOOT_RATE := {"D": 7, "R": 7, "I": 6, "H": 6, "Y": 5, "M": 0, "W": 3, "F": 4, "P": 3, "T": 3, "C": 4, "S": 3, "K": 0, "L": 2}
+## 区块危险度权重（供 _place_box 判定容器品质档位；物资箱不再在 3m 空地网格随机撒落，统一由 _place_contextual_loot 贴靠合理建筑/掩体/地标固定落位）
+const LOOT_RATE := {"D": 0, "R": 0, "I": 0, "H": 0, "Y": 0, "M": 0, "W": 0, "F": 0, "P": 0, "T": 0, "C": 0, "S": 0, "K": 0, "L": 0}
 const LOOT_W := {"D": {"supply": 30, "tool": 30, "military": 22, "safe": 18}, "R": {"supply": 50, "tool": 35, "military": 5, "safe": 10},
 	"I": {"supply": 15, "tool": 55, "military": 20, "safe": 10}, "H": {"supply": 30, "tool": 45, "military": 15, "safe": 10},
-	"Y": {"supply": 25, "tool": 50, "military": 15, "safe": 10}, "W": {"supply": 40, "tool": 40, "military": 12, "safe": 8},
+	"Y": {"supply": 25, "tool": 50, "military": 15, "safe": 10}, "M": {"supply": 10, "tool": 15, "military": 55, "safe": 20},
+	"W": {"supply": 40, "tool": 40, "military": 12, "safe": 8},
 	"F": {"supply": 60, "tool": 30, "military": 4, "safe": 6}, "P": {"supply": 55, "tool": 25, "military": 8, "safe": 12},
 	"T": {"supply": 50, "tool": 30, "military": 10, "safe": 10}, "C": {"supply": 15, "tool": 25, "military": 50, "safe": 10},
 	"S": {"supply": 20, "tool": 20, "military": 35, "safe": 25}, "L": {"supply": 45, "tool": 35, "military": 10, "safe": 10}}
@@ -8525,15 +8911,8 @@ func _scatter() -> void:
 			if not in_bounds(p, 3.5):
 				continue
 			var ch := zone_at(p)
+			var _skip_loot_roll := rng.randf()
 			var roll := rng.randf()
-			# 战利品
-			var lr: float = float(LOOT_RATE.get(ch, 0)) / 4900.0 * step * step
-			if roll < lr:
-				if not _blocked(p, 1.4):
-					_place_box(GameData._weighted(LOOT_W.get(ch, LOOT_W.W), rng), p)
-					blocks.append(Rect2(p.x - 1, p.z - 1, 2, 2))
-				continue
-			roll = rng.randf()
 			match ch:
 				"T":
 					if roll < 0.36 and not _blocked(p, 1.1):
@@ -8590,11 +8969,11 @@ func _scatter() -> void:
 								Vector3(bsc * 1.10, bsc * 0.95, bsc * 1.10))
 						blocks.append(_rect_for(p, size))
 				"W":
-					if roll < 0.022 and not _blocked(p, 3.0):
+					if roll < 0.025 and not _blocked(p, 3.0):
 						var r2 := rng.randf()
-						if r2 < 0.4:
+						if r2 < 0.32:
 							_boulder(p, rng.randf_range(1.5, 4.5))
-						elif r2 < 0.65:
+						elif r2 < 0.52:
 							var horiz_w := rng.randf() < 0.5
 							var size := Vector3(rng.randf_range(6, 12), rng.randf_range(1.4, 3.0), 0.8) if horiz_w else Vector3(0.8, rng.randf_range(1.4, 3.0), rng.randf_range(6, 12))
 							var wsb := _static_box(size, p + Vector3(0, size.y * 0.5, 0), Color(0.50, 0.46, 0.42))
@@ -8604,9 +8983,22 @@ func _scatter() -> void:
 								var p_ps := Vector3(wp_s * size.x, -size.y * 0.04, 0) if horiz_w else Vector3(0, -size.y * 0.04, wp_s * size.z)
 								_ibox(wsb, p_sz, 0.03, A.concrete(Color(0.42, 0.39, 0.36), false), p_ps)
 							blocks.append(_rect_for(p, size))
-						elif r2 < 0.8:
+						elif r2 < 0.68 and not _blocked(p, 5.4) and not on_road(Vector2(p.x, p.z), 4.5):
+							var yaw_fl := rng.randf() * 360.0
+							var sc_fl := rng.randf_range(0.85, 1.10)
+							PrefabLib.place_at_ground(self, world, "ter_arid_flora_pylon", p + Vector3(0.0, -0.11, 0.0), yaw_fl, Vector3(10.8, 5.4, 8.2) * sc_fl, false)
+							var py_sb := _bldg_body(Vector3(2.4, 2.6, 2.4), p + Vector3(0.0, 1.3, 0.0))
+							py_sb.rotation_degrees.y = yaw_fl
+							blocks.append(Rect2(p.x - 4.4 * sc_fl, p.z - 3.6 * sc_fl, 8.8 * sc_fl, 7.2 * sc_fl))
+						elif r2 < 0.77 and not _blocked(p, 5.4) and not on_road(Vector2(p.x, p.z), 4.5):
+							var yaw_dt := rng.randf() * 360.0
+							PrefabLib.place_at_ground(self, world, "ter_dragon_teeth_pipe", p + Vector3(0.0, -0.10, 0.0), yaw_dt, Vector3(10.4, 2.3, 7.6), false)
+							var dt_sb := _bldg_body(Vector3(8.6, 1.5, 3.0), p + Vector3(0.0, 0.75, 0.0))
+							dt_sb.rotation_degrees.y = yaw_dt
+							blocks.append(Rect2(p.x - 4.8, p.z - 3.8, 9.6, 7.6))
+						elif r2 < 0.84:
 							_dead_tree(p)
-						elif r2 < 0.9:
+						elif r2 < 0.92:
 							_wreck_car(p)
 						else:
 							var sz := Vector3(rng.randf_range(5, 8.5), rng.randf_range(2.2, 4.0), rng.randf_range(5, 8.5))
@@ -8620,6 +9012,12 @@ func _scatter() -> void:
 						_tank_wreck(p)
 					elif roll < 0.052 and not _blocked(p, 1.5):
 						_fire_barrel(p)
+					elif roll < 0.058 and not _blocked(p, 5.4) and not on_road(Vector2(p.x, p.z), 4.5):
+						var yaw_dtc := rng.randf() * 360.0
+						PrefabLib.place_at_ground(self, world, "ter_dragon_teeth_pipe", p + Vector3(0.0, -0.10, 0.0), yaw_dtc, Vector3(10.4, 2.3, 7.6), false)
+						var dtc_sb := _bldg_body(Vector3(8.6, 1.5, 3.0), p + Vector3(0.0, 0.75, 0.0))
+						dtc_sb.rotation_degrees.y = yaw_dtc
+						blocks.append(Rect2(p.x - 4.8, p.z - 3.8, 9.6, 7.6))
 				"S":
 					if roll < 0.15 and not in_wet(Vector2(p.x, p.z), 6.0):
 						var d := A.ground_decal(world, A.cloud_tex(), Color(0.13, 0.08, 0.15, rng.randf_range(0.45, 0.75)), rng.randf_range(4.0, 9.0), p + Vector3(0, 0.036 + rng.randf() * 0.003, 0))
@@ -8746,6 +9144,9 @@ func _tank_wreck(p: Vector3) -> void:
 		A.add(tur, A.cyl(0.42, 0.18, 0.44, 12), M2, Vector3(-0.52, 0.46, 0.15))
 		A.add(tur, A.cyl(0.38, 0.06, 0.38, 12), M, Vector3(-0.78, 0.72, 0.15), Vector3(0, 0, 62))
 		blocks.append(_rect_for(p, Vector3(6.2, 1, 6.2)))
+		add_contact_shadow(p, 5.4, 8.2, sb.rotation_degrees.y)
+		var flank := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, deg_to_rad(sb.rotation_degrees.y))
+		register_loot_anchor(p + flank * 4.4, sb.rotation_degrees.y + 90.0, "military", 92, "tank_wreck", flank)
 	else:
 		# 6×6 重型装甲运兵车（APC）残骸：防雷V型底壳 + 倾斜观察窗驾驶舱 + 六轮越野胎 + 顶置遥控武器站残架
 		var sb := _bldg_body(Vector3(2.85, 2.15, 6.2), p + Vector3(0, 1.08, 0))
@@ -8762,6 +9163,9 @@ func _tank_wreck(p: Vector3) -> void:
 		_imesh(sb, A.cyl(0.58, 0.34, 0.64, 12), M2, Vector3(0, 1.10, -0.35))
 		_imesh(sb, A.cyl(0.06, 1.65, 0.07, 8), M_TRK, Vector3(0, 1.20, -1.25), Vector3(82, 0, 0))
 		blocks.append(_rect_for(p, Vector3(5.8, 1, 5.8)))
+		add_contact_shadow(p, 4.8, 7.8, sb.rotation_degrees.y)
+		var flank := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, deg_to_rad(sb.rotation_degrees.y))
+		register_loot_anchor(p + flank * 4.2, sb.rotation_degrees.y + 90.0, "military", 92, "tank_wreck", flank)
 
 
 func _park_statue(c: Vector3) -> void:
@@ -8788,7 +9192,10 @@ func _park_statue(c: Vector3) -> void:
 	A.add(sb, A.bevel_box(Vector3(0.72, 2.10, 0.56), 0.08, 0.68), M_BRZ, Vector3(0, 4.12, 0), Vector3(0, 0, 8))
 	A.add(sb, A.bevel_box(Vector3(1.18, 0.28, 0.28), 0.04), M_BRZ, Vector3(0.06, 4.35, 0), Vector3(0, 25, -24))
 	blocks.append(Rect2(c.x - 4.8, c.z - 4.8, 9.6, 9.6))
+	add_contact_shadow(c, 11.4, 11.4, 0.0)
 	_poi_lamp(c + Vector3(5.2, 0, 5.2), Color(1.0, 0.8, 0.55))
+	register_loot_anchor(c + Vector3(-6.0, 0.0, 1.8), 90.0, "supply", 88, "park_statue", Vector3(-1, 0, 0))
+	register_loot_anchor(c + Vector3(6.0, 0.0, -1.8), -90.0, "supply", 84, "park_statue", Vector3(1, 0, 0))
 
 
 ## 菌毯区：数据格子里相连的 S 格各放一座虫巢
@@ -8818,6 +9225,8 @@ func _hive_nests() -> void:
 					nest.position = p
 					nest.setup(self)
 					blocks.append(Rect2(p.x - 2, p.z - 2, 4, 4))
+					register_loot_anchor(p + Vector3(4.2, 0.0, 1.6), 90.0, "military", 93, "hive_cache", Vector3(1, 0, 0))
+					register_loot_anchor(p + Vector3(-4.2, 0.0, -1.6), -90.0, "safe", 91, "hive_cache", Vector3(-1, 0, 0))
 					break
 
 
@@ -8869,95 +9278,18 @@ func _scatter_cliffs() -> void:
 # ---------- 建筑部件 ----------
 func _house(p: Vector3, sz: Vector3, rot := 0.0) -> void:
 	var is_brk := rng.randf() < 0.45
-	var c: Color = Color(0.47, 0.33, 0.25) if is_brk else [Color(0.58, 0.53, 0.46), Color(0.52, 0.48, 0.43), Color(0.55, 0.54, 0.5)][rng.randi() % 3]
-	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
+	var c: Color = Color(0.55, 0.36, 0.25) if is_brk else [Color(0.64, 0.59, 0.52), Color(0.58, 0.54, 0.49), Color(0.61, 0.60, 0.55)][rng.randi() % 3]
+	var M_WALL: Material = A.brick(c) if is_brk else A.concrete(c)
+	var sb := _bldg_body(sz, p + Vector3(0.0, sz.y * 0.5, 0.0))
 	sb.rotation.y = -rot
-	_ibox(sb, sz, 0.01, A.brick(c) if is_brk else A.concrete(c))
-	var hx := sz.x * 0.5
-	var hz := sz.z * 0.5
-	var hy := sz.y * 0.5
-	var M_DARK := A.concrete(Color(0.30, 0.29, 0.27) if is_brk else c.darkened(0.36), false)
-	var M_FR := A.concrete(Color(0.54, 0.51, 0.46) if is_brk else c.lightened(0.14), false)
-	var M_WOOD := A.paint(Color(0.32, 0.22, 0.15), 0.0, 0.9)
-	var M_WIN := A.window_mat(0.18, Vector2(0.44, 0.44))
-	# 台基 + 四角壁柱 + 檐下腰线
-	_ibox(sb, Vector3(sz.x + 0.45, 0.14, sz.z + 0.45), 0.02, M_FR, Vector3(0, -hy + 0.07, 0), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(sz.x + 0.16, 0.52, sz.z + 0.16), 0.03, M_DARK, Vector3(0, -hy + 0.26, 0))
-	_ibox(sb, Vector3(sz.x + 0.22, 0.16, sz.z + 0.22), 0.02, M_FR, Vector3(0, hy - 0.06, 0))
-	for sx in [-1.0, 1.0]:
-		for szz in [-1.0, 1.0]:
-			_ibox(sb, Vector3(0.32, sz.y + 0.04, 0.32), 0.02, M_FR, Vector3(sx * (hx - 0.06), 0.01, szz * (hz - 0.06)))
-	# 前后与山墙窗框 + 窗台石 + 落水雨水管
-	for sd in [-1.0, 1.0]:
-		for k in 2:
-			var x := (k - 0.5) * hx * 0.95
-			_ibox(sb, Vector3(1.12, 1.12, 0.08), 0.01, M_FR, Vector3(x, 0.22, sd * (hz + 0.02)), Vector3.ZERO, Vector3.ONE, false)
-			_ibox(sb, Vector3(0.88, 0.88, 0.10), 0.01, M_WIN, Vector3(x, 0.22, sd * (hz + 0.035)), Vector3.ZERO, Vector3.ONE, false)
-			_ibox(sb, Vector3(1.24, 0.09, 0.16), 0.01, M_DARK, Vector3(x, -0.36, sd * (hz + 0.05)), Vector3.ZERO, Vector3.ONE, false)
-		_ibox(sb, Vector3(0.10, 0.90, 0.90), 0.01, M_WIN, Vector3(sd * (hx + 0.03), 0.22, 0.0), Vector3.ZERO, Vector3.ONE, false)
-	_imesh(sb, A.cyl(0.045, sz.y - 0.1, 0.045, 6), A.metal(Color(0.26, 0.27, 0.28)), Vector3(-hx + 0.18, 0.0, hz + 0.06), Vector3.ZERO, Vector3.ONE, false)
-	# 入户门 + 门廊混凝土台阶 + 双立柱支撑门廊雨棚（外挑严格收在 <= 0.82m 以内，杜绝窄巷重叠）
-	var dx := hx * 0.42
-	_ibox(sb, Vector3(1.15, 2.05, 0.12), 0.01, M_WOOD, Vector3(dx, -hy + 1.02, hz + 0.04), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(1.82, 0.24, 0.82), 0.02, M_DARK, Vector3(dx, -hy + 0.12, hz + 0.40))
-	_ibox(sb, Vector3(1.88, 0.14, 0.84), 0.02, M_WOOD, Vector3(dx, -hy + 2.18, hz + 0.40), Vector3(8, 0, 0))
-	for px_p in [-0.78, 0.78]:
-		_ibox(sb, Vector3(0.11, 1.92, 0.11), 0.01, M_FR, Vector3(dx + px_p, -hy + 1.14, hz + 0.74), Vector3.ZERO, Vector3.ONE, false)
-	# 双坡工业旧民居屋顶：压型扣合板岩灰 / 锈暗铁皮 / 陈旧陶土色 + 屋脊盖瓦 + 檐口天沟 + 老虎窗 + 砖砌烟囱
-	var roof_c: Color = [Color(0.36, 0.22, 0.17), Color(0.23, 0.26, 0.29), Color(0.34, 0.29, 0.23), Color(0.28, 0.30, 0.27)][rng.randi() % 4]
-	var M_ROOF := A.roof_mat(roof_c, 0.36, true)
-	var M_RIDGE := A.roof_mat(roof_c.darkened(0.25), 0.36, false)
-	var rh: float = minf(sz.x, sz.z) * 0.36
-	var rw := sz.x + 0.46
-	var rd := sz.z + 0.40
-	var outline := PackedVector2Array([Vector2(-0.5, 0), Vector2(0, 1), Vector2(0.5, 0)])
-	_imesh(sb, A.prism(outline, 1.0, 0.01), M_ROOF, Vector3(0, hy, 0), Vector3.ZERO, Vector3(rw, rh, rd))
-	_ibox(sb, Vector3(0.32, 0.2, rd + 0.12), 0.02, M_RIDGE, Vector3(0, hy + rh - 0.02, 0))
-	for sx in [-1.0, 1.0]:
-		_ibox(sb, Vector3(0.18, 0.22, rd + 0.08), 0.02, M_FR, Vector3(sx * (rw * 0.5 - 0.06), hy + 0.06, 0))
-	_ibox(sb, Vector3(1.15, 0.75, 1.25), 0.02, M_FR, Vector3(-hx * 0.42, hy + rh * 0.42, 0.0))
-	_ibox(sb, Vector3(1.3, 0.14, 1.4), 0.02, M_RIDGE, Vector3(-hx * 0.42, hy + rh * 0.42 + 0.42, 0.0))
-	_ibox(sb, Vector3(0.68, 1.35, 0.68), 0.03, A.brick(Color(0.42, 0.28, 0.22)), Vector3(hx * 0.45, hy + rh * 0.62, hz * 0.28))
-	_ibox(sb, Vector3(0.82, 0.14, 0.82), 0.02, M_FR, Vector3(hx * 0.45, hy + rh * 0.62 + 0.72, hz * 0.28))
+	PrefabLib.place_on_body(self, sb, "bldg_house", sz, true, M_WALL)
 
 func _warehouse(p: Vector3, sz: Vector3, col := Color(-1, 0, 0), rot := 0.0) -> void:
-	var c: Color = col if col.r >= 0.0 else [Color(0.42, 0.45, 0.43), Color(0.52, 0.46, 0.37), Color(0.36, 0.42, 0.47)][rng.randi() % 3]
-	var M := A.corrugated(c, 0.48, 0.28)
-	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
+	var c: Color = col if col.r >= 0.0 else [Color(0.49, 0.53, 0.50), Color(0.60, 0.53, 0.41), Color(0.42, 0.50, 0.58)][rng.randi() % 3]
+	var M: Material = A.corrugated(c, 0.36, 0.22)
+	var sb := _bldg_body(sz, p + Vector3(0.0, sz.y * 0.5, 0.0))
 	sb.rotation.y = -rot
-	_ibox(sb, sz, 0.01, M)
-	var hx := sz.x * 0.5
-	var hz := sz.z * 0.5
-	var hy := sz.y * 0.5
-	var M_BASE := A.concrete(Color(0.38, 0.37, 0.35), false)
-	var MR := A.corrugated(c.darkened(0.24), 0.52, 0.28)
-	# 混凝土高勒脚墙裙 + 钢结构立柱
-	_ibox(sb, Vector3(sz.x + 0.24, 1.05, sz.z + 0.24), 0.03, M_BASE, Vector3(0, -hy + 0.52, 0))
-	var n := maxi(2, int(sz.x / 2.2))
-	var arch_h := sz.z * 0.14
-	for k in n + 1:
-		var rx := -hx + k * sz.x / n
-		for sd in [-1.0, 1.0]:
-			_ibox(sb, Vector3(0.24, sz.y + 0.1, 0.2), 0.02, MR, Vector3(rx, 0.02, sd * (hz + 0.06)))
-	# 拱形屋顶 + 屋顶中央通风天窗气楼 + 无动力涡轮排风球（俯视角清晰呈现厂房工业脊线）
-	_imesh(sb, A.cyl(1.0, 1.0, 1.0, 38), A.corrugated(c.darkened(0.14), 0.52, 0.28), Vector3(0, hy, 0), Vector3(0, 0, 90), Vector3(arch_h, sz.x + 0.36, sz.z * 0.5 + 0.06))
-	_ibox(sb, Vector3(sz.x * 0.76, 0.48, sz.z * 0.22), 0.03, MR, Vector3(0, hy + arch_h + 0.12, 0))
-	_ibox(sb, Vector3(sz.x * 0.78, 0.12, sz.z * 0.26), 0.02, M_BASE, Vector3(0, hy + arch_h + 0.4, 0))
-	for vx_k in [-0.24, 0.24]:
-		_imesh(sb, A.cyl(0.24, 0.28, 0.18, 12), A.metal(Color(0.42, 0.43, 0.44)), Vector3(vx_k * sz.x, hy + arch_h + 0.56, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 装卸月台 + 凹陷波纹钢卷帘门 + 悬挑雨棚与斜拉杆 + 防撞黄黑护桩
-	var dock_w := sz.x * 0.46
-	var M_SHUT := A.corrugated(Color(0.20, 0.22, 0.24), 0.45, 0.42)
-	var M_DARK_M := A.metal(Color(0.12, 0.13, 0.14))
-	_ibox(sb, Vector3(dock_w * 0.76, sz.y * 0.64, 0.16), 0.02, M_DARK_M, Vector3(0, -hy + sz.y * 0.32, hz + 0.06), Vector3.ZERO, Vector3.ONE, false)
-	for sl in 5:
-		var sy_sl := -hy + sz.y * (0.12 + sl * 0.105)
-		_ibox(sb, Vector3(dock_w * 0.70, sz.y * 0.085, 0.08), 0.01, M_SHUT, Vector3(0, sy_sl, hz + 0.12), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(dock_w, 0.88, 0.86), 0.04, A.concrete(Color(0.5, 0.48, 0.45), false), Vector3(0, -hy + 0.44, hz + 0.43))
-	for bx_d in [-dock_w * 0.42, dock_w * 0.42]:
-		_imesh(sb, A.cyl(0.10, 1.02, 0.10, 10), A.hazard(), Vector3(bx_d, -hy + 0.51, hz + 0.90), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(dock_w + 0.40, 0.16, 0.88), 0.02, MR, Vector3(0, -hy + sz.y * 0.68, hz + 0.42), Vector3(6, 0, 0))
-	A.stencil(sb, "BLD-%02d" % rng.randi_range(1, 40), Vector3(-hx * 0.6, hy * 0.5, hz + 0.14), Vector3.ZERO, 0.02, Color(0.85, 0.82, 0.72, 0.6))
+	PrefabLib.place_on_body(self, sb, "bldg_warehouse", sz, true, M, -999.0, rng.randf() < 0.45, "BLD-%02d" % rng.randi_range(1, 40))
 
 func _tank(p: Vector3, rad: float, h: float) -> void:
 	var sb := StaticBody3D.new()
@@ -8994,106 +9326,43 @@ func _tank(p: Vector3, rad: float, h: float) -> void:
 	A.add(sb, A.cyl(0.24, 0.45, 0.24, 20), M_RING, Vector3(rad + 0.15, 0.85, 0), Vector3(0, 0, 90))
 	A.add(sb, A.torus(0.22, 0.32, 20), A.paint(Color(0.68, 0.22, 0.16), 0.4, 0.5), Vector3(rad + 0.38, 0.85, 0), Vector3(0, 0, 90), Vector3.ONE, false)
 	blocks.append(Rect2(p.x - rad - 1, p.z - rad - 1, rad * 2 + 2, rad * 2 + 2))
+	add_contact_shadow(p, rad * 2.7, rad * 2.7, 0.0)
+	register_loot_anchor(p + Vector3(rad + 2.15, 0.0, 0.6), 90.0, "tool", 81, "oil_tank", Vector3(1, 0, 0))
 
 func _chimney(p: Vector3) -> void:
-	var sb := _static_box(Vector3(3.2, 1.4, 3.2), p + Vector3(0, 0.7, 0), Color(0.45, 0.42, 0.4))
-	var M := A.brick(Color(0.48, 0.31, 0.23), 0.26)
-	var M_RING := A.metal(Color(0.26, 0.25, 0.24))
-	A.add(sb, A.cyl(1.38, 1.8, 1.56, 36), A.concrete(Color(0.4, 0.38, 0.35), false), Vector3(0, 1.2, 0))
-	A.add(sb, A.cyl(0.88, 22.0, 1.32, 36), M, Vector3(0, 11.2, 0))
-	A.add(sb, A.cyl(1.02, 0.55, 0.92, 36), M_RING, Vector3(0, 22.1, 0))
-	for k in 5:
-		var y_band := 4.5 + k * 3.8
-		var r_band := lerpf(1.32, 0.88, y_band / 22.0)
-		A.add(sb, A.torus(r_band - 0.02, r_band + 0.09, 36), M_RING, Vector3(0, y_band, 0), Vector3.ZERO, Vector3(1, 0.6, 1))
-	# 高空检修环廊平台
-	A.add(sb, A.cyl(1.48, 0.12, 1.48, 36), M_RING, Vector3(0, 16.0, 0))
-	A.add(sb, A.torus(1.42, 1.49, 36), M_RING, Vector3(0, 16.65, 0), Vector3.ZERO, Vector3(1, 0.45, 1), false)
-	A.emitter(sb, Vector3(0, 22.5, 0), {"amount": 8, "life": 6.0, "size": 2.5, "tex": A.smoke_tex(), "additive": false, "vmin": 0.6, "vmax": 1.2,
+	# 盘梯立式储油罐与高炉烟囱围堰组（B5-23 ind_oil_tank_chimney）
+	var sb := _bldg_body(Vector3(8.6, 8.5, 8.0), p + Vector3(0.0, 4.25, 0.0))
+	sb.rotation_degrees.y = float(rng.randi_range(0, 3)) * 90.0
+	PrefabLib.place_on_body(self, sb, "ind_oil_tank_chimney", Vector3(9.2, 11.5, 8.6), false, null, -4.25, rng.randf() < 0.50)
+	A.emitter(sb, Vector3(2.55, 7.30, 0.35), {"amount": 8, "life": 6.0, "size": 2.4, "tex": A.smoke_tex(), "additive": false, "vmin": 0.6, "vmax": 1.2,
 		"gravity": Vector3(0.6, 0.4, 0.2), "c0": Color(0.15, 0.13, 0.12, 0.45), "c1": Color(0.3, 0.28, 0.26, 0.0), "grow0": 0.6, "grow1": 3.0})
-	blocks.append(Rect2(p.x - 2, p.z - 2, 4, 4))
+	blocks.append(Rect2(p.x - 4.6, p.z - 4.4, 9.2, 8.8))
+	add_contact_shadow(p, 11.4, 10.6, sb.rotation_degrees.y)
+	var ch_out := Vector3(0.0, 0.0, 1.0).rotated(Vector3.UP, deg_to_rad(sb.rotation_degrees.y))
+	register_loot_anchor(p + ch_out * 5.8, sb.rotation_degrees.y, "tool", 83, "chimney", ch_out)
 
 func _bunker(p: Vector3) -> void:
-	# 钢筋混凝土永备机枪暗堡：收分抗弹堡体 + 阶梯式防跳弹射孔 + 重型防爆顶盖 + 蘑菇型装甲换气帽 + 沙袋胸墙
-	var sz := Vector3(6.2, 2.7, 5.2)
-	var M_CON := A.concrete(Color(0.46, 0.45, 0.41))
-	var M_CAP := A.concrete(Color(0.38, 0.37, 0.34), false)
-	var M_ST := A.metal(Color(0.16, 0.17, 0.18))
-	var M_BAG := A.paint(Color(0.50, 0.45, 0.32), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.6})
-	var sb := _bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
+	# 永备钢筋混凝土防弹机枪暗堡（B5-21 fort_pillbox_bunker）
+	var sz := Vector3(6.8, 3.2, 6.8)
+	var sb := _bldg_body(Vector3(6.2, 3.0, 6.2), p + Vector3(0.0, 1.5, 0.0))
 	sb.rotation_degrees.y = rng.randf_range(-18.0, 18.0)
-	A.add(sb, A.bevel_box(sz, 0.18, 0.90), M_CON, Vector3.ZERO)
-	_ibox(sb, Vector3(sz.x + 0.5, 0.42, sz.z + 0.5), 0.05, M_CAP, Vector3(0, -sz.y * 0.5 + 0.21, 0))
-	# 正面阶梯内凹射击孔与钢制护檐
-	_ibox(sb, Vector3(4.2, 0.62, 0.28), 0.03, M_CAP, Vector3(0, 0.32, sz.z * 0.5 - 0.02))
-	_ibox(sb, Vector3(3.6, 0.28, 0.26), 0.01, A.paint(Color(0.02, 0.02, 0.025), 0.0, 1.0), Vector3(0, 0.28, sz.z * 0.5 + 0.04), Vector3.ZERO, Vector3.ONE, false)
-	_ibox(sb, Vector3(4.4, 0.14, 0.46), 0.02, M_ST, Vector3(0, 0.62, sz.z * 0.5 + 0.12))
-	# 背侧凹陷防爆钢门
-	_ibox(sb, Vector3(1.25, 1.85, 0.16), 0.02, M_ST, Vector3(0, -0.35, -sz.z * 0.5 - 0.02), Vector3.ZERO, Vector3.ONE, false)
-	# 加厚防弹伞盖顶 + 装甲通风圆顶 + 顶部掩体沙袋群
-	_ibox(sb, Vector3(sz.x + 0.68, 0.46, sz.z + 0.68), 0.08, M_CAP, Vector3(0, sz.y * 0.5 + 0.20, 0))
-	_imesh(sb, A.cyl(0.46, 0.38, 0.52, 14), M_ST, Vector3(-1.4, sz.y * 0.5 + 0.52, -0.8))
-	_imesh(sb, A.cyl(0.62, 0.14, 0.42, 14), M_ST, Vector3(-1.4, sz.y * 0.5 + 0.74, -0.8), Vector3.ZERO, Vector3.ONE, false)
-	for k in 4:
-		_ibox(sb, Vector3(1.28, 0.38, 0.65), 0.10, M_BAG, Vector3(-1.95 + k * 1.3, sz.y * 0.5 + 0.56, sz.z * 0.5 - 0.35), Vector3(0, rng.randf_range(-5, 5), 0))
-	blocks.append(_rect_for(p, sz + Vector3(2, 0, 2)))
+	PrefabLib.place_on_body(self, sb, "fort_pillbox_bunker", sz, false, null, -1.5, rng.randf() < 0.45)
+	blocks.append(_rect_for(p, sz + Vector3(1.6, 0.0, 1.6)))
+	add_contact_shadow(p, 8.8, 8.8, sb.rotation_degrees.y)
+	var byaw := sb.rotation_degrees.y
+	var b_rear := Vector3(0.0, 0.0, -1.0).rotated(Vector3.UP, deg_to_rad(byaw))
+	var b_side := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, deg_to_rad(byaw))
+	register_loot_anchor(p + b_rear * 5.4, byaw + 180.0, "military", 98, "bunker", b_rear)
+	register_loot_anchor(p + b_side * 5.4, byaw + 90.0, "safe", 95, "bunker", b_side)
 
 func _watchtower(p: Vector3) -> void:
-	# 重工钢桁架哨戒瞭望塔：四足混凝土独立基础 + 三层交叉斜撑钢架 + 外挑走道护栏 + 坡顶波纹板岗亭 + 爬梯与探照灯
-	var sb := _static_box(Vector3(2.4, 1.2, 2.4), p + Vector3(0, 6.2, 0), Color(0.38, 0.36, 0.31), null, A.corrugated(Color(0.36, 0.35, 0.30), 0.48, 0.34))
-	var M := A.metal(Color(0.24, 0.25, 0.25))
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
-	var M_CON := A.concrete(Color(0.46, 0.44, 0.41), false)
-	var M_WIN_WT := A.window_mat(0.24, Vector2(0.65, 0.42))
-	# 外挑钢格栅巡逻平台与四周栏杆
-	A.add(sb, A.bevel_box(Vector3(3.25, 0.14, 3.25), 0.03), M_DARK, Vector3(0, -0.64, 0))
-	for sd_r in [-1.54, 1.54]:
-		A.add(sb, A.bevel_box(Vector3(3.16, 0.06, 0.06), 0.01), M, Vector3(0, 0.28, sd_r), Vector3.ZERO, Vector3.ONE, false)
-		A.add(sb, A.bevel_box(Vector3(0.06, 0.06, 3.16), 0.01), M, Vector3(sd_r, 0.28, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 岗亭四面深凹观察窗带 + 斜坡防雨铁皮顶 + 转角探照灯头
-	for f_sd in [-1.0, 1.0]:
-		A.add(sb, A.bevel_box(Vector3(1.95, 0.42, 0.08), 0.01), M_WIN_WT, Vector3(0, 0.86, f_sd * 1.18), Vector3.ZERO, Vector3.ONE, false)
-		A.add(sb, A.bevel_box(Vector3(0.08, 0.42, 1.95), 0.01), M_WIN_WT, Vector3(f_sd * 1.18, 0.86, 0), Vector3.ZERO, Vector3.ONE, false)
-	for lx in [-1.14, 1.14]:
-		for lz in [-1.14, 1.14]:
-			A.add(sb, A.cyl(0.055, 1.12, 0.055, 8), M, Vector3(lx, 1.08, lz))
-	A.add(sb, A.bevel_box(Vector3(3.1, 0.14, 3.1), 0.03), A.roof_mat(Color(0.28, 0.27, 0.24), 0.62, true), Vector3(0, 1.66, 0), Vector3(4, 0, 2))
-	A.add(sb, A.cyl(0.16, 0.24, 0.14, 10), M_DARK, Vector3(1.38, 0.56, 1.38), Vector3(24, 45, 0))
-	# 下部四根收分角钢主腿 + 混凝土杯口基础 + 三层横撑与十字斜撑 + 侧面检修爬梯
-	for lx in [-1.0, 1.0]:
-		for lz in [-1.0, 1.0]:
-			var b_pt := Vector3(lx * 1.32, -6.2, lz * 1.32)
-			var t_pt := Vector3(lx * 1.02, -0.68, lz * 1.02)
-			A.add(sb, A.bevel_box(Vector3(0.52, 0.30, 0.52), 0.03), M_CON, b_pt + Vector3(0, 0.15, 0))
-			A.add(sb, A.tube([b_pt + Vector3(0, 0.2, 0), t_pt], 0.085, 8, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	for tier in 3:
-		var u0 := float(tier) / 3.0
-		var u1 := float(tier + 1) / 3.0
-		var y0 := lerpf(-5.95, -0.72, u0)
-		var y1 := lerpf(-5.95, -0.72, u1)
-		var r0 := lerpf(1.30, 1.02, u0)
-		var r1 := lerpf(1.30, 1.02, u1)
-		for sd_i in 4:
-			var a0 := Vector3(-r0, y0, -r0).rotated(Vector3.UP, PI * 0.5 * sd_i)
-			var b0 := Vector3(r0, y0, -r0).rotated(Vector3.UP, PI * 0.5 * sd_i)
-			var a1 := Vector3(-r1, y1, -r1).rotated(Vector3.UP, PI * 0.5 * sd_i)
-			var b1 := Vector3(r1, y1, -r1).rotated(Vector3.UP, PI * 0.5 * sd_i)
-			A.add(sb, A.tube([a0, b0], 0.048, 6, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(sb, A.tube([a0, b1], 0.040, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(sb, A.tube([b0, a1], 0.040, 6, 2), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	A.add(sb, A.bevel_box(Vector3(0.46, 5.75, 0.10), 0.01), M_DARK, Vector3(0, -3.3, -1.24), Vector3(-3, 0, 0))
-	# 立柱碰撞
-	var col := StaticBody3D.new()
-	col.collision_layer = 1
-	var cs := CollisionShape3D.new()
-	var sh := BoxShape3D.new()
-	sh.size = Vector3(2.2, 5.0, 2.2)
-	cs.shape = sh
-	cs.position.y = 2.5
-	col.add_child(cs)
-	world.add_child(col)
-	col.position = p
-	blocks.append(Rect2(p.x - 1.5, p.z - 1.5, 3, 3))
+	# 重工角钢桁架高空哨戒瞭望塔（B5-22 fort_watchtower）
+	var sb := _bldg_body(Vector3(3.4, 5.2, 3.4), p + Vector3(0.0, 2.6, 0.0))
+	PrefabLib.place_on_body(self, sb, "fort_watchtower", Vector3(5.4, 9.8, 5.4), false, null, -2.6, rng.randf() < 0.40)
+	blocks.append(Rect2(p.x - 2.4, p.z - 2.4, 4.8, 4.8))
+	add_contact_shadow(p, 5.6, 5.6, 0.0)
+	var wt_kind := "military" if zone_at(p) == "M" else "tool"
+	register_loot_anchor(p + Vector3(3.6, 0.0, 0.4), 90.0, wt_kind, 89, "watchtower", Vector3(1, 0, 0))
 
 func _sandbags(p: Vector3, rot: float) -> void:
 	var M := A.paint(Color(0.5, 0.45, 0.32), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.6, "wear": 0.2})
@@ -9103,6 +9372,9 @@ func _sandbags(p: Vector3, rot: float) -> void:
 		for k in 5:
 			A.add(sb, A.bevel_box(Vector3(0.85, 0.36, 0.55), 0.15), M, Vector3(-1.7 + k * 0.85 + (0.42 if row % 2 else 0.0), -0.42 + row * 0.38, rng.randf_range(-0.08, 0.08)), Vector3(0, rng.randf_range(-6, 6), 0))
 	blocks.append(_rect_for(p, Vector3(4.4, 1, 4.4)))
+	add_contact_shadow(p, 5.0, 2.2, rot)
+	var sb_back := Vector3(0.0, 0.0, -1.0).rotated(Vector3.UP, deg_to_rad(rot))
+	register_loot_anchor(p + sb_back * 3.3, rot + 180.0, "military", 93, "sandbags", sb_back)
 
 func _boulder(p: Vector3, s: float) -> void:
 	var sb := StaticBody3D.new()
@@ -9343,8 +9615,26 @@ func _patrol_free(p: Vector3, r: float) -> bool:
 # ---------- 性能：静态装饰合批 ----------
 ## 静态外观全部交给分块合批：world 下（只经过无脚本、无分组、自动命名的 Node3D / StaticBody3D）的静态网格
 ## 从节点树摘掉，按 分块 + 材质 合成 ArrayMesh；碰撞体留在原处不动。开局只建视野内的分块，其余懒构建。
+func _strip_world_labels(root: Node) -> int:
+	if root == null:
+		return 0
+	var stack: Array = [root]
+	var stripped := 0
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for ch in n.get_children():
+			if ch is Label3D:
+				n.remove_child(ch)
+				ch.free()
+				stripped += 1
+			else:
+				stack.append(ch)
+	return stripped
+
+
 func _bake_static(drop: Vector3) -> void:
 	_flush_inst()
+	_strip_world_labels(world)
 	var rb := _rb()
 	var stack: Array = [world]
 	var empty_dirs: Array = []
@@ -9380,7 +9670,38 @@ func _bake_static(drop: Vector3) -> void:
 			d.free()
 	var f: Vector3 = mech.global_position if mech and is_instance_valid(mech) else drop
 	rb.build_all(f, rb.STREAM_R)
+	_flush_contact_shadows()
 	print("[raid] batched %d static meshes + %d instances into %d chunks (%d built)" % [removed, rb.stats.inst, rb._chunks.size(), rb.stats.built])
+
+
+func _flush_contact_shadows() -> void:
+	if _contact_shadows.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = A.quad(1.0, 1.0)
+	mm.instance_count = _contact_shadows.size()
+	var mn := Vector3(INF, INF, INF)
+	var mx := Vector3(-INF, -INF, -INF)
+	for i in _contact_shadows.size():
+		var xf: Transform3D = _contact_shadows[i]
+		mm.set_instance_transform(i, xf)
+		var p := xf.origin
+		var r := maxf(xf.basis.x.length(), xf.basis.z.length()) * 0.72
+		mn.x = minf(mn.x, p.x - r)
+		mn.y = minf(mn.y, p.y - 0.1)
+		mn.z = minf(mn.z, p.z - r)
+		mx.x = maxf(mx.x, p.x + r)
+		mx.y = maxf(mx.y, p.y + 0.1)
+		mx.z = maxf(mx.z, p.z + r)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "ContactShadows"
+	mmi.multimesh = mm
+	mmi.material_override = A.contact_shadow_mat(0.50)
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.custom_aabb = AABB(mn, mx - mn)
+	world.add_child(mmi)
+	_contact_shadows.clear()
 
 
 func _has_surface_override(mi: MeshInstance3D) -> bool:
@@ -9468,6 +9789,7 @@ func refresh_lang() -> void:
 		transport_zone.set_title(Loc.t("运输机降落区", "Dropship LZ"))
 	if world_link != null and is_instance_valid(world_link) and world_link.has_method("refresh_lang"):
 		world_link.refresh_lang()
+	_build_subregions()
 	for b in get_tree().get_nodes_in_group("lootboxes"):
 		if not is_instance_valid(b):
 			continue

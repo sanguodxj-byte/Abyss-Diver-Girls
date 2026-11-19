@@ -14,11 +14,15 @@ var _kind_i := 0
 var _falling: Array = []   ## {node, y, vy, kind, pos, chute}
 var _unlocks: Array = []
 var _done := {}
+var _erng := RandomNumberGenerator.new()
+var _used_sites: Array = []
 
 
 func setup(r) -> void:
 	raid = r
-	_next = raid.rng.randf_range(70.0, 100.0)
+	_erng.seed = r._map_seed(30)
+	_next = 80.0
+	_used_sites.clear()
 	_unlocks = raid.get_meta("poi_unlocks", [])
 	Events.item_picked.connect(_on_item_picked)
 	Events.box_opened.connect(_on_box_opened)
@@ -38,7 +42,7 @@ func _process(delta: float) -> void:
 			_falling.remove_at(i)
 	if _count < 3 and _t >= _next:
 		_count += 1
-		_next = _t + raid.rng.randf_range(72.0, 108.0)
+		_next = _t + 90.0
 		_launch(_kind_i % 3)
 		_kind_i += 1
 
@@ -54,21 +58,51 @@ func _launch(kind: int) -> void:
 		_: _cargo_crash(p)
 
 
+func _valid_event_spot(p: Vector3) -> bool:
+	if not raid.in_bounds(p, 10.0):
+		return false
+	if raid.in_wet(Vector2(p.x, p.z), 2.5):
+		return false
+	if raid._blocked(p, 2.8, true):
+		return false
+	if raid.nav != null and not raid.nav.is_reachable(p, true, 0.0):
+		return false
+	for u: Vector3 in _used_sites:
+		if Vector2(u.x - p.x, u.z - p.z).length() < 18.0:
+			return false
+	return true
+
+
+## 优先选择地图上固定的开阔广场/地标前坪/路口落点，不再用随机极坐标乱扔；若附近无预设点则按固定方位环择优
 func _pick_spot() -> Vector3:
 	var base: Vector3 = raid.mech.global_position
-	for i in 36:
-		var a = raid.rng.randf() * TAU
-		var d = raid.rng.randf_range(24.0, 58.0)
-		var p := base + Vector3(cos(a) * d, 0, sin(a) * d)
-		if not raid.in_bounds(p, 10.0):
+	var cands: Array = []
+	for e: Array in raid.MAP.get("labels", []):
+		cands.append(Vector3(float(e[1]), 0.0, float(e[2])))
+	for ex: Array in raid.MAP.get("extracts", []):
+		cands.append(Vector3(float(ex[1]), 0.0, float(ex[2])))
+	for m: Dictionary in raid.get_meta("ext_landmarks", []):
+		cands.append(Vector3(float(m.get("x", 0.0)), 0.0, float(m.get("z", 0.0))))
+	var best := Vector3(INF, 0, INF)
+	var best_d := INF
+	for c: Vector3 in cands:
+		var d := Vector2(c.x - base.x, c.z - base.z).length()
+		if d < 22.0 or d > 82.0 or d >= best_d:
 			continue
-		if raid.in_wet(Vector2(p.x, p.z), 2.0):
-			continue
-		if raid._blocked(p, 2.8, true):
-			continue
-		if raid.nav != null and not raid.nav.is_reachable(p, true, 0.0):
-			continue
-		return p
+		if _valid_event_spot(c):
+			best_d = d
+			best = c
+	if best.x != INF:
+		_used_sites.append(best)
+		return best
+	# 确定性八方位同心环（固定角度与半径顺序，无随机漂移）
+	for dist: float in [34.0, 48.0, 26.0, 58.0]:
+		for k in 12:
+			var a := TAU * float(k) / 12.0
+			var p := base + Vector3(cos(a) * dist, 0.0, sin(a) * dist)
+			if _valid_event_spot(p):
+				_used_sites.append(p)
+				return p
 	return Vector3(INF, 0, INF)
 
 
@@ -83,7 +117,7 @@ func _supply_drop(p: Vector3) -> void:
 	var chute := Node3D.new()
 	n.add_child(chute)
 	chute.position = Vector3(0, 6.4, 0)
-	chute.rotation_degrees = Vector3(12, raid.rng.randf() * 360, -8)
+	chute.rotation_degrees = Vector3(12, 24.0, -8)
 	var M_CANOPY := A.paint(Color(0.60, 0.58, 0.48), 0.0, 0.92, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0})
 	A.add(chute, A.cyl(1.15, 1.45, 3.55, 12), M_CANOPY, Vector3(0, 0.4, 0))
 	A.add(chute, A.torus(0.95, 1.22, 16), A.paint(Color(0.72, 0.30, 0.12), 0.0, 0.88), Vector3(0, 1.12, 0), Vector3.ZERO, Vector3(1, 0.35, 1), false)
@@ -189,7 +223,7 @@ func _land(f: Dictionary) -> void:
 		"supply":
 			raid.explode_fx(p, 6.0, Color(0.85, 0.72, 0.5))
 			raid.shake = max(raid.shake, 0.35)
-			var b = K.crate(raid, p, "supply", GameData.roll_loot("supply", raid.rng) + ["fuel_cell"])
+			var b = K.crate(raid, p, "supply", GameData.roll_loot("supply", _erng) + ["fuel_cell"], 0.0)
 			raid.alert_noise(p, 24.0)
 			Events.emit_custom("supply_drop", {"pos": [p.x, p.y, p.z], "items": b.items.duplicate(), "map": raid.map_id})
 		"cargo":
@@ -197,8 +231,8 @@ func _land(f: Dictionary) -> void:
 			raid.shake = max(raid.shake, 0.7)
 			raid.alert_noise(p, 46.0)
 			_spawn_cargo_wreck(p)
-			var b2 = K.crate(raid, p + Vector3(2.8, 0, 2.4), "military", GameData.roll_loot("military", raid.rng) + ["bug_crystal"])
-			K.crate(raid, p + Vector3(-2.8, 0, 1.8), "supply")
+			var b2 = K.crate(raid, p + Vector3(2.8, 0, 2.4), "military", GameData.roll_loot("military", _erng) + ["bug_crystal"], 90.0)
+			K.crate(raid, p + Vector3(-2.8, 0, 1.8), "supply", [], -90.0)
 			Events.emit_custom("cargo_crash", {"pos": [p.x, p.y, p.z], "items": b2.items.duplicate(), "map": raid.map_id})
 		_:
 			raid.explode_fx(p, 3.0, Color(0.8, 0.7, 0.5))
@@ -208,7 +242,7 @@ func _spawn_cargo_wreck(p: Vector3) -> void:
 	var w := Node3D.new()
 	raid.world.add_child(w)
 	w.position = p
-	var yaw: float = raid.rng.randf_range(-28.0, 28.0)
+	var yaw: float = 16.0
 	w.rotation_degrees.y = yaw
 	A.ground_vfx(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.038, 0))
 	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})

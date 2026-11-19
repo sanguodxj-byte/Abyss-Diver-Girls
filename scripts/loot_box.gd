@@ -16,6 +16,7 @@ const STYLE := {
 }
 
 var kind := "supply"
+var tier := 1
 var title := ""
 var items: Array = []
 var revealed := 0
@@ -40,9 +41,10 @@ func _m(mesh: Mesh, mat: Material, pos: Vector3, rot := Vector3.ZERO, scl := Vec
 	return mi
 
 
-func setup(k: String, loot: Array) -> void:
+func setup(k: String, loot: Array, tier := 1) -> void:
 	kind = k
-	title = GameData.LOOT_TABLES[k].name
+	self.tier = tier
+	title = GameData.loot_title(k, tier)
 	items = loot
 	add_to_group("lootboxes")
 	_rng.seed = hash(str(position) + k)
@@ -61,7 +63,6 @@ func setup(k: String, loot: Array) -> void:
 		cs.shape = sh
 		cs.position.y = sz.y * 0.5 - sink
 		add_child(cs)
-		A.ground_vfx(self, A.blob_tex(), Color(1, 1, 1, 0.55), max(sz.x, sz.z) * 1.6, Vector3(0, 0.036, 0), false, 0.34, false, 1)
 		match k:
 			"supply": _build_supply(sz, sink)
 			"tool": _build_tool(sz, sink)
@@ -90,6 +91,8 @@ func _batch_loot_meshes() -> void:
 	var bodies: Array = []
 	for n in find_children("*", "", true, false):
 		if n is MeshInstance3D:
+			if n.has_meta("keep_unmerged"):
+				continue
 			if not hl_set.has(n.get_instance_id()):
 				other_list.append(n)
 		elif n is Label3D:
@@ -193,19 +196,23 @@ func _merge_mesh_group(list: Array, cache_key: String) -> Array:
 	return result
 
 
-## 底部堆沙 + 散落碎石（沙土用地面同款材质，自然衔接）
+## 底部柔和接地阴影枕垫 + 克制小碎石（让每只物资箱稳稳压在地面上，低画质与移动端均具备扎实落地感）
 func _sand_and_rubble(sz: Vector3) -> void:
-	var G := A.ground()
+	var sh := MeshInstance3D.new()
+	sh.mesh = A.quad(sz.x * 1.56, sz.z * 1.56)
+	sh.material_override = A.contact_shadow_mat(0.54)
+	sh.position = Vector3(0.0, 0.024, 0.0)
+	sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sh.visibility_range_end = 56.0
+	sh.visibility_range_end_margin = 4.0
+	sh.set_meta("keep_unmerged", true)
+	add_child(sh)
+	var C := A.concrete(Color(0.56, 0.53, 0.48), false)
 	for i in 3:
 		var a := _rng.randf() * TAU
-		var r: float = _rng.randf_range(0.35, 0.6) * max(sz.x, sz.z)
-		_m(A.sphere(1.0, -1, 12), G, Vector3(cos(a) * sz.x * 0.45, -0.02, sin(a) * sz.z * 0.45), Vector3.ZERO, Vector3(r, 0.16 + _rng.randf() * 0.1, r * 0.8), false)
-	var C := A.concrete(Color(0.56, 0.53, 0.48), false)
-	for i in 5:
-		var a := _rng.randf() * TAU
-		var d: float = _rng.randf_range(0.7, 1.2) * max(sz.x, sz.z) * 0.6
-		var s := _rng.randf_range(0.08, 0.2)
-		_m(A.bevel_box(Vector3(s * 1.4, s, s * 1.1), s * 0.25), C, Vector3(cos(a) * d, s * 0.35, sin(a) * d), Vector3(_rng.randf() * 40, _rng.randf() * 360, _rng.randf() * 40), Vector3.ONE, false)
+		var d: float = _rng.randf_range(0.68, 1.05) * max(sz.x, sz.z) * 0.56
+		var s := _rng.randf_range(0.07, 0.14)
+		_m(A.bevel_box(Vector3(s * 1.35, s * 0.85, s * 1.1), s * 0.22), C, Vector3(cos(a) * d, s * 0.30, sin(a) * d), Vector3(_rng.randf() * 35, _rng.randf() * 360, _rng.randf() * 35), Vector3.ONE, false)
 
 
 ## 补给箱：防腐垫木叉车托盘底座 + 两只叠放的军规加强筋塑钢周转箱 + 折叠旧油布 + 棘轮紧固捆扎带（无光圈/无状态灯）
@@ -244,7 +251,6 @@ func _build_supply(sz: Vector3, sink: float) -> void:
 	for sx in [-0.3, 0.25]:
 		_m(A.bevel_box(Vector3(0.052, sz.y + 0.06, sz.z + 0.055), 0.005), S, Vector3(sx * sz.x, (sz.y + pal_h) * 0.5 - sink, 0))
 		_m(A.bevel_box(Vector3(0.085, 0.10, 0.05), 0.008), B, Vector3(sx * sz.x, y0 + h1 * 0.68, -sz.z * 0.5 - 0.025))
-	A.stencil(self, "RATION 04", Vector3(0, y0 + h1 * 0.48, -sz.z * 0.5 - 0.022), Vector3(0, 180, 0), 0.0035, Color(0.75, 0.72, 0.62, 0.5))
 
 
 ## 工具箱：倾倒的重型车间钢制工具柜，带防滑胶垫围边、推车圆管扶手、多层导轨抽屉与散落撬棍套筒盒
@@ -307,7 +313,6 @@ func _build_military(sz: Vector3, sink: float) -> void:
 		_meshes.append(A.add(body, A.bevel_box(Vector3(0.065, 0.20, 0.40), 0.014), MD, Vector3(sx * (sz.x * 0.5 + 0.032), sz.y * 0.46 - sink - 0.05, 0)))
 		_meshes.append(A.add(body, A.cyl(0.016, 0.30, 0.016, 8), MB, Vector3(sx * (sz.x * 0.5 + 0.065), sz.y * 0.42 - sink - 0.05, 0), Vector3(90, 0, 0)))
 	_meshes.append(A.add(body, A.bevel_box(Vector3(0.26, 0.016, sz.z * 0.96), 0.003), _worn(Color(0.62, 0.48, 0.16), 0.0, 0.2), Vector3(sz.x * 0.32, sz.y - sink - 0.04, 0)))
-	A.stencil(body, "AMMO 7.62  LOT-117", Vector3(-0.1, sz.y * 0.40 - sink - 0.05, -sz.z * 0.5 - 0.016), Vector3(0, 180, 0), 0.0032, Color(0.78, 0.76, 0.66, 0.48))
 
 
 ## 保险柜：厚钢板铆接重型金库保险柜侧倒在碎混凝土里，外露双轴重铰链、三辐转盘密码锁与门闩执手

@@ -433,14 +433,14 @@ func _spawn_boss_extra_drop(p: Vector3) -> void:
 			continue
 		var md: Dictionary = GameData.MODULES[mid]
 		all_mods.append(mid)
-		if int(md.get("price", 0)) >= 650:
+		if float(md.get("v", 0.0)) >= 650.0:
 			high_mods.append(mid)
 	var mod_pool: Array = high_mods if not high_mods.is_empty() else all_mods
 	if not mod_pool.is_empty():
 		items.append(str(mod_pool[r.randi() % mod_pool.size()]))
-	var trophies := ["gold", "gen_crystal", "credit_l"]
+	var trophies := ["credit_l", "gen_crystal"]
 	items.append(str(trophies[r.randi() % trophies.size()]))
-	var extras := ["bug_crystal", "gen_crystal", "credit_l", "repair_kit", "circuit", "gold"]
+	var extras := ["bug_crystal", "gen_crystal", "credit_l", "repair_kit", "circuit", "credit_l"]
 	var extra_n := 2 + (r.randi() % 2)
 	for _i in extra_n:
 		items.append(str(extras[r.randi() % extras.size()]))

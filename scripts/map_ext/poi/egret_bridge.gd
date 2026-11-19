@@ -34,16 +34,14 @@ static func build(raid, c: Vector3, pid: String) -> void:
 		A.add(hull, A.bevel_box(Vector3(0.24, 1.85, 1.45), 0.03), M_IRON, Vector3(sx_h * 4.46, 2.05, 2.6))
 		A.add(hull, A.cyl(0.32, 0.22, 0.38, 14), M_IRON, Vector3(sx_h * 4.48, 3.15, -2.8), Vector3(0, 0, sx_h * -90.0))
 	A.add(hull, A.bevel_box(Vector3(6.8, 0.28, 0.22), 0.02), A.hazard(), Vector3(0, 3.65, 6.46))
-	A.stencil(hull, "CNS EGRET-01", Vector3(0, 2.55, 6.50), Vector3.ZERO, 0.028, Color(0.22, 0.21, 0.19, 0.78), 52)
 	A.add(hull, A.bevel_box(Vector3(7.6, 1.4, 5.0), 0.14, 0.86), A.paint(HULL.lightened(0.06), 0.35, 0.5, {"wear": 0.5, "rust": 0.4, "panel_scale": 1.2}), Vector3(0, 4.9, 1.4))
 	# 舷窗：朝天的深色玻璃带与断裂的窗框
 	for i in 3:
 		A.add(hull, A.bevel_box(Vector3(1.8, 0.2, 1.2), 0.04), A.glass(Color(0.28, 0.55, 0.65)), Vector3(-2.4 + i * 2.2, 5.06, 0.4), Vector3(0, 0, 4))
 		A.add(hull, A.bevel_box(Vector3(2.0, 0.26, 1.4), 0.06), A.paint(HULL_DARK, 0.6, 0.5, {"rust": 0.7}), Vector3(-2.4 + i * 2.2, 5.02, 0.4), Vector3(0, 0, 4))
-	# 侧板：装甲条、铆钉排、编号喷字、警示条
+	# 侧板：装甲条、铆钉排、警示条
 	for i in 4:
 		A.add(hull, A.bevel_box(Vector3(9.2, 0.16, 0.28), 0.03), A.paint(HULL_DARK, 0.6, 0.55, {"rust": 0.8, "wear": 0.5}), Vector3(0, 1.0 + i * 0.9, -6.55))
-	A.stencil(hull, "EGRET-01", Vector3(0.2, 2.9, -6.56), Vector3(0, 180, 0), 0.03, Color(0.9, 0.88, 0.8, 0.55), 56)
 	A.add(hull, A.bevel_box(Vector3(6.0, 0.34, 0.2), 0.02), A.hazard(), Vector3(-1.0, 4.0, -6.55))
 	# 顶面破口：焦黑弹洞、掀起的甲板片、露出的一排肋骨
 	A.add(hull, A.bevel_box(Vector3(3.4, 0.18, 2.6), 0.06), A.paint(Color(0.05, 0.05, 0.05), 0.2, 0.9, {"dust": 0.0, "panel_scale": 0.0}), Vector3(0.4, 4.52, -4.2), Vector3(2, 14, 3))
@@ -103,7 +101,6 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(box, A.bevel_box(Vector3(1.32, 0.14, 1.12), 0.02), A.hazard(), Vector3(0, 0.34, 0))
 	A.add(box, A.cyl(0.11, 0.68, 0.11, 12), A.metal(Color(0.45, 0.46, 0.44)), Vector3(0, 0.60, 0.28), Vector3(0, 0, 90))
 	A.add(box, A.bevel_box(Vector3(0.72, 0.06, 0.10), 0.01), A.emit(Color(1.0, 0.55, 0.12), 0.85), Vector3(0, 0.56, -0.50), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(box, "FDR-01", Vector3(0, 0.02, -0.54), Vector3(0, 180, 0), 0.014, Color(0.92, 0.90, 0.84, 0.72), 36)
 	# 舱体尾部断裂面：露出的骨架与线束
 	for i in 5:
 		A.add(raid.world, A.cyl(0.06, 1.6, 0.06, 5), A.metal(Color(0.3, 0.29, 0.26)), c + Vector3(-5.4 + i * 0.7, 1.3, -4.8), Vector3(r.randf_range(-30, 30), r.randf_range(-30, 30), r.randf_range(-30, 30)))

@@ -21,6 +21,7 @@ const AssetPaths = preload("res://scripts/asset_paths.gd")
 const Icons = preload("res://scripts/item_icons.gd")
 const WorldLink = preload("res://scripts/world_link.gd")
 const WorldMapView = preload("res://scripts/world_map_view.gd")
+const PageMotion = preload("res://scripts/ui_transition.gd")
 
 ## 3D 机库背景与转台
 var preview_root: Node3D
@@ -49,6 +50,10 @@ var _settings_tab := "video"
 
 ## 视图容器
 var views := {}
+var _view_tweens: Dictionary = {}
+var _view_modes: Dictionary = {}
+var _deploy_tweens: Dictionary = {}
+var _deploy_modes: Dictionary = {}
 var tab_bg: Control
 const TAB_TINT := {
 	"trade": Color(0.78, 0.48, 0.16),
@@ -702,18 +707,66 @@ func _build_bottom_bar() -> void:
 	add_child(dep)
 
 
+func _finish_page_transition(page: Control, key: Variant, hide_after: bool, tweens: Dictionary, modes: Dictionary) -> void:
+	if not is_instance_valid(page):
+		tweens.erase(key)
+		modes.erase(key)
+		return
+	PageMotion.clear(page)
+	if hide_after:
+		page.visible = false
+	page.modulate.a = 1.0
+	page.process_mode = int(modes.get(key, Node.PROCESS_MODE_INHERIT))
+	modes.erase(key)
+	tweens.erase(key)
+
+
+func _transition_page(page: Control, key: Variant, show_page: bool, changed: bool, tweens: Dictionary, modes: Dictionary, enter_delay := 0.0) -> void:
+	var old_tw: Tween = tweens.get(key)
+	if old_tw != null and old_tw.is_valid():
+		old_tw.kill()
+		if modes.has(key):
+			page.process_mode = int(modes[key])
+			modes.erase(key)
+		tweens.erase(key)
+	PageMotion.clear(page)
+	if not changed:
+		page.visible = show_page
+		page.modulate.a = 1.0
+		return
+	if show_page:
+		page.visible = true
+	elif not page.visible:
+		page.modulate.a = 1.0
+		return
+	modes[key] = page.process_mode
+	page.process_mode = Node.PROCESS_MODE_DISABLED
+	if show_page:
+		page.modulate.a = 0.0
+	var effect: Control = PageMotion.attach(page, "panels")
+	effect.set("progress", 0.0 if show_page else 1.0)
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT if show_page else Tween.EASE_IN_OUT)
+	tweens[key] = tw
+	tw.tween_property(effect, "progress", 1.0 if show_page else 0.0, PageMotion.ENTER if show_page else PageMotion.EXIT).set_delay(enter_delay if show_page else 0.0)
+	if show_page:
+		tw.tween_property(page, "modulate:a", 1.0, 0.01).set_delay(enter_delay)
+	tw.finished.connect(_finish_page_transition.bind(page, key, not show_page, tweens, modes))
+
+
 func _switch_tab(tab_key: String) -> void:
 	var changed := tab_key != cur_tab
 	cur_tab = tab_key
 	for k in nav_buttons:
 		nav_buttons[k].button_pressed = (k == tab_key)
+	var enter_delay := 0.0
+	if changed:
+		for k in views:
+			if k != tab_key and views[k].visible:
+				enter_delay = PageMotion.EXIT
+				break
 	for k in views:
-		var on: bool = (k == tab_key)
-		views[k].visible = on
-		if on and changed:
-			views[k].modulate.a = 0.68
-			var tw := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			tw.tween_property(views[k], "modulate:a", 1.0, 0.12)
+		var view_key := str(k)
+		_transition_page(views[k], view_key, k == tab_key, changed, _view_tweens, _view_modes, enter_delay)
 	if tab_bg:
 		(tab_bg as Hd2Backdrop).set_tab(tab_key)
 		tab_bg.visible = tab_key != "maintenance"
@@ -721,11 +774,10 @@ func _switch_tab(tab_key: String) -> void:
 		hangar_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if tab_key == "maintenance" else SubViewport.UPDATE_DISABLED
 	if explode_btn:
 		explode_btn.visible = (tab_key == "maintenance")
-	if changed or true:
-		if tab_key == "trade":
-			_trade_show("list")
-		elif tab_key == "deploy":
-			_deploy_show(1)
+	if tab_key == "trade":
+		_trade_show("list")
+	elif tab_key == "deploy":
+		_deploy_show(1)
 	Audio.play_ui("ui_tab")
 	refresh()
 
@@ -945,10 +997,6 @@ func _open_hub_settings(initial_tab := "video") -> void:
 		Audio.play_ui("ui_cancel")
 		var p = get_parent()
 		if p != null and p.has_method("show_menu"):
-			if "hub" in p:
-				p.hub = null
-			p.remove_child(self)
-			queue_free()
 			p.show_menu())
 	foot.add_child(b_menu)
 	var sp := Control.new()
@@ -1727,11 +1775,18 @@ func _refresh_world_map() -> void:
 
 
 func _deploy_show(n: int) -> void:
+	var changed := n != deploy_step
 	deploy_step = n
 	if n == 1:
 		_refresh_world_map()
+	var enter_delay := 0.0
+	if changed:
+		for i in deploy_pages.size():
+			if i != n - 1 and deploy_pages[i].visible:
+				enter_delay = PageMotion.EXIT
+				break
 	for i in deploy_pages.size():
-		deploy_pages[i].visible = (i == n - 1)
+		_transition_page(deploy_pages[i], i, i == n - 1, changed, _deploy_tweens, _deploy_modes, enter_delay)
 	for i in step_btns.size():
 		var b: Button = step_btns[i]
 		var st := "on" if i == n - 1 else ("done" if i < n - 1 else "todo")
@@ -2744,16 +2799,16 @@ func _build_hangar() -> void:
 	env.tonemap_exposure = 1.12
 	var mob := OS.has_feature("mobile")
 	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
-	env.glow_enabled = (not mob) or GameData.quality >= 2
+	env.glow_enabled = true
 	env.glow_normalized = true
-	env.glow_intensity = 0.68
+	env.glow_intensity = 0.52 if (mob and GameData.quality == 0) else 0.68
 	env.glow_strength = 0.92
 	env.glow_bloom = 0.04
 	env.glow_hdr_threshold = 1.0
 	env.set_glow_level(1, 0.85)
 	env.set_glow_level(2, 0.7)
 	env.set_glow_level(3, 0.45)
-	env.ssao_enabled = (not mob) and (not mob_ren) and GameData.quality >= 1
+	env.ssao_enabled = (not mob) and (not mob_ren)
 	env.ssao_radius = 1.15
 	env.ssao_intensity = 2.4
 	env.ssao_detail = 0.85
@@ -2900,23 +2955,23 @@ func _build_hangar() -> void:
 	key.light_energy = 9.2
 	key.spot_range = 20.0
 	key.spot_angle = 32.0
-	key.shadow_enabled = (not mob and not mob_ren) or GameData.quality >= 1
+	key.shadow_enabled = true
 	key.shadow_bias = 0.02
 	key.shadow_normal_bias = 1.0
-	key.shadow_blur = 0.0 if (mob or mob_ren) else 1.15
+	key.shadow_blur = 0.35 if (mob or mob_ren) else 1.15
 	key.light_color = Color(1.0, 0.95, 0.88)
 	preview_root.add_child(key)
 	key.look_at_from_position(key.position, Vector3(0, 1.5, 0))
 
-	if (not mob and not mob_ren) or GameData.quality >= 1:
-		var rp := ReflectionProbe.new()
-		rp.update_mode = ReflectionProbe.UPDATE_ONCE
-		rp.box_projection = true
-		rp.size = Vector3(28, 12, 22)
-		rp.position = Vector3(0, 4.0, -1.0)
-		rp.intensity = 0.72
-		rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
-		preview_root.add_child(rp)
+	# UPDATE_ONCE 反射探针仅启动时烘焙一次，每帧零额外开销，低画质也保留机甲金属高光质感
+	var rp := ReflectionProbe.new()
+	rp.update_mode = ReflectionProbe.UPDATE_ONCE
+	rp.box_projection = true
+	rp.size = Vector3(28, 12, 22)
+	rp.position = Vector3(0, 4.0, -1.0)
+	rp.intensity = 0.72
+	rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+	preview_root.add_child(rp)
 
 	var h_lights := [
 		[Vector3(-5.0, 3.5, -2.0), Color(0.32, 0.75, 1.0), 3.0, 9.5],

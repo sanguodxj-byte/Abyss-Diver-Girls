@@ -525,7 +525,7 @@ static func _build_credit_chip(root: Node3D, large: bool) -> Vector3:
 
 
 static func _build_gold(root: Node3D) -> Vector3:
-	# 2×1 横向足金金条：斜边梯形金锭 + 凹印央行钢印（亮泽高金属度）
+	# 2×1 横向纪念金条：斜边梯形金锭 + 凹印旧世界央行钢印（亮泽高金属度）
 	var M_AU := A.paint(Color(0.96, 0.78, 0.22), 0.94, 0.20, {"wear": 0.06, "panel_scale": 0.0})
 	var M_STAMP := A.paint(Color(0.76, 0.56, 0.12), 0.88, 0.28, {"wear": 0.05, "panel_scale": 0.0})
 	K.bb(root, Vector3(1.52, 0.32, 0.62), M_AU, Vector3.ZERO, Vector3.ZERO, 0.045, 0.78)

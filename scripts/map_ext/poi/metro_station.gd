@@ -56,7 +56,6 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(v1, A.bevel_box(Vector3(0.68, 1.06, 0.05), 0.02), A.emit(Color(0.22, 0.48, 0.54), 0.38), Vector3(-0.10, 1.34, 0.38), Vector3.ZERO, Vector3.ONE, false)
 	A.add(v1, A.bevel_box(Vector3(0.18, 0.68, 0.05), 0.01), M_ST, Vector3(0.36, 1.28, 0.38), Vector3.ZERO, Vector3.ONE, false)
 	A.add(v1, A.bevel_box(Vector3(0.66, 0.26, 0.06), 0.015), A.paint(Color(0.08, 0.09, 0.10), 0.2, 0.7), Vector3(-0.10, 0.36, 0.38), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(v1, "DRINK", Vector3(-0.10, 0.66, 0.40), Vector3.ZERO, 0.018, Color(0.84, 0.84, 0.78, 0.55), 32)
 	K.blocker(raid, c + Vector3(-4.2, 0, -6.4), Vector3(1.04, 2.04, 0.76))
 	var v2 := Node3D.new()
 	raid.world.add_child(v2)
@@ -71,9 +70,8 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	K.bench(raid, c + Vector3(5.6, 0, 0.4), 0.0)
 	for p in [Vector3(-2.2, 0.3, -0.9), Vector3(3.4, 0.3, -1.2), Vector3(-11.6, 0.3, 1.1)]:
 		A.add(raid.world, A.bevel_box(Vector3(0.9, 0.6, 0.45), 0.05), A.paint(Color(0.4, 0.32, 0.22), 0.1, 0.8, {"wear": 0.6, "dust": 0.5}), c + p, Vector3(0, r.randf() * 90, 0))
-	# 线路牌与站名牌（置于北侧完整承重墙段中央与顶梁下沿）
+	# 线路牌与站名牌钢架（不挂 3D 漂浮字）
 	K.sign(raid, c + Vector3(9.6, 2.2, -6.8), 0.0, "LINE 3", 3.6, 1.2)
-	A.stencil(raid.world, "STA-03  PLATFORM 2", c + Vector3(-2.0, 2.55, -6.82), Vector3.ZERO, 0.019, Color(0.86, 0.84, 0.76, 0.72), 44)
 	# 检票闸机：不锈钢圆角机箱 + 刷卡斜面板 + 半开阻拦扇门
 	var M_GATE := A.metal(Color(0.34, 0.36, 0.37))
 	var M_PADDLE := A.paint(Color(0.62, 0.20, 0.16), 0.2, 0.45)

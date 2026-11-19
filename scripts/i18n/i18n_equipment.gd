@@ -524,7 +524,7 @@ const ITEMS_EN := {
 	# ---- Currency ----
 	"credit_s": {"name": "Credit Chip (S)", "desc": "Unregistered small-denomination credit chip; redeems for 100 Credits upon extraction or sale."},
 	"credit_l": {"name": "Credit Chip (L)", "desc": "High-clearance settlement chip; redeems for 500 Credits upon extraction or sale."},
-	"gold": {"name": "Gold Bar", "desc": "Pre-war central bank stamped bullion—hard black-market currency valued at 1,200 Credits."},
+	"gold": {"name": "Old World Commemorative Bar", "desc": "A bullion bar struck by the old central bank. Long out of circulation—worth only a collector's price in the wastes."},
 	# ---- Tactical Consumables ----
 	"sonic_decoy": {"name": "Sonic Decoy Beacon", "desc": "Tactical acoustic emitter (Key 3). Lures bugs within 14m away from the mech and detonates after 2.2s."},
 	"extract_flare": {"name": "Evac Guide Smoke", "desc": "Pressurized interference smoke canister (Key 4). Blinds/slows bugs within 10m and cuts evac timer by 50%."},

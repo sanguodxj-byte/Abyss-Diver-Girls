@@ -44,7 +44,7 @@ var _allies_pending: Array = []
 func setup(r, drop: Vector3) -> void:
 	raid = r
 	rng.seed = r._map_seed(20)
-	next_t = rng.randf_range(FIRST_SQUAD.x, FIRST_SQUAD.y)
+	next_t = 18.0
 	if raid.hud and raid.hud.radar:
 		overlay = RadarOverlay.new()
 		overlay.raid = raid
@@ -102,7 +102,7 @@ func _physics_tick(delta: float) -> void:
 	for sq in squads.duplicate():
 		_update_squad(sq, delta)
 	if rovers_enabled and squads.size() < MAX_SQUADS and clock >= next_t:
-		next_t = clock + rng.randf_range(NEXT_SQUAD.x, NEXT_SQUAD.y)
+		next_t = clock + 65.0
 		spawn_squad()
 
 

@@ -19,3 +19,7 @@ desktop.ini
 .DS_Store
 tools/worldmap/out/
 build/
+
+# 小红书半自动发帖：浏览器登录态与产物（勿提交）
+tools/xhs_publish/state/
+tools/xhs_publish/out/

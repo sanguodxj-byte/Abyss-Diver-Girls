@@ -23,7 +23,6 @@ static func build(raid, c: Vector3, pid: String) -> void:
 			A.add(hall, A.bevel_box(Vector3(0.2, 7.2, 0.14), 0.02), M_RIB, Vector3(rx, 0, 4.55), Vector3.ZERO, Vector3.ONE, false)
 		A.add(hall, A.torus(3.16, 3.3, 36), M_RIB, Vector3(rx, 3.6, 0), Vector3(0, 0, 90), Vector3(1, 0.45, 1), false)
 	A.add(hall, A.bevel_box(Vector3(4.0, 4.2, 0.14), 0.02), A.metal(Color(0.22, 0.22, 0.21)), Vector3(2.0, -1.5, 4.55), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(hall, "TURBINE HALL 2", Vector3(-4.0, 1.4, 4.56), Vector3.ZERO, 0.02, Color(0.8, 0.78, 0.7, 0.55), 44)
 	# 两座双曲线风格冷却塔：高细分圆台塔身 + 底部环形集水池与斜撑柱列 + 中空压顶风筒檐口与深暗风道黑腔
 	var m_void := StandardMaterial3D.new()
 	m_void.albedo_color = Color(0.015, 0.015, 0.018)

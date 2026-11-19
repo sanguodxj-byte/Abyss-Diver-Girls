@@ -12,6 +12,8 @@ uniform float rough_val : hint_range(0.2, 1.0) = 0.78;
 uniform float alpha_cut : hint_range(0.08, 0.65) = 0.34;
 uniform float sway_amp : hint_range(0.0, 0.25) = 0.045;
 uniform float backlight_str : hint_range(0.0, 1.0) = 0.36;
+uniform float albedo_gain : hint_range(0.4, 3.5) = 1.0;
+uniform float up_normal_blend : hint_range(0.0, 0.9) = 0.0;
 
 varying float v_ao;
 varying float v_var;
@@ -44,21 +46,26 @@ void fragment() {
 	float tree_h = fract(sin(dot(floor(v_wpos.xz * 0.22), vec2(127.1, 311.7))) * 43758.5453);
 	float mix_t = clamp(tree_h * 0.65 + v_var * 0.35, 0.0, 1.0);
 	vec3 tint = mix(tint_a.rgb, tint_b.rgb, mix_t);
-	// 树冠外层受光略暖亮，内芯保留适度阴翳，杜绝树冠过暗发黑
-	vec3 shade_mul = mix(vec3(0.66, 0.72, 0.65), vec3(1.16, 1.14, 1.08), smoothstep(0.22, 0.96, v_ao));
-	vec3 col = tx.rgb * tint * shade_mul;
+	// 废土衰草与低饱和枯绿树冠分层（外层微枯尘绿、内腔沉稳冷岩暗影，不糊成死黑块）
+	float ao_t = mix(smoothstep(0.20, 0.94, v_ao), smoothstep(0.05, 0.85, v_ao), up_normal_blend);
+	vec3 shade_mul = mix(vec3(0.66, 0.70, 0.70), vec3(1.12, 1.08, 0.94), ao_t);
+	vec3 col = clamp(tx.rgb * tint * shade_mul * albedo_gain, vec3(0.0), vec3(0.94));
 
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
 	}
+	if (up_normal_blend > 0.01) {
+		vec3 v_up = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+		NORMAL = normalize(mix(NORMAL, v_up, up_normal_blend));
+	}
 
 	ALBEDO = col;
 	ROUGHNESS = clamp(rough_val - (1.0 - UV.y) * 0.08, 0.35, 0.96);
-	SPECULAR = 0.24;
+	SPECULAR = 0.22;
 	METALLIC = 0.0;
-	BACKLIGHT = col * vec3(0.62, 0.66, 0.34) * backlight_str * smoothstep(0.25, 1.0, v_ao);
-	AO = clamp(mix(0.48, 1.0, v_ao), 0.45, 1.0);
-	AO_LIGHT_AFFECT = 0.48;
+	BACKLIGHT = col * vec3(0.68, 0.72, 0.40) * backlight_str * smoothstep(0.18, 1.0, v_ao);
+	AO = clamp(mix(mix(0.58, 0.78, up_normal_blend), 1.0, v_ao), 0.56, 1.0);
+	AO_LIGHT_AFFECT = mix(0.42, 0.20, up_normal_blend);
 
 	if (use_normal > 0.5) {
 		vec3 nm = texture(normal_tex, UV).rgb;
@@ -71,9 +78,9 @@ void fragment() {
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
-	float wrap = clamp(ndl * 0.55 + 0.45, 0.0, 1.0);
-	float shadow_fac = LIGHT_IS_DIRECTIONAL ? mix(0.54, 1.0, ATTENUATION) : ATTENUATION;
-	float trans = clamp(dot(-NORMAL, LIGHT) * 0.55 + 0.45, 0.0, 1.0) * 0.40;
-	float atten_trans = LIGHT_IS_DIRECTIONAL ? mix(0.35, 1.0, ATTENUATION) : ATTENUATION;
-	DIFFUSE_LIGHT += (ALBEDO * wrap * shadow_fac + BACKLIGHT * trans * atten_trans) * LIGHT_COLOR * 0.32;
+	float wrap = clamp(ndl * 0.58 + 0.42, 0.0, 1.0);
+	float shadow_fac = LIGHT_IS_DIRECTIONAL ? mix(0.55, 1.0, ATTENUATION) : ATTENUATION;
+	float trans = clamp(dot(-NORMAL, LIGHT) * 0.55 + 0.45, 0.0, 1.0) * 0.38;
+	float atten_trans = LIGHT_IS_DIRECTIONAL ? mix(0.38, 1.0, ATTENUATION) : ATTENUATION;
+	DIFFUSE_LIGHT += (ALBEDO * wrap * shadow_fac + BACKLIGHT * trans * atten_trans) * LIGHT_COLOR * 0.35;
 }

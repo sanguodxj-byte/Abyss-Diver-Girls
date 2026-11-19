@@ -508,7 +508,7 @@ static func req_list(parts: Array, item_name: Callable) -> VBoxContainer:
 ## 物品数据里的 short 字段 → ABBR 缩写表 → 型号（SC-1、MK-II、HMG-24）→ 去掉「旧世界」与括号后的前 3 个字。
 ## 绘制时再按实际像素宽度裁到格子内（fit_text），不会溢出到相邻格。
 const ABBR := {
-	"credit_s": "芯片S", "credit_l": "芯片L", "gold": "金条", "energy_rod": "电池棒", "extract_flare": "烟幕",
+	"credit_s": "芯片S", "credit_l": "芯片L", "gold": "纪念金", "energy_rod": "电池棒", "extract_flare": "烟幕",
 	"extract_barrier": "屏障", "sonic_decoy": "诱饵", "coolant_pack": "冷却剂", "surge_cell": "超频芯", "fuel_cell": "燃料",
 	"repair_kit": "维修包", "beacon": "信标", "water_tab": "净水片", "can_food": "罐头", "biscuit": "饼干", "coffee": "咖啡豆",
 	"bug_crystal": "虫晶", "chitin": "虫甲", "circuit": "电路板", "wire": "铜线", "bolts": "螺栓", "hdd": "硬盘", "toy": "玩具",
@@ -518,7 +518,7 @@ const ABBR := {
 	"gift_chart": "图册", "gift_cocoa": "可可粉", "gift_flask": "酒壶", "gift_watch": "怀表", "gift_wrench": "扳手",
 }
 const ABBR_EN := {
-	"credit_s": "CHIPS", "credit_l": "CHIPL", "gold": "GOLD", "energy_rod": "ROD", "extract_flare": "SMOKE",
+	"credit_s": "CHIPS", "credit_l": "CHIPL", "gold": "MEMO", "energy_rod": "ROD", "extract_flare": "SMOKE",
 	"extract_barrier": "WALL", "sonic_decoy": "DECOY", "coolant_pack": "COOL", "surge_cell": "SURGE", "fuel_cell": "CELL",
 	"repair_kit": "KIT", "beacon": "BEACN", "water_tab": "TABS", "can_food": "MEAT", "biscuit": "RATS", "coffee": "BEANS",
 	"bug_crystal": "CRYS", "chitin": "CHITN", "circuit": "PCB", "wire": "WIRE", "bolts": "BOLTS", "hdd": "HDD", "toy": "TOY",

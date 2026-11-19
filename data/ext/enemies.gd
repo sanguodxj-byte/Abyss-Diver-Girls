@@ -261,7 +261,7 @@ const LOOT_TABLES := {
 	"elite": {"name": "精英虫残骸", "rolls": [2, 4], "pool": {"chitin": 30, "bug_crystal": 28, "@module": 22, "credit_l": 8, "repair_kit": 12}},
 	"boss_brood": {"name": "巢母残骸", "rolls": [3, 4], "pool": {"bug_crystal": 40, "@module": 26, "gen_crystal": 8, "credit_l": 14, "chitin": 12}},
 	"boss_king": {"name": "王虫残骸", "rolls": [3, 5], "pool": {"bug_crystal": 32, "@module": 30, "credit_l": 18, "gen_crystal": 10, "repair_kit": 10}},
-	"boss_queen": {"name": "母皇残骸", "rolls": [4, 6], "pool": {"bug_crystal": 34, "@module": 30, "credit_l": 20, "gold": 8, "gen_crystal": 8}},
+	"boss_queen": {"name": "母皇残骸", "rolls": [4, 6], "pool": {"bug_crystal": 34, "@module": 30, "credit_l": 28, "gen_crystal": 8}},
 	"boss_reaper": {"name": "镰王残骸", "rolls": [3, 5], "pool": {"bug_crystal": 34, "@module": 28, "credit_l": 16, "gen_crystal": 10, "chitin": 12}},
 	"boss_colossus": {"name": "巨炮皇虫残骸", "rolls": [3, 5], "pool": {"bug_crystal": 30, "@module": 30, "credit_l": 18, "gen_crystal": 10, "repair_kit": 12}},
 	"boss_devourer": {"name": "钻皇残骸", "rolls": [3, 5], "pool": {"bug_crystal": 36, "@module": 26, "credit_l": 16, "gen_crystal": 10, "chitin": 12}},
@@ -270,11 +270,11 @@ const LOOT_TABLES := {
 	"boss_dreadnought": {"name": "熔渣无畏舰残骸", "rolls": [4, 5], "pool": {"@module": 32, "bug_crystal": 26, "credit_l": 20, "gen_crystal": 12, "repair_kit": 10}},
 	"boss_warhead": {"name": "弹道猎犬残骸", "rolls": [3, 5], "pool": {"@module": 30, "circuit": 24, "credit_l": 18, "gen_crystal": 14, "fuel_cell": 14}},
 	"boss_leviathan": {"name": "闸枢巨鳌残骸", "rolls": [3, 5], "pool": {"bug_crystal": 34, "@module": 30, "credit_l": 18, "gen_crystal": 10, "chitin": 8}},
-	"boss_titan": {"name": "斗轮泰坦残骸", "rolls": [4, 6], "pool": {"@module": 32, "bug_crystal": 28, "credit_l": 20, "gen_crystal": 12, "gold": 8}},
-	"boss_overlord": {"name": "磁暴主宰残骸", "rolls": [4, 6], "pool": {"@module": 34, "bug_crystal": 30, "credit_l": 20, "gold": 8, "gen_crystal": 8}},
+	"boss_titan": {"name": "斗轮泰坦残骸", "rolls": [4, 6], "pool": {"@module": 32, "bug_crystal": 28, "credit_l": 28, "gen_crystal": 12}},
+	"boss_overlord": {"name": "磁暴主宰残骸", "rolls": [4, 6], "pool": {"@module": 34, "bug_crystal": 30, "credit_l": 28, "gen_crystal": 8}},
 	"boss_behemoth": {"name": "龙门巨兽残骸", "rolls": [4, 5], "pool": {"@module": 32, "bug_crystal": 28, "credit_l": 20, "gen_crystal": 12, "repair_kit": 8}},
-	"boss_citadel": {"name": "陆地巡洋舰残骸", "rolls": [5, 7], "pool": {"@module": 36, "bug_crystal": 24, "credit_l": 20, "gold": 10, "gen_crystal": 10}},
-	"boss_carrier": {"name": "浮空母舰残骸", "rolls": [4, 6], "pool": {"@module": 34, "circuit": 22, "credit_l": 20, "gen_crystal": 14, "gold": 10}},
+	"boss_citadel": {"name": "陆地巡洋舰残骸", "rolls": [5, 7], "pool": {"@module": 36, "bug_crystal": 24, "credit_l": 30, "gen_crystal": 10}},
+	"boss_carrier": {"name": "浮空母舰残骸", "rolls": [4, 6], "pool": {"@module": 34, "circuit": 22, "credit_l": 30, "gen_crystal": 14}},
 }
 const SFX := {
 	# ---- 镰爪虫：骨刃出鞘、冲刺破风 ----

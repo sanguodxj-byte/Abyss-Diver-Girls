@@ -8,6 +8,7 @@ const MenuScript = preload("res://scripts/menu.gd")
 const RaidScript = preload("res://scripts/raid.gd")
 const ResultScript = preload("res://scripts/result_screen.gd")
 const LoadingScreenScript = preload("res://scripts/loading_screen.gd")
+const PageMotion = preload("res://scripts/ui_transition.gd")
 const TEST_DIR := "res://tests"
 
 var hub
@@ -17,6 +18,9 @@ var _deploying := false
 var _network_committed := false
 var _network_result := false
 var _accounted_result := {}
+var _screen_tweens: Dictionary = {}
+var _screen_modes: Dictionary = {}
+var _screen_base_alpha: Dictionary = {}
 
 
 func _ready() -> void:
@@ -132,13 +136,85 @@ func _test_args() -> Array:
 var menu
 
 
+func _fade_targets(screen: Node) -> Array[CanvasItem]:
+	var targets: Array[CanvasItem] = []
+	for child in screen.get_children():
+		if child is CanvasItem:
+			targets.append(child as CanvasItem)
+	return targets
+
+
+func _fade_screen(screen: Node, fade_in: bool, free_when_done := false, enter_delay := 0.0) -> void:
+	if screen == null or not is_instance_valid(screen):
+		return
+	var id := screen.get_instance_id()
+	var previous: Tween = _screen_tweens.get(id)
+	if previous != null and previous.is_valid():
+		previous.kill()
+	if not _screen_modes.has(id):
+		_screen_modes[id] = screen.process_mode
+	screen.process_mode = int(_screen_modes[id]) if fade_in else Node.PROCESS_MODE_DISABLED
+	PageMotion.clear(screen)
+	var targets := _fade_targets(screen)
+	for item in targets:
+		var item_id := item.get_instance_id()
+		if not _screen_base_alpha.has(item_id):
+			_screen_base_alpha[item_id] = item.modulate.a
+		if fade_in:
+			item.modulate.a = 0.0
+	var effect: Control = PageMotion.attach(screen, "result" if screen is CanvasLayer else "hatch")
+	effect.set("progress", 0.0 if fade_in else 1.0)
+	var delayed_entry := fade_in and enter_delay > 0.0
+	effect.visible = not delayed_entry
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT if fade_in else Tween.EASE_IN_OUT)
+	_screen_tweens[id] = tw
+	if delayed_entry:
+		tw.tween_callback(effect.show).set_delay(enter_delay)
+	tw.tween_property(effect, "progress", 1.0 if fade_in else 0.0, PageMotion.ENTER if fade_in else PageMotion.SCREEN_EXIT).set_delay(enter_delay if fade_in else 0.0)
+	for item in targets:
+		var item_id := item.get_instance_id()
+		var alpha := float(_screen_base_alpha[item_id]) if fade_in else 0.0
+		var alpha_delay := enter_delay if fade_in else PageMotion.SCREEN_EXIT - 0.08
+		tw.tween_property(item, "modulate:a", alpha, 0.10 if fade_in else 0.08).set_delay(alpha_delay)
+	tw.finished.connect(func():
+		_screen_tweens.erase(id)
+		if not is_instance_valid(screen):
+			_screen_modes.erase(id)
+			for item in targets:
+				if is_instance_valid(item):
+					_screen_base_alpha.erase(item.get_instance_id())
+			return
+		if free_when_done:
+			_screen_modes.erase(id)
+			for item in targets:
+				if is_instance_valid(item):
+					_screen_base_alpha.erase(item.get_instance_id())
+			screen.queue_free()
+		else:
+			PageMotion.clear(screen)
+			screen.process_mode = int(_screen_modes.get(id, Node.PROCESS_MODE_INHERIT))
+			_screen_modes.erase(id))
+
+
+
 func show_menu() -> void:
+	var old_hub = hub if hub != null and is_instance_valid(hub) else null
+	var has_outgoing: bool = old_hub != null or (menu != null and is_instance_valid(menu))
+	hub = null
+	if menu != null and is_instance_valid(menu):
+		var old_menu = menu
+		menu = null
+		_fade_screen(old_menu, false, true)
 	menu = MenuScript.new()
 	add_child(menu)
+	_fade_screen(menu, true, false, PageMotion.SCREEN_EXIT if has_outgoing else 0.0)
+	if old_hub != null:
+		_fade_screen(old_hub, false, true)
 	Audio.play_music("menu", 1.5)
 	menu.start_requested.connect(func():
-		menu.queue_free()
-		menu = null
+		if menu == null or not is_instance_valid(menu):
+			return
+		Audio.stop_music(0.25)
 		show_hub())
 
 
@@ -146,23 +222,23 @@ func show_hub() -> void:
 	if Net.state == "results":
 		Net.return_to_room()
 	var after_raid: bool = result_layer != null or raid != null
-	if menu and is_instance_valid(menu):
-		if menu.get_parent():
-			menu.get_parent().remove_child(menu)
-		menu.queue_free()
+	var outgoing: Array[Node] = []
+	if menu != null and is_instance_valid(menu):
+		outgoing.append(menu)
 		menu = null
-	if result_layer:
-		result_layer.queue_free()
+	if result_layer != null and is_instance_valid(result_layer):
+		outgoing.append(result_layer)
 		result_layer = null
 	if raid:
 		raid.queue_free()
 		raid = null
 	if hub and is_instance_valid(hub):
-		if hub.get_parent():
-			hub.get_parent().remove_child(hub)
-		hub.queue_free()
+		outgoing.append(hub)
 	hub = HubScript.new()
 	add_child(hub)
+	_fade_screen(hub, true, false, PageMotion.SCREEN_EXIT if not outgoing.is_empty() else 0.0)
+	for screen in outgoing:
+		_fade_screen(screen, false, true)
 	hub.deploy_requested.connect(start_raid)
 	Events.returned_to_hub.emit(after_raid)
 
@@ -224,6 +300,7 @@ func start_raid() -> void:
 	var loader = LoadingScreenScript.new()
 	add_child(loader)
 	loader.setup(GameData.map_id, lo)
+	Audio.stop_music(0.35)
 	await loader.play_close(0.34)
 	if hub and is_instance_valid(hub):
 		hub.queue_free()
@@ -264,6 +341,7 @@ func _show_result(r: Dictionary) -> void:
 	result_layer = ResultScript.new()
 	add_child(result_layer)
 	result_layer.setup(r)
+	_fade_screen(result_layer, true)
 	result_layer.back_requested.connect(show_hub)
 
 
@@ -343,6 +421,7 @@ func _start_network_raid(config: Dictionary) -> void:
 	var loader = LoadingScreenScript.new()
 	add_child(loader)
 	loader.setup(config.map, lo)
+	Audio.stop_music(0.35)
 	await loader.play_close(0.2)
 	if not Net.active():
 		loader.queue_free()

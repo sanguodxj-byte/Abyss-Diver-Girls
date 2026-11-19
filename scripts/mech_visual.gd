@@ -105,7 +105,7 @@ static func build(lo: Dictionary, with_lights := true, with_shadow := true) -> N
 	root.set_meta("loadout", {})
 	root.set_meta("explode", 0.0)
 	if with_shadow:
-		A.ground_vfx(root, A.blob_tex(), Color(1, 1, 1, 0.9), 3.8, Vector3(0, 0.034, 0), false, 0.34, false, 1)
+		A.add(root, A.quad(4.2, 4.2), A.contact_shadow_mat(0.56), Vector3(0, 0.034, 0), Vector3.ZERO, Vector3.ONE, false)
 	var mount := Node3D.new()
 	mount.name = "TorsoMount"
 	mount.set_meta("out", Vector3.UP)

@@ -1020,9 +1020,9 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	m.set_shader_parameter("albedo_tex", world_tex("steel_plate_a.png"))
 	m.set_shader_parameter("use_albedo_tex", 1.0)
 	m.set_shader_parameter("albedo_tex_scale", 0.24)
-	m.set_shader_parameter("albedo_tex_strength", 0.40)
+	m.set_shader_parameter("albedo_tex_strength", 0.52)
 	m.set_shader_parameter("normal_tex", world_tex("steel_plate_n.png"))
-	m.set_shader_parameter("normal_strength", 0.42)
+	m.set_shader_parameter("normal_strength", 0.52)
 	if not opts.has("panel_scale"):
 		m.set_shader_parameter("panel_scale", 0.0)
 	for k in opts:
@@ -1101,84 +1101,84 @@ static func glass(c: Color) -> ShaderMaterial:
 	return window_mat(0.52, Vector2(0.88, 1.08), c.darkened(0.72), muted, 0.48)
 
 
-## 现浇模板混凝土：木模板横纹 + 对拉螺杆孔 + 骨料砂砾法线 + 雨水流痕
+## 现浇模板混凝土：宽模板缝（防桥墩/护墙横线摩尔纹）+ 废土雨水烟熏与钢筋渗锈做旧
 static func concrete(c: Color, seams := true) -> ShaderMaterial:
-	return paint(c, 0.0, 0.92, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("concrete_a.png"), "albedo_tex_scale": 0.24, "albedo_tex_strength": 0.84,
-		"normal_tex": world_tex("concrete_n.png"), "normal_strength": 0.85,
-		"wear": 0.42, "metal_wear": 0.0, "bare_metal": c.lightened(0.22), "scratches": 0.0,
-		"rust": 0.52, "rust_color": Color(0.16, 0.14, 0.12), "grime": 0.82, "dust": 0.22, "dust_color": Color(0.42, 0.38, 0.33),
-		"panel_scale": 0.26 if seams else 0.0, "detail_scale": 0.85,
-	})
-
-
-## 重工业顺丁错缝窑变砖墙：真实灰缝凹陷法线 + 单砖窑变色阶 + 烟熏泛碱
-static func brick(c := Color(0.46, 0.30, 0.23), scale := 0.34) -> ShaderMaterial:
 	return paint(c, 0.0, 0.91, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("brick_a.png"), "albedo_tex_scale": scale, "albedo_tex_strength": 0.92,
-		"normal_tex": world_tex("brick_n.png"), "normal_strength": 1.05,
-		"wear": 0.32, "metal_wear": 0.0, "bare_metal": c.lightened(0.20), "scratches": 0.0,
-		"rust": 0.46, "rust_color": Color(0.15, 0.12, 0.10), "grime": 0.82, "dust": 0.20, "dust_color": Color(0.44, 0.40, 0.35),
-		"panel_scale": 0.0, "detail_scale": 1.0,
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("concrete_a.png"), "albedo_tex_scale": 0.11, "albedo_tex_strength": 0.50,
+		"normal_tex": world_tex("concrete_n.png"), "normal_strength": 0.40,
+		"wear": 0.48, "metal_wear": 0.0, "bare_metal": c.lightened(0.20), "scratches": 0.0,
+		"rust": 0.44, "rust_color": Color(0.22, 0.16, 0.11), "grime": 0.74, "dust": 0.26, "dust_color": Color(0.38, 0.35, 0.30),
+		"panel_scale": 0.22 if seams else 0.0, "detail_scale": 0.82,
 	})
 
 
-## 梯形压型波纹钢墙板：立体竖向波纹肋 + 横向螺栓搭接板缝 + 搭接处锈蚀
-static func corrugated(c: Color, rust_amt := 0.42, scale := 0.24) -> ShaderMaterial:
-	return paint(c, 0.46, 0.56, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("corrugated_a.png"), "albedo_tex_scale": scale, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("corrugated_n.png"), "normal_strength": 0.82,
-		"wear": 0.46, "metal_wear": 1.0, "scratches": 0.24,
-		"rust": rust_amt, "grime": 0.65, "dust": 0.22,
-		"panel_scale": 0.0, "detail_scale": 1.0,
+## 重工业顺丁错缝窑变砖墙：沉稳风化陶砖 + 雨渍烟灰做旧
+static func brick(c := Color(0.42, 0.27, 0.20), scale := 0.28) -> ShaderMaterial:
+	return paint(c, 0.0, 0.90, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("brick_a.png"), "albedo_tex_scale": scale * 0.84, "albedo_tex_strength": 0.76,
+		"normal_tex": world_tex("brick_n.png"), "normal_strength": 0.66,
+		"wear": 0.44, "metal_wear": 0.0, "bare_metal": c.lightened(0.18), "scratches": 0.0,
+		"rust": 0.36, "rust_color": Color(0.17, 0.13, 0.10), "grime": 0.72, "dust": 0.22, "dust_color": Color(0.40, 0.36, 0.31),
+		"panel_scale": 0.0, "detail_scale": 0.92,
 	})
 
 
-## 直立锁边 / 重工金属瓦屋面：顺坡向立体锁边肋 + 横向叠瓦阶梯缝
-static func roof_mat(c: Color, rust_amt := 0.36, sloped := true) -> ShaderMaterial:
-	return paint(c, 0.34, 0.66, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("roof_seam_a.png"), "albedo_tex_scale": 0.23, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("roof_seam_n.png"), "normal_strength": 0.78,
+## 梯形压型波纹钢墙板：宽距压型肋 + 工业锈蚀镀锌钢质感（防高频白条闪烁同时保留废土锈蚀）
+static func corrugated(c: Color, rust_amt := 0.36, scale := 0.22) -> ShaderMaterial:
+	return paint(c, 0.36, 0.66, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("corrugated_a.png"), "albedo_tex_scale": scale * 0.74, "albedo_tex_strength": 0.64,
+		"normal_tex": world_tex("corrugated_n.png"), "normal_strength": 0.48,
+		"wear": 0.54, "metal_wear": 1.0, "scratches": 0.24,
+		"rust": minf(rust_amt * 1.10, 0.92), "grime": 0.68, "dust": 0.22,
+		"panel_scale": 0.0, "detail_scale": 0.92,
+	})
+
+
+## 直立锁边 / 重工金属瓦屋面：锈蚀铁皮与工业落灰质感
+static func roof_mat(c: Color, rust_amt := 0.32, sloped := true) -> ShaderMaterial:
+	return paint(c, 0.32, 0.72, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("roof_seam_a.png"), "albedo_tex_scale": 0.19, "albedo_tex_strength": 0.66,
+		"normal_tex": world_tex("roof_seam_n.png"), "normal_strength": 0.48,
 		"roof_uv": 1.0 if sloped else 0.0,
-		"wear": 0.38, "metal_wear": 1.0, "scratches": 0.15,
-		"rust": rust_amt, "grime": 0.58, "dust": 0.30,
-		"panel_scale": 0.0, "detail_scale": 1.0,
+		"wear": 0.48, "metal_wear": 1.0, "scratches": 0.18,
+		"rust": minf(rust_amt * 1.05, 0.88), "grime": 0.64, "dust": 0.26,
+		"panel_scale": 0.0, "detail_scale": 0.92,
 	})
 
 
-## 沥青油毡防水工业平屋面：卷材搭接缝 + 粗砾石撒面 + 积水补丁
-static func tar_roof(c := Color(0.26, 0.27, 0.28), dust_amt := 0.30) -> ShaderMaterial:
-	return paint(c, 0.0, 0.89, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("tar_roof_a.png"), "albedo_tex_scale": 0.26, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("tar_roof_n.png"), "normal_strength": 0.88,
+## 沥青油毡防水工业平屋面：深炭旧油毡与风化尘渍
+static func tar_roof(c := Color(0.24, 0.25, 0.26), dust_amt := 0.26) -> ShaderMaterial:
+	return paint(c, 0.0, 0.90, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("tar_roof_a.png"), "albedo_tex_scale": 0.20, "albedo_tex_strength": 0.62,
+		"normal_tex": world_tex("tar_roof_n.png"), "normal_strength": 0.48,
 		"roof_uv": 1.0,
-		"wear": 0.24, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
-		"rust": 0.24, "rust_color": Color(0.15, 0.14, 0.13), "grime": 0.62, "dust": dust_amt, "dust_color": Color(0.36, 0.34, 0.31),
-		"panel_scale": 0.0, "detail_scale": 1.0,
+		"wear": 0.34, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
+		"rust": 0.28, "rust_color": Color(0.16, 0.14, 0.12), "grime": 0.66, "dust": dust_amt, "dust_color": Color(0.36, 0.34, 0.30),
+		"panel_scale": 0.0, "detail_scale": 0.90,
 	})
 
 
-## 粗骨料工业沥青路面：玄武岩碎石颗粒 + 修补油渍 + 骨料凹凸
-static func asphalt(c := Color(0.28, 0.285, 0.295)) -> ShaderMaterial:
-	return paint(c, 0.0, 0.88, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.38, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.88,
-		"wear": 0.18, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
-		"rust": 0.20, "rust_color": Color(0.14, 0.13, 0.12), "grime": 0.45,
-		"dust": 0.12, "dust_color": Color(0.32, 0.30, 0.27),
-		"panel_scale": 0.0, "detail_scale": 1.0,
+## 粗骨料工业沥青路面：深炭黑湿润沥青 + 磨耗骨料肌理
+static func asphalt(c := Color(0.20, 0.205, 0.215)) -> ShaderMaterial:
+	return paint(c, 0.0, 0.80, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.28, "albedo_tex_strength": 0.62,
+		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.48,
+		"wear": 0.28, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
+		"rust": 0.22, "rust_color": Color(0.14, 0.13, 0.12), "grime": 0.56,
+		"dust": 0.16, "dust_color": Color(0.30, 0.28, 0.25),
+		"panel_scale": 0.0, "detail_scale": 0.92,
 	})
 
 
-## 压实道砟 / 砂砾河滩与土路材质
-static func gravel_mat(c := Color(0.36, 0.33, 0.29), rough := 0.94) -> ShaderMaterial:
+## 压实道砟 / 砂砾河滩与土路材质（低频干净颗粒，抑制远距沙粒闪点）
+static func gravel_mat(c := Color(0.38, 0.35, 0.31), rough := 0.92) -> ShaderMaterial:
 	return paint(c, 0.0, rough, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("ground_gravel_a.png"), "albedo_tex_scale": 0.34, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("ground_gravel_n.png"), "normal_strength": 0.92,
-		"wear": 0.15, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
-		"rust": 0.22, "rust_color": c.darkened(0.28), "grime": 0.55,
-		"dust": 0.16, "dust_color": c.lightened(0.06),
-		"panel_scale": 0.0, "detail_scale": 1.0,
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("ground_gravel_a.png"), "albedo_tex_scale": 0.24, "albedo_tex_strength": 0.58,
+		"normal_tex": world_tex("ground_gravel_n.png"), "normal_strength": 0.48,
+		"wear": 0.12, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
+		"rust": 0.16, "rust_color": c.darkened(0.24), "grime": 0.40,
+		"dust": 0.14, "dust_color": c.lightened(0.06),
+		"panel_scale": 0.0, "detail_scale": 0.90,
 	})
 
 
@@ -1222,47 +1222,55 @@ static func foliage_mat(kind := "pine") -> ShaderMaterial:
 			m.set_shader_parameter("albedo_tex", world_tex("pine_frond_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("pine_frond_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.92, 0.96, 0.84))
-			m.set_shader_parameter("tint_b", Color(1.12, 1.04, 0.86))
-			m.set_shader_parameter("rough_val", 0.80)
+			m.set_shader_parameter("tint_a", Color(0.84, 0.88, 0.76))
+			m.set_shader_parameter("tint_b", Color(0.98, 0.94, 0.78))
+			m.set_shader_parameter("albedo_gain", 1.18)
+			m.set_shader_parameter("rough_val", 0.82)
 			m.set_shader_parameter("alpha_cut", 0.34)
 			m.set_shader_parameter("sway_amp", 0.04)
+			m.set_shader_parameter("backlight_str", 0.36)
 		"broad":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.94, 1.00, 0.84))
-			m.set_shader_parameter("tint_b", Color(1.16, 1.02, 0.80))
-			m.set_shader_parameter("rough_val", 0.76)
+			m.set_shader_parameter("tint_a", Color(0.84, 0.88, 0.74))
+			m.set_shader_parameter("tint_b", Color(1.02, 0.92, 0.70))
+			m.set_shader_parameter("albedo_gain", 1.14)
+			m.set_shader_parameter("rough_val", 0.82)
 			m.set_shader_parameter("alpha_cut", 0.34)
 			m.set_shader_parameter("sway_amp", 0.05)
+			m.set_shader_parameter("backlight_str", 0.34)
 		"autumn":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(1.12, 0.84, 0.56))
-			m.set_shader_parameter("tint_b", Color(1.26, 0.96, 0.62))
-			m.set_shader_parameter("rough_val", 0.82)
+			m.set_shader_parameter("tint_a", Color(1.02, 0.76, 0.50))
+			m.set_shader_parameter("tint_b", Color(1.16, 0.86, 0.56))
+			m.set_shader_parameter("albedo_gain", 1.14)
+			m.set_shader_parameter("rough_val", 0.84)
 			m.set_shader_parameter("alpha_cut", 0.36)
 			m.set_shader_parameter("sway_amp", 0.045)
 		"shrub":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.88, 0.94, 0.78))
-			m.set_shader_parameter("tint_b", Color(1.06, 0.96, 0.76))
-			m.set_shader_parameter("rough_val", 0.82)
+			m.set_shader_parameter("tint_a", Color(0.82, 0.86, 0.70))
+			m.set_shader_parameter("tint_b", Color(0.96, 0.88, 0.68))
+			m.set_shader_parameter("albedo_gain", 1.20)
+			m.set_shader_parameter("rough_val", 0.84)
 			m.set_shader_parameter("alpha_cut", 0.32)
 			m.set_shader_parameter("sway_amp", 0.025)
 		"grass":
 			m.set_shader_parameter("albedo_tex", world_tex("grass_tuft_a.png"))
 			m.set_shader_parameter("use_normal", 0.0)
-			m.set_shader_parameter("tint_a", Color(0.86, 0.88, 0.74))
-			m.set_shader_parameter("tint_b", Color(1.10, 0.98, 0.76))
-			m.set_shader_parameter("rough_val", 0.88)
-			m.set_shader_parameter("alpha_cut", 0.30)
+			m.set_shader_parameter("tint_a", Color(0.78, 0.80, 0.58))
+			m.set_shader_parameter("tint_b", Color(0.92, 0.82, 0.56))
+			m.set_shader_parameter("albedo_gain", 2.30)
+			m.set_shader_parameter("up_normal_blend", 0.82)
+			m.set_shader_parameter("rough_val", 0.90)
+			m.set_shader_parameter("alpha_cut", 0.28)
 			m.set_shader_parameter("sway_amp", 0.055)
-			m.set_shader_parameter("backlight_str", 0.44)
+			m.set_shader_parameter("backlight_str", 0.42)
 	_mat_cache[key] = m
 	return m
 
@@ -1460,78 +1468,88 @@ void fragment(){
 	float mid = texture(n_low, p * 0.021 + 0.37).r;
 	float hi = texture(n_hi, p * 0.095).r;
 
-	vec3 s_col = texture(soil_a, p * 0.23).rgb * 1.18;
-	vec3 g_col = texture(grav_a, p * 0.25).rgb * 1.20;
-	vec3 c_col = texture(conc_a, p * 0.20).rgb * 1.16;
+	// 写实废土地表混合：恢复中频干土/碎石/混凝土实物质感（继续保持低噪防远距闪点）
+	highp vec2 p_rot = vec2(p.x * 0.80 - p.y * 0.60, p.x * 0.60 + p.y * 0.80);
+	float macro_var = texture(n_low, p_rot * 0.0085 + vec2(0.19, 0.71)).r;
+	vec3 s_col = mix(vec3(0.72), texture(soil_a, p * 0.19).rgb * 1.16, 0.64);
+	vec3 g_col = mix(vec3(0.72), texture(grav_a, p * 0.21).rgb * 1.18, 0.66);
+	vec3 c_col = mix(vec3(0.74), texture(conc_a, p * 0.14).rgb * 1.15, 0.58);
 
-	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.28, 0.72, low + (hi - 0.5) * 0.32)) * s_col;
-	float mudm = smoothstep(0.60, 0.78, mid + (hi - 0.5) * 0.14);
-	col = mix(col, mud * s_col * 0.90, mudm);
+	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
+	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12);
+	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
 
-	float gm = smoothstep(0.44, 0.72, 1.0 - mid + (low - 0.5) * 0.42 + (hi - 0.5) * 0.22) * (1.0 - mudm);
-	vec3 gcol = mix(grass, grass2, hi) * mix(vec3(1.0), s_col, 0.58);
-	col = mix(col, gcol, gm * 0.80);
+	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.36 + (hi - 0.5) * 0.10) * (1.0 - mudm * 0.55);
+	vec3 gcol = mix(grass, grass2, smoothstep(0.28, 0.72, low * 0.6 + hi * 0.4)) * mix(vec3(1.0), s_col * 1.24, 0.42);
+	col = mix(col, gcol, gm * 0.78);
 
-	float grav_patch = smoothstep(0.58, 0.78, hi * 0.65 + (1.0 - low) * 0.35) * (1.0 - gm * 0.75);
-	col = mix(col, dirt_a * 0.90 * g_col, grav_patch * 0.46);
-	col *= mix(0.84, 1.12, low);
+	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.75);
+	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
+	col *= mix(0.88, 1.12, low * 0.55 + macro_var * 0.45);
 
 	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
 	float zfade = bfade.x * bfade.y * zone_on;
-	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.030, vec2(0.002), vec2(0.998));
+	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
 	vec4 zt = texture(zone_tex, z_uv) * zfade;
 
 	float row_id = floor(p.y / 2.4);
 	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
 	vec2 tf = abs(fract(slab_uv) - 0.5);
-	float seam = smoothstep(0.480, 0.496, max(tf.x, tf.y)) * smoothstep(0.52, 0.86, zt.r);
-	vec3 pave = vec3(0.28, 0.28, 0.27) * c_col * mix(0.90, 1.05, low) * (1.0 - seam * 0.36);
-	float pm = smoothstep(0.32, 0.86, zt.r + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22) * (1.0 - mudm * 0.42);
+	float seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * smoothstep(0.48, 0.80, zt.r);
+	vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + macro_var * 0.4) * (1.0 - seam * 0.36);
+	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.08);
 	col = mix(col, pave, pm);
 
-	vec3 gr = mix(vec3(0.21, 0.26, 0.13), vec3(0.35, 0.36, 0.19), hi) * mix(vec3(1.0), s_col, 0.62) * (0.85 + low * 0.30);
-	float gmm = smoothstep(0.22, 0.82, zt.g + (low - 0.5) * 0.24 + (mid - 0.5) * 0.36);
+	vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.6 + macro_var * 0.4)) * mix(vec3(1.0), s_col * 1.24, 0.42);
+	float gmm = smoothstep(0.24, 0.76, zt.g + (low - 0.5) * 0.15 + (mid - 0.5) * 0.16) * (1.0 - pm * 0.84);
 	col = mix(col, gr, gmm);
 
-	vec3 soil = mix(vec3(0.24, 0.19, 0.13), vec3(0.34, 0.27, 0.18), mid) * s_col;
-	float smm = smoothstep(0.24, 0.82, zt.b + (low - 0.5) * 0.28 + (mid - 0.5) * 0.24);
+	vec3 soil = mix(vec3(0.22, 0.18, 0.13), vec3(0.31, 0.25, 0.17), mid) * s_col * 1.24;
+	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14);
 	col = mix(col, soil, smm);
 
-	vec3 grv = mix(vec3(0.30, 0.29, 0.265), vec3(0.38, 0.34, 0.29), low) * g_col;
-	float am = smoothstep(0.28, 0.84, zt.a + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22) * (1.0 - mudm * 0.35);
+	vec3 grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.6 + macro_var * 0.4) * g_col * 1.24;
+	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10) * (1.0 - pm * 0.55);
 	col = mix(col, grv, am);
 
+	float road_v = 0.0;
+	float bldg_contact = 0.0;
 	if (abs(sector_on) > 0.5) {
 		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
 		float s_in = 0.0;
-		float road_v = 0.0;
-		float bldg_contact = 0.0;
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
 			vec3 sec = texture(sector_tex, s_uv).rgb;
 			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
 			road_v = sec.g * (1.0 - pm * 0.48);
 			bldg_contact = sec.b;
 		}
-		col = mix(col, grv * 0.90, road_v * 0.74);
-		col = mix(col, mix(dirt_b, mud, 0.42) * s_col * 0.82, bldg_contact * 0.50);
-		vec3 out_mul = (sector_on > 0.0) ? vec3(0.76, 0.78, 0.82) : vec3(0.28, 0.25, 0.32);
+		col = mix(col, grv * 0.86, road_v * 0.65);
+		col *= mix(vec3(1.0), vec3(0.50, 0.52, 0.55), bldg_contact * 0.68);
+		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
 		col = mix(col * out_mul, col, s_in);
 	}
+	// 写实雨后泥地湿润反光与克制积水
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
-	float basin = (1.0 - low) * 0.55 + mid * 0.45;
-	float puddle = w_amt * smoothstep(0.52, 0.68, basin);
-	col = mix(col, col * 0.78, w_amt * 0.22 * (1.0 - puddle));
-	col = mix(col, col * 0.42 + vec3(0.06, 0.075, 0.095), puddle * 0.78);
+	float p_allow = (1.0 - gmm * 0.82) * (1.0 - smm * 0.75);
+	float basin = 0.50 + (0.5 - low) * 0.74 + (macro_var - 0.5) * 0.56 + (mid - 0.5) * 0.28;
+	float puddle = w_amt * p_allow * smoothstep(0.700, 0.795, basin);
+	float soak = w_amt * p_allow * smoothstep(0.600, 0.730, basin);
+	col *= mix(1.0, 0.86, w_amt * 0.28);
+	col *= mix(1.0, 0.78, soak * 0.62);
+	col = mix(col, col * 0.56 + vec3(0.018, 0.022, 0.028), puddle * 0.72);
 	ALBEDO = col;
 
-	vec3 n_det = texture(soil_n, p * 0.23).rgb;
-	vec3 n_macro = texture(n_nrm, p * 0.065).rgb;
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * 0.55 + (n_macro * 2.0 - 1.0) * 0.45 + vec3(0.0, 0.0, 0.65));
-	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.92));
-	ROUGHNESS = mix(mix(0.92, 0.82, pm), 0.14, puddle * 0.92);
-	SPECULAR = mix(0.30, 0.55, puddle * 0.85);
+	vec3 n_det = mix(texture(soil_n, p * 0.19).rgb, texture(conc_n, p * 0.14).rgb, pm);
+	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * 0.48 + (n_macro * 2.0 - 1.0) * 0.42 + vec3(0.0, 0.0, 0.76));
+	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.85));
+	ROUGHNESS = mix(mix(0.90, 0.80, pm), 0.13, puddle * 0.90);
+	ROUGHNESS = mix(ROUGHNESS, 0.40, soak * 0.60 * (1.0 - puddle));
+	SPECULAR = mix(0.28, 0.56, puddle * 0.85);
+	AO = clamp(1.0 - pm * seam * 0.34 - road_v * 0.16 - bldg_contact * 0.66, 0.22, 1.0);
+	AO_LIGHT_AFFECT = 0.68;
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = 0.75 * (1.0 - puddle * 0.85);
+	NORMAL_MAP_DEPTH = 0.52 * (1.0 - puddle * 0.82);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1626,75 +1644,75 @@ void fragment(){
 	float fw = clamp(1.0 - length(fwidth(p)) * 0.42, 0.0, 1.0);
 	float hi2_aa = mix(0.5, hi2, fw);
 
-	// 兼容中景无接缝双旋转随机混合，兼具近景粒度锐度与高空零重复瓦片感
-	vec2 uv_a = p * 0.25;
-	vec2 uv_b = rot2(p * 0.17 + vec2(7.3, 11.9));
+	// 写实废土双角旋转混合：保留中频碎石/干土/风化混凝土板肌理与龟裂，远距自动降频防沙粒闪点
+	vec2 uv_a = p * 0.20;
+	vec2 uv_b = rot2(p * 0.14 + vec2(7.3, 11.9));
 	float m_blend = smoothstep(0.28, 0.72, med2);
-	vec2 uv_ga = p * 0.28;
-	vec2 uv_gb = rot2(p * 0.19 + vec2(3.7, 5.1));
-	vec2 uv_ca = p * 0.21;
-	vec2 uv_cb = rot2(p * 0.14 + vec2(9.1, 2.3));
-	vec3 s_col = mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.18;
-	vec3 g_col = mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.20;
-	vec3 c_col = mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.16;
+	vec2 uv_ga = p * 0.22;
+	vec2 uv_gb = rot2(p * 0.15 + vec2(3.7, 5.1));
+	vec2 uv_ca = p * 0.14;
+	vec2 uv_cb = rot2(p * 0.10 + vec2(9.1, 2.3));
+	vec3 s_col = mix(vec3(0.72), mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.16, 0.64);
+	vec3 g_col = mix(vec3(0.72), mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.18, 0.66);
+	vec3 c_col = mix(vec3(0.74), mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.15, 0.58);
 
-	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.28, 0.72, low + (hi - 0.5) * 0.32)) * s_col;
+	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
 
-	// 仅在干涸泥滩区域出现自然扭曲干裂纹（彻底移除污染全图的 1.1m 蜂窝网格）
-	float mudm = smoothstep(0.60, 0.78, mid + (hi - 0.5) * 0.14);
-	float cr = cracks(p * 0.42 + vec2(low, mid) * 1.6);
-	float crack_mud = (1.0 - smoothstep(0.015, 0.065, cr)) * mudm;
-	col = mix(col, mud * s_col * 0.92, mudm);
+	// 废土干涸泥滩龟裂与压实泥泞过渡
+	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12);
+	float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
+	float crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm;
+	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
 	col *= 1.0 - crack_mud * 0.34;
 
-	// 荒草苔斑：融入壤土碎屑底纹（远距导数抗锯齿抑制高空摩尔纹噪点）
-	float gm = smoothstep(0.44, 0.72, 1.0 - mid + (low - 0.5) * 0.42 + (hi - 0.5) * 0.22) * (1.0 - mudm);
-	vec3 gcol = mix(grass, grass2, hi2_aa) * mix(vec3(1.0), s_col, 0.58);
-	col = mix(col, gcol, gm * 0.82 * smoothstep(0.22, 0.68, hi2_aa + 0.12));
+	// 荒原衰草与尘苔：克制脱饱和的枯绿与褐草
+	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.38 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.55);
+	vec3 gcol = mix(grass, grass2, smoothstep(0.26, 0.74, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42);
+	col = mix(col, gcol, gm * 0.78 * smoothstep(0.18, 0.62, hi2_aa + 0.18));
 
-	// 散落自然碎石斑块
-	float grav_patch = smoothstep(0.58, 0.78, hi * 0.65 + (1.0 - low) * 0.35) * (1.0 - gm * 0.75);
-	col = mix(col, dirt_a * 0.90 * g_col, grav_patch * 0.46);
-	col *= mix(0.82, 1.14, low * 0.55 + med2 * 0.45);
+	// 散落粗骨料与废墟碎砾斑块
+	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.72);
+	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
+	col *= mix(0.87, 1.12, low * 0.55 + med2 * 0.45);
 
-	// 分区地表：R 硬化混凝土场坪 / G 林草荒地 / B 翻耕熟土 / A 工业压实道砟碎石
+	// 分区地表：R 风化混凝土场坪 / G 废土荒草 / B 翻耕泥土 / A 工业压实油渣道砟
 	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
 	float zfade = bfade.x * bfade.y * zone_on;
-	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.030, vec2(0.002), vec2(0.998));
+	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
 	vec4 zt = texture(zone_tex, z_uv) * zfade;
 
 	float row_id = floor(p.y / 2.4);
 	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
 	vec2 tf = abs(fract(slab_uv) - 0.5);
-	float seam_mask = smoothstep(0.58, 0.88, zt.r) * (1.0 - smoothstep(0.50, 0.76, mid));
-	float seam = smoothstep(0.480, 0.496, max(tf.x, tf.y)) * seam_mask;
-	float tar_seal = smoothstep(0.488, 0.498, max(tf.x, tf.y)) * seam_mask;
+	float seam_mask = smoothstep(0.46, 0.80, zt.r) * (1.0 - smoothstep(0.66, 0.88, mid));
+	float seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * seam_mask;
+	float tar_seal = smoothstep(0.486, 0.498, max(tf.x, tf.y)) * seam_mask;
 	float slab_var = fract(sin(dot(floor(slab_uv), vec2(41.3, 289.1))) * 43758.5453);
-	vec3 pave = vec3(0.28, 0.28, 0.27) * c_col * mix(0.88, 1.06, low * 0.6 + med2 * 0.4) * (0.94 + slab_var * 0.10);
-		pave *= 1.0 - seam * 0.24;
-		pave = mix(pave, vec3(0.135, 0.135, 0.140), tar_seal * 0.46);
-	pave = mix(pave, vec3(0.20, 0.195, 0.185) * c_col, smoothstep(0.54, 0.80, mid) * 0.34);
-	float pm = smoothstep(0.32, 0.86, zt.r + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22 + (hi - 0.5) * 0.16) * (1.0 - mudm * 0.42);
+	vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + med2 * 0.4) * (0.91 + slab_var * 0.16);
+	pave *= 1.0 - seam * 0.34;
+	pave = mix(pave, vec3(0.10, 0.105, 0.11), tar_seal * 0.58);
+	pave = mix(pave, vec3(0.22, 0.215, 0.20) * c_col * 1.20, smoothstep(0.60, 0.86, mid) * 0.28);
+	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.08 + (hi - 0.5) * 0.05);
 	col = mix(col, pave, pm);
 
-	vec3 gr = mix(vec3(0.21, 0.26, 0.13), vec3(0.35, 0.36, 0.19), hi2_aa) * mix(vec3(1.0), s_col, 0.62) * (0.85 + low * 0.30);
-	float gmm = smoothstep(0.22, 0.82, zt.g + (low - 0.5) * 0.24 + (mid - 0.5) * 0.36 + (hi - 0.5) * 0.20);
+	vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42) * (0.90 + low * 0.20);
+	float gmm = smoothstep(0.24, 0.76, zt.g + (low - 0.5) * 0.15 + (mid - 0.5) * 0.18 + (hi - 0.5) * 0.08) * (1.0 - pm * 0.84);
 	col = mix(col, gr, gmm);
 
 	float furrow = 0.5 + 0.5 * sin((p.x * 0.35 + p.y * 0.94) * 2.1 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4) * fw;
-	vec3 soil = mix(vec3(0.24, 0.19, 0.13), vec3(0.34, 0.27, 0.18), smoothstep(0.2, 0.8, mix(mid, furrow, 0.36))) * s_col;
-	float smm = smoothstep(0.24, 0.82, zt.b + (low - 0.5) * 0.28 + (mid - 0.5) * 0.24 + (hi - 0.5) * 0.18);
+	vec3 soil = mix(vec3(0.22, 0.18, 0.13), vec3(0.31, 0.25, 0.17), smoothstep(0.2, 0.8, mix(mid, furrow, 0.34))) * s_col * 1.24;
+	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14 + (hi - 0.5) * 0.08);
 	col = mix(col, soil, smm);
 
-	float rut = smoothstep(0.64, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.38, 0.70, mid) * fw;
-	vec3 grv = mix(vec3(0.30, 0.29, 0.265), vec3(0.38, 0.34, 0.29), low * 0.65 + med2 * 0.35) * g_col;
-	grv = mix(grv, vec3(0.22, 0.21, 0.195) * g_col, smoothstep(0.56, 0.78, mid) * 0.40 + rut * 0.16);
-	float am = smoothstep(0.28, 0.84, zt.a + (low - 0.5) * 0.26 + (mid - 0.5) * 0.22 + (hi - 0.5) * 0.18) * (1.0 - mudm * 0.35);
+	float rut = smoothstep(0.66, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.42, 0.72, mid) * fw;
+	vec3 grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.65 + med2 * 0.35) * g_col * 1.24;
+	grv = mix(grv, vec3(0.16, 0.155, 0.145) * g_col * 1.22, smoothstep(0.64, 0.86, mid) * 0.26 + rut * 0.16);
+	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10 + (hi - 0.5) * 0.06) * (1.0 - pm * 0.55);
 	col = mix(col, grv, am);
 
 	float zone_cov = clamp(pm + gmm * 0.88 + smm * 0.88 + am * 0.88, 0.0, 0.94);
-	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.65, 0.84, mid) * (1.0 - crack_mud * 0.85);
-	col = mix(col, col * 0.74, wet_film * 0.42);
+	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.70, 0.88, mid) * (1.0 - crack_mud * 0.85);
+	col = mix(col, col * 0.76, wet_film * 0.36);
 	float road_v = 0.0;
 	float bldg_contact = 0.0;
 	if (abs(sector_on) > 0.5) {
@@ -1703,35 +1721,38 @@ void fragment(){
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
 			vec3 sec = texture(sector_tex, s_uv).rgb;
 			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
-			road_v = sec.g * smoothstep(0.25, 0.80, 0.55 + (low - 0.5) * 0.35 + (mid - 0.5) * 0.30) * (1.0 - pm * 0.48);
-			bldg_contact = sec.b * smoothstep(0.18, 0.78, 0.65 + (low - 0.5) * 0.25);
+			road_v = sec.g * smoothstep(0.25, 0.80, 0.55 + (low - 0.5) * 0.30 + (mid - 0.5) * 0.25) * (1.0 - pm * 0.48);
+			bldg_contact = sec.b;
 		}
-		col = mix(col, grv * 0.90, road_v * 0.74);
-		col = mix(col, mix(dirt_b, mud, 0.42) * s_col * 0.82, bldg_contact * 0.55);
-		vec3 out_mul = (sector_on > 0.0) ? vec3(0.76, 0.78, 0.82) : vec3(0.28, 0.25, 0.32);
+		col = mix(col, grv * 0.86, road_v * 0.65);
+		// 沉稳烟灰冷调建筑接地接触暗影
+		col *= mix(vec3(1.0), vec3(0.48, 0.50, 0.54), bldg_contact * 0.68);
+		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
 		col = mix(col * out_mul, col, s_in);
 	}
+	// 写实雨后湿润地面反光与低洼浅积水（保持平滑低频边界，无脏黑锯齿斑）
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
-	float basin = 0.50 + (0.5 - low) * 0.96 + (med2 - 0.5) * 0.78 + (mid - 0.5) * 0.42 + (hi - 0.5) * 0.14;
-	float puddle = w_amt * smoothstep(0.520, 0.590, basin) * (1.0 - crack_mud * 0.65);
-	float p_deep = smoothstep(0.575, 0.700, basin);
-	float soak_rim = w_amt * smoothstep(0.435, 0.528, basin);
-	float damp_halo = w_amt * smoothstep(0.310, 0.445, basin);
+	float p_allow = (1.0 - gmm * 0.84) * (1.0 - smm * 0.78) * (1.0 - crack_mud * 0.65);
+	float basin = 0.50 + (0.5 - low) * 0.76 + (med2 - 0.5) * 0.58 + (mid - 0.5) * 0.28;
+	float puddle = w_amt * p_allow * smoothstep(0.700, 0.795, basin);
+	float p_deep = smoothstep(0.755, 0.880, basin);
+	float soak_rim = w_amt * p_allow * smoothstep(0.600, 0.730, basin);
+	float damp_halo = w_amt * smoothstep(0.400, 0.590, basin);
 	float col_lum = dot(col, vec3(0.299, 0.587, 0.114));
-	col = mix(col, max(mix(vec3(col_lum), col, 1.15), vec3(0.0)), clamp(max(damp_halo, soak_rim), 0.0, 1.0));
-	col *= mix(1.0, 0.74, max(damp_halo, w_amt * 0.30) * (1.0 - soak_rim * 0.7));
-	col *= mix(1.0, 0.56, soak_rim);
-	col = mix(col, mix(col * 0.82, mix(col * 0.46, vec3(0.036, 0.045, 0.054), 0.45), p_deep), puddle);
+	col = mix(col, max(mix(vec3(col_lum), col, 1.08), vec3(0.0)), clamp(max(damp_halo * 0.60, soak_rim), 0.0, 1.0));
+	col *= mix(1.0, 0.85, max(damp_halo * 0.60, w_amt * 0.22) * (1.0 - soak_rim * 0.65));
+	col *= mix(1.0, 0.74, soak_rim);
+	col = mix(col, mix(col * 0.72, mix(col * 0.50, vec3(0.020, 0.024, 0.030), 0.40), p_deep), puddle);
 	ALBEDO = col;
 
-	// 按地表类型融合真实壤土颗粒、碎石道砟与混凝土法线贴图，结合表面导数与法线方差防远景闪烁
+	// 中频实感地表法线（远距 fw 自动平滑防闪点，近中景呈现碎石与混凝土块面微凹凸）
 	vec3 ns = mix(texture(soil_n, uv_a).rgb, texture(soil_n, uv_b).rgb, m_blend);
 	vec3 ng = mix(texture(grav_n, uv_ga).rgb, texture(grav_n, uv_gb).rgb, m_blend);
 	vec3 nc = mix(texture(conc_n, uv_ca).rgb, texture(conc_n, uv_cb).rgb, m_blend);
-	vec3 n_macro = texture(n_nrm, p * 0.065).rgb;
-	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45 + road_v * 0.60, 0.0, 1.0));
+	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
+	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45 + road_v * 0.55, 0.0, 1.0));
 	n_det = mix(n_det, nc, pm);
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.45, 0.86, fw) + (n_macro * 2.0 - 1.0) * 0.48 + vec3(0.0, 0.0, 0.56));
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.32, 0.66, fw) + (n_macro * 2.0 - 1.0) * 0.40 + vec3(0.0, 0.0, 0.72));
 	vec2 rip_sl = vec2(0.0);
 	if (puddle > 0.02 && weather_rain > 0.01) {
 		float cam_d = length(wp - INV_VIEW_MATRIX[3].xyz);
@@ -1740,24 +1761,24 @@ void fragment(){
 			rip_sl = g_ripple(p, TIME) * puddle * r_fade;
 		}
 	}
-	n_comb = normalize(mix(n_comb, normalize(vec3(rip_sl.x, rip_sl.y, 1.0)), puddle * 0.94));
-	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.85);
+	n_comb = normalize(mix(n_comb, normalize(vec3(rip_sl.x, rip_sl.y, 1.0)), puddle * 0.88));
+	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.78);
 	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.22);
-	float r_base = mix(0.93, 0.78, mudm * (1.0 - zone_cov));
-	r_base = mix(r_base, 0.82, pm * (1.0 - seam));
+	float r_base = mix(0.92, 0.80, mudm * (1.0 - zone_cov));
+	r_base = mix(r_base, 0.80, pm * (1.0 - seam));
 	r_base = mix(r_base, 0.34, pm * tar_seal);
-	r_base = mix(r_base, 0.91, am);
-	r_base = mix(r_base, 0.46, max(wet_film, max(damp_halo * 0.82, w_amt * 0.35)));
-	r_base = mix(r_base, 0.18, soak_rim * 0.88);
-	r_base = sqrt(clamp(r_base * r_base + r_var, 0.03, 1.0));
-	ROUGHNESS = mix(r_base, mix(0.055, 0.036, p_deep), puddle * 0.97);
-	SPECULAR = mix(0.32, 0.90, pm * 0.18 + wet_film * 0.22 + soak_rim * 0.45 + puddle * 0.95);
-	AO = clamp(1.0 - crack_mud * 0.58 - pm * seam * 0.36 - am * rut * 0.18 - road_v * 0.14 - bldg_contact * 0.46, 0.24, 1.0);
-	AO_LIGHT_AFFECT = 0.58;
-	CLEARCOAT = max(puddle * 0.86, soak_rim * 0.42);
-	CLEARCOAT_ROUGHNESS = mix(0.12, 0.05, puddle);
+	r_base = mix(r_base, 0.90, am);
+	r_base = mix(r_base, 0.50, max(wet_film, max(damp_halo * 0.68, w_amt * 0.26)));
+	r_base = mix(r_base, 0.26, soak_rim * 0.78);
+	r_base = sqrt(clamp(r_base * r_base + r_var, 0.04, 1.0));
+	ROUGHNESS = mix(r_base, mix(0.12, 0.085, p_deep), puddle * 0.94);
+	SPECULAR = mix(0.28, 0.66, pm * 0.14 + wet_film * 0.16 + soak_rim * 0.36 + puddle * 0.88);
+	AO = clamp(1.0 - crack_mud * 0.48 - pm * seam * 0.36 - am * rut * 0.18 - road_v * 0.16 - bldg_contact * 0.68, 0.18, 1.0);
+	AO_LIGHT_AFFECT = 0.68;
+	CLEARCOAT = max(puddle * 0.54, soak_rim * 0.24);
+	CLEARCOAT_ROUGHNESS = mix(0.18, 0.085, puddle);
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = (mix(0.76, 1.12, fw) + crack_mud * 1.25 + pm * seam * 1.05 + am * 0.30) * (1.0 - puddle * 0.88);
+	NORMAL_MAP_DEPTH = (mix(0.42, 0.66, fw) + crack_mud * 0.95 + pm * seam * 0.80 + am * 0.18) * (1.0 - puddle * 0.84);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1777,7 +1798,7 @@ void fragment(){
 	return m
 
 
-## 3D 视口专用 16x16x16 色彩分级查找表：暗部石板青冷调收束、高光暖象牙柔化滚降与轻微胶片 S 曲线反差。
+## 3D 视口专用 16x16x16 末世废土胶片 LUT：银留工艺（Bleach-Bypass）适度脱饱和、扎实暗部冷钢青、氧化钨丝微暖高光与扎实电影 S 曲线。
 static func cinematic_lut() -> ImageTexture3D:
 	if _tex_cache.has("cinematic_lut"):
 		return _tex_cache["cinematic_lut"]
@@ -1792,27 +1813,61 @@ static func cinematic_lut() -> ImageTexture3D:
 			for x in n:
 				var r0 := float(x) / float(n - 1)
 				var luma := r0 * 0.299 + g0 * 0.587 + b0 * 0.114
-				var sr := lerpf(r0, r0 * r0 * (3.0 - 2.0 * r0), 0.15)
-				var sg := lerpf(g0, g0 * g0 * (3.0 - 2.0 * g0), 0.15)
-				var sb := lerpf(b0, b0 * b0 * (3.0 - 2.0 * b0), 0.15)
-				var sh := (1.0 - smoothstep(0.0, 0.46, luma)) * smoothstep(0.0, 0.06, luma)
-				var hi := smoothstep(0.50, 0.96, luma) * (1.0 - smoothstep(0.95, 1.0, luma) * 0.65)
-				sr += -0.010 * sh + 0.014 * hi
-				sg += 0.003 * sh + 0.006 * hi
-				sb += 0.016 * sh - 0.011 * hi
-				var mx := maxf(sr, maxf(sg, sb))
-				var mn := minf(sr, minf(sg, sb))
-				var vib := (1.0 - clampf(mx - mn, 0.0, 1.0)) * 0.07
+				var sr := lerpf(r0, r0 * r0 * (3.0 - 2.0 * r0), 0.22)
+				var sg := lerpf(g0, g0 * g0 * (3.0 - 2.0 * g0), 0.22)
+				var sb := lerpf(b0, b0 * b0 * (3.0 - 2.0 * b0), 0.22)
+				# 保留沉稳深黑层次与暗部细节可读性，暗部冷钢青，高光微暖锈黄滚降
+				var floor_lift := (1.0 - smoothstep(0.0, 0.18, luma)) * 0.009
+				var sh := (1.0 - smoothstep(0.0, 0.45, luma)) * smoothstep(0.0, 0.04, luma)
+				var hi := smoothstep(0.48, 0.94, luma) * (1.0 - smoothstep(0.95, 1.0, luma) * 0.60)
+				sr += floor_lift * 0.80 - 0.009 * sh + 0.012 * hi
+				sg += floor_lift * 0.92 + 0.002 * sh + 0.005 * hi
+				sb += floor_lift * 1.02 + 0.008 * sh - 0.009 * hi
+				# 轻度银留脱饱和（Bleach-Bypass），赋予钢铁、混凝土与尘雾写实冷峻质感
 				var lum2 := sr * 0.299 + sg * 0.587 + sb * 0.114
-				sr = clampf(lum2 + (sr - lum2) * (1.0 + vib), 0.0, 1.0)
-				sg = clampf(lum2 + (sg - lum2) * (1.0 + vib), 0.0, 1.0)
-				sb = clampf(lum2 + (sb - lum2) * (1.0 + vib), 0.0, 1.0)
+				var sat_mul := lerpf(0.88, 0.96, hi)
+				sr = clampf(lum2 + (sr - lum2) * sat_mul, 0.0, 1.0)
+				sg = clampf(lum2 + (sg - lum2) * sat_mul, 0.0, 1.0)
+				sb = clampf(lum2 + (sb - lum2) * sat_mul, 0.0, 1.0)
 				img.set_pixel(x, y, Color(sr, sg, sb, 1.0))
 		slices[z] = img
 	var lut := ImageTexture3D.new()
 	lut.create(Image.FORMAT_RGB8, n, n, n, false, slices)
 	_tex_cache["cinematic_lut"] = lut
 	return lut
+
+
+## 柔和圆角矩形接地接触阴影贴图（供箱体、集装箱、载具残骸与机甲底盘共用，零锯齿、低画质/移动端 equally 有效）
+static func contact_shadow_tex() -> ImageTexture:
+	if _tex_cache.has("contact_shadow_tex"):
+		return _tex_cache["contact_shadow_tex"]
+	var n := 96
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		var ny := (float(y) + 0.5) / float(n) * 2.0 - 1.0
+		for x in n:
+			var nx := (float(x) + 0.5) / float(n) * 2.0 - 1.0
+			# 圆角超椭圆距离场：贴合箱子/集装箱/载具底盘，四周极其柔和晕开
+			var qx := maxf(absf(nx) - 0.34, 0.0)
+			var qy := maxf(absf(ny) - 0.34, 0.0)
+			var d := sqrt(qx * qx + qy * qy) / 0.66
+			var a := pow(clampf(1.0 - d, 0.0, 1.0), 2.15)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	var tex := ImageTexture.create_from_image(img)
+	_tex_cache["contact_shadow_tex"] = tex
+	return tex
+
+
+## 统一冷靛灰接地软阴影材质（支持单 MultiMesh 合批绘制，微量视线前拉防路面吃影与 z-fighting，极低开销）
+static func contact_shadow_mat(alpha := 0.52) -> ShaderMaterial:
+	var key := "contact_shadow_mat_%.2f" % alpha
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var m := ground_vfx_mat(contact_shadow_tex(), Color(0.020, 0.023, 0.028, alpha), false, 0.14, true, 0)
+	m.render_priority = -4
+	m.set_meta("no_outline", true)
+	_mat_cache[key] = m
+	return m
 
 
 ## 叠加用的贴地材质（光圈、阴影斑等），不受光。

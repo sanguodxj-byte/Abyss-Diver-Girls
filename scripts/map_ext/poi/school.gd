@@ -26,7 +26,6 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	# 正门台阶与门廊
 	K.steps(raid, c + Vector3(0, 0, -3.6), 3, 0.3, 0.6, 5.0, 180.0)
 	K.canopy(raid, c + Vector3(0, 0, -2.4), Vector2(6.0, 3.0), 3.4, 0.0, Color(0.5, 0.46, 0.4))
-	A.stencil(raid.world, "SCHOOL 04", c + Vector3(0, 5.2, -4.72), Vector3.ZERO, 0.022, Color(0.85, 0.82, 0.72, 0.6), 48)
 	K.roof_kit(raid, c + Vector3(0, 0, -7.6), Vector2(17.0, 5.6), 6.4, BRICK)
 	# 东翼：三面围合的两间教室（门洞加宽至 3.8m+）
 	K.wall_line(raid, c + Vector3(9.0, 0, 1.0), 11.0, 3.6, 90.0, [[-4.0, -0.2]], BRICK)

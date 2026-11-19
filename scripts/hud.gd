@@ -133,15 +133,15 @@ func setup(r) -> void:
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vignette.modulate.a = 0.0
-	# 常驻暗角（压暗四周，把视线收到画面中央），放在受伤暗角之下
+	# 常驻战地摄影机炭灰光学暗角（收束四角，强化写实工业废土胶片纵深），放在受伤暗角之下
 	var g2 := Gradient.new()
-	g2.offsets = PackedFloat32Array([0.0, 0.72, 1.0])
-	g2.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.0), Color(0.02, 0.02, 0.02, 0.22)])
+	g2.offsets = PackedFloat32Array([0.0, 0.52, 0.82, 1.0])
+	g2.colors = PackedColorArray([Color(0.015, 0.018, 0.022, 0.0), Color(0.015, 0.018, 0.022, 0.0), Color(0.015, 0.018, 0.022, 0.16), Color(0.010, 0.012, 0.016, 0.38)])
 	var gt2 := GradientTexture2D.new()
 	gt2.gradient = g2
 	gt2.fill = GradientTexture2D.FILL_RADIAL
 	gt2.fill_from = Vector2(0.5, 0.5)
-	gt2.fill_to = Vector2(1.08, 0.5)
+	gt2.fill_to = Vector2(1.06, 0.5)
 	gt2.width = 256
 	gt2.height = 256
 	var vig2 := TextureRect.new()
@@ -711,8 +711,8 @@ func is_touch_busy() -> bool:
 func _build_center() -> void:
 	zone_banner = Control.new()
 	zone_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	zone_banner.offset_left = -200
-	zone_banner.offset_right = 200
+	zone_banner.offset_left = -230
+	zone_banner.offset_right = 230
 	zone_banner.offset_top = 20
 	zone_banner.offset_bottom = 78
 	zone_banner.z_index = 18
@@ -1113,28 +1113,30 @@ func toggle_inventory() -> void:
 		Audio.play_ui("ui_open")
 
 
-func show_zone_banner(zone_name: String, delay := 0.08) -> void:
+func show_zone_banner(zone_name: String, delay := 0.08, sub_text := "") -> void:
 	if zone_banner == null or zone_name == "":
 		return
 	if _zone_tw != null and is_instance_valid(_zone_tw):
 		_zone_tw.kill()
-	zone_sub_lbl.text = Loc.t("进入战区", "ENTERING SECTOR")
+	zone_sub_lbl.text = sub_text if sub_text != "" else Loc.t("进入战区", "ENTERING SECTOR")
 	zone_title_lbl.text = zone_name
 	_zone_active = true
+	var base_y := 92.0 if (boss_panel != null and boss_panel.visible) else 22.0
+	var h := 58.0
 	zone_banner.visible = true
 	zone_banner.modulate.a = 0.0
-	zone_banner.offset_top = 14
-	zone_banner.offset_bottom = 72
+	zone_banner.offset_top = base_y - 8.0
+	zone_banner.offset_bottom = base_y - 8.0 + h
 	_zone_tw = create_tween()
 	if delay > 0.0:
 		_zone_tw.tween_interval(delay)
 	_zone_tw.tween_property(zone_banner, "modulate:a", 1.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_zone_tw.parallel().tween_property(zone_banner, "offset_top", 22.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_zone_tw.parallel().tween_property(zone_banner, "offset_bottom", 80.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_zone_tw.parallel().tween_property(zone_banner, "offset_top", base_y, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_zone_tw.parallel().tween_property(zone_banner, "offset_bottom", base_y + h, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_zone_tw.tween_interval(1.9)
 	_zone_tw.tween_property(zone_banner, "modulate:a", 0.0, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_zone_tw.parallel().tween_property(zone_banner, "offset_top", 18.0, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_zone_tw.parallel().tween_property(zone_banner, "offset_bottom", 76.0, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_zone_tw.parallel().tween_property(zone_banner, "offset_top", base_y - 4.0, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_zone_tw.parallel().tween_property(zone_banner, "offset_bottom", base_y - 4.0 + h, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	_zone_tw.tween_callback(func():
 		_zone_active = false
 		if zone_banner != null:

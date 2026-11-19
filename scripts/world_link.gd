@@ -202,19 +202,9 @@ func _build_gate(g: Dictionary) -> void:
 	l.omni_range = 16.0
 	l.position = Vector3(0, 3.0, 4.0)
 	n.add_child(l)
-	var lab := Label3D.new()
-	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lab.no_depth_test = true
-	lab.font_size = 56
-	lab.pixel_size = 0.02
-	lab.modulate = c.lightened(0.3)
-	lab.outline_size = 10
-	lab.outline_modulate = Color(0, 0, 0, 0.85)
-	lab.position = Vector3(0, 10.6, 3.0)
-	lab.text = Loc.t("通往 %s ➜" % g.name, "To %s ➜" % g.name) if g.open else Loc.t("%s · 尚未开放" % g.name, "%s · LOCKED" % g.name)
-	n.add_child(lab)
+	# 边界转场口不再悬挂 3D 漂浮文字，由顶部区域横幅与进入边界时的 HUD 提示承担
 	g["node"] = n
-	g["label"] = lab
+	g["label"] = null
 
 
 ## 在地形图（小地图 / 大地图共用）上画出转场口：沿不规则边界段的亮色粗线 + 指向分界外的引导三角
@@ -270,34 +260,43 @@ func _process(delta: float) -> void:
 		return
 	var e := gate_at(raid.mech.global_position)
 	if e != _in_gate:
+		var was_gate := _in_gate != ""
 		_in_gate = e
 		_hold = 0.0
 		if e != "" and raid.hud:
 			var g: Dictionary = gates[e]
 			raid.hud.msg(Loc.t("穿越边界：保持在光幕内，即将进入「%s」" % g.name, "Border crossing: hold inside barrier to enter [%s]" % g.name) if g.open else Loc.t("「%s」尚未开放，边界封锁" % g.name, "[%s] not yet open, border sealed" % g.name))
-		for g: Dictionary in gates.values():
-			g.label.text = Loc.t("通往 %s ➜" % g.name, "To %s ➜" % g.name) if g.open else Loc.t("%s · 尚未开放" % g.name, "%s · LOCKED" % g.name)
+		elif was_gate and raid.hud:
+			raid.hud.set_prompt("")
 	if e != "" and gates[e].open:
 		_in_shaft = false
 		_hold += delta
 		var g: Dictionary = gates[e]
-		g.label.text = Loc.t("进入 %s  %.1f" % [g.name, maxf(HOLD - _hold, 0.0)], "Entering %s  %.1f" % [g.name, maxf(HOLD - _hold, 0.0)])
+		if raid.hud:
+			raid.hud.set_prompt(Loc.t("穿越边界 · 进入「%s」 %.1fs" % [g.name, maxf(HOLD - _hold, 0.0)], "Crossing Border · Entering [%s] %.1fs" % [g.name, maxf(HOLD - _hold, 0.0)]))
 		if _hold >= HOLD:
+			if raid.hud:
+				raid.hud.set_prompt("")
 			go(e)
 		return
 	if not shaft.is_empty():
 		var mp2 := Vector2(raid.mech.global_position.x, raid.mech.global_position.z)
 		var on_shaft := mp2.distance_to(shaft.pos as Vector2) < 4.6
 		if on_shaft != _in_shaft:
+			var was_shaft := _in_shaft
 			_in_shaft = on_shaft
 			_hold = 0.0
 			if on_shaft and raid.hud:
 				raid.hud.msg(Loc.t("深井升降台已解锁：保持停靠即可潜入「%s」" % shaft.name, "Shaft lift unlocked: stay docked to descend into [%s]" % shaft.name))
-			(shaft.label as Label3D).text = Loc.t("▼ 深井升降台 · 潜入「%s」" % shaft.name, "▼ Shaft Lift · Descend to [%s]" % shaft.name)
+			elif was_shaft and raid.hud:
+				raid.hud.set_prompt("")
 		if on_shaft:
 			_hold += delta
-			(shaft.label as Label3D).text = Loc.t("潜入 %s  %.1f" % [shaft.name, maxf(HOLD - _hold, 0.0)], "Descending %s  %.1f" % [shaft.name, maxf(HOLD - _hold, 0.0)])
+			if raid.hud:
+				raid.hud.set_prompt(Loc.t("深井升降台 · 潜入「%s」 %.1fs" % [shaft.name, maxf(HOLD - _hold, 0.0)], "Shaft Lift · Descending to [%s] %.1fs" % [shaft.name, maxf(HOLD - _hold, 0.0)]))
 			if _hold >= HOLD:
+				if raid.hud:
+					raid.hud.set_prompt("")
 				go_to_map(str(shaft.to), "")
 
 
@@ -449,18 +448,8 @@ func _build_shaft(pos: Vector3) -> void:
 	l.position = Vector3(0, 2.8, 0)
 	n.add_child(l)
 	var target_name := str(GameData.map_data("abyss_maw").get("name", Loc.t("零号深渊井", "Abyss Maw")))
-	var lab := Label3D.new()
-	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lab.no_depth_test = true
-	lab.font_size = 52
-	lab.pixel_size = 0.02
-	lab.modulate = col.lightened(0.35)
-	lab.outline_size = 10
-	lab.outline_modulate = Color(0, 0, 0, 0.85)
-	lab.position = Vector3(0, 4.2, 0)
-	lab.text = Loc.t("▼ 深井升降台 · 潜入「%s」" % target_name, "▼ Shaft Lift · Descend to [%s]" % target_name)
-	n.add_child(lab)
-	shaft = {"to": "abyss_maw", "name": target_name, "pos": Vector2(pos.x, pos.z), "open": true, "node": n, "label": lab}
+	# 深井升降台不再悬挂 3D 漂浮文字，由顶部区域横幅与进入升降台时的 HUD 提示承担
+	shaft = {"to": "abyss_maw", "name": target_name, "pos": Vector2(pos.x, pos.z), "open": true, "node": n, "label": null}
 
 
 ## 转场进入的落点：对应边的转场口向内 16 米；该边没有转场口时退回原空投点

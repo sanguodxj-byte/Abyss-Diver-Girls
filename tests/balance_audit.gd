@@ -6,6 +6,17 @@ extends "res://tests/lib/test_base.gd"
 const OUT := "res://review/balance_audit.json"
 const ARMOR_SAMPLES := [0.0, 0.15, 0.22, 0.28, 0.35]
 
+## 占空比：面对单体、会移动的敌人时，该类武器能实际输出的时间占比。
+## 用来把「射程 / 贴身成本」显式化——近战理论 DPS 高，但要贴到 3m 才打得着。
+const UPTIME := {
+	"melee": 0.30, "shotgun": 0.55, "flamer": 0.50, "mg": 0.70,
+	"autocannon": 0.65, "cannon": 0.55, "sniper": 0.60,
+	"launcher": 0.55, "laser": 0.70,
+}
+const UPTIME_DEFAULT := 0.6
+## 风险调整 DPS 的护甲基准（终章 Boss 常见档位）
+const BOSS_ARMOR_REF := 0.55
+
 
 func run() -> void:
 	await wait(0.3)
@@ -23,6 +34,7 @@ func run() -> void:
 		"loadouts": _loadouts(),
 		"backs": _back_rows(),
 		"enemy_ttk": _ttk(mods, enemies),
+		"loot_tiers": _loot_tiers(),
 	}
 	var path := ProjectSettings.globalize_path(OUT)
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -65,6 +77,9 @@ func _modules() -> Array:
 			var pen := _num(m, "pen")
 			var ap := clampf((pen - 15.0) / 62.0, 0.0, 0.85)
 			var sustain := per_shot * float(mag) / maxf(cycle, 0.05)
+			var uptime: float = float(UPTIME.get(weapon, UPTIME_DEFAULT))
+			var sustain_vs_boss := sustain * (1.0 - BOSS_ARMOR_REF * (1.0 - ap))
+			var risk_adj := sustain_vs_boss * uptime
 			var dps_by_armor := {}
 			for a: float in ARMOR_SAMPLES:
 				var eff := per_shot * (1.0 - a * (1.0 - ap))
@@ -74,6 +89,10 @@ func _modules() -> Array:
 				"burst_dps": snappedf(per_shot * rate, 0.01),
 				"sustain_dps": snappedf(sustain, 0.01),
 				"dps_by_armor": dps_by_armor,
+				"uptime": uptime,
+				"sustain_vs_boss": snappedf(sustain_vs_boss, 0.01),
+				"risk_adj_dps": snappedf(risk_adj, 0.01),
+				"v_per_risk_adj": snappedf(_num(m, "v") / maxf(risk_adj, 0.01), 0.1),
 				"energy_per_s": snappedf(GameData.shot_energy_cost(m) * rate, 0.001),
 				"dmg_per_energy": snappedf(per_shot / maxf(GameData.shot_energy_cost(m), 0.001), 0.01),
 				"v_per_sustain_dps": snappedf(_num(m, "v") / maxf(sustain, 0.01), 0.1),
@@ -207,6 +226,54 @@ func _loadouts() -> Array:
 	return rows
 
 
+## 容器分档：同一张表在 1/2/3 档下的出货件数、模块概率与单箱期望货值
+func _loot_tiers() -> Array:
+	var rows: Array = []
+	var rar_v := {}
+	var rar_n := {}
+	for id in GameData.MODULES:
+		var m: Dictionary = GameData.MODULES[id]
+		var r := int(m.get("rar", 0))
+		rar_v[r] = float(rar_v.get(r, 0.0)) + _num(m, "v")
+		rar_n[r] = int(rar_n.get(r, 0)) + 1
+	for table in GameData.LOOT_TABLES:
+		var t: Dictionary = GameData.LOOT_TABLES[table]
+		for tier in [1, 2, 3]:
+			var tr: Dictionary = GameData.LOOT_TIER[tier] as Dictionary
+			var pool: Dictionary = (t.pool as Dictionary).duplicate()
+			if pool.has("@module"):
+				pool["@module"] = float(pool["@module"]) * float(tr.module)
+			var total := 0.0
+			for k in pool:
+				total += float(pool[k])
+			total = maxf(total, 0.001)
+			var rw: Array = tr.rar
+			var rw_sum := 0.0
+			var mod_exp := 0.0
+			for i in 5:
+				rw_sum += float(rw[i])
+				var cnt := maxi(int(rar_n.get(i, 0)), 1)
+				mod_exp += float(rw[i]) * (float(rar_v.get(i, 0.0)) / float(cnt))
+			mod_exp /= maxf(rw_sum, 0.001)
+			var per := 0.0
+			var mod_chance := 0.0
+			for k in pool:
+				var w := float(pool[k]) / total
+				if str(k) == "@module":
+					mod_chance = w
+					per += w * mod_exp
+				else:
+					per += w * float(GameData.item(str(k)).get("v", 0.0))
+			var rolls := (float(t.rolls[0]) + float(t.rolls[1])) / 2.0 + float(tr.rolls)
+			rows.append({
+				"table": table, "tier": tier, "rolls": snappedf(rolls, 0.01),
+				"module_chance": snappedf(mod_chance, 0.001),
+				"module_value": snappedf(mod_exp, 0.1),
+				"expect_value": snappedf(rolls * per, 0.1),
+			})
+	return rows
+
+
 func _summary(out: Dictionary) -> void:
 	var arms: Array = []
 	var mods: Array = []
@@ -214,11 +281,12 @@ func _summary(out: Dictionary) -> void:
 		if str(r.slot) == "arm":
 			arms.append(r)
 			mods.append(r)
-	arms.sort_custom(func(a, b): return float(a.sustain_dps) > float(b.sustain_dps))
-	log_line("武器持续 DPS（换弹计入）：")
+	arms.sort_custom(func(a, b): return float(a.risk_adj_dps) > float(b.risk_adj_dps))
+	log_line("武器（按风险调整 DPS 排序 · up=占空比 · 基准 %.2f 甲）：" % BOSS_ARMOR_REF)
 	for r: Dictionary in arms:
-		log_line("  %-14s %-6s burst=%6.1f sustain=%6.1f pen=%2.0f ap=%.2f 能量%.2f/s ¥/%s" % [
-			r.id, r.weapon, r.burst_dps, r.sustain_dps, r.pen, r.ap, r.energy_per_s, r.v_per_sustain_dps])
+		log_line("  %-14s %-6s burst=%6.1f sustain=%6.1f pen=%2.0f ap=%.2f up=%.2f adj=%6.1f 能量%.2f/s ¥/adj=%s" % [
+			r.id, r.weapon, r.burst_dps, r.sustain_dps, r.pen, r.ap,
+			r.uptime, r.risk_adj_dps, r.energy_per_s, r.v_per_risk_adj])
 	var enemies: Array = out.enemies
 	enemies.sort_custom(func(a, b): return float(a.dps) > float(b.dps))
 	log_line("敌人攻击 DPS 前 6：")
@@ -233,6 +301,11 @@ func _summary(out: Dictionary) -> void:
 	for w in ["sniper", "laser", "cannon", "launcher", "autocannon", "mg", "flamer", "shotgun", "melee"]:
 		var f: Dictionary = GameData.WEAPON_FALLOFF[w]
 		log_line("  %-11s near=%.2f far=%.2f min=%.0f%%" % [w, f.near, f.far, f.min * 100.0])
+	log_line("容器分档（每箱期望货值 · 档位由区块军事/保险箱占比决定）：")
+	for r: Dictionary in out.loot_tiers:
+		if str(r.table) in ["supply", "military", "safe"]:
+			log_line("  %-9s tier%d rolls=%.1f 模块率=%2.0f%% 期望=¥%5.0f" % [
+				r.table, r.tier, r.rolls, r.module_chance * 100.0, r.expect_value])
 	log_line("背部模块：")
 	for r: Dictionary in out.backs:
 		var ab := str(r.ability)

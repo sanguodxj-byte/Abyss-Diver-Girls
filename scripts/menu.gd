@@ -125,6 +125,8 @@ func _build_scene(sv: SubViewport) -> void:
 const POST := """
 shader_type canvas_item;
 uniform float t = 0.0;
+varying float page_alpha;
+void vertex(){ page_alpha = COLOR.a; }
 float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void fragment(){
 	vec2 uv = UV - 0.5;
@@ -133,6 +135,7 @@ void fragment(){
 	float bars = step(0.5 - 0.045, abs(uv.y));
 	COLOR = vec4(vec3(grain * 0.5), clamp(vig * 0.65 + abs(grain), 0.0, 1.0));
 	COLOR = mix(COLOR, vec4(0.0, 0.0, 0.0, 1.0), bars);
+	COLOR.a *= page_alpha;
 }
 """
 
@@ -396,12 +399,15 @@ const MENU_CFG := "user://menu.cfg"
 const TITLE_FX := """
 shader_type canvas_item;
 // 标题：HD2 战术平面平滑采样，带下方柔和投影
+varying float page_alpha;
+void vertex() { page_alpha = COLOR.a; }
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	vec2 px = TEXTURE_PIXEL_SIZE * vec2(5.0, 8.0);
 	float sh = texture(TEXTURE, UV - px).a;
 	vec4 shadow = vec4(0.0, 0.0, 0.0, sh * 0.45);
 	COLOR = mix(shadow, vec4(c.rgb, 1.0), c.a);
+	COLOR.a *= page_alpha;
 }
 """
 

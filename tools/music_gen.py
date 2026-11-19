@@ -1,122 +1,223 @@
-"""用 Flow Music 生成十二个音乐槽，统一响度并转成 ogg。
-
-依赖本机的 flowmusic skill（C:\\Users\\Administrator\\.agents\\skills\\flowmusic）。
-流程：逐首调用 CLI 生成 wav → ffmpeg 按目标响度归一并转 ogg → 放进 assets\\audio\\music\\。
-已存在且文件大于 20KB 的槽会跳过，方便中途重跑。
-
-用法：python tools\\music_gen.py [槽 id ...]
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-
+通过 build-music 技能（本地 AIStudio2API http://127.0.0.1:2048，固定模型 lyria-3.5）
+生成全部 13 首 BGM（对应 14 个音乐槽，bayport_explore 共用 greyport_explore.ogg）。
+严格遵守「所有音频禁止任何后处理」铁律：lyria-3.5 生成的原始音频不加任何滤波、EQ、压缩、限幅、
+loudnorm、响度缩放或人工淡入淡出裁切，仅做纯容器直转（MP3 -> OGG）原样输出至 assets\\audio\\music\\。
+用法：
+  python tools\\music_gen.py [--force] [--raw-copy-only] [槽 id ...]
+"""
+import argparse
+import base64
+import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import sys
+import threading
+import time
+import urllib.request
 
-SKILL = r"C:\Users\Administrator\.agents\skills\flowmusic"
-CLI = r"C:\Users\Administrator\AppData\Roaming\npm\flowmusic.cmd"
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.dont_write_bytecode = True
+
+API_URL = "http://127.0.0.1:2048/v1/chat/completions"
+STATUS_URL = "http://127.0.0.1:2048/api/status"
+MODEL_ID = "lyria-3.5"
+
+RAW_DIR = os.path.join(ROOT, "build", "bgm_lyria_raw")
 OUT_DIR = os.path.join(ROOT, "assets", "audio", "music")
-TMP_DIR = os.path.join(os.environ.get("TEMP", "."), "abyss_music")
+DATA_URI_RE = re.compile(r"data:(audio/[a-zA-Z0-9.+_-]+);base64,([A-Za-z0-9+/=\s]+)")
 
-# id, 提示词, 时长秒, 目标 LUFS
 CUES = [
-    ("menu", "Japanese light-novel main theme, 72 bpm, D major, felt piano stating a five-note motif D A F sharp E D, "
-             "music box doubling the melody, warm analog pad, muted bass, brushed kick, almost no drums, gentle nostalgic "
-             "and hopeful, seamless loop feel, no vocals", 100, -20),
-    ("hangar", "warm airship hangar theme, 78 bpm, D major, celesta and round analog bass playing a five-note motif, "
-               "brushed shuffle, soft shaker, homely and safe after a mission, instrumental, seamless loop feel", 100, -20),
-    ("greyport_explore", "rain-soaked ruined river port ambience, F sharp minor, no intro, the eerie motif is present "
-                         "from the very first bar, sparse felt piano slowly playing D A F sharp E D, distant metal groans, "
-                         "wind and dripping water, even energy from start to end, no build-up, seamless loop, instrumental", 120, -19),
-    ("ironbelt_explore", "cold industrial wasteland groove, C minor, no intro, mechanical percussion and low synth pulse "
-                         "present from the very first bar, even energy throughout, no build-up and no drop, distant factory "
-                         "clanks, seamless loop, instrumental", 120, -19),
-    ("dustfield_explore", "wide open dry plain, D minor, wind and sparse plucked strings, solo cello fragments, lonely "
-                          "and vast, no drums, instrumental", 120, -19),
-    ("redlake_explore", "calm unsettling lakeside, G sharp minor, watery reverb, soft echoing plucks, music box with "
-                        "delay, foggy ambience, no drums, instrumental", 110, -19),
-    ("canyon_explore", "claustrophobic deep canyon ambience, 60 bpm, E minor, slowly evolving low drone, rubble echo, "
-                       "sparse felt piano far away in reverb clearly playing the five-note motif D A F sharp E D, "
-                       "dripping water, distant rock groans, no drums, no resolution, instrumental", 110, -19),
-    ("combat", "post-apocalyptic wasteland combat, 100 bpm, E phrygian, distorted electric guitar drone, "
-               "scrap metal percussion, marching snare rolls, deep sub drone, radio static swells, desperate and "
-               "grim but never heroic, no synth lead, no electronic dance beat, seamless loop feel, instrumental", 90, -16),
-    ("boss", "colossal threat theme, 84 bpm, C sharp phrygian, low distorted bass drone, industrial metal hits, "
-             "sheet-metal booms like timpani, dissonant string clusters swelling, faint distorted radio voices, "
-             "overwhelming and grim, no epic brass fanfare, seamless loop feel, instrumental", 90, -16),
-    ("extract", "extraction countdown under a hostile sky, 120 bpm, D phrygian, ticking metallic percussion, low "
-                "pulsing drone, sparse distorted guitar chords, rising urgency without resolution, no melodic lead, "
-                "seamless loop feel, instrumental", 60, -17),
-    ("result_success", "intimate mission success, 70 bpm, D major, solo felt piano clearly stating the five-note motif "
-                       "D A F sharp E D, soft ukulele strumming, music box doubling the melody, small warm room reverb, "
-                       "quiet relief rather than triumph, no big strings, no orchestra swell, natural ending, instrumental", 45, -17),
-    ("result_fail", "mission failure stinger, music box plays a slowed fractured motif, sparse and melancholic, "
-                    "fades out naturally, no loop, instrumental", 40, -17),
-    ("abyss_maw_explore", "deep abyssal hive descent, G sharp locrian, sub-bass drone with a slow breathing pulse, "
-                          "crystalline chimes far away, distant chitin clicks and dripping water, immense cathedral "
-                          "reverb, sparse felt piano slowly playing the five-note motif D A F sharp E D, no drums, "
-                          "seamless loop, instrumental", 120, -19),
+    (
+        "menu",
+        "一段平缓宁静的高空飞空艇舷窗环境背景纯音乐，D大调，66 BPM，温暖柔和的模拟合成器长音铺底与微弱弦乐和声，极简克制、低存在感，带自然淡入淡出与舒缓留白，无钢琴独奏、无八音盒、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "hangar",
+        "一段平缓沉稳的飞空艇机库整备背景纯音乐，A多利亚调式，70 BPM，温暖低频模拟贝斯长音与柔和暗调风琴铺底，安静安全、极低存在感，带自然淡入淡出与舒缓留白，无八音盒、无钢片琴、无主奏旋律、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "greyport_explore",
+        "一段阴雨废墟河港探索的极简暗黑环境氛围纯音乐，升F小调，60 BPM，平缓深沉的合成器低频长音与空旷雾气泛音，极低存在感、带自然淡入淡出与长时间留白，无钢琴、无八音盒、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "ironbelt_explore",
+        "一段冷峻废弃重工业钢厂探索的极简环境纯音乐，C小调，62 BPM，平缓克制的低频模拟合成器持续铺底与深邃空间共鸣，极低存在感、带自然淡入淡出与长时间留白，无打击乐、无节奏鼓点、无主旋律，纯器乐，30秒",
+    ),
+    (
+        "dustfield_explore",
+        "一段荒凉辽阔尘土平原探索的极简环境纯音乐，D小调，58 BPM，平缓温暖的低音大提琴长音与空旷荒野合成器铺底，孤独安静、极低存在感、带自然淡入淡出与长时间留白，无钢琴、无拨弦主旋律、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "redlake_explore",
+        "一段迷雾赤湖探索的极简暗调环境纯音乐，升G小调，60 BPM，平缓柔和的水下感玻璃合成器长音与深沉低频铺底，平静神秘、极低存在感、带自然淡入淡出与长时间留白，无八音盒、无钢琴、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "canyon_explore",
+        "一段幽深地下裂谷矿区探索的极简暗黑环境纯音乐，E小调，56 BPM，平缓深邃的岩洞低频共鸣合成器长音铺底，安静空旷、极低存在感、带自然淡入淡出与长时间留白，无钢琴、无八音盒、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "abyss_maw_explore",
+        "一段超深钻探竖井深渊探索的极简暗黑环境纯音乐，升G洛克里亚调式，54 BPM，缓慢呼吸的深渊超低频合成器铺底与微弱空间泛音，极低存在感、带自然淡入淡出与长时间留白，无钢琴、无鼓点，纯器乐，30秒",
+    ),
+    (
+        "combat",
+        "一段克制低存在感的废土战术交战背景铺底纯音乐，E弗里吉亚调式，92 BPM，平缓深沉的低频电子脉冲与暗调模拟合成器持续张力，不刺耳、无失真电吉他、无喧闹军鼓，纯器乐，30秒",
+    ),
+    (
+        "extract",
+        "一段克制低存在感的撤离等待倒计时背景纯音乐，D小调，96 BPM，平缓低沉的脉冲低音与暗调悬疑合成器长音铺底，紧张但柔和克制，无刺耳高频、无喧闹鼓组，纯器乐，30秒",
+    ),
+    (
+        "result_success",
+        "一段温柔释然的任务完成结算环境纯音乐，D大调，66 BPM，平缓温暖的模拟合成器与柔和弦乐和弦缓慢消散，安静舒缓、低存在感，无八音盒、无鼓点，自然收尾，纯器乐，30秒",
+    ),
+    (
+        "result_fail",
+        "一段低沉克制的行动失败结算环境纯音乐，D小调，58 BPM，平缓空寂的暗调合成器低音和弦缓慢衰减至寂静，哀而不煽、低存在感，无八音盒、无鼓点，自然收尾，纯器乐，30秒",
+    ),
+    (
+        "boss",
+        "一段极具压迫感的重工业巨兽Boss战斗纯音乐，升C弗里吉亚调式，86 BPM，厚重震撼的超低频工业合成器轰鸣、沉重金属战鼓与暗黑不协和低音铜管群，威慑力强，纯器乐，30秒",
+    ),
 ]
 
 
-def generate(cue_id, prompt, duration):
-    """调 flowmusic CLI 生成一首，返回下载到的 wav 路径。"""
-    os.makedirs(TMP_DIR, exist_ok=True)
-    cmd = [CLI, "gen", prompt, "--instrumental", "--length", str(duration),
-           "--title", "abyss_" + cue_id, "--json", "-o", TMP_DIR]
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
-    if proc.returncode != 0:
-        raise RuntimeError("cli 退出码 %d：%s" % (proc.returncode, (proc.stderr or "")[-400:]))
-    out = (proc.stdout or "").strip()
-    start = out.find("{")
-    if start < 0:
-        raise RuntimeError("没找到 JSON 输出：" + out[-300:])
-    data = json.loads(out[start:])
-    songs = data.get("songs") or []
-    if not songs:
-        raise RuntimeError("没有返回歌曲：" + out[:300])
-    path = songs[0].get("file") or songs[0].get("wav_url") or ""
-    if not path or not os.path.exists(path):
-        raise RuntimeError("返回的路径不存在：" + str(path))
-    return path, songs[0]
+def check_service() -> dict:
+    req = urllib.request.Request(STATUS_URL)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
-def to_ogg(src, dst, lufs):
-    """按目标响度归一，转 ogg。"""
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    tmp = dst + ".tmp.ogg"
-    cmd = ["ffmpeg", "-y", "-i", src,
-           "-af", "loudnorm=I=%s:TP=-1.5:LRA=11" % lufs,
-           "-c:a", "libvorbis", "-q:a", "6", tmp]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if proc.returncode != 0 or not os.path.exists(tmp):
-        raise RuntimeError("转码失败：" + (proc.stderr or "")[-300:])
-    os.replace(tmp, dst)
+def fetch_lyria_clip(cue_id: str, prompt: str, out_raw_path: str, max_retries: int = 4) -> float:
+    os.makedirs(os.path.dirname(out_raw_path), exist_ok=True)
+    payload = {
+        "model": MODEL_ID,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
-
-def main(argv):
-    want = set(argv)
-    done, skipped, failed = [], [], []
-    for cue_id, prompt, duration, lufs in CUES:
-        if want and cue_id not in want:
-            continue
-        dst = os.path.join(OUT_DIR, cue_id + ".ogg")
-        if os.path.exists(dst) and os.path.getsize(dst) > 20000:
-            skipped.append(cue_id)
-            print("跳过（已存在）", cue_id, flush=True)
-            continue
+    last_err = None
+    for attempt in range(max_retries):
+        req = urllib.request.Request(
+            API_URL,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
-            print("生成中", cue_id, flush=True)
-            src, meta = generate(cue_id, prompt, duration)
-            to_ogg(src, dst, lufs)
-            size = os.path.getsize(dst)
-            print("完成", cue_id, "%d KB" % (size // 1024), "标题", meta.get("title"), flush=True)
-            done.append(cue_id)
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                raw_json = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw_json)
+            content = data["choices"][0]["message"]["content"]
+            m = DATA_URI_RE.search(content)
+            if not m:
+                raise RuntimeError(f"lyria-3.5 响应未包含 data:audio URI: {content[:200]}")
+            audio_bytes = base64.b64decode(m.group(2))
+            if len(audio_bytes) < 4096:
+                raise RuntimeError(f"lyria-3.5 音频过小 ({len(audio_bytes)} bytes)")
+            tmp_path = out_raw_path + f".tmp.{threading.get_ident()}"
+            with open(tmp_path, "wb") as f:
+                f.write(audio_bytes)
+            os.replace(tmp_path, out_raw_path)
+
+            probe = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    out_raw_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return float((probe.stdout or "0").strip() or 0.0)
         except Exception as e:
-            print("失败", cue_id, repr(e)[:300], flush=True)
-            failed.append(cue_id)
-    print(json.dumps({"done": done, "skipped": skipped, "failed": failed}, ensure_ascii=False))
-    return 0 if not failed else 1
+            last_err = e
+            if attempt + 1 < max_retries:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            raise last_err from e
+    raise last_err  # pragma: no cover
+
+
+def raw_to_ogg_unmodified(raw_path: str, ogg_path: str) -> float:
+    """将原始音频直接封装/转码为 OGG，禁止添加任何 -af 音频滤镜或后处理。"""
+    os.makedirs(os.path.dirname(ogg_path), exist_ok=True)
+    tmp_ogg = ogg_path + f".tmp.{threading.get_ident()}.ogg"
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", raw_path,
+        "-c:a", "libvorbis", "-q:a", "6",
+        tmp_ogg,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if proc.returncode != 0 or not os.path.exists(tmp_ogg):
+        raise RuntimeError(f"直转 OGG 失败: {proc.stderr}")
+    os.replace(tmp_ogg, ogg_path)
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            ogg_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return float((probe.stdout or "0").strip() or 0.0)
+
+
+def process_one(row: tuple, raw_copy_only: bool, force: bool) -> tuple[str, float, int]:
+    cue_id, prompt = row[0], row[1]
+    raw_p = os.path.join(RAW_DIR, f"{cue_id}.mp3")
+    if force or not os.path.exists(raw_p) or os.path.getsize(raw_p) < 10000:
+        if raw_copy_only:
+            raise FileNotFoundError(f"缺少 lyria-3.5 原始音频: {raw_p}")
+        fetch_lyria_clip(cue_id, prompt, raw_p)
+
+    ogg_p = os.path.join(OUT_DIR, f"{cue_id}.ogg")
+    dur = raw_to_ogg_unmodified(raw_p, ogg_p)
+    return cue_id, dur, os.path.getsize(ogg_p)
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="通过 build-music (lyria-3.5) 生成 BGM（无任何后处理，原样直出）")
+    ap.add_argument("cues", nargs="*", help="指定音乐槽 ID（留空则处理全部 13 首）")
+    ap.add_argument("--workers", type=int, default=2, help="并发数")
+    ap.add_argument("--raw-copy-only", action="store_true", help="直接将已下载的 lyria-3.5 原始音频无损直转为 OGG，不附加任何后处理")
+    ap.add_argument("--force", action="store_true", help="强制重新调用 lyria-3.5 生成")
+    args = ap.parse_args(argv)
+
+    if not args.raw_copy_only:
+        st = check_service()
+        print(f"[build-music] status={st.get('state')} accounts={st.get('accounts')}", flush=True)
+
+    want = set(args.cues)
+    todo = [r for r in CUES if not want or r[0] in want]
+    t0 = time.time()
+    errors = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+        futs = {pool.submit(process_one, r, args.raw_copy_only, args.force): r[0] for r in todo}
+        for fut in concurrent.futures.as_completed(futs):
+            cid = futs[fut]
+            try:
+                cue_id, dur, sz = fut.result()
+                print(f"[lyria-3.5-raw] {cue_id:<20} dur={dur:5.1f}s size={sz // 1024}KB (zero post-processing)", flush=True)
+            except Exception as e:
+                errors.append((cid, str(e)))
+                print(f"[lyria-3.5-raw] FAIL {cid}: {e}", flush=True)
+
+    print(f"[music_gen] 原样直出 {len(todo) - len(errors)}/{len(todo)} 首，耗时 {time.time() - t0:.1f}s", flush=True)
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

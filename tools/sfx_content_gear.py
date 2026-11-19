@@ -559,3 +559,32 @@ def _comm_open(v, rng):
         place(squelch_noise, 0.035),
         place(relay, 0.18),
     ), 1.45)
+
+
+@sfx("barrier_deploy", n=1, target=-15.0, dur=1.1, fout=0.14)
+def _barrier_deploy(v, rng):
+    piston = thump(0.28, 122, 32, 12.0, rng, 2.3)
+    posts = clank(0.26, 265, METAL_HEAVY, 14.0, rng, 0.82)
+    field_up = whoosh(0.58, 220, 1280, rng, 1.8) * 0.72
+    arc = zap(0.42, 2050, rng, 34) * 0.56
+    return reverb_tail(sat(mix(
+        place(piston, 0.0),
+        place(posts, 0.015),
+        place(field_up, 0.08),
+        place(arc, 0.14),
+    ), 1.6), 0.18, 0.16)
+
+
+@sfx("coolant_vent", n=1, target=-15.5, dur=1.0, fout=0.12)
+def _coolant_vent(v, rng):
+    valve = clank(0.20, 290, METAL_HEAVY, 16.0, rng, 0.78)
+    pop = thump(0.24, 110, 32, 14.0, rng, 2.1) * 0.72
+    cryo = hiss(0.75, 2200, 1450, 4.2, rng) * 0.82
+    rush = whoosh(0.55, 1150, 260, rng, 1.7) * 0.65
+    return reverb_tail(sat(mix(
+        place(valve, 0.0),
+        place(pop, 0.01),
+        place(cryo, 0.03),
+        place(rush, 0.04),
+    ), 1.55), 0.16, 0.16)
+

@@ -154,14 +154,14 @@ static func lattice(raid, p: Vector3, hgt: float, base: float) -> void:
 	raid.blocks.append(raid._rect_for(p, Vector3(base, 1, base)))
 
 
-static func crate(raid, p: Vector3, kind := "supply", loot: Array = []) -> Node:
-	var b = raid._place_box(kind, p, loot)
+static func crate(raid, p: Vector3, kind := "supply", loot: Array = [], yaw_deg := 0.0) -> Node:
+	var b = raid._place_box(kind, p, loot, yaw_deg)
 	return b
 
 
 ## 固定内容的容器：kind 取既有掉落表（决定外观），loot 写死物品 id
-static func fixed(raid, p: Vector3, items: Array, kind := "tool") -> Node:
-	return raid._place_box(kind, p, items.duplicate())
+static func fixed(raid, p: Vector3, items: Array, kind := "tool", yaw_deg := 0.0) -> Node:
+	return raid._place_box(kind, p, items.duplicate(), yaw_deg)
 
 
 static func lamp(raid, p: Vector3, c := Color(1.0, 0.78, 0.45)) -> void:
@@ -173,21 +173,13 @@ static func barrel(raid, p: Vector3) -> void:
 
 
 static func guard(raid, c: Vector3, kind := "beetle", radius := 5.0) -> void:
-	var a = raid.rng.randf() * TAU
+	var a := float(hash("%s|%d|%d" % [kind, roundi(c.x), roundi(c.z)]) & 0x7fffffff % 360) * (PI / 180.0)
 	raid.spawn_bug(kind, c + Vector3(cos(a) * radius, 0.5, sin(a) * radius))
 
 
-static func label(raid, c: Vector3, text: String, hgt := 7.0) -> void:
-	var lbl := Label3D.new()
-	lbl.text = text
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.font_size = 64
-	lbl.pixel_size = 0.02
-	lbl.modulate = Color(1.0, 0.85, 0.6)
-	lbl.outline_size = 10
-	lbl.outline_modulate = Color(0.05, 0.03, 0.02, 0.9)
-	lbl.position = c + Vector3(0, hgt, 0)
-	raid.world.add_child(lbl)
+static func label(_raid, _c: Vector3, _text: String, _hgt := 7.0) -> void:
+	# 地图上不再生成 3D 漂浮文字，区域提示统一由顶部进入地区横幅承担
+	pass
 
 
 static func rubble(raid, p: Vector3, s: float, col := CONCRETE_DARK) -> void:
@@ -204,7 +196,7 @@ static func rubble(raid, p: Vector3, s: float, col := CONCRETE_DARK) -> void:
 
 static func car(raid, p: Vector3, rot := INF) -> void:
 	var wc: int = raid.world.get_child_count()
-	raid._wreck_car(p, rot)
+	raid._wreck_car(p, rot, 0.85)
 	if raid.world.get_child_count() > wc:
 		var sb = raid.world.get_child(wc)
 		if sb is StaticBody3D:
@@ -279,7 +271,7 @@ static func bench(raid, p: Vector3, rot: float, w := 1.8) -> void:
 		A.add(n, A.bevel_box(Vector3(0.07, 0.42, 0.44), 0.01), A.metal(STEEL), Vector3(sx * w * 0.42, 0.21, 0))
 
 
-static func sign(raid, p: Vector3, rot: float, text: String, w := 3.0, hgt := 1.0) -> void:
+static func sign(raid, p: Vector3, rot: float, _text: String, w := 3.0, hgt := 1.0) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
@@ -287,7 +279,6 @@ static func sign(raid, p: Vector3, rot: float, text: String, w := 3.0, hgt := 1.
 	A.add(n, A.bevel_box(Vector3(w, hgt, 0.1), 0.02), A.paint(Color(0.12, 0.13, 0.12), 0.2, 0.7, {"wear": 0.5, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0}), Vector3(0, 0, 0))
 	for sx in [-1.0, 1.0]:
 		A.add(n, A.cyl(0.06, 2.4, 0.06, 12), A.metal(STEEL), Vector3(sx * w * 0.36, -1.25, 0))
-	A.stencil(n, text, Vector3(0, 0.02, -0.07), Vector3(0, 180, 0), 0.008, Color(0.88, 0.86, 0.78, 0.75), 48)
 
 
 static func railing(raid, c: Vector3, length: float, rot: float, hgt := 1.1) -> void:

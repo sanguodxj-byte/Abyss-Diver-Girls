@@ -59,6 +59,8 @@ LOCAL = {
 	"distress_beacon": (["distress_beacon.wav"], True),
 	"relay_unlock": (["relay_unlock.wav"], True),
 	"archive_pickup": (["archive_pickup.wav"], True),
+	"barrier_deploy": (["barrier_deploy.wav"], True),
+	"coolant_vent": (["coolant_vent.wav"], True),
 	"sandstorm_start": (["sandstorm_start.wav"], True),
 	"sandstorm_end": (["sandstorm_end.wav"], True),
 	"weather_rain_loop": (["weather_rain_loop.wav"], True),

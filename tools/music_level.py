@@ -15,13 +15,14 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MUSIC = os.path.join(ROOT, "assets", "audio", "music")
 
-# 曲目单里的目标响度
+# 曲目单里的目标响度（除 boss 外均为带长留白的低存在感平缓铺底）
 TARGET = {
-    "menu": -20, "hangar": -20,
-    "greyport_explore": -19, "ironbelt_explore": -19, "dustfield_explore": -19,
-    "redlake_explore": -19, "canyon_explore": -19, "abyss_maw_explore": -19,
-    "combat": -16, "boss": -16,
-    "extract": -17, "result_success": -17, "result_fail": -17,
+    "menu": -27, "hangar": -27,
+    "greyport_explore": -28, "ironbelt_explore": -28, "dustfield_explore": -28,
+    "redlake_explore": -28, "canyon_explore": -28, "abyss_maw_explore": -28,
+    "combat": -25, "extract": -25,
+    "result_success": -26, "result_fail": -27,
+    "boss": -18,
 }
 
 

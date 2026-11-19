@@ -132,7 +132,7 @@ def render_card(title, filename, idx, total, t_cur, rms_db):
     dr.text((40, 154), f"TIME: {t_cur:05.2f}s", fill=(180, 195, 210), font=f_md)
     bar_w = int(np.clip((rms_db + 60.0) / 60.0, 0.0, 1.0) * (W - 80))
     dr.rectangle([40, 230, W - 40, 266], fill=(32, 38, 46), outline=(80, 95, 112))
-    if bar_w > 0:
+    if bar_w >= 2:
         col = (85, 195, 130) if rms_db < -6.0 else (235, 185, 70)
         dr.rectangle([42, 232, 40 + bar_w, 264], fill=col)
     dr.text((40, 286), f"LEVEL: {rms_db:5.1f} dBFS", fill=(160, 175, 190), font=f_sm)

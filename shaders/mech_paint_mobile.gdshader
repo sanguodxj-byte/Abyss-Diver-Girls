@@ -94,20 +94,20 @@ void fragment() {
 
 	vec3 base_c = base_color.rgb * tint;
 	if (metal_wear > 0.5) {
-		vec3 min_m = mix(vec3(0.032, 0.034, 0.038), vec3(0.115, 0.120, 0.130), metal_base);
+		vec3 min_m = mix(vec3(0.042, 0.045, 0.052), vec3(0.135, 0.142, 0.155), metal_base);
 		base_c = max(base_c, min_m);
-		base_c = mix(base_c, sqrt(base_c) * 0.58, metal_base * 0.42);
+		base_c = mix(base_c, sqrt(base_c) * 0.62, metal_base * 0.40);
 	}
-	vec3 col = base_c * (0.95 + 0.10 * n_lo) * (0.96 + 0.07 * n_hi);
+	vec3 col = base_c * (0.97 + 0.06 * n_lo) * (0.985 + 0.03 * n_hi);
 	float tex_luma = 0.7;
 	if (use_albedo_tex > 0.5) {
-		float ts = albedo_tex_scale * 1.8;
+		float ts = albedo_tex_scale * 1.6;
 		vec3 at = texture(albedo_tex, uv_p * ts).rgb;
 		tex_luma = dot(at, vec3(0.333));
-		col *= mix(vec3(1.0), at * 1.52, albedo_tex_strength);
+		col *= mix(vec3(1.0), at * 1.48, albedo_tex_strength);
 	}
 	float met = metal_base;
-	float rough = rough_base * (0.88 + 0.20 * n_hi + (0.65 - tex_luma) * 0.14 * use_albedo_tex);
+	float rough = rough_base * (0.93 + 0.12 * n_hi + (0.66 - tex_luma) * 0.10 * use_albedo_tex);
 
 	if (stripes > 0.5) {
 		float s = fract((p.x + p.y + p.z) * 2.2);
@@ -122,34 +122,39 @@ void fragment() {
 			highp vec2 g = uv_p * panel_scale + vec2(0.13, 0.31);
 			g.x += mod(floor(g.y), 2.0) * 0.5;
 			highp vec2 dist = 0.5 - abs(fract(g) - 0.5);
-			float lw = 0.006;
-			float lx = 1.0 - smoothstep(lw, lw + 0.018, dist.x);
-			float ly = 1.0 - smoothstep(lw, lw + 0.018, dist.y);
+			vec2 fw = max(fwidth(uv_p) * panel_scale, vec2(1e-4));
+			float fade = clamp(1.0 - (max(fw.x, fw.y) - 0.016) * 14.0, 0.0, 1.0) * flat_gate;
+			float lw = 0.0055;
+			float lx = 1.0 - smoothstep(lw, lw + fw.x * 1.6, dist.x);
+			float ly = 1.0 - smoothstep(lw, lw + fw.y * 1.6, dist.y);
 			highp float cell_h = fract(sin(dot(floor(g), vec2(127.1, 311.7))) * 43758.5453);
 			col *= 1.0 + (cell_h - 0.5) * mix(0.04, 0.055, metal_wear) * flat_gate;
-			seam = max(lx, ly) * flat_gate;
+			seam = max(lx, ly) * fade;
 			col *= 1.0 - seam * mix(0.18, 0.32, metal_wear);
 			rough = mix(rough, 0.90, seam);
 		}
 	}
 
-	float low = (1.0 - smoothstep(0.0, 2.1, wpos.y)) * (1.0 - smoothstep(0.35, 0.75, abs(wnrm.y)));
+	float low = (1.0 - smoothstep(0.0, 1.85, wpos.y)) * (1.0 - smoothstep(0.35, 0.75, abs(wnrm.y)));
 	float under = smoothstep(0.25, 0.85, -wnrm.y) * metal_wear;
-	col *= 1.0 - grime * (0.24 * low * (0.6 + 0.5 * n_lo) + 0.12 * under);
+	col *= mix(vec3(1.0), vec3(0.60, 0.59, 0.57), low * (0.38 + grime * 0.24));
+	col *= 1.0 - grime * (0.24 * low * (0.55 + 0.45 * n_lo) + 0.16 * under);
 
 	float vert = 1.0 - abs(wnrm.y);
-	float streak = smoothstep(0.58, 0.88, n_hi) * vert * smoothstep(0.38, 0.72, n_lo);
-	vec3 eff_rust = metal_wear > 0.5 ? rust_color.rgb : (base_c * 0.58 + vec3(0.025, 0.022, 0.018));
-	col = mix(col, eff_rust, rust * streak * 0.58);
-	rough = mix(rough, 0.92, rust * streak * 0.75);
+	float streak = smoothstep(0.54, 0.86, n_hi) * vert * smoothstep(0.34, 0.72, n_lo);
+	vec3 eff_rust = metal_wear > 0.5 ? rust_color.rgb : (base_c * 0.50 + vec3(0.026, 0.022, 0.018));
+	col = mix(col, eff_rust, rust * streak * 0.64);
+	rough = mix(rough, 0.94, rust * streak * 0.76);
 
+	col *= 1.0 + edge * 0.045 * (1.0 - low * 0.65);
+	rough = max(0.20, rough - edge * 0.08);
 	float chipn = n_hi * 0.62 + n_lo * 0.56;
-	float eff_edge = edge * clamp(wear * 1.35, 0.0, 1.0);
-	float worn = smoothstep(0.48, 0.78, eff_edge * smoothstep(0.88 - wear * 0.24, 1.04 - wear * 0.24, chipn)) * 0.62;
-	vec3 exposed_col = mix((base_c * 1.16 + vec3(0.018)) * 0.94, (base_c * 1.32 + vec3(0.045, 0.048, 0.054)) * (0.90 + 0.16 * n_hi), metal_wear);
+	float eff_edge = edge * clamp(wear * 1.45, 0.0, 1.0);
+	float worn = smoothstep(0.42, 0.74, eff_edge * smoothstep(0.84 - wear * 0.24, 1.02 - wear * 0.24, chipn)) * 0.68;
+	vec3 exposed_col = mix((base_c * 1.08 + vec3(0.016)) * 0.94, (base_c * 1.18 + vec3(0.055, 0.058, 0.062)) * (0.90 + 0.14 * n_hi), metal_wear);
 	col = mix(col, exposed_col, worn);
-	met = mix(met, mix(met, 0.86, metal_wear), worn);
-	rough = mix(rough, mix(0.88, 0.26 + 0.14 * n_hi, metal_wear), worn);
+	met = mix(met, mix(met, 0.88, metal_wear), worn);
+	rough = mix(rough, mix(0.90, 0.24 + 0.12 * n_hi, metal_wear), worn);
 
 	float dmg = clamp(mech_damage * takes_damage, 0.0, 1.0);
 	if (dmg > 0.01) {
@@ -171,18 +176,24 @@ void fragment() {
 	float puddle_m = 0.0;
 	if (wet_g > 0.01) {
 		float porous = 1.0 - metal_wear;
-		float flat_up = smoothstep(0.76, 0.94, wnrm.y) * porous;
-		float pf = n_lo * 0.72 + n_hi * 0.28;
-		puddle_m = wet_g * flat_up * smoothstep(0.56, 0.66, pf);
-		float soak_m = wet_g * max(flat_up * smoothstep(0.45, 0.58, pf), clamp(wnrm.y, 0.0, 1.0) * 0.45);
-		col *= mix(1.0, mix(0.88, 0.62, porous), soak_m);
-		rough = mix(rough, 0.22, soak_m * 0.72);
-		rough = mix(rough, 0.07, puddle_m);
+		float near_g = smoothstep(1.65, 0.25, wpos.y);
+		float flat_up = smoothstep(0.80, 0.95, wnrm.y) * porous;
+		// 用低频世界坐标采样潮湿斑块，避免移动端沥青路面出现高频豹纹小黑点
+		float wb = texture(noise_lo, wpos.xz * 0.026 + vec2(0.31, 0.73)).r;
+		float pf = 0.50 + (wb - 0.5) * 1.12 + (n_lo - 0.5) * 0.22;
+		puddle_m = wet_g * flat_up * near_g * smoothstep(0.71, 0.80, pf);
+		float soak_m = wet_g * max(flat_up * near_g * smoothstep(0.62, 0.74, pf), clamp(wnrm.y, 0.0, 1.0) * 0.24);
+		col *= mix(1.0, mix(0.94, 0.84, porous), soak_m);
+		col = mix(col, col * 0.68 + vec3(0.024, 0.032, 0.044), puddle_m * 0.62);
+		rough = mix(rough, min(rough, mix(0.56, 0.48, porous)), soak_m * 0.45);
+		rough = mix(rough, 0.18, puddle_m);
 	}
 
 	if (normal_strength > 0.05) {
-		float ns = use_albedo_tex > 0.5 ? (albedo_tex_scale * 1.8) : 1.35;
-		vec2 nm = (texture(normal_tex, uv_p * ns).rg * 2.0 - 1.0) * clamp(normal_strength, 0.0, 1.0) * (1.0 - puddle_m * 0.88);
+		float ns = use_albedo_tex > 0.5 ? (albedo_tex_scale * 1.6) : 1.25;
+		float uv_fw = length(fwidth(uv_p * ns));
+		float nfade = clamp(1.0 - uv_fw * 2.05, 0.0, 1.0);
+		vec2 nm = (texture(normal_tex, uv_p * ns).rg * 2.0 - 1.0) * clamp(normal_strength, 0.0, 0.92) * nfade * (1.0 - puddle_m * 0.78);
 		vec3 dp_loc = dom_x ? vec3(0.0, nm.y, nm.x) : (dom_y ? (roof_uv > 0.5 ? vec3(-nm.y, 0.0, nm.x) : vec3(nm.x, 0.0, -nm.y)) : vec3(nm.x, nm.y, 0.0));
 		mat3 v_rot = mat3(rot_x, rot_y, rot_z);
 		vec3 w_sum = wnrm + v_rot * dp_loc;
@@ -191,8 +202,14 @@ void fragment() {
 		NORMAL = length(v_n) > 1e-4 ? normalize(v_n) : NORMAL;
 	}
 
+	// 法线方差抗高光闪烁 + 烘焙接缝/接地 AO（关闭 SSAO 的低画质下依然保持建筑扎根立体感）
+	vec3 dn = fwidth(NORMAL);
+	float var_n = dot(dn, dn) * (1.0 - puddle_m * 0.80);
+	float tex_ao = use_albedo_tex > 0.5 ? clamp((0.62 - tex_luma) * 0.42, 0.0, 0.20) : 0.0;
 	ALBEDO = col;
 	METALLIC = met;
-	ROUGHNESS = clamp(rough, mix(0.10, 0.06, puddle_m), 1.0);
-	SPECULAR = mix(mix(0.45, 0.82, worn * metal_wear), 0.65, puddle_m);
+	ROUGHNESS = clamp(sqrt(max(rough * rough + min(1.1 * var_n, 0.20), 0.0)), mix(0.12, 0.09, puddle_m), 1.0);
+	SPECULAR = mix(mix(0.46, 0.80, worn * metal_wear), 0.56, puddle_m);
+	AO = clamp(1.0 - tex_ao - seam * mix(0.16, 0.36, metal_wear) - low * grime * 0.28 - under * 0.16, 0.42, 1.0);
+	AO_LIGHT_AFFECT = 0.42;
 }

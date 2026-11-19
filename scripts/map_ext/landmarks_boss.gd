@@ -9,6 +9,7 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
 const STEEL := Color(0.30, 0.31, 0.32)
 const DARK_STEEL := Color(0.18, 0.19, 0.21)
@@ -259,7 +260,6 @@ static func _missile_silo(raid, p: Vector3, rot: float) -> void:
 	# 硬化抗核爆钢筋混凝土发射坪 + 柏油抗烧蚀导流区
 	A.add(n, A.bevel_box(Vector3(24.4, 0.16, 25.6), 0.05), M_CON, Vector3(0, 0.08, 0.4), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.bevel_box(Vector3(16.8, 0.05, 14.0), 0.02), A.asphalt(Color(0.22, 0.22, 0.23)), Vector3(0, 0.17, 4.4), Vector3.ZERO, Vector3.ONE, false)
-	A.stencil(n, "SILO-04", Vector3(0, 0.212, 8.8), Vector3(-90, 0, 0), 0.045, Color(0.86, 0.80, 0.58, 0.58))
 	# 发射井口圆环装甲座圈（置于 z = -7.4m，前场 z = -1..+12m 完全敞开）
 	var sc := Vector3(0, 0.0, -7.4)
 	A.add(n, A.cyl(5.2, 0.56, 5.8, 16), M_CDK, sc + Vector3(0, 0.28, 0))
@@ -409,7 +409,6 @@ static func _bucket_excavator(raid, p: Vector3, rot: float) -> void:
 	A.add(n, A.bevel_box(Vector3(3.4, 1.15, 4.2), 0.05), M_ST, hse + Vector3(-1.2, 3.25, -1.2))
 	for ex_z: float in [-2.2, -0.4]:
 		A.add(n, A.cyl(0.32, 2.15, 0.36, 12), M_DARK, hse + Vector3(-1.8, 4.45, ex_z))
-	A.stencil(n, "BWE-288", hse + Vector3(-3.88, -1.15, 1.2), Vector3(0, -90, 0), 0.032, Color(0.14, 0.13, 0.12, 0.82))
 	# 悬挑多窗格装甲驾驶室与遮阳钢檐
 	A.add(n, A.bevel_box(Vector3(2.8, 2.6, 3.2), 0.06), M_YEL_CLAD, base + Vector3(4.6, 8.2, 3.2))
 	A.add(n, A.bevel_box(Vector3(2.92, 1.24, 3.32), 0.03), M_CAB_WIN, base + Vector3(4.6, 8.4, 3.2), Vector3.ZERO, Vector3.ONE, false)
@@ -469,10 +468,12 @@ static func _geothermal_vault(raid, p: Vector3, rot: float) -> void:
 		A.add(n, A.bevel_box(Vector3(0.32, 0.03, 17.6), 0.01), M_ST, Vector3(0, 0.205 + ri * 0.004, 4.4), Vector3(0, ri * 30.0, 0), Vector3.ONE, false)
 	A.add(n, A.cyl(0.85, 0.05, 0.92, 12), M_DARK, Vector3(0, 0.235, 4.4), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.torus(8.6, 9.1, 24), M_HAZ, Vector3(0, 0.19, 4.4), Vector3.ZERO, Vector3(1, 0.35, 1), false)
-	# 后部主反应堆压力安全壳穹顶（置于 z = -8.0m，直径 11.2m，高 13.8m）
+	# 后部主反应堆压力安全壳多面体截角穹顶 + 深渊封印钻井塔台（置于 z = -8.0m，前场完全敞开供首领决战）
 	var vc := Vector3(0, 0, -8.0)
 	A.add(n, A.cyl(5.6, 6.8, 6.2, 16), M_CON, vc + Vector3(0, 3.4, 0))
-	A.add(n, A.sphere(5.55, 4.8, 24), M_ST, vc + Vector3(0, 6.8, 0))
+	A.add(n, A.cyl(4.35, 2.4, 5.55, 12), M_ST, vc + Vector3(0, 8.0, 0))
+	A.add(n, A.cyl(2.45, 2.1, 4.35, 12), M_ST, vc + Vector3(0, 10.25, 0))
+	PrefabLib.place_at_ground(raid, n, "poi_abyss_gate_rig", vc + Vector3(0, 0.02, 0), 0.0, Vector3(12.2, 14.8, 12.2), true, null, false)
 	# 磁约束超导铜线圈环箍 + 8 道外露重型钢肋扶壁 + 窄缝耐压泄温窗
 	for k in 3:
 		var ry := 2.2 + k * 2.1

@@ -16,7 +16,7 @@ const SFX_EXT := [".wav", ".ogg"]
 const MUSIC_EXT := [".ogg", ".mp3", ".wav"]
 const VOICE_EXT := [".mp3", ".ogg", ".wav"]
 const MAX_VARIANTS := 12
-const DEFAULT_VOLUME := {"Master": 1.0, "Music": 0.8, "SFX": 1.0, "Voice": 1.0, "UI": 0.9}
+const DEFAULT_VOLUME := {"Master": 1.0, "Music": 0.5, "SFX": 1.0, "Voice": 1.0, "UI": 0.9}
 
 var volume := DEFAULT_VOLUME.duplicate()
 
@@ -29,6 +29,7 @@ var _pool3: Array = []
 var _loops := {}          ## key -> 播放器
 var _decks: Array = []
 var _deck_gain := [0.0, 0.0]
+var _deck_trim_db := [-5.5, -5.5]
 var _deck_tw: Array = [null, null]
 var _deck := 0
 var _music_streams := {}
@@ -45,11 +46,14 @@ var _last_ui_auto := false
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_ensure_buses()
+	for b in volume:
+		_apply_volume(b)
 	for i in 2:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Music"
 		p.volume_db = -80.0
 		add_child(p)
+		p.finished.connect(_on_deck_finished.bind(i))
 		_decks.append(p)
 	_voice = AudioStreamPlayer.new()
 	_voice.bus = "Voice"
@@ -217,8 +221,8 @@ func _take_player(d3: bool) -> Node:
 		if d3:
 			var p3 := AudioStreamPlayer3D.new()
 			p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-			p3.attenuation_filter_cutoff_hz = 3400.0
-			p3.attenuation_filter_db = -18.0
+			p3.attenuation_filter_cutoff_hz = 20500.0
+			p3.attenuation_filter_db = 0.0
 			n = p3
 		else:
 			n = AudioStreamPlayer.new()
@@ -259,8 +263,8 @@ func loop_start(key: String, id: String, host: Node = null, opts := {}) -> Node:
 	if d3:
 		var p3 := AudioStreamPlayer3D.new()
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-		p3.attenuation_filter_cutoff_hz = 3400.0
-		p3.attenuation_filter_db = -18.0
+		p3.attenuation_filter_cutoff_hz = 20500.0
+		p3.attenuation_filter_db = 0.0
 		p3.unit_size = float(inf.unit)
 		p3.max_distance = float(inf.dist)
 		p = p3
@@ -357,31 +361,45 @@ func _set_loop(st: AudioStream, on: bool) -> void:
 
 
 # ====================================================================== 音乐
-## 切到某个音乐槽（交叉淡化）。槽位没有文件时淡出当前音乐。回到循环曲时从上次离开的位置接着放。
+## 切到某个音乐槽（非对称交叉淡化：旧槽快速收尾防串音，新槽平缓淡入）。槽位没有文件时淡出当前音乐。
 func play_music(slot: String, fade := 1.2) -> void:
 	if slot == music_slot:
 		return
+	var prev_slot := music_slot
 	var cur: AudioStreamPlayer = _decks[_deck]
-	if music_slot != "" and cur.playing:
-		_music_pos[music_slot] = cur.get_playback_position()
-	_fade(_deck, 0.0, fade, true)
+	if prev_slot != "" and cur.playing:
+		_music_pos[prev_slot] = cur.get_playback_position()
+	var out_fade := minf(fade, 0.35) if prev_slot == "menu" else minf(fade, 0.65)
+	_fade(_deck, 0.0, out_fade, true)
 	music_slot = slot
 	var st := _music_stream(slot)
 	if st == null:
+		_fade(1 - _deck, 0.0, out_fade, true)
 		return
 	_deck = 1 - _deck
 	var nd: AudioStreamPlayer = _decks[_deck]
 	if _deck_tw[_deck]:
 		_deck_tw[_deck].kill()
+		_deck_tw[_deck] = null
 	nd.stop()
 	nd.stream = st
+	_deck_trim_db[_deck] = _slot_trim_db(slot)
 	var inf := Reg.music_info(slot, music_table())
-	var from: float = float(_music_pos.get(slot, 0.0)) if bool(inf.get("loop", true)) else 0.0
+	var from: float = float(_music_pos.get(slot, 0.0)) if (bool(inf.get("loop", true)) and slot != "menu") else 0.0
 	if from >= st.get_length() - 0.5:
 		from = 0.0
 	_set_gain(_deck, 0.0)
 	nd.play(from)
-	_fade(_deck, 1.0, fade, false)
+	var in_fade := maxf(fade, 1.4) if slot == "boss" else maxf(fade, 2.4)
+	_fade(_deck, 1.0, in_fade, false)
+
+
+func _slot_trim_db(slot: String) -> float:
+	if slot == "boss":
+		return -1.0
+	if slot in ["combat", "extract"]:
+		return -4.0
+	return -5.5
 
 
 func stop_music(fade := 1.0) -> void:
@@ -413,16 +431,40 @@ func _music_stream(slot: String) -> AudioStream:
 			if st:
 				break
 	if st:
-		_set_loop(st, bool(inf.get("loop", true)))
+		_set_loop(st, slot == "boss" and bool(inf.get("loop", true)))
 	_music_streams[slot] = st
 	return st
+
+
+func _on_deck_finished(i: int) -> void:
+	if i != _deck or music_slot == "":
+		return
+	var slot := music_slot
+	var inf := Reg.music_info(slot, music_table())
+	if not bool(inf.get("loop", true)):
+		return
+	if slot == "boss":
+		_decks[i].play(0.0)
+		return
+	var rest_sec := 12.0 if slot in ["combat", "extract"] else 18.0
+	if _deck_tw[i]:
+		_deck_tw[i].kill()
+	_set_gain(i, 0.0)
+	var tw := create_tween()
+	tw.tween_interval(rest_sec)
+	tw.tween_callback(func():
+		if _deck == i and music_slot == slot and _decks[i].stream != null:
+			_set_gain(i, 0.0)
+			_decks[i].play(0.0)
+			_fade(i, 1.0, 3.5, false))
+	_deck_tw[i] = tw
 
 
 func _fade(i: int, to: float, dur: float, stop_after: bool) -> void:
 	if _deck_tw[i]:
 		_deck_tw[i].kill()
 		_deck_tw[i] = null
-	if dur <= 0.0:
+	if dur <= 0.0 or (stop_after and to <= 0.0 and _deck_gain[i] <= 0.001):
 		_set_gain(i, to)
 		if stop_after and to <= 0.0:
 			_decks[i].stop()
@@ -436,7 +478,11 @@ func _fade(i: int, to: float, dur: float, stop_after: bool) -> void:
 
 func _set_gain(i: int, g: float) -> void:
 	_deck_gain[i] = g
-	_decks[i].volume_db = linear_to_db(maxf(g, 0.0001))
+	if g <= 0.0005:
+		_decks[i].volume_db = -80.0
+		return
+	var shaped := g * g * g
+	_decks[i].volume_db = linear_to_db(maxf(shaped, 0.0001)) + _deck_trim_db[i]
 
 
 # ====================================================================== 配音
@@ -515,34 +561,6 @@ func _ensure_buses() -> void:
 			var i := AudioServer.bus_count - 1
 			AudioServer.set_bus_name(i, b)
 			AudioServer.set_bus_send(i, "Master")
-	_ensure_bus_fx("SFX", true, true)
-	_ensure_bus_fx("UI", false, true)
-	_ensure_bus_fx("Master", false, true)
-
-
-func _ensure_bus_fx(bus_name: String, add_lp: bool, add_lim: bool) -> void:
-	var idx := AudioServer.get_bus_index(bus_name)
-	if idx < 0:
-		return
-	var has_lp := false
-	var has_lim := false
-	for k in AudioServer.get_bus_effect_count(idx):
-		var fx := AudioServer.get_bus_effect(idx, k)
-		if fx is AudioEffectLowPassFilter:
-			has_lp = true
-		elif fx is AudioEffectHardLimiter:
-			has_lim = true
-	if add_lp and not has_lp:
-		var lp := AudioEffectLowPassFilter.new()
-		lp.cutoff_hz = 7500.0
-		lp.resonance = 0.5
-		AudioServer.add_bus_effect(idx, lp)
-	if add_lim and not has_lim:
-		var lim := AudioEffectHardLimiter.new()
-		lim.ceiling_db = -1.0
-		lim.pre_gain_db = 0.0
-		lim.release = 0.08
-		AudioServer.add_bus_effect(idx, lim)
 
 
 # ====================================================================== 界面自动接线

@@ -75,7 +75,7 @@ static func place_boss(raid, boss_id: String, zones: Array, min_dist: float, dro
 	if b != null:
 		var center := Vector3(b.position.x, 0.0, b.position.z)
 		b.home = center
-		b.rotation_degrees.y = raid.rng.randf() * 360.0
+		b.rotation_degrees.y = rad_to_deg(atan2(drop.x - center.x, drop.z - center.z))
 		if raid.mech != null:
 			b.target = raid.mech
 		_build_boss_lair(raid, center, boss_id)
@@ -112,7 +112,7 @@ static func place_boss_at_landmark(raid, boss_id: String, lm_type: String, fallb
 	if b != null:
 		var center := Vector3(b.position.x, 0.0, b.position.z)
 		b.home = center
-		b.rotation_degrees.y = raid.rng.randf() * 360.0
+		b.rotation_degrees.y = rad_to_deg(atan2(drop.x - center.x, drop.z - center.z))
 		if raid.mech != null:
 			b.target = raid.mech
 		_build_boss_lair(raid, center, boss_id)
@@ -177,14 +177,14 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 	light.omni_range = 16.0
 	light.position = Vector3(0, 2.6, 0)
 	lair.add_child(light)
-	# 首领巢穴战利品箱：保险柜 + 军用箱
+	# 首领巢穴战利品箱：保险柜 + 军用箱（沿竞技台切向整齐摆放）
 	var box_kinds := ["safe", "military"]
 	for i in box_kinds.size():
 		var ba: float = TAU * (0.35 + float(i) * 0.3)
 		var raw_p := center + Vector3(cos(ba), 0.0, sin(ba)) * 5.8
 		var bp: Vector3 = raid.dry_spot(raw_p, 2.2)
 		if not raid._blocked(bp, 1.8, false):
-			raid._place_box(box_kinds[i], Vector3(bp.x, 0.0, bp.z))
+			raid._place_box(box_kinds[i], Vector3(bp.x, 0.0, bp.z), [], rad_to_deg(-ba))
 
 
 static func _spawn_guards(raid, center: Vector3, guards: Array) -> void:
@@ -194,8 +194,8 @@ static func _spawn_guards(raid, center: Vector3, guards: Array) -> void:
 	var cap: int = int(raid.MAX_BUGS) + 48
 	for i in guards.size():
 		var kind := str(guards[i])
-		var ang: float = TAU * float(i) / float(guards.size()) + raid.rng.randf_range(-0.2, 0.2)
-		var rad: float = raid.rng.randf_range(6.8, 10.5)
+		var ang: float = TAU * float(i) / float(guards.size())
+		var rad: float = 8.4
 		var gp := center + Vector3(cos(ang) * rad, 0.5, sin(ang) * rad)
 		var g = raid.spawn_bug(kind, gp, cap)
 		if g == null:

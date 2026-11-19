@@ -34,14 +34,14 @@ func run() -> void:
 	await frames(1)
 	if not check(win.queued_count() == q_before, "冷却期内的同一通讯不应重复入队"):
 		return
-	# 战区出生点随机候选与移除未开放封堵校验
+	# 战区固定出生点与移除未开放封堵校验
 	if not check(raid.drop_points.size() >= 4, "战区候选出生点数量不足：%d" % raid.drop_points.size()):
 		return
 	var picked := {}
-	for _k in 16:
+	for _k in 8:
 		var dp: Vector3 = raid._drop_point()
-		picked["%.0f_%.0f" % [dp.x, dp.z]] = true
-	if not check(picked.size() >= 2, "多次抽取出生点结果完全固定，未随机"):
+		picked["%.1f_%.1f" % [dp.x, dp.z]] = true
+	if not check(picked.size() == 1, "多次获取出生点未固定：%s" % [picked]):
 		return
 	for g: Dictionary in raid.world_link.gate_list():
 		if not check(bool(g.get("open", false)), "边界转场口仍存在未开放封堵：%s" % [g]):

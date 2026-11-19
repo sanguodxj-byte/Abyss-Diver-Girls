@@ -58,6 +58,18 @@ var AMMO := {
 	"melee": {"mode": "melee", "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
 }
 
+## 弹匣物品：每种实弹武器对应一个实体弹匣，装填消耗一个，打空即消失
+const MAG_ITEM := {
+	"mg": "mag_mg", "autocannon": "mag_ac", "cannon": "mag_cannon",
+	"shotgun": "mag_shotgun", "sniper": "mag_sniper",
+	"launcher": "mag_launcher", "flamer": "mag_fuel",
+}
+
+
+## 武器对应的弹匣物品 id；激光 / 近战返回空串
+func mag_item_for(weapon: String) -> String:
+	return str(MAG_ITEM.get(weapon, ""))
+
 ## 武器的射击资源模式：ammo（实弹弹匣）/ energy（激光耗能）/ melee（近战少量耗能）
 func weapon_mode(weapon: String) -> String:
 	return str(AMMO.get(weapon, {}).get("mode", "ammo"))
@@ -126,15 +138,63 @@ var SKILLS := {
 var MODULES := {}
 
 var LOOT_TABLES := {
-	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 30, "water_tab": 25, "coffee": 4, "fuel_cell": 12, "repair_kit": 6}},
-	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 25, "bolts": 30, "hdd": 5, "toy": 8, "fuel_cell": 8}},
-	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 45, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10}},
+	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 30, "water_tab": 25, "coffee": 4, "fuel_cell": 12, "repair_kit": 6, "mag_mg": 14, "mag_shotgun": 6}},
+	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 25, "bolts": 30, "hdd": 5, "toy": 8, "fuel_cell": 8, "mag_ac": 6, "mag_fuel": 6}},
+	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 28, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10, "mag_cannon": 10, "mag_sniper": 6, "mag_launcher": 4}},
 	"safe": {"name": "保险柜", "rolls": [1, 3], "pool": {"credit_s": 40, "credit_l": 15, "gold": 4, "hdd": 10, "coffee": 6}},
 	"bug": {"name": "虫尸", "rolls": [1, 1], "pool": {"chitin": 85, "bug_crystal": 12, "fuel_cell": 6}},
 	"nest": {"name": "巢穴残骸", "rolls": [2, 3], "pool": {"bug_crystal": 45, "chitin": 50, "gen_crystal": 3, "legs_hex_beetle": 2}},
 }
 
-var SHOP := ["fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_biped_scout", "legs_tread_light", "legs_tread", "gen_reactor"]
+## 容器品质分档：由所在区块的「高价值容器占比」决定（military + safe 权重占比）
+## ≥55% → 3 档（军事区/要塞），≥30% → 2 档（工业区/综合区），其余 → 1 档。
+## 档位同时改变：出货件数、@module 权重倍率、模块稀有度权重、箱子名称与搜刮耗时。
+## rar 权重按「单件概率」反推（已剔除 5 件初始装配，r0 实际池为 3 件）。
+## 目标是修掉「单件 r3 比 r4 还稀有」的倒挂，同时贴近原收益，避免一次性通胀。
+##   1 档单件 ≈ 7.7% / 5.1% / 0.51% / 0.263% / 0.230%
+##   2 档单件 ≈ 6.6% / 5.5% / 0.69% / 0.331% / 0.298%
+##   3 档单件 ≈ 3.9% / 3.9% / 0.86% / 0.463% / 0.453%
+const LOOT_TIER := {
+	1: {"rolls": 0, "module": 1.0, "rar": [2.5, 5.0, 2.0, 1.2, 0.15]},
+	2: {"rolls": 0, "module": 1.15, "rar": [2.0, 5.0, 2.5, 1.4, 0.18]},
+	3: {"rolls": 1, "module": 1.40, "rar": [1.5, 5.0, 4.0, 2.5, 0.35]},
+}
+
+## 按档位给箱子换写实名字（不用「精良/精英」这种 RPG 标签）
+const LOOT_NAMES := {
+	"supply": ["补给箱", "军需补给箱", "野战补给栈"],
+	"tool": ["工具箱", "维修工具箱", "工兵器材柜"],
+	"military": ["军用储物箱", "军械箱", "指挥所军械柜"],
+	"safe": ["保险柜", "加固保险柜", "加密保管柜"],
+	"bug": ["虫尸", "虫尸", "虫尸"],
+	"nest": ["巢穴残骸", "巢穴残骸", "巢穴残骸"],
+}
+const LOOT_NAMES_EN := {
+	"supply": ["Supply Crate", "Military Supply Crate", "Field Supply Cache"],
+	"tool": ["Toolbox", "Maintenance Chest", "Engineer Locker"],
+	"military": ["Military Crate", "Arms Crate", "Command Armory Locker"],
+	"safe": ["Safe", "Reinforced Safe", "Encrypted Storage Locker"],
+	"bug": ["Bug Carcass", "Bug Carcass", "Bug Carcass"],
+	"nest": ["Nest Remains", "Nest Remains", "Nest Remains"],
+}
+
+
+## 每件物资的基础搜刮耗时（秒）：高档箱要拆装甲锁具，站桩时间明显更长
+## 实际耗时 = 基础 × 精英专精 ab_search 系数 × 底盘承重破拆系数
+const LOOT_TIER_TIME := {1: 0.55, 2: 1.00, 3: 2.00}
+
+
+## 箱子显示名：按所在区块档位取对应写实名称（bug/nest 等无档位的保持原名）
+func loot_title(kind: String, tier: int) -> String:
+	var zh: Array = LOOT_NAMES.get(kind, [])
+	var en: Array = LOOT_NAMES_EN.get(kind, [])
+	if zh.is_empty():
+		return str(LOOT_TABLES.get(kind, {}).get("name", kind))
+	var i := clampi(tier - 1, 0, zh.size() - 1)
+	return Loc.t(str(zh[i]), str(en[mini(i, en.size() - 1)]))
+
+var SHOP := ["mag_mg", "mag_shotgun", "mag_ac", "mag_cannon", "mag_sniper", "mag_launcher", "mag_fuel",
+	"fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_biped_scout", "legs_tread_light", "legs_tread", "gen_reactor"]
 
 const STARTER := {"core": "core_scout", "legs": "legs_biped", "arm_l": "arm_mg", "arm_r": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}
 
@@ -593,14 +653,37 @@ var _loot_hooks: Array = []
 func add_loot_hook(f: Callable) -> void:
 	_loot_hooks.append(f)
 
-func roll_loot(table: String, rng: RandomNumberGenerator) -> Array:
+## 区块危险度分档：按该区容器权重里 military + safe 的占比判定（与 LOOT_W 同源）
+func zone_tier(weights: Dictionary) -> int:
+	var total := 0.0
+	var rich := 0.0
+	for k in weights:
+		var w := float(weights[k])
+		total += w
+		if str(k) == "military" or str(k) == "safe":
+			rich += w
+	if total <= 0.0:
+		return 1
+	var share := rich / total
+	if share >= 0.55:
+		return 3
+	if share >= 0.30:
+		return 2
+	return 1
+
+
+func roll_loot(table: String, rng: RandomNumberGenerator, tier := 1) -> Array:
 	var t: Dictionary = LOOT_TABLES[table]
-	var n := rng.randi_range(t.rolls[0], t.rolls[1])
+	var tr: Dictionary = LOOT_TIER.get(clampi(tier, 1, 3), LOOT_TIER[1]) as Dictionary
+	var n := rng.randi_range(int(t.rolls[0]) + int(tr.rolls), int(t.rolls[1]) + int(tr.rolls))
+	var pool: Dictionary = (t.pool as Dictionary).duplicate()
+	if pool.has("@module"):
+		pool["@module"] = float(pool["@module"]) * float(tr.module)
 	var out: Array = []
 	for i in n:
-		var id := _weighted(t.pool, rng)
+		var id := _weighted(pool, rng)
 		if id == "@module":
-			id = _random_module(rng)
+			id = _random_module(rng, tier)
 		for f: Callable in _loot_hooks:
 			id = f.call(id, table, rng)
 		out.append(id)
@@ -617,11 +700,18 @@ func _weighted(pool: Dictionary, rng: RandomNumberGenerator) -> String:
 			return k
 	return pool.keys()[0]
 
-func _random_module(rng: RandomNumberGenerator) -> String:
+func _random_module(rng: RandomNumberGenerator, tier := 1) -> String:
 	var weights := {}
-	var rw := [10.0, 5.0, 2.0, 0.6, 0.15]
+	var tr: Dictionary = LOOT_TIER.get(clampi(tier, 1, 3), LOOT_TIER[1]) as Dictionary
+	var rw: Array = tr.rar
+	# 初始装配不出现在战利品池里，避免开局反复掉到已经在穿的东西
+	var skip := {}
+	for k in STARTER.values():
+		skip[str(k)] = true
 	for id in MODULES:
-		weights[id] = rw[int(MODULES[id].rar)]
+		if skip.has(str(id)):
+			continue
+		weights[str(id)] = rw[int(MODULES[id].rar)]
 	return _weighted(weights, rng)
 
 
@@ -846,8 +936,8 @@ func mark_enemy_seen(kind: String) -> bool:
 func new_game() -> void:
 	money = 1500
 	loadout = STARTER.duplicate()
-	stash = ["fuel_cell", "fuel_cell", "repair_kit", "beacon", "arm_shotgun", "can_food"]
-	cargo = ["fuel_cell", "repair_kit", "beacon"]
+	stash = ["mag_mg", "mag_mg", "mag_mg", "mag_mg", "fuel_cell", "fuel_cell", "repair_kit", "beacon", "arm_shotgun", "can_food"]
+	cargo = ["mag_mg", "mag_mg", "mag_mg", "mag_mg", "fuel_cell", "repair_kit", "beacon"]
 	raids = 0
 	extracts_ok = 0
 	seen_enemies = []
@@ -1193,8 +1283,8 @@ static func list_scripts(dir: String) -> Array:
 	return out
 
 
-## 按画质档位调整战场环境的重型后处理（GPU 开销大头）。
-## 流畅：关体积雾 / SSIL，保留基础 SSAO，阴影 2048、硬阴影；高：体积雾 + SSAO，关 SSIL，阴影 4096；极致：全开，阴影 8192。
+## 按画质档位调整战场环境的重型后处理（保证低画质/移动端也具备清晰柔影、自发光辉光、色彩统一与无锯齿质感）。
+## 流畅(0)：柔化中档 4096 阴影（移动端 2048 双分段柔影）+ 保留 SSAO/轻量辉光/LUT；高(1)：+SSR；极致(2)：+SSIL + 8192 阴影。
 func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void:
 	var mob := OS.has_feature("mobile")
 	var mobile_renderer := RenderingServer.get_current_rendering_method() == "mobile"
@@ -1204,16 +1294,28 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 		env.ssr_enabled = false
 		env.ssil_enabled = false
 		env.ssao_enabled = false
-		env.glow_enabled = quality >= 2
-		RenderingServer.directional_shadow_atlas_set_size(1024 if quality == 0 else 2048, true)
-		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD if quality == 0 else RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
-		RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+		env.glow_enabled = true
+		env.glow_intensity = 0.20 if quality == 0 else 0.25
+		env.set_glow_level(0, 0.0)
+		env.set_glow_level(1, 0.58)
+		env.set_glow_level(2, 0.40)
+		env.set_glow_level(3, 0.0 if quality == 0 else 0.24)
+		env.set_glow_level(4, 0.0)
+		env.set_glow_level(5, 0.0)
+		RenderingServer.directional_shadow_atlas_set_size(2048 if quality <= 1 else 4096, true)
+		RenderingServer.directional_soft_shadow_filter_set_quality(
+			RenderingServer.SHADOW_QUALITY_SOFT_LOW if quality == 0 else RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+		RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
 		if sun:
-			sun.light_angular_distance = 0.0
-			sun.shadow_blur = 0.0 if quality == 0 else 0.25
-			sun.directional_shadow_blend_splits = false
-			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if quality == 0 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-			sun.directional_shadow_max_distance = 44.0 if quality == 0 else (56.0 if quality == 1 else 68.0)
+			sun.shadow_bias = 0.06 if quality == 0 else 0.05
+			sun.shadow_normal_bias = 2.20 if quality == 0 else 1.90
+			sun.light_angular_distance = 0.20 if quality == 0 else 0.26
+			sun.shadow_blur = 0.72 if quality == 0 else 0.80
+			sun.directional_shadow_blend_splits = quality >= 1
+			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+			sun.directional_shadow_split_1 = 0.48
+			sun.directional_shadow_max_distance = 52.0 if quality == 0 else (62.0 if quality == 1 else 74.0)
+		RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_VERY_LOW, false)
 		return
 	match quality:
 		0:
@@ -1221,54 +1323,102 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			env.ssr_enabled = false
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_intensity = 1.65
+			env.ssao_radius = 1.90
+			env.ssao_intensity = 2.15
+			env.ssao_power = 1.55
+			env.ssao_detail = 0.70
+			env.ssao_sharpness = 0.92
+			env.ssao_light_affect = 0.32
 			env.glow_enabled = true
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_LOW, false)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
-				sun.light_angular_distance = 0.15
-				sun.directional_shadow_max_distance = 68.0
+				sun.shadow_bias = 0.045
+				sun.shadow_normal_bias = 1.75
+				sun.light_angular_distance = 0.24
+				sun.shadow_blur = 0.72
+				sun.directional_shadow_blend_splits = true
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				sun.directional_shadow_split_1 = 0.16
+				sun.directional_shadow_split_2 = 0.36
+				sun.directional_shadow_split_3 = 0.62
+				sun.directional_shadow_max_distance = 72.0
 		1:
 			env.ssr_enabled = not compat and not mobile_renderer
 			env.ssr_max_steps = 48
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_intensity = 1.85
+			env.ssao_radius = 2.10
+			env.ssao_intensity = 2.35
+			env.ssao_power = 1.60
+			env.ssao_detail = 0.72
+			env.ssao_sharpness = 0.92
+			env.ssao_light_affect = 0.34
+			env.glow_enabled = true
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			if sun:
+				sun.shadow_bias = 0.045
+				sun.shadow_normal_bias = 1.80
+				sun.light_angular_distance = 0.28
+				sun.shadow_blur = 0.82
+				sun.directional_shadow_blend_splits = true
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				sun.directional_shadow_max_distance = 84.0
 		_:
 			env.ssr_enabled = not compat and not mobile_renderer
 			env.ssr_max_steps = 64
 			env.ssil_enabled = not compat and not mobile_renderer
 			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_intensity = 1.85
+			env.ssao_radius = 2.20
+			env.ssao_intensity = 2.45
+			env.ssao_power = 1.60
+			env.ssao_detail = 0.75
+			env.ssao_sharpness = 0.92
+			env.ssao_light_affect = 0.34
+			env.glow_enabled = true
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_HIGH, true)
 			RenderingServer.directional_shadow_atlas_set_size(8192, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
+			if sun:
+				sun.shadow_bias = 0.04
+				sun.shadow_normal_bias = 1.75
+				sun.light_angular_distance = 0.32
+				sun.shadow_blur = 0.92
+				sun.directional_shadow_blend_splits = true
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				sun.directional_shadow_max_distance = 92.0
 
 
 ## 应用抗锯齿 / 渲染缩放到主视口。
-## 流畅：MSAA 2x；高 / 极致：MSAA 4x（禁用全局 FXAA 以免模糊贴图与高频棱角）
+## 桌面流畅：MSAA 2x + 16x 各向异性；移动端流畅：FSR 锐化缩放 (0.76~0.84) + 4x 各向异性，杜绝低画质发糊发毛。
 func apply_quality(vp: Viewport = null) -> void:
 	if vp == null:
 		vp = get_tree().root
 	if OS.has_feature("mobile"):
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		vp.use_taa = false
-		vp.msaa_3d = Viewport.MSAA_DISABLED if quality <= 1 else Viewport.MSAA_2X
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.msaa_3d = Viewport.MSAA_2X if quality >= 1 else Viewport.MSAA_DISABLED
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+		vp.fsr_sharpness = 0.45
 		var win_h := float(maxi(720, DisplayServer.window_get_size().y))
 		match quality:
 			0:
-				vp.scaling_3d_scale = clampf(minf(0.75, 720.0 / win_h), 0.62, 0.75)
-				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_2X
-			1:
-				vp.scaling_3d_scale = clampf(minf(0.88, 900.0 / win_h), 0.75, 0.88)
+				vp.scaling_3d_scale = clampf(minf(0.84, 780.0 / win_h), 0.76, 0.84)
 				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+			1:
+				vp.scaling_3d_scale = clampf(minf(0.92, 920.0 / win_h), 0.84, 0.92)
+				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 			_:
 				vp.scaling_3d_scale = 1.0
-				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 		return
-	# 使用硬件 MSAA 保持贴图与几何锐度，关闭会涂抹地面的 FXAA
+	# 桌面端使用硬件 MSAA + 16x 各向异性，保持道路/地面贴图与硬表面几何锐度
 	match quality:
 		0:
 			vp.msaa_3d = Viewport.MSAA_2X
@@ -1276,7 +1426,7 @@ func apply_quality(vp: Viewport = null) -> void:
 			vp.use_taa = false
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 			vp.scaling_3d_scale = 1.0
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
 		1:
 			vp.msaa_3d = Viewport.MSAA_4X
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED

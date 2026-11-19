@@ -123,17 +123,8 @@ func setup(t: String, c: Color, req: float, transport := false) -> void:
 	l.position = Vector3(0, 2.0, 0)
 	add_child(l)
 	beacon = l
-	label = Label3D.new()
-	label.text = t
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.no_depth_test = true
-	label.font_size = 46
-	label.pixel_size = 0.019
-	label.modulate = Color(c.r * 0.85 + 0.15, c.g * 0.85 + 0.15, c.b * 0.85 + 0.15, 0.92)
-	label.outline_size = 9
-	label.outline_modulate = Color(0, 0, 0, 0.88)
-	label.position.y = 2.65
-	add_child(label)
+	# 撤离区不在地图中悬挂 3D 漂浮文字，进入区域时由顶部横幅与撤离进度条提示
+	label = null
 
 
 func _process(_d: float) -> void:

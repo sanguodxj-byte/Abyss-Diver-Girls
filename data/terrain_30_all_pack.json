@@ -1,0 +1,752 @@
+{
+  "pack_id": "abyss_terrain_buildings_30_all",
+  "remote_repo_head": "c953cd8",
+  "review_cadence": "5_items_per_batch",
+  "total_batches": 6,
+  "total_items": 30,
+  "batches": [
+    {
+      "batch": 1,
+      "title": "第 1 批 · 城区与工矿核心主建筑 (5/5 已精修)",
+      "priority": "P0 · M1.1 / M1.2 / M1.3",
+      "target_scripts": "scripts/raid.gd (_house, _warehouse, _apartment, _factory_shed, _barrack)",
+      "status": "polished_ready"
+    },
+    {
+      "batch": 2,
+      "title": "第 2 批 · 商业骑楼与街坊居住建筑拓展 (5/5 已精修)",
+      "priority": "P0 · M1.1 / M1.2 / M1.3",
+      "target_scripts": "scripts/buildings_ext.gd (01~05: _arcade_shop ~ _tenement)",
+      "status": "polished_ready"
+    },
+    {
+      "batch": 3,
+      "title": "第 3 批 · 重工变电、铸造化工与防炮击掩体 (5/5 已精修)",
+      "priority": "P0 · M1.1 ~ M1.3 + 反球体修正",
+      "target_scripts": "scripts/buildings_ext.gd (06~12: _substation ~ _command_bunker)",
+      "status": "polished_ready"
+    },
+    {
+      "batch": 4,
+      "title": "第 4 批 · 机甲尺度校准重型载具残骸与破损路肩 (5/5 已精修)",
+      "priority": "P0 · M2.1 / M2.2",
+      "target_scripts": "scripts/raid.gd (_wreck_car) & scripts/map_ext/poi_kit.gd (car)",
+      "status": "polished_ready"
+    },
+    {
+      "batch": 5,
+      "title": "第 5 批 · 永备暗堡哨塔、储罐与荒原微地貌掩体 (5/5 已精修)",
+      "priority": "P1 · M3.1 / M3.2",
+      "target_scripts": "scripts/raid.gd (_bunker, _watchtower, _tank, _chimney) & scripts/maps.gd",
+      "status": "polished_ready"
+    },
+    {
+      "batch": 6,
+      "title": "第 6 批 · 遗迹战术 POI 与首领决战要塞地标 (5/5 已精修)",
+      "priority": "P1 · POI / Landmarks",
+      "target_scripts": "scripts/raid.gd (_building), scripts/map_ext/poi/*.gd, landmarks_boss.gd",
+      "status": "polished_ready"
+    }
+  ],
+  "items": [
+    {
+      "index": 1,
+      "batch": 1,
+      "id": "bldg_house",
+      "code": "B1-01",
+      "name": "旧世界砖混坡顶民居",
+      "category": "城区民居建筑",
+      "source_script": "scripts/raid.gd :: func _house(p, sz, rot)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        9.6,
+        4.2,
+        7.6
+      ],
+      "max_overhang_m": 0.78,
+      "script_path": "res://scripts/buildings/bldg_house.gd",
+      "glb_path": "glb/bldg_house.glb",
+      "legacy_diagnosis": "远端原版仅用单一砖纹方盒叠加外贴 0.08m 窗片（存在共面闪烁），屋面为单三角棱柱缺挑檐椽头与雨落管收口，墙根无沙袋碎砖接地过渡。",
+      "summary": "重构为 0.56m 双阶混凝土散水勒脚 + 四角错缝隅石壁柱 + 0.15m 真实内凹钢框玻璃窗（配可开合防爆钢百叶与滴水窗台）+ 双柱钢木门廊雨棚 + 压型钢板坡屋顶、檐沟雨落管、阁楼老虎窗、挑檐砖烟囱与避雷针。"
+    },
+    {
+      "index": 2,
+      "batch": 1,
+      "id": "bldg_warehouse",
+      "code": "B1-02",
+      "name": "拱顶重工货运装卸仓库",
+      "category": "工矿仓储建筑",
+      "source_script": "scripts/raid.gd :: func _warehouse(p, sz, col, rot)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        13.6,
+        5.4,
+        9.2
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/bldg_warehouse.gd",
+      "glb_path": "glb/bldg_warehouse.glb",
+      "legacy_diagnosis": "远端原版用拉伸圆柱直接插入方盒顶面造成交线闪烁，卷帘门平贴外墙缺导轨槽，防撞柱外挑达 1.00m 超出 0.85m OBB 安全预算。",
+      "summary": "外露 5 榀重型工字钢门式刚架立柱、1.08m 钢筋混凝土高装卸月台与斜坡道、0.28m 深凹波纹钢卷帘门（含导轨槽与半启货运卷帘）、双斜拉杆悬挑雨棚、多段折拱钢屋面配 5 道外凸拱肋、采光通风气楼与三具无动力涡轮风球。"
+    },
+    {
+      "index": 3,
+      "batch": 1,
+      "id": "bldg_apartment",
+      "code": "B1-03",
+      "name": "预制板多层职工公寓楼",
+      "category": "城区高层居住楼",
+      "source_script": "scripts/raid.gd :: func _apartment(p, sz, rot)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14.4,
+        10.2,
+        8.6
+      ],
+      "max_overhang_m": 0.78,
+      "script_path": "res://scripts/buildings/bldg_apartment.gd",
+      "glb_path": "glb/bldg_apartment.glb",
+      "legacy_diagnosis": "远端原版外墙为单一方盒贴薄片窗，屋顶水箱细腿悬空感强，缺少楼梯间出屋面电梯机房、中央空调冷却机组、外墙冷凝立管与墙根掩体。",
+      "summary": "四层预制板框架柱网围合真三维内凹窗格，中轴外凸竖向楼梯采光核与双柱防盗门厅，2~4 层半挑混凝土钢栏阳台配锈蚀角铁空调机笼与冷凝水管，侧墙贯通护笼消防爬梯，屋顶完整构筑压顶石女儿墙、出屋面楼梯机房、钢桁架高架水箱与双联风冷机组。"
+    },
+    {
+      "index": 4,
+      "batch": 1,
+      "id": "bldg_factory_shed",
+      "code": "B1-04",
+      "name": "锯齿天窗工矿机务检修库",
+      "category": "重工机务厂房",
+      "source_script": "scripts/raid.gd :: func _factory_shed(p, sz, rot)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14.2,
+        6,
+        9.6
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_factory_shed.gd",
+      "glb_path": "glb/bldg_factory_shed.glb",
+      "legacy_diagnosis": "远端原版仅放单个大三角棱柱充当锯齿顶且采光玻璃板斜插穿模，门头工字钢单块悬突缺斜撑电葫芦，缺工业旋风除尘器与柱础墩座。",
+      "summary": "重制为正统三跨北向锯齿高侧采光天窗屋架（含窗竖框与天沟排水槽）、铆接工字钢外框柱与独立混凝土柱础、正门深凹机甲/机车检修卷帘大门、带斜撑小车吊钩的悬挑单轨工字钢行车梁、侧向旋风除尘分离罐及拉索高耸排烟囱。"
+    },
+    {
+      "index": 5,
+      "batch": 1,
+      "id": "bldg_barrack",
+      "code": "B1-05",
+      "name": "战区加固防爆拱肋军营",
+      "category": "军事防爆营房",
+      "source_script": "scripts/raid.gd :: func _barrack(p, sz, rot)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        13.2,
+        4.4,
+        7.8
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/bldg_barrack.gd",
+      "glb_path": "glb/bldg_barrack.glb",
+      "legacy_diagnosis": "远端原版半圆拱顶圆柱下半截陷入墙体方盒内部，射击观察窗为平贴薄片，屋顶三防过滤机仅为一光滑黑盒，墙根缺沙袋掩体群。",
+      "summary": "1.20m 厚重钢筋混凝土收分防爆墙裙配 10 座外倾抗爆扶壁柱、北约军绿压型装甲墙身、7 道外凸铆接钢拱肋多面体防爆拱顶、0.18m 深凹防弹射击观察孔（配折角遮弹眉板与防爆钢栅）、正脸气闸双扇手轮防爆门、屋顶双滤毒罐核生化新风系统与桁架通讯鞭状天线。"
+    },
+    {
+      "index": 6,
+      "batch": 2,
+      "id": "bldg_arcade_shop",
+      "code": "B2-06",
+      "name": "柱廊骑楼底层商铺楼",
+      "category": "城区商业骑楼",
+      "source_script": "scripts/buildings_ext.gd :: static func _arcade_shop(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        13.8,
+        8.8,
+        8.6
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_arcade_shop.gd",
+      "glb_path": "glb/bldg_arcade_shop.glb",
+      "legacy_diagnosis": "一层骑楼柱廊内铺面卷帘与招牌框贴合过平，二至三层外窗为外贴薄片，屋顶缺冷却水塔与风管。",
+      "summary": "首层退进 1.38m 五柱骑楼人行柱廊，廊内设真实内凹商铺橱窗、双扇店门与半启波纹钢卷闸门，外挂锈蚀招牌钢框；2~3层立面分层切出内凹花格钢窗与空调外机笼，屋顶设压顶石女儿墙、冷却水塔、镀锌风管与残损广告桁架。"
+    },
+    {
+      "index": 7,
+      "batch": 2,
+      "id": "bldg_stepped_tower",
+      "code": "B2-07",
+      "name": "阶梯退台商务办公塔楼",
+      "category": "城区高层办公楼",
+      "source_script": "scripts/buildings_ext.gd :: static func _stepped_tower(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14.8,
+        13.5,
+        9.6
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_stepped_tower.gd",
+      "glb_path": "glb/bldg_stepped_tower.glb",
+      "legacy_diagnosis": "三级退台露台缺少护栏女儿墙收边，竖向条窗贴在实心盒表面无竖向遮阳翼板深度。",
+      "summary": "三级阶梯式收分现代主义办公塔楼：裙房宽柱廊门厅 + 中段标准办公层 + 顶段核心塔身，壁柱外挑预制混凝土竖向遮阳翼板（Brise-Soleil），两级退台露台均设压顶女儿墙与风冷冷水机组，塔冠矗立电梯机房与八角微波中继通信塔。"
+    },
+    {
+      "index": 8,
+      "batch": 2,
+      "id": "bldg_courtyard_blk",
+      "code": "B2-08",
+      "name": "围合内院街坊四合公寓",
+      "category": "城区围合街坊",
+      "source_script": "scripts/buildings_ext.gd :: static func _courtyard_blk(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        15.2,
+        8.4,
+        11.4
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/bldg_courtyard_blk.gd",
+      "glb_path": "glb/bldg_courtyard_blk.glb",
+      "legacy_diagnosis": "四翼围合门洞过浅，外立面缺乏壁柱、内凹窗与排水管细节，内院地面缺少散水台阶。",
+      "summary": "四翼合围中空街坊四合公寓（中央留出 6.4×3.4m 真实露天内院），正面贯通防爆铁艺栅栏门洞通道，内外立面共三层全部实装真内凹窗龛，内院上方架设供暖过街管桥，屋顶设环形女儿墙与双联生活水箱。"
+    },
+    {
+      "index": 9,
+      "batch": 2,
+      "id": "bldg_terrace",
+      "code": "B2-09",
+      "name": "联排防火墙工人排屋",
+      "category": "工矿联排住宅",
+      "source_script": "scripts/buildings_ext.gd :: static func _terrace(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14.6,
+        6.2,
+        7.8
+      ],
+      "max_overhang_m": 0.78,
+      "script_path": "res://scripts/buildings/bldg_terrace.gd",
+      "glb_path": "glb/bldg_terrace.glb",
+      "legacy_diagnosis": "分户阶梯山墙厚度偏薄，各户入户门与窗户平贴墙皮，缺煤仓木箱与墙根散水勒脚。",
+      "summary": "三户联排工矿红砖住宅，由 4 道高出双坡屋面的阶梯状砖砌分户防火墙清晰切分；每户独立配备混凝土门前台阶、雨棚、内凹木框观察窗入户门与双层钢百叶窗，屋脊耸立 3 座独立双风帽砖烟囱，墙根带储煤木箱与沙袋。"
+    },
+    {
+      "index": 10,
+      "batch": 2,
+      "id": "bldg_tenement",
+      "code": "B2-10",
+      "name": "外廊式高层筒子楼",
+      "category": "工业区宿舍楼",
+      "source_script": "scripts/buildings_ext.gd :: static func _tenement(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        15,
+        11.2,
+        8.4
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_tenement.gd",
+      "glb_path": "glb/bldg_tenement.glb",
+      "legacy_diagnosis": "贯通式外走廊栏板与立柱节点生硬，走廊内侧户门与气窗无退深，屋顶缺太阳能/水箱构架。",
+      "summary": "四层工业区单身职工外廊筒子楼：正立面由 5 根贯通方柱与铸铁竖栏挑出四层通长外走廊，廊内逐间排布真实内凹户门与厨房高窗，左右两端外挂半封闭钢结构疏散楼梯塔，屋顶配置成排真空管太阳能热水器集热架与水箱。"
+    },
+    {
+      "index": 11,
+      "batch": 3,
+      "id": "bldg_substation",
+      "code": "B3-11",
+      "name": "高压瓷瓶龙门变电所",
+      "category": "能源基础设施",
+      "source_script": "scripts/buildings_ext.gd :: static func _substation(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        13.4,
+        6.4,
+        9.2
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/bldg_substation.gd",
+      "glb_path": "glb/bldg_substation.glb",
+      "legacy_diagnosis": "主变散热油箱片数偏少，缺少龙门母线横担、高压绝缘瓷瓶串与防火墙隔板。",
+      "summary": "一体化钢筋混凝土变电所基座上左置高压配电主控室（含内凹防爆百叶双开门与监控室钢窗），右置由高耸钢筋混凝土防爆隔火墙分隔的两台油浸式多片散热器主变压器、多伞裙高压绝缘瓷瓶套管与钢构 A 字龙门母线架。"
+    },
+    {
+      "index": 12,
+      "batch": 3,
+      "id": "bldg_foundry",
+      "code": "B3-12",
+      "name": "多跨锯齿高温铸造车间",
+      "category": "重工冶炼厂房",
+      "source_script": "scripts/buildings_ext.gd :: static func _foundry(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        15.4,
+        7.2,
+        10.6
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_foundry.gd",
+      "glb_path": "glb/bldg_foundry.glb",
+      "legacy_diagnosis": "冲天炉排烟塔与厂房主体衔接简略，侧墙百叶与钢包渣罐装卸口缺厚重钢结构细节。",
+      "summary": "重型铆接钢柱高温铸造主厂房：屋顶贯穿纵向高温冶炼排烟天窗气楼，正立面设深凹铁水包轨道运输大门与高侧耐热采光窗列，右侧并联两座带火花捕集帽与热风环形总管的耐火砖冲天炉高塔，墙根堆筑冷却矿渣与钢锭托盘。"
+    },
+    {
+      "index": 13,
+      "batch": 3,
+      "id": "bldg_chem_plant",
+      "code": "B3-13",
+      "name": "催化分馏塔与管廊化工厂",
+      "category": "石化工业装置",
+      "source_script": "scripts/buildings_ext.gd :: static func _chem_plant(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14.6,
+        8.6,
+        10
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_chem_plant.gd",
+      "glb_path": "glb/bldg_chem_plant.glb",
+      "legacy_diagnosis": "分馏塔缺少旋梯平台护栏与塔顶冷凝回流管束，主车间立面过于平整。",
+      "summary": "防化防爆围堰基座内左设压型泄爆板反应压缩车间（含深凹气密防爆门与中控防弹视窗），右立两座高耸催化分馏不锈钢塔釜（配三级八角钢格栅环形检修平台、护笼爬梯与塔顶鹅颈冷凝回流大管），中段由架空双层输液阀门管桥刚性连通。"
+    },
+    {
+      "index": 14,
+      "batch": 3,
+      "id": "bldg_loco_shed",
+      "code": "B3-14",
+      "name": "铁路内燃机车双股道检修库",
+      "category": "铁路编组站建筑",
+      "source_script": "scripts/buildings_ext.gd :: static func _loco_shed(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        15.6,
+        6.8,
+        10.4
+      ],
+      "max_overhang_m": 0.82,
+      "script_path": "res://scripts/buildings/bldg_loco_shed.gd",
+      "glb_path": "glb/bldg_loco_shed.glb",
+      "legacy_diagnosis": "双拱门洞仅贴深色矩形块，缺内凹股道地沟、折页库门与机车排烟集气罩。",
+      "summary": "双跨并列铁路内燃机车整备检修库：地面铺设两股标准轨距枕木道砟钢轨直通深凹检修库门，门洞两侧挂装外开式重型铁艺折扇大门与上部挡烟垂壁，侧山墙嵌通高工矿采光钢窗，双脊坡屋顶排列 4 座机车柴油尾气排烟风帽。"
+    },
+    {
+      "index": 15,
+      "batch": 3,
+      "id": "bldg_command_bunker",
+      "code": "B3-15",
+      "name": "多面体雷达罩防炮击指挥所",
+      "category": "军事核心地堡",
+      "source_script": "scripts/buildings_ext.gd :: static func _command_bunker(...)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        13,
+        5.6,
+        9.4
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/bldg_command_bunker.gd",
+      "glb_path": "glb/bldg_command_bunker.glb",
+      "legacy_diagnosis": "原脚本第526行使用 A.sphere(0.95, 1.1, 18) 圆球雷达罩违反反球体铁律，且观察狭缝缺少装甲遮弹沿。",
+      "summary": "重装钢筋混凝土防钻地弹战区指挥地堡：彻底移除原脚本第 526 行违规圆球，改用三层十边形截角测地线多面体雷达罩（Polyhedral Geodesic Radome）；正面突出前伸气闸防爆门廊与深凹装甲遮弹指挥观察狭缝，四角斜撑抗爆扶壁与战地沙袋胸墙。"
+    },
+    {
+      "index": 16,
+      "batch": 4,
+      "id": "veh_dump_truck",
+      "code": "B4-16",
+      "name": "2.9m 宽重型矿山自卸卡车残骸",
+      "category": "尺度校准重型载具",
+      "source_script": "scripts/raid.gd :: _wreck_car (M2.1 重制)",
+      "todo_codes": [
+        "P0-M2.1"
+      ],
+      "nominal_size_m": [
+        2.9,
+        3.35,
+        7.2
+      ],
+      "max_overhang_m": 0.25,
+      "script_path": "res://scripts/buildings/veh_dump_truck.gd",
+      "glb_path": "glb/veh_dump_truck.glb",
+      "legacy_diagnosis": "原仓公路车辆宽仅 1.4m~1.6m，在 4m 高重装机甲旁宛如袖珍玩具车。",
+      "summary": "严格按 M2.1 机甲真实参照尺度（2.9m 宽 × 7.2m 长 × 3.35m 高）重制的重型矿山自卸工程卡车残骸：重型梯形大梁、6 条 1.32m 直径宽幅深花纹矿山巨胎、左偏置防滚驾驶室（含内凹防弹窗与前登车梯）及带外露加强筋与护顶檐的微倾矿石翻斗。"
+    },
+    {
+      "index": 17,
+      "batch": 4,
+      "id": "veh_apc_wreck",
+      "code": "B4-17",
+      "name": "2.8m 宽八轮装甲运兵车残骸",
+      "category": "尺度校准军用载具",
+      "source_script": "scripts/map_ext/poi_kit.gd :: car (M2.1 重制)",
+      "todo_codes": [
+        "P0-M2.1"
+      ],
+      "nominal_size_m": [
+        2.82,
+        2.65,
+        7.35
+      ],
+      "max_overhang_m": 0.25,
+      "script_path": "res://scripts/buildings/veh_apc_wreck.gd",
+      "glb_path": "glb/veh_apc_wreck.glb",
+      "legacy_diagnosis": "哨卡与城区缺乏与玩家机甲同世代尺度的军用装甲护卫车残骸掩体。",
+      "summary": "2.82m 宽 × 7.35m 长八轮全驱装甲运兵车（8×8 APC）战术残骸：折角防地雷 V 型下车体、楔形首上甲与折叠防浪板、车长防弹观察潜望窗、4 轴 8 轮重型越野胎、微偏转 16° 的 30mm 无人遥控机炮塔及尾部放下接地的液压步兵突击跳板。"
+    },
+    {
+      "index": 18,
+      "batch": 4,
+      "id": "veh_fuel_tanker",
+      "code": "B4-18",
+      "name": "2.65m 宽半挂重型油罐拖车残骸",
+      "category": "尺度校准工业载具",
+      "source_script": "scripts/raid.gd & poi/fuel_depot.gd (M2.1)",
+      "todo_codes": [
+        "P0-M2.1"
+      ],
+      "nominal_size_m": [
+        2.65,
+        3.15,
+        7.5
+      ],
+      "max_overhang_m": 0.25,
+      "script_path": "res://scripts/buildings/veh_fuel_tanker.gd",
+      "glb_path": "glb/veh_fuel_tanker.glb",
+      "legacy_diagnosis": "油库与干线公路缺乏大型战术遮蔽长车体。",
+      "summary": "2.65m 宽 × 7.50m 长平头重卡牵引车 + 工业成品油储运罐体车残骸：前部平头驾驶室（内凹前风挡、侧窗、进气格栅与立式镀铬排气管），后背加劲箍环多隔舱卧式油罐、罐顶防滑检修走道护栏、双呼吸人孔盖、侧面输油阀门箱与尾部爬梯。"
+    },
+    {
+      "index": 19,
+      "batch": 4,
+      "id": "veh_armored_dozer",
+      "code": "B4-19",
+      "name": "2.85m 宽装甲工程推土机残骸",
+      "category": "尺度校准工程机械",
+      "source_script": "scripts/map_ext/poi/quarry.gd (M2.1)",
+      "todo_codes": [
+        "P0-M2.1"
+      ],
+      "nominal_size_m": [
+        2.85,
+        3.2,
+        6.1
+      ],
+      "max_overhang_m": 0.25,
+      "script_path": "res://scripts/buildings/veh_armored_dozer.gd",
+      "glb_path": "glb/veh_armored_dozer.glb",
+      "legacy_diagnosis": "矿坑与废墟工地缺少厚重工程履带机械掩体。",
+      "summary": "参考 D9R 军用装甲破障推土机比例（2.85m 宽 × 6.10m 长 × 3.20m 高）重制：高驱动轮三角重型履带行走架、前部双大口径液压油缸支撑的弧折面重型破障推土铲、带遮阳防弹风挡的高耸防滚装甲驾驶室、斜百叶动力罩与尾部单齿液压破岩松土器。"
+    },
+    {
+      "index": 20,
+      "batch": 4,
+      "id": "ter_road_shoulder",
+      "code": "B4-20",
+      "name": "碎裂路缘石与风沙掩埋路肩过渡段",
+      "category": "公路地形过渡件",
+      "source_script": "scripts/raid.gd :: 道路系统 (M2.2)",
+      "todo_codes": [
+        "P0-M2.2"
+      ],
+      "nominal_size_m": [
+        12,
+        0.65,
+        6.4
+      ],
+      "max_overhang_m": 0.3,
+      "script_path": "res://scripts/buildings/ter_road_shoulder.gd",
+      "glb_path": "glb/ter_road_shoulder.glb",
+      "legacy_diagnosis": "当前柏油路与荒原黄沙交界呈一刀切生硬直线，缺少路肩破损与风沙侵蚀层次。",
+      "summary": "专为消除公路“一刀切直线边缘”设计的 12.0m 模块化破损路肩过渡预制段：内侧为带褪色标线与剥落坑槽的龟裂沥青路面，中段排列错位断口与倾覆缺口的预制混凝土路缘石，外侧自然漫延多层阶梯风沙掩埋棱体、重型履带车辙印与歪斜波形钢护栏残桩。"
+    },
+    {
+      "index": 21,
+      "batch": 5,
+      "id": "fort_pillbox_bunker",
+      "code": "B5-21",
+      "name": "八角钢筋混凝土永备机枪暗堡",
+      "category": "野战防御工事",
+      "source_script": "scripts/raid.gd :: func _bunker(p)",
+      "todo_codes": [
+        "P0-M1.3",
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        6.8,
+        3.2,
+        6.8
+      ],
+      "max_overhang_m": 0.6,
+      "script_path": "res://scripts/buildings/fort_pillbox_bunker.gd",
+      "glb_path": "glb/fort_pillbox_bunker.glb",
+      "legacy_diagnosis": "原暗堡为简单八棱柱加单层黑条射孔，顶部与墙根缺少防弹阶梯射口与沙袋伪装网架。",
+      "summary": "八角形钢筋混凝土永备火力暗堡：底部八角散水与收分防爆裙座，正前与左右斜向三面构筑阶梯式防跳弹内凹射击观察孔（配遮弹眉板与侧腮重机枪冷却套筒），背面设下沉台阶与内凹装甲防爆门，顶覆双层倒角防炮击顶盖、潜望镜塔、弹坑扭曲钢筋、四柱伪装网支撑架及前沿弧形沙袋胸墙。"
+    },
+    {
+      "index": 22,
+      "batch": 5,
+      "id": "fort_watchtower",
+      "code": "B5-22",
+      "name": "四柱交叉角钢桁架哨戒瞭望塔",
+      "category": "野战警戒设施",
+      "source_script": "scripts/raid.gd :: func _watchtower(p)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        5.4,
+        9.8,
+        5.4
+      ],
+      "max_overhang_m": 0.5,
+      "script_path": "res://scripts/buildings/fort_watchtower.gd",
+      "glb_path": "glb/fort_watchtower.glb",
+      "legacy_diagnosis": "哨塔岗亭顶盖单薄，四角柱脚直接插地缺混凝土独立杯口基础，缺探照灯与折梯平台。",
+      "summary": "9.8m 高四柱收分交叉角钢桁架野战瞭望哨塔：底部统一混凝土基垫承托 4 座双阶混凝土独立杯口基础墩，三层水平横系梁与十字角钢斜撑内嵌两跑之字形钢踏步折梯与中层休息平台，顶部悬挑走道与钢护栏环绕四向内凹观察窗装甲岗亭、四坡折顶与双联防爆探照灯。"
+    },
+    {
+      "index": 23,
+      "batch": 5,
+      "id": "ind_oil_tank_chimney",
+      "code": "B5-23",
+      "name": "盘梯立式储油罐与高炉烟囱组",
+      "category": "重工储运高耸构筑",
+      "source_script": "scripts/raid.gd :: func _tank & _chimney",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        9.2,
+        11.5,
+        8.6
+      ],
+      "max_overhang_m": 0.6,
+      "script_path": "res://scripts/buildings/ind_oil_tank_chimney.gd",
+      "glb_path": "glb/ind_oil_tank_chimney.glb",
+      "legacy_diagnosis": "储油罐缺外盘旋梯、消防泡沫管与防溢围堰；烟囱缺耐火砖束腰箍环与航空障碍灯架。",
+      "summary": "封闭式混凝土防溢防火围堰池（配跨堰钢踏步）内左立 8.6m 高铆接立式储油罐（含 5 道环向加劲箍、14 级沿壁盘旋外钢梯、罐顶护栏呼吸阀与消防泡沫立管），右立 11.5m 高八角底座收分耐火砖高炉烟囱（含 5 道扁钢束腰箍环与护笼爬梯），中设双联输油泵阀撬块连通。"
+    },
+    {
+      "index": 24,
+      "batch": 5,
+      "id": "ter_dragon_teeth_pipe",
+      "code": "B5-24",
+      "name": "混凝土龙牙反坦锥与半掩输油管弹坑",
+      "category": "战场微观战术掩体",
+      "source_script": "scripts/raid.gd & maps.gd (M3.2)",
+      "todo_codes": [
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        10.4,
+        2.3,
+        7.6
+      ],
+      "max_overhang_m": 0.4,
+      "script_path": "res://scripts/buildings/ter_dragon_teeth_pipe.gd",
+      "glb_path": "glb/ter_dragon_teeth_pipe.glb",
+      "legacy_diagnosis": "开阔荒原缺乏既可阻滞车体又能供机甲依托射击的旧世界重工残骸微地貌。",
+      "summary": "荒原反装甲防线微观战术掩体群：前排由地下混凝土连系梁串联双排交错共 9 座四棱台钢筋混凝土“龙牙”反坦克锥（含顶吊装钢环与穿甲弹崩裂露筋细节），后侧横卧被炮火炸断的 1.06m 大口径法兰锈蚀输油管道与隆起焦土重炮弹坑环。"
+    },
+    {
+      "index": 25,
+      "batch": 5,
+      "id": "ter_arid_flora_pylon",
+      "code": "B5-25",
+      "name": "三级自然簇化枯木沙棘与倾倒电塔",
+      "category": "荒原自然与残骸簇",
+      "source_script": "scripts/raid.gd :: _build_fields & _scatter (M3.1/M3.2)",
+      "todo_codes": [
+        "P1-M3.1",
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        10.8,
+        5.4,
+        8.2
+      ],
+      "max_overhang_m": 0.4,
+      "script_path": "res://scripts/buildings/ter_arid_flora_pylon.gd",
+      "glb_path": "glb/ter_arid_flora_pylon.glb",
+      "legacy_diagnosis": "农田灌木呈规则网格暗色块，拉远镜头时发黑且重复感强。",
+      "summary": "彻底取代原仓“规则网格暗色方块灌木”的三级荒原自然生态与电力残骸群落：一级为两株多叉扭曲防风林胡杨枯木主干，二级为 4 丛多枝干耐旱沙棘刺灌簇，三级为 6 丛贴地荒漠针茅干草簇，中央斜插半截带陶瓷绝缘子串的倾倒高压输电角钢塔架。"
+    },
+    {
+      "index": 26,
+      "batch": 6,
+      "id": "poi_generic_building",
+      "code": "B6-26",
+      "name": "城区通用多层街角楼重构",
+      "category": "城区基础建筑母版",
+      "source_script": "scripts/raid.gd :: func _building(p, size, yaw)",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        11.6,
+        8.6,
+        9.2
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/poi_generic_building.gd",
+      "glb_path": "glb/poi_generic_building.glb",
+      "legacy_diagnosis": "通用楼房窗片与封窗木板平贴外墙，屋顶缺完整水箱风机组合。",
+      "summary": "城区高频随机生成母版建筑（raid.gd :: _building）标准精修范式：花岗岩灰阶梯勒脚与四角错缝壁柱，首层偏置防盗双开门厅与两扇外钉交叉封窗木板（BoardPlank 距玻璃 >=15cm 物理悬挑零穿模）的内凹钢窗，2~3层全向内凹窗配空调机笼与侧山墙消防护笼爬梯，屋顶完整配置女儿墙、楼梯机房、钢架水箱与双排风机。"
+    },
+    {
+      "index": 27,
+      "batch": 6,
+      "id": "poi_duplex_coldstore",
+      "code": "B6-27",
+      "name": "双拼联排住宅与氨冷库保温机组",
+      "category": "工矿配套建筑",
+      "source_script": "scripts/buildings_ext.gd :: _duplex & _cold_store",
+      "todo_codes": [
+        "P0-M1.1",
+        "P0-M1.2",
+        "P0-M1.3"
+      ],
+      "nominal_size_m": [
+        14,
+        6.4,
+        9
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/poi_duplex_coldstore.gd",
+      "glb_path": "glb/poi_duplex_coldstore.glb",
+      "legacy_diagnosis": "冷库保温墙板接缝与氨压缩机排管较简略，装卸密封门罩深度不足。",
+      "summary": "左冷库右办公双拼工矿后勤综合体：左翼为 0.94m 高货运月台聚氨酯压筋冷库，正面设两樘带厚重黑色充气门封垫与闭锁手轮的内凹保温冷库大门，后侧外挂双卧式液氨贮液器与镀铬保温立管直通屋顶三联蒸发冷风机组；右翼由高出屋面的砖砌防火墙分隔出二层红砖调度宿舍楼。"
+    },
+    {
+      "index": 28,
+      "batch": 6,
+      "id": "poi_silo_radar",
+      "code": "B6-28",
+      "name": "双联立筒粮仓与防空雷达台站",
+      "category": "农业与电子地标",
+      "source_script": "scripts/buildings_ext.gd::_silo_barn & poi/radar_array.gd",
+      "todo_codes": [
+        "P0-M1.1",
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        14.4,
+        10.8,
+        9.6
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/poi_silo_radar.gd",
+      "glb_path": "glb/poi_silo_radar.glb",
+      "legacy_diagnosis": "立筒仓锥顶与提升机通廊衔接简单，雷达站基座与斜撑细部不足。",
+      "summary": "远郊制高点复合战术 POI 地标：左中侧并立两座 6 道加劲环箍镀锌波纹钢立筒粮仓（顶置刮板输送连廊与 10.8m 高斗式提升机塔架及溜粮斜管）；右侧构筑钢筋混凝土防空雷达指控地堡（配手轮防爆门与遮弹观察窗），堡顶旋转座托举 22° 仰角分块平面相控阵防空雷达大阵面与敌我识别横梁天线。"
+    },
+    {
+      "index": 29,
+      "batch": 6,
+      "id": "poi_gantry_rail",
+      "code": "B6-29",
+      "name": "港口重型龙门吊与编组站信号桥",
+      "category": "交通枢纽巨构",
+      "source_script": "scripts/map_ext/poi/harbor_crane.gd & rail_depot.gd",
+      "todo_codes": [
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        15.8,
+        12.4,
+        10.2
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/poi_gantry_rail.gd",
+      "glb_path": "glb/poi_gantry_rail.glb",
+      "legacy_diagnosis": "大型桁架节点缺少缀板铆钉与司机室走道护栏，轨道缓冲止挡器简略。",
+      "summary": "灰港码头与铁路编组站核心工业巨构：地面铺设双外侧重型起重机钢轨（含端部液压止挡缓冲器）与中央标准轨距枕木货运铁轨；主体跨立 12.4m 高 A 字双箱梁重型轨道龙门起重机（含四轮台车横梁、顶部双主梁检修护栏、高空悬吊透明视窗司机室、卷扬小车与四索吊具锁紧轨上 20 英尺集装箱），前方跨线耸立钢桁架铁路三色信号灯桥。"
+    },
+    {
+      "index": 30,
+      "batch": 6,
+      "id": "poi_abyss_gate_rig",
+      "code": "B6-30",
+      "name": "深渊封印井环门与地热钻井塔台",
+      "category": "首领决战核心地标",
+      "source_script": "scripts/map_ext/landmarks_boss.gd",
+      "todo_codes": [
+        "P1-M3.2"
+      ],
+      "nominal_size_m": [
+        16,
+        12.8,
+        16
+      ],
+      "max_overhang_m": 0.8,
+      "script_path": "res://scripts/buildings/poi_abyss_gate_rig.gd",
+      "glb_path": "glb/poi_abyss_gate_rig.glb",
+      "legacy_diagnosis": "首领决战场地标底座与高压管汇锚固墩需与 2K PBR 巨型首领世代质感对齐。",
+      "summary": "终局首领决战场地核心巨构地标（16.0×16.0×12.8m）：八角钢筋混凝土防爆围堤与装甲监控地堡环卫中央 8.9m 直径十六边形深渊封印井口巨环，周向放射排布 8 组重型混凝土反力墩与双镀铬活塞液压锁井锚钳，井心耸立多级十字高压防喷器（BOP）阀堆，上方跨立 12.8m 高四柱交叉斜撑地热钻井铁塔、天车滑轮组、游动滑车与六方主动钻杆。"
+    }
+  ]
+}

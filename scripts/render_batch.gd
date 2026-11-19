@@ -62,6 +62,8 @@ static func split_tint(m: Material, mode: int) -> Array:
 	if not _is_paint_shader(m):
 		return [m, Color.WHITE]
 	var sm: ShaderMaterial = m
+	if int(_sp_f(sm, "tint_mode", 0.0)) >= 2:
+		return [m, Color.WHITE]
 	var col: Color = sm.get_shader_parameter("base_color")
 	var mk := "_tint%d" % mode
 	if sm.has_meta(mk):
@@ -199,11 +201,10 @@ func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
 		if _is_foliage(mat):
 			if not shadow:
 				step_n = 2
-			elif GameData.quality == 0:
-				use_sh = false
+			# 保留乔木树冠投影，防止低画质下林木与地面脱离发飘
 		elif GameData.quality == 0 and mesh != null:
 			var ms := mesh.get_aabb().size
-			if maxf(ms.x, maxf(ms.y, ms.z)) < 0.75:
+			if maxf(ms.x, maxf(ms.y, ms.z)) < 0.55:
 				use_sh = false
 	var st := split_tint(mat, 1)
 	var tinted: bool = st[0] != mat
@@ -431,8 +432,8 @@ static func _vis_end_mesh(fp: bool) -> float:
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
 	if mob:
 		if fp:
-			return 145.0 if GameData.quality == 0 else 185.0
-		return 78.0 if GameData.quality == 0 else 96.0
+			return 185.0 if GameData.quality == 0 else 220.0
+		return 125.0 if GameData.quality == 0 else 135.0
 	return VIS_END_FP_MESH if fp else VIS_END
 
 
@@ -440,8 +441,8 @@ static func _vis_end_inst(fp: bool) -> float:
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
 	if mob:
 		if fp:
-			return 85.0 if GameData.quality == 0 else 115.0
-		return 64.0 if GameData.quality == 0 else 82.0
+			return 110.0 if GameData.quality == 0 else 135.0
+		return 96.0 if GameData.quality == 0 else 112.0
 	return VIS_END_FP_INST if fp else VIS_END
 
 
@@ -454,7 +455,7 @@ func _build_chunk(c: Vector2i) -> void:
 	# 实例很少的组直接并进同材质的合并网格（植物材质保留在 MultiMesh 以维持统一摆风尺度与独立世界原点）
 	for key in ch.inst.keys():
 		var g: Dictionary = ch.inst[key]
-		if g.xf.size() <= MM_MIN and not _is_foliage(g.mat) and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
+		if g.xf.size() <= MM_MIN and not _is_foliage(g.mat) and not (g.mesh != null and g.mesh.has_meta("prefab_inst")) and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
 			var sh := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			for i in g.xf.size():
 				_add_part(ch, g.mesh, g.src[i], g.xf[i], sh)
@@ -599,13 +600,13 @@ func _process(_d: float) -> void:
 	if horiz_view:
 		var f_xz := Vector3(fwd.x, 0.0, fwd.z)
 		f_xz = f_xz.normalized() if f_xz.length_squared() > 0.001 else Vector3.FORWARD
-		var mob_s := (0.58 if GameData.quality == 0 else 0.70) if mob else 1.0
+		var mob_s := (0.78 if GameData.quality == 0 else 0.88) if mob else 1.0
 		f = p + f_xz * (STREAM_FWD_FP * mob_s)
 		r = STREAM_R_FP * mob_s
 	else:
 		if fwd.y < -0.05:
 			f = p + fwd * (-p.y / fwd.y)
-		var mob_s := (0.62 if GameData.quality == 0 else 0.74) if mob else 1.0
+		var mob_s := (0.94 if GameData.quality == 0 else 1.0) if mob else 1.0
 		r = STREAM_R * mob_s * maxf(1.0, p.distance_to(f) / CAM_DIST_REF)
 		if cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
 			r = maxf(r, cam.size * 0.75)

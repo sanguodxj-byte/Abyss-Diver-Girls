@@ -61,10 +61,12 @@ var input_locked := false
 var dead := false
 var walk_phase := 0.0
 var hurt_flash := 0.0
-## 弹匣
+## 弹匣（实体物品：装填消耗一个，打空即消失）
 var ammo := {"arm_l": 0, "arm_r": 0}
 var mag := {"arm_l": 0, "arm_r": 0}
 var reload_t := {"arm_l": 0.0, "arm_r": 0.0}
+## 缺弹提示冷却，避免每次扣扳机都刷一条消息
+var _mag_warn_t := {"arm_l": 0.0, "arm_r": 0.0}
 ## 部位完好度 0~1（HUD 全息投影着色；0 = 部位缺失，失去对应功能）
 var parts := {"core": 1.0, "legs": 1.0, "arm_l": 1.0, "arm_r": 1.0, "back": 1.0, "gen": 1.0}
 const PART_W := {"core": 0.3, "legs": 0.24, "arm_l": 0.13, "arm_r": 0.13, "back": 0.1, "gen": 0.1}
@@ -128,9 +130,11 @@ func setup(lo: Dictionary, carry: Array) -> void:
 			var w := str(GameData.module(wid).get("weapon", "mg"))
 			if GameData.weapon_uses_ammo(w):
 				mag[slot] = int(GameData.AMMO.get(w, {}).get("mag", 30))
+				# 出发时用一个携带弹匣完成装填；没有弹匣就是空仓
+				ammo[slot] = mag[slot] if _take_mag(w) else 0
 			else:
 				mag[slot] = 0
-			ammo[slot] = mag[slot]
+				ammo[slot] = 0
 	_overloaded = GameData.speed_factor(stats, cargo_weight()) < 0.99
 	var legs_mod: Dictionary = GameData.module(loadout.get("legs", ""))
 	acid_immune = bool(legs_mod.get("acid_immune", false))
@@ -318,9 +322,17 @@ func _physics_tick(delta: float) -> void:
 			reload_t[k] -= delta
 			if reload_t[k] <= 0.0:
 				reload_t[k] = 0.0
-				ammo[k] = mag[k]
-				reloaded.emit(k)
-				Audio.play_sfx("wpn_reload_done", global_position + Vector3(0, 2.0, 0))
+				var wc := str(GameData.module(str(loadout.get(k, ""))).get("weapon", ""))
+				# 装填完成才真正取走弹匣；期间被取走则空仓
+				if _take_mag(wc):
+					ammo[k] = mag[k]
+					_mag_warn_t[k] = 0.0
+					reloaded.emit(k)
+					Audio.play_sfx("wpn_reload_done", global_position + Vector3(0, 2.0, 0))
+				else:
+					ammo[k] = 0
+	for k in _mag_warn_t:
+		_mag_warn_t[k] = maxf(0.0, _mag_warn_t[k] - delta)
 	for k in _fire_held:
 		if _fire_held[k] > 0.0:
 			_fire_held[k] -= delta
@@ -944,7 +956,8 @@ func try_fire(slot: String) -> void:
 		raid.spawn_projectile(origin, shot_dir, m, true)
 	var noise_r := 16.0 if w == "laser" else (12.0 if w == "flamer" else (30.0 if w in ["cannon", "launcher"] else (10.0 if w == "melee" else 24.0)))
 	raid.alert_noise(global_position, noise(noise_r))
-	raid.muzzle_flash(origin, m.color, dir, w, float(m.get("dmg", 10.0)))
+	if w != "melee":
+		raid.muzzle_flash(origin, m.color, dir, w, float(m.get("dmg", 10.0)))
 
 
 ## 开火音效：fire_loop 类武器（弹匣表里标注）按住扳机时持续循环，其余每发一次 wpn_<weapon>_fire
@@ -983,12 +996,37 @@ func noise(radius: float) -> float:
 	return radius * (0.2 if stealth_t > 0.0 else 1.0) * elite_mul
 
 
+## 货舱里是否有对应弹匣
+func _has_mag(weapon: String) -> bool:
+	var mid: String = GameData.mag_item_for(weapon)
+	return mid != "" and cargo.has(mid)
+
+
+## 从货舱取走一个弹匣（装填消耗，打空后弹匣消失）
+func _take_mag(weapon: String) -> bool:
+	var mid: String = GameData.mag_item_for(weapon)
+	if mid == "":
+		return false
+	var idx: int = cargo.find(mid)
+	if idx < 0:
+		return false
+	cargo.remove_at(idx)
+	check_overload()
+	return true
+
+
 func start_reload(slot: String) -> void:
 	var id: String = loadout.get(slot, "")
 	if id == "" or reload_t[slot] > 0.0 or ammo[slot] >= mag[slot]:
 		return
 	var w: String = GameData.module(id).weapon
 	if not GameData.weapon_uses_ammo(w):
+		return
+	if not _has_mag(w):
+		if _is_local_actor() and float(_mag_warn_t.get(slot, 0.0)) <= 0.0:
+			_mag_warn_t[slot] = 3.0
+			var mn := str(GameData.item(GameData.mag_item_for(w)).get("name", "弹匣"))
+			message.emit(Loc.t("没有可用的%s，搜一个或回艇补货" % mn, "No %s — find or buy more" % mn))
 		return
 	reload_t[slot] = _reload_dur(slot)
 	if _is_local_actor():
@@ -1202,9 +1240,11 @@ func equip_module_in_raid(slot: String, new_id: String) -> String:
 		var wpn := str(GameData.module(new_id).get("weapon", "mg"))
 		if GameData.weapon_uses_ammo(wpn):
 			mag[slot] = int(GameData.AMMO.get(wpn, {}).get("mag", 30))
+			# 战地换枪同样消耗一个弹匣；没有就空仓
+			ammo[slot] = mag[slot] if _take_mag(wpn) else 0
 		else:
 			mag[slot] = 0
-		ammo[slot] = mag[slot]
+			ammo[slot] = 0
 		reload_t[slot] = 0.0
 		arm_cd[slot] = 0.0
 	elif slot == "legs":

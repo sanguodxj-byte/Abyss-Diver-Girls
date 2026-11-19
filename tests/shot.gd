@@ -36,9 +36,9 @@ func run() -> void:
 	await shot("shot_loot.png")
 	raid.close_box()
 	# 第二张：遗迹全景
-	var lbls = raid.world.get_children().filter(func(n): return n is Label3D)
-	if lbls.size() > 0:
-		raid.mech.global_position = Vector3(lbls[0].position.x + 4, 0.5, lbls[0].position.z + 9)
+	if raid.poi_centers.size() > 0:
+		var pc: Vector3 = raid.poi_centers[0]
+		raid.mech.global_position = Vector3(pc.x + 4, 0.5, pc.z + 9)
 		raid.aim_override = raid.mech.global_position + Vector3(-5, 1.8, -3)
 	await wait(1.2)
 	Input.action_press("fire_right")

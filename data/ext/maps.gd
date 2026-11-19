@@ -174,4 +174,5 @@ const RAID_SCRIPTS := [
 ]
 const MUSIC := {
 	"bayport_explore": {"file": "greyport_explore.ogg", "loop": true, "scene": "东湾船坞港探索（未交战）"},
+	"abyss_maw_explore": {"file": "abyss_maw_explore.ogg", "loop": true, "scene": "零号深渊井探索（未交战）"},
 }
