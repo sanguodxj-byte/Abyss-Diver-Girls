@@ -1,0 +1,351 @@
+{
+  "asset_id": "airship_albatross_iii",
+  "name": "潜渊·信天翁号 (ALBATROSS-III) 87m 大型浮空气囊载机飞空艇母舰",
+  "dimensions_m": {
+    "length_x": 87.2,
+    "height_y": 39.6,
+    "span_z": 52.4
+  },
+  "total_meshes": 3064,
+  "total_triangles": 214360,
+  "mech_pad_anchor": [
+    0,
+    1.56,
+    0
+  ],
+  "upstream_audit": [
+    {
+      "sourceFile": "scripts/menu_ship.gd (L46-119)",
+      "section": "外倾三联观景窗墙 (WindowWall)",
+      "partName": "14°外倾三联窗框 + 双I型竖梃 + 上横档 + 74颗铆钉 + 6片玻璃 + 收起装甲百叶 (3-A) + 左右墙板/通风格栅",
+      "statusInUpstream": "仅存在孤立的 8.4×4.4×7.0m 单面窗盒，无外部飞空艇船壳与气囊",
+      "upgradePlan": "1:1 保留并高精度升级为上层甲板左舷前部真实嵌入式【OBS-2 左舷观景舷窗舱】，窗外直视真实左舷涡桨发动机吊舱与加强肋"
+    },
+    {
+      "sourceFile": "scripts/menu_ship.gd (L120-163)",
+      "section": "窗台仪表与航海道具 (Sill)",
+      "partName": "窗台桌面 + 黄铜扶手与5支座 + 琥珀灯带 + 三联圆表(-55°) + 黄铜车钟拉杆 + 航海日志 + 马克杯 + 双筒望远镜",
+      "statusInUpstream": "车钟手柄与吊灯灯泡使用 A.sphere 圆球，整体无连接相邻舰桥/机库的舱门通道",
+      "upgradePlan": "全部替换零球体精密硬表面件，保留全套窗台仪器与道具，新增舰尾角海图备餐柜并贯通前向舰桥前厅与后向机库廊道"
+    },
+    {
+      "sourceFile": "scripts/menu_ship.gd (L164-252)",
+      "section": "局部舱室壳体与管线照明",
+      "partName": "防滑地板 + 20根地沟格栅 + 3道弯折I型肋骨梁 + 3根顶部法兰管线与阀门手轮 + 2根下垂软管 + 笼式吊灯 + 双壁灯",
+      "statusInUpstream": "外侧无船体轮廓，注释中提到的「右舷发动机吊舱」与「护航艇」实际未在代码中构建，窗外仅14片云雾广告牌",
+      "upgradePlan": "将3道弯折肋骨梁融入全舰 87m 刚性龙骨框架，并在窗外实建 4 座带6叶旋转螺旋桨的重型外伸引擎吊舱"
+    },
+    {
+      "sourceFile": "scripts/hub.gd (_build_hangar, L3947-4194)",
+      "section": "独立 3D 机甲整备舱 (BAY 03)",
+      "partName": "19×14m防滑钢甲板 + 双排水格栅沟 + 沉降回转台(24螺栓/4液压卡钳/脐带桩) + 对开防爆闸门 + 二层廊道 + 双梁桥式天车 + 工位工具柜/油桶",
+      "statusInUpstream": "原本独立于主菜单之外的单独 SubViewport，与飞空艇完全割裂，没有船壳包裹与通往其他设施的物理联系",
+      "upgradePlan": "整体实装进飞空艇中段双层挑高龙骨核心，二层1.7m检修廊道与前后上层水密门精确对齐，转盘下方整合腹下机甲空投防爆舱门"
+    },
+    {
+      "sourceFile": "data/ext/progression.gd (FACILITIES & PODS)",
+      "section": "设定中存在但原仓零 3D 建模的飞空艇舱室",
+      "partName": "舰桥指挥室、装甲工坊(米娅)、深渊研究室、医务室、出击食堂(阿堇)、核能轮机舱(轮机长)、空降部署舱(PODS)",
+      "statusInUpstream": "原仓仅作为 2D 卡片列表存在于技能/设施界面，没有任何 3D 舱室建模",
+      "upgradePlan": "在 87m 刚性装甲母舰 42m×14.4m 双层内舱内全部 3D 实景建出，配备前后双18级37.8°缓坡主楼梯与全尺铰链水密门"
+    }
+  ],
+  "subsystems": [
+    {
+      "name": "Hull_KeelAndLandingGear",
+      "label": "起落雪橇 · 舰首铁甲船艏/11m船首斜桅 · 腹下空投闸门",
+      "meshes": 256,
+      "tris": 14140
+    },
+    {
+      "name": "Hull_DecksAndBulkheads",
+      "label": "42m双层宽体甲板 · 铰链水密门舱壁与双楼梯井",
+      "meshes": 170,
+      "tris": 7998
+    },
+    {
+      "name": "Hull_PortArmorShell",
+      "label": "左舷战舰装甲壳体 · 下浮力浮筒 (含 OBS-2 窗洞)",
+      "meshes": 89,
+      "tris": 6408
+    },
+    {
+      "name": "Hull_StarboardArmorShell",
+      "label": "右舷可剖切战舰外壳 · 下浮力浮筒",
+      "meshes": 109,
+      "tris": 7946
+    },
+    {
+      "name": "Hull_GondolaRoof",
+      "label": "露天柚木主甲板 · 中央机库吊装舱口与绞盘",
+      "meshes": 93,
+      "tris": 4140
+    },
+    {
+      "name": "Envelope_PortHalf",
+      "label": "78m刚性浮空气囊 (左半空腔+内骨架+雷达栈桥+系泊锥+阶梯尾楼)",
+      "meshes": 437,
+      "tris": 39428
+    },
+    {
+      "name": "Envelope_StarboardHalf",
+      "label": "78m刚性浮空气囊 (右半剖切蒙皮+承托桁架与拉索)",
+      "meshes": 160,
+      "tris": 12496
+    },
+    {
+      "name": "Propulsion_PortNacelles",
+      "label": "左舷26m双层掠翼 · 双涵道涡桨 · 左尾主推进涡轮",
+      "meshes": 261,
+      "tris": 23734
+    },
+    {
+      "name": "Propulsion_StarboardNacelles",
+      "label": "右舷26m双层掠翼 · 双涵道涡桨 · 右尾主推进涡轮",
+      "meshes": 261,
+      "tris": 23734
+    },
+    {
+      "name": "Propulsion_CruciformTail",
+      "label": "舰尾腹下大空舵 · 左舷水平尾翼与翼尖垂尾",
+      "meshes": 30,
+      "tris": 1456
+    },
+    {
+      "name": "Tail_StarboardElevatorRoot",
+      "label": "右舷水平尾翼与翼尖垂尾 (剖切联动)",
+      "meshes": 17,
+      "tris": 572
+    },
+    {
+      "name": "Cabin_PortholeOBS2",
+      "label": "舱1 · OBS-2 主菜单观景舷窗舱",
+      "meshes": 231,
+      "tris": 12996
+    },
+    {
+      "name": "Cabin_HangarBay03",
+      "label": "舱2 · BAY 03 核心机甲整备舱",
+      "meshes": 283,
+      "tris": 16956
+    },
+    {
+      "name": "Cabin_CommandBridge",
+      "label": "舱3 · BRG-01 舰首装甲指挥舰桥",
+      "meshes": 265,
+      "tris": 12344
+    },
+    {
+      "name": "Cabin_WorkshopArmory",
+      "label": "舱4 · WRK-02 装甲工坊与前18级缓坡主楼梯",
+      "meshes": 94,
+      "tris": 4112
+    },
+    {
+      "name": "Cabin_LabAndInfirmary",
+      "label": "舱5 · LAB-04 深渊研究室与医务舱",
+      "meshes": 50,
+      "tris": 3256
+    },
+    {
+      "name": "Cabin_CrewGalley",
+      "label": "舱6 · GAL-05 出击食堂与乘员休整舱",
+      "meshes": 99,
+      "tris": 4096
+    },
+    {
+      "name": "Cabin_EngineeringAndPods",
+      "label": "舱7 · ENG-06 核能轮机与双空降发射井",
+      "meshes": 107,
+      "tris": 16316
+    },
+    {
+      "name": "Aft_CompanionwayStaircase",
+      "label": "舰尾18级缓坡贯通主楼梯",
+      "meshes": 52,
+      "tris": 2232
+    }
+  ],
+  "cabins": [
+    {
+      "id": "exterior",
+      "code": "ALB-00",
+      "name": "全舰外观 · 87m大型浮空气艇母舰",
+      "en_name": "87M DIRIGIBLE SKYFARER CARRIER",
+      "deck": "87.2m × 39.6m × 52.4m 浮空飞艇母舰",
+      "bounds": "X[-40.8..+46.4] · Y[0..39.6] · Z[-26.2..+26.2]",
+      "cam_pos": [
+        74,
+        34,
+        -76
+      ],
+      "cam_target": [
+        0,
+        17.5,
+        0
+      ],
+      "recommended_cutaway": "full_exterior",
+      "upstream_source": "大型骑空战舰舰体 + 78m 刚性浮空飞艇气囊一体化精做（整合 menu_ship + hub）"
+    },
+    {
+      "id": "cutaway_overview",
+      "code": "CUT-01",
+      "name": "右舷纵剖全景 · 七舱与双主楼梯",
+      "en_name": "STARBOARD CUTAWAY SECTION",
+      "deck": "78m气囊内骨架 + 42m双层宽体舱室",
+      "bounds": "切开右半气囊蒙皮、右舷装甲与右掠翼 (+Z) 透视气囊骨架、前后双18级主楼梯与全部 7 大舱室",
+      "cam_pos": [
+        0,
+        21,
+        98
+      ],
+      "cam_target": [
+        0,
+        17.2,
+        -0.5
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "全舰 87m 大型浮空飞艇母舰纵剖工程视图"
+    },
+    {
+      "id": "porthole_obs2",
+      "code": "OBS-2",
+      "name": "主菜单观景舷窗舱",
+      "en_name": "MAIN MENU PORTHOLE CABIN",
+      "deck": "上甲板 · 左舷前部 (Y=5.6m)",
+      "bounds": "X[+9.5..+19.5] · Y[5.6..10.0] · Z[-7.1..-0.6]",
+      "cam_pos": [
+        16.25,
+        7.62,
+        -1.35
+      ],
+      "cam_target": [
+        9.8,
+        7.45,
+        -13.6
+      ],
+      "recommended_cutaway": "full_exterior",
+      "upstream_source": "scripts/menu_ship.gd + scripts/menu.gd (1:1 整合升级)"
+    },
+    {
+      "id": "hangar_bay03",
+      "code": "BAY-03",
+      "name": "核心机甲整备舱",
+      "en_name": "MECH HANGAR PREP BAY 03",
+      "deck": "中段双层挑高龙骨核心 (Y=1.4~10.0m)",
+      "bounds": "X[-9.5..+9.5] · Y[1.4..10.0] · Z[-7.1..+7.1]",
+      "cam_pos": [
+        4.8,
+        4.75,
+        11.8
+      ],
+      "cam_target": [
+        -0.1,
+        3.65,
+        -1
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "scripts/hub.gd _build_hangar() (1:1 整合升级)"
+    },
+    {
+      "id": "command_bridge",
+      "code": "BRG-01",
+      "name": "舰首装甲指挥舰桥",
+      "en_name": "FORWARD COMMAND BRIDGE",
+      "deck": "上甲板 · 舰首 (Y=5.6m)",
+      "bounds": "X[+19.5..+25.8] · Y[5.6..10.1] · Z[-7.1..+7.1]",
+      "cam_pos": [
+        20.2,
+        7.75,
+        4.65
+      ],
+      "cam_target": [
+        24.2,
+        6.95,
+        -0.35
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "主航行驾驶与深渊战区战术指挥舱"
+    },
+    {
+      "id": "workshop_armory",
+      "code": "WRK-02",
+      "name": "装甲工坊与前主楼梯",
+      "en_name": "ARMOR WORKSHOP & ARMORY",
+      "deck": "下甲板 · 舰首前段 (Y=1.4m)",
+      "bounds": "X[+9.5..+19.5] · Y[1.4..5.6] · Z[-7.1..+7.1]",
+      "cam_pos": [
+        14.5,
+        4.2,
+        11.2
+      ],
+      "cam_target": [
+        14.5,
+        3,
+        -1.2
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "data/ext/progression.gd FACILITIES[\"workshop\"] (米娅)"
+    },
+    {
+      "id": "lab_infirmary",
+      "code": "LAB-04",
+      "name": "深渊研究室与医务舱",
+      "en_name": "ABYSS LAB & INFIRMARY",
+      "deck": "上甲板 · 右舷前部 (Y=5.6m)",
+      "bounds": "X[+9.5..+17.3] · Y[5.6..10.0] · Z[-0.6..+7.1]",
+      "cam_pos": [
+        14.4,
+        8,
+        11.4
+      ],
+      "cam_target": [
+        13.8,
+        7,
+        2.4
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "data/ext/progression.gd FACILITIES[\"lab\" / \"infirmary\"]"
+    },
+    {
+      "id": "crew_galley",
+      "code": "GAL-05",
+      "name": "出击食堂与乘员休整舱",
+      "en_name": "CREW GALLEY & QUARTERS",
+      "deck": "上甲板 · 舰尾后段 (Y=5.6m)",
+      "bounds": "X[-22.5..-9.5] · Y[5.6..10.0] · Z[-7.1..+7.1]",
+      "cam_pos": [
+        -15.2,
+        8,
+        11.6
+      ],
+      "cam_target": [
+        -15.6,
+        7,
+        -1.4
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "data/ext/progression.gd FACILITIES[\"kitchen\"] (阿堇)"
+    },
+    {
+      "id": "engineering_pods",
+      "code": "ENG-06",
+      "name": "核能轮机舱与后主楼梯",
+      "en_name": "REACTOR ENGINEERING & DROP PODS",
+      "deck": "下甲板 · 舰尾后段 (Y=1.4m)",
+      "bounds": "X[-22.5..-9.5] · Y[1.4..5.6] · Z[-7.1..+7.1]",
+      "cam_pos": [
+        -15.8,
+        4.3,
+        11.8
+      ],
+      "cam_target": [
+        -16,
+        3.1,
+        -0.8
+      ],
+      "recommended_cutaway": "starboard_cutaway",
+      "upstream_source": "data/ext/progression.gd PODS + 轮机长主动力舱"
+    }
+  ]
+}

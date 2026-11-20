@@ -8,8 +8,10 @@ const MV = preload("res://scripts/mech_visual.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 
 const MenuShip = preload("res://scripts/menu_ship.gd")
+const AlbatrossAirship = preload("res://scripts/airship/airship_albatross.gd")
 
 var cam: Camera3D
+var airship: Node3D
 var toon: Node
 var menu_env: Environment
 var t := 0.0
@@ -20,6 +22,7 @@ var slots_panel: PanelContainer
 var slots_mode := "load"
 var slot_cards := {}
 var _dlg_name: LineEdit
+var _fps_cb: CheckButton
 var buttons: Array = []
 var post_mat: ShaderMaterial
 var _sv: SubViewport
@@ -33,7 +36,7 @@ func _ready() -> void:
 	add_child(svc)
 	var sv: SubViewport = svc.sv
 	_sv = sv
-	GameData.apply_quality(sv)
+	GameData.apply_quality(sv, false)
 	_build_scene(sv)
 	_build_ui()
 
@@ -101,7 +104,22 @@ func _build_scene(sv: SubViewport) -> void:
 		var city := preload("res://scripts/menu_city.gd").new()
 		root.add_child(city)
 		city.setup(sky.sky_material, L)
-	refs = MenuShip.build(root)
+	# 装配完整 87.2m 信天翁号，将既有主菜单 OBS-2 观景舱精确置于左舷 OBS-2 舱位（世界坐标保持 0,0,0 与旧镜头 100% 重合）
+	airship = AlbatrossAirship.build_integrated({
+		"obs2_exact_origin": true,
+		"obs2_fit_airship": false,
+		"include_obs2_lights": true,
+		"include_obs2_outside": true,
+		"bay03_fit_airship": true,
+		"include_bay03_lights": false,
+		"bay03_mob": mob,
+		"bay03_mob_ren": mob_ren,
+		"batch_static": true,
+	})
+	airship.position = -AlbatrossAirship.OBS2_MOUNT_POS_EXACT
+	root.add_child(airship)
+	AlbatrossAirship.set_cutaway_mode(airship, "legacy_obs2")
+	refs = airship.get_meta("obs2_refs")
 	cam = Camera3D.new()
 	cam.fov = 62
 	cam.near = 0.22
@@ -807,6 +825,12 @@ func _build_settings(initial_tab := "video") -> void:
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	pg.add_child(vs)
+	var fps_cb := CheckButton.new()
+	fps_cb.text = Loc.t("显示 FPS", "Show FPS")
+	fps_cb.button_pressed = GameData.show_fps
+	fps_cb.toggled.connect(func(on): GameData.set_show_fps(on))
+	pg.add_child(fps_cb)
+	_fps_cb = fps_cb
 	pg.add_child(_field_label(Loc.t("画质", "Quality")))
 	var q := OptionButton.new()
 	for i in GameData.QUALITY_NAMES.size():
@@ -816,11 +840,24 @@ func _build_settings(initial_tab := "video") -> void:
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
 		if _sv and is_instance_valid(_sv):
-			GameData.apply_quality(_sv)
+			GameData.apply_quality(_sv, false)
 		if menu_env and OS.has_feature("mobile"):
 			menu_env.glow_enabled = GameData.quality >= 2
 		GameData.save_game())
 	pg.add_child(q)
+	if not OS.has_feature("mobile"):
+		pg.add_child(_field_label(Loc.t("渲染精度", "Render Scale")))
+		var rs := OptionButton.new()
+		var rs_opts := GameData.render_scale_options()
+		for i in rs_opts.size():
+			rs.add_item(str(rs_opts[i]), i)
+		rs.selected = GameData.render_scale_mode
+		rs.item_selected.connect(func(i):
+			GameData.set_render_scale_mode(i)
+			GameData.apply_quality(get_viewport())
+			if _sv and is_instance_valid(_sv):
+				GameData.apply_quality(_sv, false))
+		pg.add_child(rs)
 	pg.add_child(_field_label(Loc.t("画面风格", "Render Style")))
 	var st := OptionButton.new()
 	st.add_item(Loc.t("写实光影", "Realistic Lighting"), 0)
@@ -892,6 +929,8 @@ func _build_settings(initial_tab := "video") -> void:
 
 func _toggle_settings() -> void:
 	settings_panel.visible = not settings_panel.visible
+	if settings_panel.visible and _fps_cb != null and is_instance_valid(_fps_cb):
+		_fps_cb.set_pressed_no_signal(GameData.show_fps)
 	shade.visible = settings_panel.visible or start_panel.visible or slots_panel.visible
 	Audio.play_ui("ui_open" if settings_panel.visible else "ui_cancel")
 
@@ -916,6 +955,8 @@ func _process(delta: float) -> void:
 		refs.lamp.rotation.x = sin(t * 0.27) * 0.03
 	if refs.has("prop"):
 		refs.prop.rotation.x += delta * 14.0
+	if airship:
+		AlbatrossAirship.spin_propellers(airship, delta, 12.0)
 	if refs.has("clouds"):
 		for c in refs.clouds:
 			c.position.x -= delta * 4.0

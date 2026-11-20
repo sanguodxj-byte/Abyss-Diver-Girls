@@ -62,7 +62,7 @@ void fragment() {
 	float vig = 1.0 - dot(UV - 0.5, UV - 0.5) * 0.42;
 	float micro = 0.97 + 0.03 * sin(UV.y * 280.0 - TIME * 2.5);
 	c.rgb *= tint * vig * micro;
-	c.a *= 0.96;
+	c.a *= 0.88;
 	COLOR = c;
 }
 """
@@ -301,8 +301,7 @@ class AmmoColumn extends Control:
 	func setup(m, s: String) -> void:
 		mech = m
 		slot = s
-		mouse_filter = Control.MOUSE_FILTER_STOP
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		font = PixelUI.pixel_font()
 		var id: String = m.loadout.get(s, "")
@@ -310,30 +309,20 @@ class AmmoColumn extends Control:
 			visible = false
 			return
 		var w := str(GameData.module(id).get("weapon", "mg"))
-		if not GameData.weapon_uses_ammo(w):
-			# 激光 / 近战工程臂不占弹匣，由能量条与技能槽反馈
-			visible = false
-			return
 		visible = true
 		var a: Dictionary = GameData.AMMO.get(w, {})
-		tex = load("res://assets/ui/%s.png" % str(a.get("tex", "ammo_mg")))
-		mag = int(m.mag[s])
+		tex = load("res://assets/ui/%s.png" % str(a.get("tex", "ammo_cell")))
+		mag = 20
 		bh = bw * float(tex.get_height()) / float(tex.get_width())
 		yoff.clear()
-		for i in int(m.ammo[s]):
+		var init_n := int(round(float(mag) * clampf(float(m.energy) / maxf(float(m.max_energy), 1.0), 0.0, 1.0)))
+		for i in init_n:
 			yoff.append(0.0)
 		if not m.fired.is_connected(_on_fired):
 			m.fired.connect(_on_fired)
 		if not resized.is_connected(_layout):
 			resized.connect(_layout)
 		_layout()
-
-	func _gui_input(ev: InputEvent) -> void:
-		if mech == null or mech.input_locked:
-			return
-		if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
-			mech.start_reload(slot)
-			accept_event()
 
 	func _layout() -> void:
 		if mag <= 0:
@@ -343,35 +332,38 @@ class AmmoColumn extends Control:
 	func _on_fired(s: String) -> void:
 		if s != slot or yoff.is_empty():
 			return
-		# 底部那颗退壳弹出，其余整列下滑一格
-		yoff.pop_front()
 		for i in yoff.size():
-			yoff[i] += pitch
+			yoff[i] = minf(float(yoff[i]) + pitch * 0.45, pitch * 1.5)
 		ejects.append({"p": Vector2(size.x * 0.5, size.y - bh * 0.5), "v": Vector2(randf_range(90, 150), randf_range(-170, -110)), "r": 0.0, "rv": randf_range(8, 16), "life": 0.7})
+		queue_redraw()
 
 	func _process(delta: float) -> void:
 		if mech == null or tex == null:
 			return
-		# 换弹：按进度把子弹逐颗补回，新子弹从弹槽顶端落下
-		var want: int = int(mech.ammo[slot])
-		if mech.reload_t[slot] > 0.0:
-			want = int(round(float(mag) * (1.0 - mech.reload_frac(slot))))
+		var want: int = int(round(float(mag) * clampf(float(mech.energy) / maxf(float(mech.max_energy), 1.0), 0.0, 1.0)))
+		var dirty := false
 		while yoff.size() < want:
 			var i := yoff.size()
 			yoff.append(size.y - (i + 1) * pitch)
-		while yoff.size() > want and mech.reload_t[slot] <= 0.0:
+			dirty = true
+		while yoff.size() > want:
 			yoff.pop_back()
+			dirty = true
 		for i in yoff.size():
 			var y: float = yoff[i]
 			if y > 0.0:
 				yoff[i] = move_toward(y, 0.0, maxf(700.0 * delta, y * 16.0 * delta))
-		for e in ejects:
-			e.v.y += 900.0 * delta
-			e.p += e.v * delta
-			e.r += e.rv * delta
-			e.life -= delta
-		ejects = ejects.filter(func(e): return e.life > 0.0)
-		queue_redraw()
+				dirty = true
+		if not ejects.is_empty():
+			dirty = true
+			for e in ejects:
+				e.v.y += 900.0 * delta
+				e.p += e.v * delta
+				e.r += e.rv * delta
+				e.life -= delta
+			ejects = ejects.filter(func(e): return e.life > 0.0)
+		if dirty:
+			queue_redraw()
 
 	func _draw() -> void:
 		if tex == null:
@@ -459,11 +451,11 @@ class SkillSlot extends Control:
 		var amber := Color(0.78, 0.48, 0.16)
 		var amber_hi := Color(0.87, 0.59, 0.25)
 		var steel_hi := Color(0.46, 0.49, 0.52)
-		# 半科幻废土工业槽底 + 倒角高光框
-		var fill_c := Color(0.068, 0.074, 0.080, 0.96).lerp(amber_hi, press_flash * 0.24)
+		# 半透明废土工业凹槽（叠加在横轨背板上保持通透均匀，避免双层厚重黑块）
+		var fill_c := Color(0.024, 0.028, 0.034, 0.34).lerp(amber_hi, press_flash * 0.28)
 		draw_rect(box, fill_c)
 		draw_line(o + Vector2(2, 2), o + Vector2(s - 2, 2), Color(steel_hi.r, steel_hi.g, steel_hi.b, 0.22), 1.0)
-		var border_c := amber_hi if (info.active or press_flash > 0.05) else (Color(0.36, 0.39, 0.41, 0.95) if ready else Color(0.18, 0.20, 0.22, 0.94))
+		var border_c := amber_hi if (info.active or press_flash > 0.05) else (Color(0.38, 0.41, 0.43, 0.82) if ready else Color(0.20, 0.22, 0.24, 0.76))
 		draw_rect(box, border_c, false, 1.5)
 		if ready or info.active:
 			var a := 8.0
@@ -505,9 +497,9 @@ class SkillSlot extends Control:
 		var ch := 18.0
 		var cpos := Vector2((size.x - cw) * 0.5, s - 7.0)
 		var crect := Rect2(cpos, Vector2(cw, ch))
-		draw_rect(crect, Color(0.16, 0.18, 0.20, 0.97) if info.ok else Color(0.10, 0.11, 0.12, 0.94))
-		draw_rect(crect, Color(0.38, 0.41, 0.44, 0.95) if info.ok else Color(0.22, 0.24, 0.26, 0.92), false, 1.0)
-		draw_rect(Rect2(cpos.x, cpos.y + ch - 2.5, cw, 2.5), amber_hi if (ready or info.active) else Color(0.24, 0.26, 0.28, 0.92))
+		draw_rect(crect, Color(0.14, 0.16, 0.18, 0.78) if info.ok else Color(0.09, 0.10, 0.11, 0.74))
+		draw_rect(crect, Color(0.40, 0.43, 0.46, 0.84) if info.ok else Color(0.24, 0.26, 0.28, 0.78), false, 1.0)
+		draw_rect(Rect2(cpos.x, cpos.y + ch - 2.5, cw, 2.5), amber_hi if (ready or info.active) else Color(0.24, 0.26, 0.28, 0.80))
 		draw_string(font, cpos + Vector2(0, 12.5), cap_text, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color(0.88, 0.89, 0.86) if info.ok else Color(0.44, 0.46, 0.46))
 
 

@@ -100,7 +100,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 			var mh := 1.25 + mk * 0.55
 			var mpos: Vector3 = p + Vector3(-0.22 + mk * 0.44, mh * 0.42, (mk - 0.5) * 0.25)
 			var mrot := Vector3(r.randf_range(-12, 12), r.randf() * 360.0, r.randf_range(-12, 12))
-			A.add(raid.world, A.cyl(0.10, mh, 0.32, 6), M_SEAM, mpos, mrot, Vector3.ONE, false)
+			A.add(raid.world, A.cyl(0.10, mh, 0.32, 6, true), M_SEAM, mpos, mrot, Vector3.ONE, false)
 			A.add(raid.world, A.bevel_box(Vector3(0.05, mh * 0.45, 0.36), 0.008), m_vein, mpos, mrot, Vector3.ONE, false)
 		A.add(raid.world, A.cyl(0.035, 1.15, 0.035, 8), A.metal(STEEL), p + Vector3(0.68, 0.58, 0.15))
 		A.add(raid.world, A.bevel_box(Vector3(0.26, 0.16, 0.04), 0.008), A.hazard(), p + Vector3(0.68, 1.08, 0.15))

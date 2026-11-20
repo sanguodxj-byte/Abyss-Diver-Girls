@@ -3,8 +3,8 @@ shader_type spatial;
 // 每一步向太阳再步进几次求自阴影（Beer-Lambert + powder），云团有真正的厚度、背光面和透光边。
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 #include "res://shaders/menu_common.gdshaderinc"
-uniform int steps = 28;
-uniform int shadow_steps = 4;
+uniform int steps = 22;
+uniform int shadow_steps = 3;
 uniform float sigma = 0.045;      // 消光系数（每米，密度 1 时）
 uniform float far_fade = 5200.0;  // 远处交给天空盒的云海
 varying highp vec3 wp;
@@ -17,10 +17,11 @@ void fragment() {
 	highp vec3 d = normalize(wp - ro);
 	if (d.y > -0.003) discard;
 	highp float t0 = (cloud_top - ro.y) / d.y;
+	if (t0 > far_fade) discard;
 	highp float t1 = (cloud_bot - ro.y) / d.y;
 	float len = min(t1 - t0, 1600.0);
 	float dt = len / float(steps);
-	float jit = hash(FRAGCOORD.xy + fract(TIME) * 37.0);
+	float jit = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))) + fract(TIME * 0.37) * 0.6180339);
 	vec3 L = normalize(sun_dir);
 	float mu = dot(d, L);
 	float phase = mix(hg(mu, 0.55), hg(mu, -0.2), 0.3) * 4.0 * PI;
@@ -32,15 +33,19 @@ void fragment() {
 	for (int i = 0; i < steps; i++) {
 		float t = t0 + (float(i) + jit) * dt;
 		vec3 p = ro + d * t;
-		float cov = cloud_cov(p.xz);
-		if (cov < 0.01) continue;
-		float dn = cloud_dens(p, cov);
+		vec2 ch = cloud_cov_heap(p.xz);
+		if (ch.x < 0.01) continue;
+		float dn = cloud_dens_h(p, ch.x, ch.y);
 		if (dn < 0.003) continue;
-		// 向太阳的光学深度
+		// 向太阳的光学深度（3 步非均匀采样覆盖约 115m 光学厚度，配合 LUT 硬件采样极低开销）
 		float od = 0.0;
 		for (int k = 1; k <= shadow_steps; k++) {
-			vec3 q = p + L * (float(k * k) * 9.0);
-			od += cloud_dens(q, cloud_cov(q.xz)) * float(2 * k - 1) * 9.0;
+			float fk = float(k);
+			vec3 q = p + L * (fk * fk * 12.0);
+			vec2 qch = cloud_cov_heap(q.xz);
+			if (qch.x >= 0.01) {
+				od += cloud_dens_h(q, qch.x, qch.y) * (2.0 * fk - 1.0) * 14.0;
+			}
 		}
 		float Ts = exp(-od * sigma * 0.9);
 		float powder = 1.0 - exp(-od * sigma * 2.0 - dn * 1.5);
@@ -52,7 +57,7 @@ void fragment() {
 		dsum += T * a * t;
 		wsum += T * a;
 		T *= 1.0 - a;
-		if (T < 0.02) break;
+		if (T < 0.025) break;
 	}
 	float alpha = 1.0 - T;
 	if (alpha < 0.002) discard;

@@ -57,10 +57,11 @@ func _host_run() -> void:
 	await wait_real(1.0)
 	var m = c.units[remote]
 	var start: Vector3 = m.position
-	var ammo_before: int = m.ammo.arm_l
+	var shots := [0]
+	m.fired.connect(func(_s: String): shots[0] += 1)
 	_stage("move")
-	if not await _wait_for(func(): return m.position.distance_to(start) > 0.5 and m.ammo.arm_l < ammo_before, "客户端移动/开火未由房主执行", 12): return
-	log_line("remote moved %.2fm, ammo %d -> %d" % [m.position.distance_to(start), ammo_before, m.ammo.arm_l])
+	if not await _wait_for(func(): return m.position.distance_to(start) > 0.5 and shots[0] > 0, "客户端移动/开火未由房主执行", 12): return
+	log_line("remote moved %.2fm, shots=%d energy=%.1f" % [m.position.distance_to(start), shots[0], m.energy])
 	await wait_real(1.0)
 	_stage("idle")
 	await wait_real(0.5)

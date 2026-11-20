@@ -591,7 +591,7 @@ static func _crystal_cluster(raid, p: Vector3, rot: float) -> void:
 		var r = raid.rng.randf_range(0.45, 0.92)
 		var q := Vector3(sin(a) * d, h * 0.38, cos(a) * d)
 		var tilt := Vector3(raid.rng.randf_range(-16, 16), raid.rng.randf() * 360, raid.rng.randf_range(-16, 16))
-		A.add(n, A.cyl(r * 0.28, h, r * 0.78, 6), M_ORE, q, tilt, Vector3(1.0, 1.0, 0.78), false)
+		A.add(n, A.cyl(r * 0.28, h, r * 0.78, 6, true), M_ORE, q, tilt, Vector3(1.0, 1.0, 0.78), false)
 		if i % 2 == 0:
 			A.add(n, A.bevel_box(Vector3(0.08, h * 0.48, r * 0.95), 0.01), m_vein, q + Vector3(0, -h * 0.08, 0), tilt, Vector3.ONE, false)
 	# 外围遗弃的工业勘探三脚地震检波仪与取芯钢筒

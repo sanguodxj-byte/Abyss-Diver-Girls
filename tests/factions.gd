@@ -62,7 +62,10 @@ func run() -> void:
 			p0 = m.global_position
 			break
 	var route: Array = [p0 + Vector3(30, 0.3, -8), p0 + Vector3(-60, 0.3, -8)]
-	var sq: Dictionary = fac.spawn_squad(3, route)
+	# 走正式增援队列，覆盖后台脚本预读和分帧合批后的入场、交战、掉落行为。
+	var sq: Dictionary = fac._enqueue_squad(3, route)
+	if not check(await until(func(): return sq.get("members", []).size() == 3, 12.0), "分帧增援队列未完成"):
+		return
 	if not check(sq.size() > 0 and sq.members.size() == 3, "流浪者小队生成失败"):
 		return
 	var r0 = sq.members[0]

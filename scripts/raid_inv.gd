@@ -1225,27 +1225,17 @@ func _format_slot_spec(slot: String, mid: String, mit: Dictionary) -> String:
 				sk_nm
 			]
 		"arm_l", "arm_r":
-			var wtype := str(mit.get("weapon", "mg"))
 			var pel := int(mit.get("pellets", 1))
 			var dmg_txt := "%d×%d" % [int(mit.get("dmg", 0)), pel] if pel > 1 else str(int(mit.get("dmg", 0)))
 			var pen_cls := GameData.pen_class(float(mit.get("pen", 22.0)))
 			var rng_v := int(round(float(mit.get("range", GameData.STD_RANGE))))
-			if GameData.weapon_uses_ammo(wtype):
-				var mag_cap := int(GameData.AMMO.get(wtype, {}).get("mag", 0))
-				var cur_ammo: int = int(raid.mech.ammo.get(slot, mag_cap)) if raid and raid.mech else mag_cap
-				return Loc.t("穿深 %s · 射程 %d · 伤 %s · 弹 %d/%d", "Pen C%d · Rng %d · Dmg %s · %d/%d") % [
-					(Loc.armor_tier(pen_cls) if not Loc.is_en() else pen_cls),
-					rng_v,
-					dmg_txt,
-					cur_ammo,
-					mag_cap
-				]
-			return Loc.t("穿深 %s · 射程 %d · 伤 %s · %s %d/发", "Pen C%d · Rng %d · Dmg %s · %s %d/shot") % [
+			var en_s := str(snappedf(GameData.shot_energy_cost(mit), 0.01))
+			return Loc.t("穿深 %s · 射程 %d · 伤 %s · %s %s/发", "Pen C%d · Rng %d · Dmg %s · %s %s/shot") % [
 				(Loc.armor_tier(pen_cls) if not Loc.is_en() else pen_cls),
 				rng_v,
 				dmg_txt,
 				Loc.t("能耗", "Energy"),
-				int(round(GameData.shot_energy_cost(mit)))
+				en_s
 			]
 		"back":
 			var bsk_info := GameData.module_skill_info(mid)

@@ -264,11 +264,24 @@ func _loot_tiers() -> Array:
 					per += w * mod_exp
 				else:
 					per += w * float(GameData.item(str(k)).get("v", 0.0))
+			# 稀有产出层：每件物资小概率改从稀有池抽取
+			var rc: float = GameData.RARE_CHANCE * float((GameData.RARE_TIER_MUL as Dictionary).get(tier, 1.0))
+			var rare_pool: Dictionary = GameData.RARE_POOL
+			var rare_total := 0.0
+			for k2 in rare_pool:
+				rare_total += float(rare_pool[k2])
+			var rare_exp := 0.0
+			for k2 in rare_pool:
+				var w2 := float(rare_pool[k2]) / maxf(rare_total, 0.001)
+				rare_exp += w2 * (mod_exp if str(k2) == "@module" else float(GameData.item(str(k2)).get("v", 0.0)))
+			per += rc * rare_exp
 			var rolls := (float(t.rolls[0]) + float(t.rolls[1])) / 2.0 + float(tr.rolls)
 			rows.append({
 				"table": table, "tier": tier, "rolls": snappedf(rolls, 0.01),
 				"module_chance": snappedf(mod_chance, 0.001),
 				"module_value": snappedf(mod_exp, 0.1),
+				"rare_chance": snappedf(rc, 0.001),
+				"rare_value": snappedf(rare_exp, 0.1),
 				"expect_value": snappedf(rolls * per, 0.1),
 			})
 	return rows

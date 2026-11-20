@@ -42,6 +42,7 @@ var _sfx_gap := {"arm_l": 0, "arm_r": 0}
 var nav_agent = preload("res://scripts/nav_grid.gd").Agent.new()   ## 沿导航网格（机甲间隙）绕开建筑
 var _near := false
 var _anim_acc := 0.0
+var _los_q: PhysicsRayQueryParameters3D = null
 
 const ROVER_MASK := 1 | 2 | 4 | 32     ## 流浪者子弹：地形 + 玩家 + 虫群 + 队友
 const ALLY_MASK := 1 | 4 | 16          ## 队友子弹：地形 + 虫群 + 流浪者
@@ -50,8 +51,22 @@ const ROVER_GLOW := Color(1.0, 0.22, 0.12)
 const ALLY_GLOW := Color(0.35, 0.85, 1.0)
 
 
-func setup_npc(lo: Dictionary, fac: String, t := 1) -> void:
-	setup(lo, [])
+## 256×256 敌我识别环需要逐像素生成，首次开销应发生在加载阶段。
+static func warm_shared_visuals(materials: Array = [], cores: Array = []) -> void:
+	A2.ring_tex()
+	A2.aegis_shield_mesh(1.52, 1.55, 6, 36)
+	for material: Material in materials:
+		var exempt := occ_exempt_material(material)
+		_painted_material(exempt, "ally")
+		_painted_material(exempt, "rover")
+	for id: String in cores:
+		_raider_kit_scene(id)
+
+
+func setup_npc(lo: Dictionary, fac: String, t := 1, prebuilt_visual: Node3D = null) -> void:
+	var setup_t := Prof.t0()
+	setup(lo, [], prebuilt_visual)
+	Prof.add("spawn.actor_setup", setup_t)
 	faction = fac
 	tier = clampi(t, 1, 3)
 	add_to_group("npc_mechs")
@@ -69,9 +84,15 @@ func setup_npc(lo: Dictionary, fac: String, t := 1) -> void:
 	hp = max_hp
 	_strafe = 1.0 if randf() < 0.5 else -1.0
 	if faction == "rover":
+		setup_t = Prof.t0()
 		_add_raider_kit()
+		Prof.add("spawn.raider_kit", setup_t)
+	setup_t = Prof.t0()
 	_paint()
+	Prof.add("spawn.paint", setup_t)
+	setup_t = Prof.t0()
 	_add_marker()
+	Prof.add("spawn.marker", setup_t)
 
 
 func is_rover() -> bool:
@@ -80,12 +101,28 @@ func is_rover() -> bool:
 
 # ================================================================ 外观
 static var _tint_cache := {}
+static var _raider_kits := {}
 
 ## 流浪者战地改装件：躯干顶部防滚护杠、双联锈蚀排烟直管（深黑烟膛）、鞭状敌我识别天线与前向格栅附加装甲
 func _add_raider_kit() -> void:
 	if torso == null:
 		return
 	var cid := str(torso.get_meta("id", "core_std"))
+	torso.add_child(_raider_kit_scene(cid).instantiate())
+
+
+static func _raider_kit_scene(cid: String) -> PackedScene:
+	if _raider_kits.has(cid): return _raider_kits[cid]
+	var kit := _build_raider_kit(cid)
+	for node in kit.find_children("*", "", true, false): node.owner = kit
+	var packed := PackedScene.new()
+	assert(packed.pack(kit) == OK)
+	kit.free()
+	_raider_kits[cid] = packed
+	return packed
+
+
+static func _build_raider_kit(cid: String) -> Node3D:
 	# [bar_y, bar_z, bar_w, post_h, ex_x, ex_y, ex_z, slat_y, slat_z, slat_w]
 	var cfg_map := {
 		"core_std": [1.06, 0.08, 1.18, 0.34, 0.56, 0.96, 0.56, 0.16, -0.76, 1.04],
@@ -102,7 +139,6 @@ func _add_raider_kit() -> void:
 	var post_x := bar_w * 0.5 - 0.04
 	var kit := Node3D.new()
 	kit.name = "RaiderKit"
-	torso.add_child(kit)
 	var m_iron := A2.metal(Color(0.18, 0.19, 0.20))
 	var m_rust := A2.paint(Color(0.42, 0.22, 0.15), 0.30, 0.72, {"rust": 0.65, "wear": 0.60})
 	var m_bore := A2.rubber()
@@ -124,44 +160,50 @@ func _add_raider_kit() -> void:
 		A2.add(kit, A2.bevel_box(Vector3(0.04, 0.24, 0.14), 0.008), m_iron, Vector3(sx * (slat_w * 0.5 - 0.05), slat_y + 0.08, slat_z + 0.07))
 	for ky in 2:
 		A2.add(kit, A2.bevel_box(Vector3(slat_w, 0.038, 0.028), 0.006), m_rust if ky == 0 else m_iron, Vector3(0, slat_y + ky * 0.15, slat_z))
+	_batch_visual(kit)
+	return kit
 
 
 ## 敌对涂装：流浪者的装甲赋予高风化铁锈炭灰涂装（保留裸钢/镀铬/橡胶与警示条对比度）、光学窗改为猩红；队友仅替换青色识别灯
 func _paint() -> void:
-	for mi in visual.find_children("*", "MeshInstance3D", true, false):
-		var m = mi.material_override
-		if m == null:
-			continue
-		var key := "%s_%d" % [faction, m.get_instance_id()]
-		if m is StandardMaterial3D:
-			if not _tint_cache.has(key):
-				var d: StandardMaterial3D = m.duplicate()
-				if d.emission_enabled:
-					d.emission = ROVER_GLOW if faction == "rover" else ALLY_GLOW
-					d.albedo_color = d.emission
-				elif faction == "rover":
-					if d.metallic >= 0.68:
-						d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.48, 0.44), 0.22)
-					else:
-						d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.30, 0.22), 0.42)
-				_tint_cache[key] = d
-			mi.material_override = _tint_cache[key]
-		elif m is ShaderMaterial and m.shader != null and (m.shader.resource_path == "res://shaders/mech_paint.gdshader" or m.shader.resource_path == "res://shaders/mech_paint_mobile.gdshader"):
-			if not _tint_cache.has(key):
-				var sm: ShaderMaterial = m.duplicate()
-				sm.set_shader_parameter("takes_damage", 0.0)
-				if faction == "rover":
-					var mb := float(sm.get_shader_parameter("metal_base") if sm.get_shader_parameter("metal_base") != null else 0.15)
-					var stp := float(sm.get_shader_parameter("stripes") if sm.get_shader_parameter("stripes") != null else 0.0)
-					if mb < 0.55 and stp < 0.5:
-						var bc: Color = sm.get_shader_parameter("base_color")
-						sm.set_shader_parameter("base_color", Color(bc.r * 0.86, bc.g * 0.66, bc.b * 0.56, bc.a))
-						sm.set_shader_parameter("rust", 0.52)
-						sm.set_shader_parameter("wear", 0.60)
-						sm.set_shader_parameter("grime", 0.58)
-						sm.set_shader_parameter("dust", 0.34)
-				_tint_cache[key] = sm
-			mi.material_override = _tint_cache[key]
+	for mi: MeshInstance3D in visual.find_children("*", "MeshInstance3D", true, false):
+		if mi.material_override != null:
+			mi.material_override = _painted_material(mi.material_override, faction)
+
+
+static func _painted_material(m: Material, fac: String) -> Material:
+	var key := "%s_%d" % [fac, m.get_instance_id()]
+	if m is StandardMaterial3D:
+		if not _tint_cache.has(key):
+			var d: StandardMaterial3D = m.duplicate()
+			if d.emission_enabled:
+				d.emission = ROVER_GLOW if fac == "rover" else ALLY_GLOW
+				d.albedo_color = d.emission
+			elif fac == "rover":
+				if d.metallic >= 0.68:
+					d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.48, 0.44), 0.22)
+				else:
+					d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.30, 0.22), 0.42)
+			_tint_cache[key] = d
+		return _tint_cache[key]
+	elif m is ShaderMaterial and m.shader != null and (m.shader.resource_path == "res://shaders/mech_paint.gdshader" or m.shader.resource_path == "res://shaders/mech_paint_mobile.gdshader"):
+		if not _tint_cache.has(key):
+			var sm: ShaderMaterial = m.duplicate()
+			sm.set_shader_parameter("takes_damage", 0.0)
+			if fac == "rover":
+				var mb := float(sm.get_shader_parameter("metal_base") if sm.get_shader_parameter("metal_base") != null else 0.15)
+				var stp := float(sm.get_shader_parameter("stripes") if sm.get_shader_parameter("stripes") != null else 0.0)
+				if mb < 0.55 and stp < 0.5:
+					var bc: Color = sm.get_shader_parameter("base_color")
+					sm.set_shader_parameter("base_color", Color(bc.r * 0.86, bc.g * 0.66, bc.b * 0.56, bc.a))
+					sm.set_shader_parameter("rust", 0.52)
+					sm.set_shader_parameter("wear", 0.60)
+					sm.set_shader_parameter("grime", 0.58)
+					sm.set_shader_parameter("dust", 0.34)
+			_tint_cache[key] = sm
+		return _tint_cache[key]
+
+	return m
 
 
 func _add_marker() -> void:
@@ -246,12 +288,6 @@ func _physics_tick(delta: float) -> void:
 		return
 	for k in arm_cd:
 		arm_cd[k] = maxf(0.0, arm_cd[k] - delta)
-	for k in reload_t:
-		if reload_t[k] > 0.0:
-			reload_t[k] -= delta
-			if reload_t[k] <= 0.0:
-				reload_t[k] = 0.0
-				ammo[k] = mag[k]
 	hurt_flash = maxf(0.0, hurt_flash - delta)
 	_update_hit_flash()
 	if marker and lod == 0:
@@ -427,8 +463,12 @@ func _choose_target() -> void:
 	ai_target = best
 	_los = true
 	if best != null:
-		var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 2.0, 0), best.global_position + Vector3(0, 1.4, 0), 1)
-		_los = get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+		if _los_q == null:
+			_los_q = PhysicsRayQueryParameters3D.new()
+			_los_q.collision_mask = 1
+		_los_q.from = p + Vector3(0, 2.0, 0)
+		_los_q.to = best.global_position + Vector3(0, 1.4, 0)
+		_los = get_world_3d().direct_space_state.intersect_ray(_los_q).is_empty()
 
 
 ## 移动方向（长度 = 相对全速的比例）
@@ -502,20 +542,12 @@ func _weapon_range() -> float:
 # ================================================================ 开火
 func _npc_fire(slot: String) -> void:
 	var id: String = loadout.get(slot, "")
-	if id == "" or arm_cd[slot] > 0.0 or reload_t[slot] > 0.0 or parts[slot] <= 0.0:
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0:
 		return
 	var m: Dictionary = GameData.module(id)
 	var w := str(m.get("weapon", "mg"))
-	var uses_ammo := GameData.weapon_uses_ammo(w)
-	if uses_ammo and ammo[slot] <= 0:
-		_reload(slot)
-		return
 	arm_cd[slot] = 1.0 / maxf(float(m.get("rate", 1.0)), 0.05) * (1.3 if faction == "rover" else 1.0)
 	recoil[slot] = 1.0
-	if uses_ammo:
-		ammo[slot] -= 1
-		if ammo[slot] <= 0:
-			_reload(slot)
 	var muzzle: Node3D = muzzles.get(slot)
 	var origin: Vector3 = muzzle.global_position if muzzle else global_position + Vector3(0, 2.0, 0)
 	origin.y = clampf(origin.y, 1.2, 2.6)
@@ -534,13 +566,7 @@ func _npc_fire(slot: String) -> void:
 
 
 func _reload(slot: String) -> void:
-	var id: String = loadout.get(slot, "")
-	if id == "" or reload_t[slot] > 0.0:
-		return
-	var w: String = str(GameData.module(id).get("weapon", "mg"))
-	if not GameData.weapon_uses_ammo(w):
-		return
-	reload_t[slot] = float(GameData.AMMO.get(w, {}).get("reload", 2.0)) * 1.2
+	reload_t[slot] = 0.0
 
 
 func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
@@ -563,7 +589,7 @@ func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
 			p_l.apply_falloff(fo)
 		"flamer", "cryo":
 			var life_f := clampf(rng_m / maxf(speed, 12.0) * 6.0, 2.5, 6.0)
-			var p = raid._proj(origin, dir * maxf(speed, 12.0) * randf_range(0.86, 1.12), dmg, life_f, mask, c, 0.34, false, w)
+			var p = raid._proj(origin, dir * maxf(speed, 12.0) * raid.fx_random_range(0.86, 1.12), dmg, life_f, mask, c, 0.34, false, w)
 			p.pierce = true
 			p.grow = 0.0
 			p.hit_sfx = "-"
@@ -574,7 +600,7 @@ func _shot(m: Dictionary, origin: Vector3, dir: Vector3) -> void:
 				speed = 60.0
 			var n: int = int(m.get("pellets", 1))
 			for i in n:
-				var a := deg_to_rad(randf_range(-float(m.get("spread", 2.0)), float(m.get("spread", 2.0))) * 0.5)
+				var a := deg_to_rad(raid.fx_random_range(-float(m.get("spread", 2.0)), float(m.get("spread", 2.0))) * 0.5)
 				var cal := "sniper_ap" if (w == "sniper" and raw_dmg >= 100.0) else ("sniper" if w == "sniper" else ("cannon" if (w in ["shotgun", "cannon", "launcher", "melee"] and raw_dmg >= 55.0) else ("slug" if (w in ["shotgun", "cannon", "launcher", "melee"] and n == 1) else ("pellet" if w == "shotgun" else ("ac30" if raw_dmg >= 20.0 else ("hmg" if raw_dmg >= 12.0 else "mg"))))))
 				var wake_c := Color(1.0, 0.24, 0.14) if faction == "rover" else (
 					Color(1.0, 0.74, 0.24) if w == "sniper" else (
@@ -594,10 +620,14 @@ func take_damage(amount: float) -> void:
 	var eff := amount * (1.0 - armor)
 	var prev_hp := hp
 	hp -= eff
+	var damage_t := Prof.t0()
 	if faction == "rover" and raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit"):
 		raid.hud.notify_enemy_hit(self, prev_hp, hp, max_hp)
+	Prof.add("damage.npc_bar", damage_t)
+	damage_t = Prof.t0()
 	hurt_flash = 0.13
 	_update_hit_flash()
+	Prof.add("damage.npc_flash", damage_t)
 	kick_v += Vector3(randf_range(0.8, 1.6), randf_range(-1.0, 1.0), randf_range(-1.2, 1.2)) * clampf(eff / 14.0, 0.3, 1.2)
 	if _ok(aggressor) and (aggressor == raid.mech or aggressor.is_in_group("coop_players") or aggressor.is_in_group("allies")):
 		killed_by_player = true
@@ -605,7 +635,9 @@ func take_damage(amount: float) -> void:
 		killed_by_player = true   # 爆炸等无来源伤害只来自玩家
 	if hp <= 0.0:
 		hp = 0.0
+		damage_t = Prof.t0()
 		die("destroyed")
+		Prof.add("damage.npc_die", damage_t)
 
 
 func _collect_hit_meshes() -> void:

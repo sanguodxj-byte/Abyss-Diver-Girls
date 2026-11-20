@@ -759,8 +759,8 @@ func _slash_fx(dir: Vector3) -> void:
 	var p := global_position + Vector3(0, 1.0, 0) + dir * float(data.range) * 0.7
 	var side := dir.cross(Vector3.UP)
 	for k in 3:
-		var mi: MeshInstance3D = ART.add(raid.fx, ART.capsule(0.05, 2.2 + k * 0.3), ART.emit(Color(1.0, 0.95, 0.85), 3.0),
-			p + side * (k - 1) * 0.55 + Vector3(0, 0.2 * k, 0), Vector3(0, 0, 0))
+		var mi: MeshInstance3D = ART.add(raid.fx, ART.slash_arc_mesh(2.2 + k * 0.3, 0.16 - k * 0.03, 0.42), ART.emit(Color(1.0, 0.95, 0.85), 3.0),
+			p + side * (k - 1) * 0.55 + Vector3(0, 0.2 * k, 0), Vector3(0, 0, 0), Vector3.ONE, false)
 		mi.look_at(p + dir * 3.0 + Vector3(0, -0.5, 0), Vector3.UP)
 		mi.rotate_object_local(Vector3.FORWARD, PI * 0.5)
 		var tw := mi.create_tween()
@@ -870,10 +870,10 @@ static func shield_ally(raid, b, heal: float, shield: float) -> void:
 	var old = b.get_meta("shield_fx") if b.has_meta("shield_fx") else null
 	if old != null and is_instance_valid(old):
 		old.queue_free()
-	var smat := ART.reactive_arc_mat(Color(0.38, 0.96, 0.78, 0.85))
+	var smat := ART.aegis_shield_mat(Color(0.38, 0.96, 0.78, 0.85))
 	smat.set_shader_parameter("surge", 0.55)
 	var mi := MeshInstance3D.new()
-	mi.mesh = ART.reactive_arc_mesh(maxf(0.55, float(b.data.radius) * 1.25), maxf(0.85, float(b.data.scale) * 1.15), 3, 10)
+	mi.mesh = ART.aegis_shield_mesh(maxf(0.55, float(b.data.radius) * 1.25), maxf(0.85, float(b.data.scale) * 1.15), 5, 28)
 	mi.material_override = smat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = Vector3(0, 0.85 * float(b.data.scale), 0)

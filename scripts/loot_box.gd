@@ -13,6 +13,14 @@ const STYLE := {
 	"safe": {"size": Vector3(1.0, 1.25, 1.0)},
 	"bug": {"size": Vector3(1.6, 0.6, 1.6)},
 	"nest": {"size": Vector3(1.6, 0.6, 1.6)},
+	"ammo": {"size": Vector3(1.0, 0.55, 0.7)},
+	"med": {"size": Vector3(1.1, 0.62, 0.8)},
+	"tech": {"size": Vector3(1.4, 0.75, 0.85)},
+	"register": {"size": Vector3(0.7, 1.05, 0.6)},
+	"weapon": {"size": Vector3(1.8, 0.7, 0.5)},
+	"car_wreck": {"size": Vector3(2.6, 1.0, 1.35)},
+	"container": {"size": Vector3(3.4, 1.5, 1.5)},
+	"cache": {"size": Vector3(0.7, 0.55, 0.7)},
 }
 
 var kind := "supply"
@@ -26,12 +34,18 @@ var _meshes: Array = []
 var _rng := RandomNumberGenerator.new()
 static var _hl_mat: ShaderMaterial
 static var _hl_mesh_cache := {}
+static var _worn_cache := {}
 
 
 ## 环境同款的做旧漆面
 static func _worn(c: Color, metal := 0.1, rust := 0.25) -> ShaderMaterial:
-	return A.paint(c, metal, 0.82, {"wear": 0.65, "dust": 0.55, "dust_color": Color(0.45, 0.4, 0.33), "grime": 0.75,
-		"rust": rust, "rust_color": Color(0.27, 0.15, 0.08), "scratches": 0.35, "bare_metal": c.lightened(0.35), "panel_scale": 0.0})
+	var key := "%s|%.2f|%.2f" % [c.to_html(false), metal, rust]
+	var m: ShaderMaterial = _worn_cache.get(key)
+	if m == null:
+		m = A.paint(c, metal, 0.82, {"wear": 0.65, "dust": 0.55, "dust_color": Color(0.45, 0.4, 0.33), "grime": 0.75,
+			"rust": rust, "rust_color": Color(0.27, 0.15, 0.08), "scratches": 0.35, "bare_metal": c.lightened(0.35), "panel_scale": 0.0})
+		_worn_cache[key] = m
+	return m
 
 
 func _m(mesh: Mesh, mat: Material, pos: Vector3, rot := Vector3.ZERO, scl := Vector3.ONE, hl := true) -> MeshInstance3D:
@@ -68,6 +82,14 @@ func setup(k: String, loot: Array, tier := 1) -> void:
 			"tool": _build_tool(sz, sink)
 			"military": _build_military(sz, sink)
 			"safe": _build_safe(sz, sink)
+			"ammo": _build_ammo(sz, sink)
+			"med": _build_med(sz, sink)
+			"tech": _build_tech(sz, sink)
+			"register": _build_register(sz, sink)
+			"weapon": _build_weapon(sz, sink)
+			"car_wreck": _build_car(sz, sink)
+			"container": _build_container(sz, sink)
+			"cache": _build_cache(sz, sink)
 		_sand_and_rubble(sz)
 	_batch_loot_meshes()
 
@@ -105,7 +127,7 @@ func _batch_loot_meshes() -> void:
 			n.visibility_range_end_margin = 4.0
 		elif n is Node3D and n.get_class() == "Node3D":
 			bodies.append(n)
-	var ckey := kind if kind in ["supply", "tool", "military", "safe"] else ""
+	var ckey := kind if (kind != "bug" and kind != "nest") else ""
 	_meshes = _merge_mesh_group(_meshes, ckey)
 	_merge_mesh_group(other_list, "")
 	for b in bodies:
@@ -344,6 +366,142 @@ func _build_safe(sz: Vector3, sink: float) -> void:
 	for i in 3:
 		var a := TAU * i / 3.0 + 0.5
 		_m(A.bevel_box(Vector3(0.5, 0.22, 0.4), 0.06), C, Vector3(cos(a) * 0.75, 0.08, sin(a) * 0.75), Vector3(_rng.randf() * 20, _rng.randf() * 360, _rng.randf() * 25), Vector3.ONE, false)
+
+
+## 弹药箱：军绿小型弹链箱，顶盖弹壳压条与双卡扣，两枚引信头露在侧袋
+func _build_ammo(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.30, 0.32, 0.23), 0.26, 0.42)
+	var MD := _worn(Color(0.13, 0.14, 0.13), 0.68, 0.5)
+	var MB := _worn(Color(0.55, 0.44, 0.20), 0.78, 0.35)
+	var body := Node3D.new()
+	add_child(body)
+	body.rotation_degrees = Vector3(2, 0, 4)
+	_meshes.append(A.add(body, A.bevel_box(sz, 0.04), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x + 0.03, 0.06, sz.z + 0.03), 0.01), MD, Vector3(0, sz.y * 0.62 - sink, 0)))
+	for rx in [-0.30, 0.0, 0.30]:
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.05, sz.y * 0.5, sz.z * 0.92), 0.006), MD, Vector3(rx * sz.x, sz.y * 0.42 - sink, 0)))
+	for sx in [-1.0, 1.0]:
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.10, 0.16, 0.05), 0.008), MB, Vector3(sx * (sz.x * 0.5 - 0.02), sz.y * 0.58 - sink, -sz.z * 0.5 - 0.02)))
+	_meshes.append(A.add(body, A.cyl(0.03, 0.06, 0.03, 8), MB, Vector3(0.24, sz.y - sink - 0.02, -sz.z * 0.28), Vector3(90, 0, 0)))
+	_m(A.cyl(0.016, 0.09, 0.016, 6), MB, Vector3(-0.18, sz.y * 0.68 - sink, -sz.z * 0.42), Vector3(20, 0, 70), Vector3.ONE, false)
+
+
+## 医疗箱：白漆钢箱 + 红十字条带 + 上掀盖铰链，一角被压瘪
+func _build_med(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.72, 0.72, 0.70), 0.10, 0.18)
+	var MD := _worn(Color(0.14, 0.145, 0.155), 0.6, 0.45)
+	var MR := _worn(Color(0.62, 0.16, 0.14), 0.08, 0.12)
+	var body := Node3D.new()
+	add_child(body)
+	body.rotation_degrees = Vector3(0, 0, -5)
+	_meshes.append(A.add(body, A.bevel_box(sz, 0.04), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x + 0.03, 0.05, sz.z + 0.03), 0.01), MD, Vector3(0, sz.y - sink - 0.02, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(0.16, sz.y * 0.34, 0.02), 0.004), MR, Vector3(0, sz.y * 0.58 - sink, -sz.z * 0.5 - 0.012)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.34, 0.16, 0.02), 0.004), MR, Vector3(0, sz.y * 0.58 - sink, -sz.z * 0.5 - 0.012)))
+	for sx in [-1.0, 1.0]:
+		_meshes.append(A.add(body, A.cyl(0.02, 0.14, 0.02, 8), MD, Vector3(sx * (sz.x * 0.5 - 0.02), sz.y - sink - 0.06, -sz.z * 0.5 - 0.02)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.30, 0.14, sz.z * 0.30), 0.02), MD, Vector3(sz.x * 0.22, sz.y * 0.30 - sink, sz.z * 0.30), Vector3(0, 14, 6)))
+
+
+## 技术物资箱：蓝灰防静电钢板箱，侧挂接口面板与提手，盖板压着一块裸电路板
+func _build_tech(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.24, 0.30, 0.38), 0.40, 0.35)
+	var MD := _worn(Color(0.13, 0.14, 0.14), 0.7, 0.5)
+	var MC := _worn(Color(0.42, 0.46, 0.30), 0.1, 0.3)
+	var body := Node3D.new()
+	add_child(body)
+	body.rotation_degrees = Vector3(0, 12, 2)
+	_meshes.append(A.add(body, A.bevel_box(sz, 0.035), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.86, sz.y * 0.44, 0.025), 0.008), MD, Vector3(0, sz.y * 0.44 - sink, -sz.z * 0.5 - 0.012)))
+	for i in 4:
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.10, 0.05, 0.02), 0.004), MC, Vector3(-sz.x * 0.24 + i * 0.16, sz.y * 0.44 - sink, -sz.z * 0.5 - 0.024)))
+	for sx in [-1.0, 1.0]:
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.05, sz.y * 0.62, 0.10), 0.008), MD, Vector3(sx * (sz.x * 0.5 - 0.02), sz.y * 0.52 - sink, 0)))
+	_meshes.append(A.add(body, A.cyl(0.012, 0.22, 0.012, 6), MD, Vector3(sz.x * 0.30, sz.y * 0.62 - sink, sz.z * 0.40), Vector3(24, 0, 14)))
+	_m(A.bevel_box(Vector3(0.22, 0.015, 0.16), 0.003), MC, Vector3(-sz.x * 0.4, 0.012, sz.z * 0.44), Vector3(0, 40, 0), Vector3.ONE, false)
+
+
+## 结算终端：立式旧世界收款机柜，暗屏与按键板，底部储钞格半开
+func _build_register(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.30, 0.32, 0.36), 0.45, 0.45)
+	var MD := _worn(Color(0.13, 0.14, 0.14), 0.72, 0.5)
+	var MG := A.glass(Color(0.18, 0.34, 0.40))
+	var MB := _worn(Color(0.20, 0.44, 0.20), 0.05, 0.2)
+	_meshes.append(A.add(self, A.bevel_box(sz, 0.03), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(sz.x - 0.14, sz.y * 0.36, 0.03), 0.008), MG, Vector3(0, sz.y * 0.68 - sink, -sz.z * 0.5 - 0.014)))
+	for iy in 3:
+		for ix in 4:
+			_meshes.append(A.add(self, A.bevel_box(Vector3(0.05, 0.035, 0.015), 0.003), MD, Vector3(-sz.x * 0.18 + ix * 0.10, sz.y * 0.36 - sink - iy * 0.05, -sz.z * 0.5 - 0.014)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(sz.x * 0.42, sz.y * 0.22, 0.05), 0.01), MD, Vector3(0, sz.y * 0.22 - sink, -sz.z * 0.5 - 0.026)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(0.06, 0.10, 0.02), 0.004), MB, Vector3(sz.x * 0.22, sz.y * 0.22 - sink, -sz.z * 0.5 - 0.05)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(sz.x + 0.03, 0.05, sz.z + 0.03), 0.01), MD, Vector3(0, sz.y - sink, 0)))
+
+
+## 武器架：斜倚墙面的木制军械架，三条枪槽衬垫与铁丝缠锁
+func _build_weapon(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.36, 0.27, 0.16), 0.08, 0.5)
+	var MD := _worn(Color(0.14, 0.145, 0.155), 0.7, 0.5)
+	var MB := _worn(Color(0.30, 0.30, 0.28), 0.3, 0.4)
+	var body := Node3D.new()
+	add_child(body)
+	body.rotation_degrees = Vector3(-14, 0, 0)
+	_meshes.append(A.add(body, A.bevel_box(sz, 0.02), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	for i in 3:
+		var rx := -sz.x * 0.32 + i * sz.x * 0.32
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.05, sz.y * 0.86, 0.05), 0.006), MD, Vector3(rx, sz.y * 0.5 - sink, -sz.z * 0.5 - 0.026)))
+		_meshes.append(A.add(body, A.bevel_box(Vector3(0.06, sz.y * 0.7, 0.10), 0.008), MD, Vector3(rx, sz.y * 0.46 - sink, -sz.z * 0.5 + 0.06)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.94, 0.05, 0.05), 0.006), MD, Vector3(0, sz.y * 0.8 - sink, -sz.z * 0.5 - 0.026)))
+	for i in 4:
+		_meshes.append(A.add(body, A.cyl(0.008, sz.z * 0.9, 0.008, 6), MB, Vector3(-sz.x * 0.4 + i * sz.x * 0.26, sz.y * 0.3 - sink, 0), Vector3(0, 90, 12 + i * 5)))
+
+
+## 抛锚轿车：锈蚀轿车壳体，四轮歪斜、车窗炸裂、后备箱盖半开
+func _build_car(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.30, 0.33, 0.30), 0.30, 0.62)
+	var MD := _worn(Color(0.14, 0.145, 0.15), 0.7, 0.5)
+	var MG := _worn(Color(0.48, 0.54, 0.54), 0.18, 0.08)
+	var body := Node3D.new()
+	add_child(body)
+	body.rotation_degrees = Vector3(0, 0, 3)
+	_meshes.append(A.add(body, A.bevel_box(sz, 0.10), M, Vector3(0, sz.y * 0.55 - sink, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.52, sz.y * 0.50, sz.z * 0.86), 0.06), M, Vector3(-sz.x * 0.02, sz.y * 0.92 - sink, 0)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.40, sz.y * 0.28, sz.z * 0.80), 0.03), MD, Vector3(-sz.x * 0.02, sz.y * 1.06 - sink, 0)))
+	for sx in [-1.0, 1.0]:
+		for pz in [-1.0, 1.0]:
+			_meshes.append(A.add(body, A.cyl(0.26, 0.18, 0.26, 12), MD, Vector3(sx * (sz.x * 0.5 - 0.06), 0.26 - sink, pz * sz.z * 0.36), Vector3(0, 0, 90)))
+	_meshes.append(A.add(body, A.bevel_box(Vector3(sz.x * 0.50, 0.05, sz.z * 0.55), 0.01), M, Vector3(sz.x * 0.30, sz.y * 1.16 - sink, 0), Vector3(0, 0, 35)))
+	_m(A.bevel_box(Vector3(sz.x * 0.44, 0.30, 0.03), 0.01), MG, Vector3(-sz.x * 0.02, sz.y * 0.98 - sink, -sz.z * 0.5 - 0.01), Vector3.ONE, Vector3.ONE, false)
+	_m(A.bevel_box(Vector3(sz.x * 0.30, 0.14, sz.z * 0.44), 0.02), MD, Vector3(sz.x * 0.30, 0.16 - sink, 0), Vector3(0, 22, 0), Vector3.ONE, false)
+
+
+## 废弃集装箱：波纹钢板大箱体，双开对门缝、铅封挂锁与顶部锈蚀横梁
+func _build_container(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.24, 0.36, 0.40), 0.35, 0.58)
+	var MD := _worn(Color(0.13, 0.14, 0.14), 0.72, 0.55)
+	var MB := _worn(Color(0.52, 0.44, 0.22), 0.80, 0.40)
+	_meshes.append(A.add(self, A.bevel_box(sz, 0.03), M, Vector3(0, sz.y * 0.5 - sink, 0)))
+	for i in int(sz.x / 0.28):
+		var rx := -sz.x * 0.5 + 0.14 + i * 0.28
+		_meshes.append(A.add(self, A.bevel_box(Vector3(0.05, sz.y * 0.96, sz.z * 0.98), 0.008), MD, Vector3(rx, sz.y * 0.5 - sink, 0)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(sz.x + 0.04, 0.09, sz.z + 0.04), 0.01), MD, Vector3(0, sz.y - sink, 0)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(0.05, sz.y * 0.90, sz.z + 0.02), 0.01), MD, Vector3(-sz.x * 0.5 - 0.02, sz.y * 0.5 - sink, 0)))
+	for sx in [-0.12, 0.12]:
+		_meshes.append(A.add(self, A.bevel_box(Vector3(0.10, sz.y * 0.86, 0.06), 0.01), MD, Vector3(sx, sz.y * 0.5 - sink, -sz.z * 0.5 - 0.03)))
+	_meshes.append(A.add(self, A.cyl(0.05, 0.16, 0.05, 8), MB, Vector3(0, sz.y * 0.62 - sink, -sz.z * 0.5 - 0.06), Vector3(90, 0, 0)))
+	_meshes.append(A.add(self, A.bevel_box(Vector3(0.18, 0.24, 0.05), 0.01), MB, Vector3(0, sz.y * 0.36 - sink, -sz.z * 0.5 - 0.04)))
+
+
+## 埋藏桶：半埋进沙土的加固铁桶，双道铁箍与翘开的桶盖，旁边一堆沙
+func _build_cache(sz: Vector3, sink: float) -> void:
+	var M := _worn(Color(0.34, 0.40, 0.28), 0.42, 0.6)
+	var MD := _worn(Color(0.13, 0.14, 0.13), 0.72, 0.55)
+	var C := A.concrete(Color(0.60, 0.55, 0.48), false)
+	var cy := sz.y * 0.42 - sink
+	_meshes.append(A.add(self, A.cyl(sz.x * 0.5, sz.y, sz.x * 0.5, 14), M, Vector3(0, cy, 0), Vector3(0, 0, 8)))
+	for hy in [-0.18, 0.16]:
+		_meshes.append(A.add(self, A.cyl(sz.x * 0.52, 0.045, sz.x * 0.52, 14), MD, Vector3(0, cy + hy, 0), Vector3(0, 0, 8)))
+	_meshes.append(A.add(self, A.cyl(sz.x * 0.40, 0.06, sz.x * 0.40, 14), MD, Vector3(sz.x * 0.10, cy + sz.y * 0.5 - 0.02, 0), Vector3(0, 0, 14)))
+	_m(A.bevel_box(Vector3(0.5, 0.18, 0.42), 0.05), C, Vector3(-sz.x * 0.6, 0.06, sz.z * 0.4), Vector3(0, 30, 0), Vector3.ONE, false)
 
 
 ## 敌对机械体残骸：撕裂的铸铁枪钢装甲壳、氧化锈蚀副板、断裂镀铬液压作动筒、黄铜伺服关节环与余温暗琥珀炉芯（移除旧紫色光条）

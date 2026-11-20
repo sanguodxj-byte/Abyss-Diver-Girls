@@ -28,8 +28,9 @@ func run() -> void:
 	var m = raid.mech
 	m.cargo.append_array(["circuit", "bolts", "hdd"])
 	m.hp = m.max_hp * 0.77
-	m.ammo["arm_l"] = 3
+	m.energy = m.max_energy * 0.65
 	m.parts["arm_r"] = 0.5
+	var energy0: float = m.energy
 	raid.kills = 7
 	var cargo0: Array = m.cargo.duplicate()
 	var start0: Array = raid.start_cargo.duplicate()
@@ -67,7 +68,7 @@ func run() -> void:
 		return
 	if not check(absf(nm.hp - hp0) < 0.5, "机甲结构没有保留：%.1f → %.1f" % [hp0, nm.hp]):
 		return
-	if not check(int(nm.ammo.arm_l) == 3 and absf(float(nm.parts.arm_r) - 0.5) < 0.01, "弹药或部件完好度没有保留：%s %s" % [nm.ammo, nm.parts]):
+	if not check(nm.energy <= energy0 + 0.5 and nm.energy > energy0 - 5.0 and absf(float(nm.parts.arm_r) - 0.5) < 0.01, "能源或部件完好度没有保留：%.1f->%.1f %s" % [energy0, nm.energy, nm.parts]):
 		return
 	if not check(nr.time >= t0 and nr.kills >= 7, "局内时间或击杀数没有保留：%.1f / %d" % [nr.time, nr.kills]):
 		return

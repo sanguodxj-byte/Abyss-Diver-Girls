@@ -14,6 +14,7 @@ uniform float sway_amp : hint_range(0.0, 0.25) = 0.045;
 uniform float backlight_str : hint_range(0.0, 1.0) = 0.36;
 uniform float albedo_gain : hint_range(0.4, 3.5) = 1.0;
 uniform float up_normal_blend : hint_range(0.0, 0.9) = 0.0;
+#include "res://shaders/occ_fade.gdshaderinc"
 
 varying float v_ao;
 varying float v_var;
@@ -35,6 +36,13 @@ void vertex() {
 }
 
 void fragment() {
+	float occ_fade = 0.0;
+	if (occ_params.w > 0.005) {
+		occ_fade = occ_calc_fade(v_wpos, INV_VIEW_MATRIX[3].xyz, occ_params.w, 0.85);
+		if (occ_fade > 0.005 && occ_ign(FRAGCOORD.xy) < clamp(occ_fade * 1.06, 0.0, 1.0)) {
+			discard;
+		}
+	}
 	vec4 tx = texture(albedo_tex, UV);
 	// 远景大仰角/俯拍时随导数自动降低裁切阈值，杜绝树冠远看稀疏发虚
 	float uv_fw = max(fwidth(UV.x), fwidth(UV.y));
@@ -59,7 +67,7 @@ void fragment() {
 		NORMAL = normalize(mix(NORMAL, v_up, up_normal_blend));
 	}
 
-	ALBEDO = col;
+	ALBEDO = occ_fade > 0.01 ? occ_soft_mist(col, occ_fade) : col;
 	ROUGHNESS = clamp(rough_val - (1.0 - UV.y) * 0.08, 0.35, 0.96);
 	SPECULAR = 0.22;
 	METALLIC = 0.0;

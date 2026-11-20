@@ -20,6 +20,9 @@ uniform float metal_wear : hint_range(0.0, 1.0) = 1.0;
 uniform float roof_uv = 0.0;
 global uniform float mech_damage;
 global uniform float weather_wet;
+#include "res://shaders/occ_fade.gdshaderinc"
+uniform float occ_exempt = 0.0;
+uniform float occ_self_fade = 0.0;
 uniform vec4 bare_metal : source_color = vec4(0.66, 0.67, 0.69, 1.0);
 uniform vec4 dust_color : source_color = vec4(0.48, 0.43, 0.36, 1.0);
 uniform vec4 rust_color : source_color = vec4(0.32, 0.16, 0.08, 1.0);
@@ -81,6 +84,26 @@ void vertex() {
 }
 
 void fragment() {
+	float occ_fade = 0.0;
+	if (occ_self_fade > 0.005) {
+		highp vec3 dc_s = INV_VIEW_MATRIX[3].xyz - occ_cam_pos;
+		if (dot(dc_s, dc_s) <= 0.25) {
+			occ_fade = clamp(occ_self_fade, 0.0, 0.92);
+			if (occ_ign(FRAGCOORD.xy) < occ_fade) {
+				discard;
+			}
+		}
+	} else if (occ_exempt < 0.5) {
+		if (occ_clip_whole_bldg(wpos, INV_VIEW_MATRIX[3].xyz)) {
+			discard;
+		}
+		if (occ_params.x > 0.005) {
+			occ_fade = occ_calc_fade(wpos, INV_VIEW_MATRIX[3].xyz, occ_params.x, 0.40);
+			if (occ_fade > 0.005 && occ_ign(FRAGCOORD.xy) < clamp(occ_fade * 1.06, 0.0, 1.0)) {
+				discard;
+			}
+		}
+	}
 	vec3 n_loc = normalize(lnrm);
 	vec3 an = abs(n_loc);
 	highp vec3 p = lpos * detail_scale;
@@ -212,4 +235,9 @@ void fragment() {
 	SPECULAR = mix(mix(0.46, 0.80, worn * metal_wear), 0.56, puddle_m);
 	AO = clamp(1.0 - tex_ao - seam * mix(0.16, 0.36, metal_wear) - low * grime * 0.28 - under * 0.16, 0.42, 1.0);
 	AO_LIGHT_AFFECT = 0.42;
+	if (occ_fade > 0.01) {
+		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
+		ROUGHNESS = mix(ROUGHNESS, 0.96, occ_fade * 0.65);
+		SPECULAR *= 1.0 - occ_fade * 0.72;
+	}
 }

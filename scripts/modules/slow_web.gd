@@ -5,6 +5,7 @@ extends Node3D
 const A = preload("res://scripts/art.gd")
 const FX = preload("res://scripts/modules/weapon_fx.gd")
 const Status = preload("res://scripts/modules/status.gd")
+const DM = preload("res://scripts/modules/device_models.gd")
 
 var raid
 var radius := 4.2
@@ -23,20 +24,10 @@ func setup(r, rad: float, dur: float) -> void:
 
 func _ready() -> void:
 	A.ground_vfx(self, A.grime_stain_tex(), Color(0.42, 0.78, 0.74, 0.46), radius * 2.15, Vector3(0, 0.122, 0), false, 0.44, false, 3)
-	var m := A.emit(Color(0.52, 0.92, 0.88), 1.6)
-	var tips: Array = []
-	for i in 11:
-		var a := TAU * float(i) / 11.0 + randf_range(-0.22, 0.22)
-		var r_len := radius * randf_range(0.68, 1.04)
-		var tip := Vector3(cos(a) * r_len, 0.10 + randf() * 0.08, sin(a) * r_len)
-		tips.append(tip)
-		var mid := tip * randf_range(0.38, 0.56) + Vector3(randf_range(-0.25, 0.25), 0.18 + randf() * 0.10, randf_range(-0.25, 0.25))
-		A.add(self, A.tube([Vector3(0, 0.10, 0), mid, tip], 0.036, 5, 5), m, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	for i in tips.size():
-		if i % 2 == 0:
-			var a_pt: Vector3 = (tips[i] as Vector3) * 0.62
-			var b_pt: Vector3 = (tips[(i + 1) % tips.size()] as Vector3) * 0.58
-			A.add(self, A.tube([a_pt, (a_pt + b_pt) * 0.5 + Vector3(0, 0.08, 0), b_pt], 0.024, 4, 4), m, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	# 战术锚钉阻滞网：中心抛射母罐 + 周边锚钉 + 平滑悬链钢缆 / 高粘纤维束
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	DM.build_web(self, radius, Color(0.52, 0.92, 0.88), rng)
 	A.emitter(self, Vector3(0, 0.15, 0), {"amount": 14, "life": 1.2, "size": 0.25, "spread": 180.0, "vmin": 0.1, "vmax": 0.4, "gravity": Vector3(0, 0.4, 0),
 		"c0": Color(0.45, 1.0, 0.95, 0.7), "c1": Color(0.2, 0.6, 0.6, 0.0), "grow0": 0.8, "grow1": 0.2})
 	var tw := create_tween()

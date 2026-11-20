@@ -117,7 +117,9 @@ func _physics_tick(delta: float) -> void:
 	var from := global_position
 	var to := from + vel * delta
 	var q := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
+	var hit_t := Prof.t0()
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
+	Prof.add("projectile.ray", hit_t)
 	if not r.is_empty():
 		var c = r.collider
 		var hit_dist := prev_dist + from.distance_to(r.position)
@@ -131,18 +133,26 @@ func _physics_tick(delta: float) -> void:
 		if source != null and is_instance_valid(source) and "aggressor" in c:
 			c.aggressor = source
 		if c.has_method("take_damage"):
+			hit_t = Prof.t0()
 			if c.is_in_group("bugs"):
 				c.set_meta("last_hit_pos", r.position)
 				c.take_damage(hit_dmg, from, ap)
 			else:
 				c.take_damage(hit_dmg)
+			Prof.add("projectile.damage", hit_t)
+			hit_t = Prof.t0()
 			if is_local_hit:
 				Growth.record_skill_xp("ab_firearm", clampf(hit_dmg * 0.025, 0.14, 1.15))
 				if raid != null and raid.hud != null and raid.hud.has_method("notify_hit"):
 					raid.hud.notify_hit()
+			Prof.add("projectile.progress", hit_t)
+		hit_t = Prof.t0()
 		raid.impact(r.position, r.normal, color, c.has_method("take_damage"), vel, organic)
+		Prof.add("projectile.impact", hit_t)
+		hit_t = Prof.t0()
 		if hit_sfx != "-":
 			Audio.play_sfx(hit_sfx if hit_sfx != "" else ("hit_chitin" if organic else "hit_metal"), r.position)
+		Prof.add("projectile.audio", hit_t)
 		if pierce and c.has_method("take_damage"):
 			exclude.append(c.get_rid())
 		else:

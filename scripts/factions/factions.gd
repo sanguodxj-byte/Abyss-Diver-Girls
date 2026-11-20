@@ -11,7 +11,10 @@ extends Node
 const Prof = preload("res://scripts/prof.gd")
 
 const Npc = preload("res://scripts/factions/npc_mech.gd")
+const MV = preload("res://scripts/mech_visual.gd")
+const MechScript = preload("res://scripts/mech.gd")
 const RadarOverlay = preload("res://scripts/factions/radar_overlay.gd")
+const VisualCache = preload("res://scripts/npc_visual_cache.gd")
 
 const MAX_SQUADS := 2
 const FIRST_SQUAD := Vector2(10.0, 22.0)    ## 开局后第一支小队进场的时间窗（秒）
@@ -39,10 +42,34 @@ var clock := 0.0
 var rng := RandomNumberGenerator.new()
 var overlay
 var _allies_pending: Array = []
+var _spawn_jobs: Array = []      ## 每处理帧推进一个构建阶段；初始队友的冷构建在加载阶段完成
+var _spawn_cooldown := 0         ## 相邻模块构建间隔帧数，平滑帧时间
+var _ally_banner_pending := 0
+
+
+func _exit_tree() -> void:
+	for job: Dictionary in _spawn_jobs:
+		var pm = job.get("pending_mod", null)
+		if pm is Node and is_instance_valid(pm) and (pm as Node).get_parent() == null:
+			(pm as Node).free()
+		var pb: Dictionary = job.get("prebuilt", {})
+		for m in pb.values():
+			if m is Node and is_instance_valid(m) and (m as Node).get_parent() == null:
+				(m as Node).free()
+	_spawn_jobs.clear()
+
+
+func _process(_delta: float) -> void:
+	if raid == null or raid.ended or raid.dropping:
+		return
+	var _pt := Prof.t0()
+	_step_spawn_queue()
+	Prof.add("proc.factions_spawn", _pt)
 
 
 func setup(r, drop: Vector3) -> void:
 	raid = r
+	VisualCache.prepare()
 	rng.seed = r._map_seed(20)
 	next_t = 18.0
 	if raid.hud and raid.hud.radar:
@@ -55,9 +82,35 @@ func setup(r, drop: Vector3) -> void:
 		list = raid.transit.allies
 	else:
 		list = ally_squad()
+	if rovers_enabled or not list.is_empty():
+		Npc.warm_shared_visuals(VisualCache.materials(), rover_pools().core)
 	_allies_pending = list.duplicate(true)
 	if not raid.transit.is_empty():
 		_spawn_allies(drop)
+	else:
+		_prepare_allies(drop)
+
+
+## 已选队友在加载时准备模型，落地后仍由原队列逐台入场、播放空投并显示提示。
+## 脚本首次加载和网格合批不能留到玩家已经开始交战时执行。
+func _prepare_allies(drop: Vector3) -> void:
+	_enqueue_allies(drop)
+	for job: Dictionary in _spawn_jobs:
+		var lo: Dictionary = job["lo"]
+		var prebuilt: Dictionary = job["prebuilt"]
+		for slot in MV.SLOTS:
+			var id := str(lo.get(slot, ""))
+			if slot == "legs" and id.is_empty():
+				id = "legs_biped"
+			if id.is_empty():
+				continue
+			var mod := VisualCache.instantiate(slot, id, str(job["serial"]))
+			if mod == null:
+				mod = MV.build_module(slot, id, true, str(job["serial"]))
+				MechScript._batch_visual(mod)
+			if mod != null:
+				prebuilt[slot] = mod
+		job["slot_idx"] = MV.SLOTS.size()
 
 
 ## 读成长系统的队友编成：函数还不存在（或返回的不是数组）时视为没有队友
@@ -96,14 +149,192 @@ func _physics_tick(delta: float) -> void:
 	if raid.dropping:
 		return
 	if not _allies_pending.is_empty() and allies.is_empty():
-		_spawn_allies(raid.mech.global_position)
+		_enqueue_allies(raid.mech.global_position)
 	clock += delta
 	_update_allies(delta)
 	for sq in squads.duplicate():
 		_update_squad(sq, delta)
 	if rovers_enabled and squads.size() < MAX_SQUADS and clock >= next_t:
 		next_t = clock + 65.0
-		spawn_squad()
+		_enqueue_squad()
+
+
+func _make_spawn_job(kind: String, lo: Dictionary, extra: Dictionary) -> Dictionary:
+	var serial := "%02d" % (abs(hash(str(lo.get("core", "")) + str(lo.get("legs", "")))) % 90 + 10)
+	if kind == "rover":
+		for id in lo.values():
+			MV.request_module(str(id))
+	return {
+		"kind": kind,
+		"lo": lo,
+		"serial": serial,
+		"slot_idx": 0,
+		"phase": 0,
+		"pending_mod": null,
+		"prebuilt": {},
+		"extra": extra,
+	}
+
+
+func _enqueue_allies(at: Vector3) -> void:
+	var list := _allies_pending
+	_allies_pending = []
+	_ally_banner_pending = list.size()
+	for i in list.size():
+		var e: Dictionary = list[i] if list[i] is Dictionary else {}
+		var pilot := str(e.get("pilot", ""))
+		var tier := clampi(int(e.get("tier", 1)), 1, 3)
+		var lo: Dictionary = e.get("loadout", {}) if e.get("loadout") is Dictionary else {}
+		if lo.is_empty():
+			lo = pilot_loadout(pilot)
+		_spawn_jobs.append(_make_spawn_job("ally", lo, {
+			"pilot": pilot,
+			"tier": tier,
+			"slot_i": i,
+			"hp": e.get("hp", -1.0),
+			"at": at,
+		}))
+
+
+func _enqueue_squad(n := -1, route: Array = []) -> Dictionary:
+	if route.is_empty():
+		route = make_route()
+	if route.size() < 2:
+		return {}
+	var clamped: Array = []
+	for q: Vector3 in route:
+		clamped.append(_clamp_in_zone(q, 6.0))
+	route = clamped
+	if n < 0:
+		n = rng.randi_range(2, 4)
+	var sq := {"members": [], "route": route, "idx": 1, "calm": 99.0, "fighting": false, "pending": n}
+	var start: Vector3 = route[0]
+	var dir: Vector3 = (route[1] - route[0])
+	dir.y = 0.0
+	dir = dir.normalized() if dir.length() > 0.1 else Vector3.FORWARD
+	var yaw := atan2(-dir.x, -dir.z)
+	for i in n:
+		_spawn_jobs.append(_make_spawn_job("rover", rover_loadout(rng), {
+			"sq": sq,
+			"slot_i": i,
+			"start": start,
+			"yaw": yaw,
+		}))
+	squads.append(sq)
+	return sq
+
+
+func _step_spawn_queue() -> void:
+	if _spawn_jobs.is_empty():
+		return
+	if _spawn_cooldown > 0:
+		_spawn_cooldown -= 1
+		return
+	var job: Dictionary = _spawn_jobs[0]
+	var lo: Dictionary = job["lo"]
+	var slot_idx: int = int(job["slot_idx"])
+	var prebuilt: Dictionary = job["prebuilt"]
+	var is_ally := str(job["kind"]) == "ally"
+	if slot_idx < MV.SLOTS.size():
+		var slot: String = MV.SLOTS[slot_idx]
+		var phase: int = int(job.get("phase", 0))
+		if phase == 0:
+			var legs_id: String = str(lo.get("legs", ""))
+			if legs_id == "":
+				legs_id = "legs_biped"
+			var id: String = legs_id if slot == "legs" else str(lo.get(slot, ""))
+			if id != "":
+				if not MV.module_ready(id):
+					return
+				var cached_t := Prof.t0()
+				var cached := VisualCache.instantiate(slot, id, str(job["serial"]))
+				Prof.add("spawn.cached_module", cached_t)
+				if cached != null:
+					prebuilt[slot] = cached
+					job["slot_idx"] = slot_idx + 1
+					return
+				var mod := MV.build_module(slot, id, true, str(job["serial"]))
+				if mod != null:
+					job["pending_mod"] = mod
+					job["phase"] = 1
+					_spawn_cooldown = 0 if is_ally else 1
+					return
+			job["slot_idx"] = slot_idx + 1
+			job["phase"] = 0
+			return
+		elif phase == 1:
+			var mod: Node3D = job.get("pending_mod", null)
+			job["phase"] = 2
+			_finish_module_batch(job, slot, mod)
+		return
+	_spawn_jobs.pop_front()
+	var finish_t := Prof.t0()
+	var visual := MV.assemble_prebuilt(lo, prebuilt, true, true)
+	Prof.add("spawn.assemble", finish_t)
+	var ex: Dictionary = job["extra"]
+	if str(job["kind"]) == "ally":
+		var n = Npc.new()
+		n.raid = raid
+		n.pilot = str(ex["pilot"])
+		raid.add_child(n)
+		finish_t = Prof.t0()
+		n.setup_npc(lo, "ally", int(ex["tier"]), visual)
+		Prof.add("spawn.npc_setup", finish_t)
+		var hp_v: float = float(ex.get("hp", -1.0))
+		if hp_v > 0.0:
+			n.hp = clampf(hp_v, 1.0, n.max_hp)
+		var si: int = int(ex["slot_i"])
+		n.slot_i = si
+		var off: Vector3 = ALLY_SLOTS[si % ALLY_SLOTS.size()]
+		var at: Vector3 = raid.mech.global_position if Npc._ok(raid.mech) else (ex["at"] as Vector3)
+		n.global_position = _free_near(at + off)
+		allies.append(n)
+		if raid.transit.is_empty():
+			var land: Vector3 = n.global_position
+			n.global_position = land + Vector3(0, 18, 0)
+			var tw := n.create_tween()
+			tw.tween_interval(0.10 * si)
+			tw.tween_property(n, "global_position", land + Vector3(0, 0.2, 0), 0.7).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.tween_callback(func():
+				if is_instance_valid(n):
+					n.slam = 0.8
+					raid.explode_fx(land, 2.5, Color(0.8, 0.7, 0.55)))
+		_ally_banner_pending = maxi(0, _ally_banner_pending - 1)
+		if _ally_banner_pending == 0 and not allies.is_empty() and raid.hud:
+			raid.hud.msg(Loc.t("战斗队友 %d 台已随行，自动跟随并攻击虫群与流浪者" % allies.size(), "%d combat wingmate(s) deployed — following & engaging bugs and Rovers" % allies.size()))
+	else:
+		var sq: Dictionary = ex["sq"]
+		sq["pending"] = maxi(0, int(sq.get("pending", 1)) - 1)
+		var r = Npc.new()
+		r.raid = raid
+		raid.add_child(r)
+		finish_t = Prof.t0()
+		r.setup_npc(lo, "rover", 1, visual)
+		Prof.add("spawn.npc_setup", finish_t)
+		r.squad = sq
+		var si: int = int(ex["slot_i"])
+		r.slot_i = si
+		var yaw: float = float(ex["yaw"])
+		var start: Vector3 = ex["start"]
+		finish_t = Prof.t0()
+		r.global_position = _free_near(start + FORMATION[si % FORMATION.size()].rotated(Vector3.UP, yaw))
+		Prof.add("spawn.place", finish_t)
+		r.legs.rotation.y = yaw
+		r.torso.rotation.y = yaw
+		sq.members.append(r)
+		_spawn_cooldown = 2
+
+
+func _finish_module_batch(job: Dictionary, slot: String, mod: Node3D) -> void:
+	if mod != null and is_instance_valid(mod):
+		await MechScript._batch_visual(mod, get_tree())
+		if not is_instance_valid(mod):
+			return
+		job["prebuilt"][slot] = mod
+	job["pending_mod"] = null
+	job["slot_idx"] = int(job["slot_idx"]) + 1
+	job["phase"] = 0
+	_spawn_cooldown = 0 if str(job["kind"]) == "ally" else 1
 
 
 # ================================================================ 战斗队友
@@ -221,7 +452,8 @@ func _update_squad(sq: Dictionary, delta: float) -> void:
 			alive.append(r)
 	sq.members = alive
 	if alive.is_empty():
-		squads.erase(sq)
+		if int(sq.get("pending", 0)) <= 0:
+			squads.erase(sq)
 		return
 	var fighting := false
 	for r in alive:
@@ -284,6 +516,21 @@ func _try_leave(sq: Dictionary) -> void:
 
 ## 随机拼装一台流浪者：每个槽位在现有模块里抽（稀有度 ≤2，武器排除近战 / 抛射类），背部 60% 概率挂件
 static func rover_loadout(r: RandomNumberGenerator) -> Dictionary:
+	var pools := rover_pools()
+	var lo := {}
+	for slot in ["core", "legs", "arm_l", "arm_r", "back", "gen"]:
+		var key: String = "arm" if slot.begins_with("arm") else slot
+		var pool: Array = pools[key]
+		if pool.is_empty() or (slot == "back" and r.randf() > 0.6):
+			lo[slot] = str(GameData.STARTER.get(slot, "")) if slot != "back" else ""
+			continue
+		lo[slot] = str(pool[r.randi() % pool.size()])
+	if lo.arm_l == "" and lo.arm_r == "":
+		lo.arm_l = "arm_mg"
+	return lo
+
+
+static func rover_pools() -> Dictionary:
 	var pools := {"core": [], "legs": [], "arm": [], "back": [], "gen": []}
 	for id in GameData.MODULES:
 		var m: Dictionary = GameData.MODULES[id]
@@ -297,17 +544,7 @@ static func rover_loadout(r: RandomNumberGenerator) -> Dictionary:
 			if not GameData.AMMO.has(w):
 				continue
 		pools[slot].append(id)
-	var lo := {}
-	for slot in ["core", "legs", "arm_l", "arm_r", "back", "gen"]:
-		var key: String = "arm" if slot.begins_with("arm") else slot
-		var pool: Array = pools[key]
-		if pool.is_empty() or (slot == "back" and r.randf() > 0.6):
-			lo[slot] = str(GameData.STARTER.get(slot, "")) if slot != "back" else ""
-			continue
-		lo[slot] = str(pool[r.randi() % pool.size()])
-	if lo.arm_l == "" and lo.arm_r == "":
-		lo.arm_l = "arm_mg"
-	return lo
+	return pools
 
 
 ## 进场路线：沿一条延伸至不规则战区周界的道路行进；入口选离玩家 90 米以外的那一端。

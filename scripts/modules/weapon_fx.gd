@@ -3,6 +3,7 @@ extends RefCounted
 ## 全部挂在 raid.fx 下并自行释放，不进入物理层，也不参与碰撞。
 
 const A = preload("res://scripts/art.gd")
+const MM = preload("res://scripts/modules/munition_models.gd")
 
 
 ## 重工业实体长杆穿甲箭弹高速掠过表现（取代旧版双层发光光束）
@@ -17,14 +18,22 @@ static func beam(raid, a: Vector3, b: Vector3, _c: Color, w: float, life := 0.18
 	dart.look_at(b, Vector3.UP if abs(fwd.y) < 0.95 else Vector3.FORWARD)
 	var r := clampf(w * 0.85, 0.024, 0.055)
 	var L := clampf(r * 24.0, 0.65, 1.35)
-	var m_tung := A.metal(Color(0.22, 0.24, 0.26))
-	var m_tip := A.chrome()
-	var m_copper := A.paint(Color(0.84, 0.46, 0.24), 0.88, 0.28, {"panel_scale": 0.0})
-	A.add(dart, A.cyl(r * 0.82, L * 0.72, r, 10), m_tung, Vector3(0, 0, L * 0.08), Vector3(90, 0, 0), Vector3.ONE, false)
-	A.add(dart, A.cyl(0.005, L * 0.30, r * 0.82, 10), m_tip, Vector3(0, 0, -L * 0.42), Vector3(-90, 0, 0), Vector3.ONE, false)
-	A.add(dart, A.cyl(r * 1.18, L * 0.07, r * 1.18, 10), m_copper, Vector3(0, 0, -L * 0.05), Vector3(90, 0, 0), Vector3.ONE, false)
-	for fi in 4:
-		A.add(dart, A.bevel_box(Vector3(r * 0.24, r * 2.4, L * 0.22), 0.002), m_tung, Vector3(0, 0, L * 0.34), Vector3(0, 0, fi * 90.0), Vector3.ONE, false)
+	var body := Node3D.new()
+	dart.add_child(body)
+	body.rotation_degrees = Vector3(-90, 0, 0)
+	var petals: Array = MM.build_apfsds_dart(body, r, L)
+	# 出膛脱壳：三瓣弹托脱离箭体，向外翻滚散开后消失
+	for pt in petals:
+		var holder: Node3D = pt
+		var gt := holder.global_transform
+		holder.get_parent().remove_child(holder)
+		raid.fx.add_child(holder)
+		holder.global_transform = gt
+		var out_dir: Vector3 = (gt.basis * Vector3(0, 0, -1)).normalized()
+		var ptw := holder.create_tween()
+		ptw.tween_property(holder, "global_position", gt.origin + out_dir * 0.9 - fwd * 0.6 + Vector3(0, -0.25, 0), 0.32).set_ease(Tween.EASE_OUT)
+		ptw.parallel().tween_property(holder, "rotation", holder.rotation + Vector3(randf_range(-2.0, 2.0), randf_range(-1.0, 1.0), randf_range(-2.0, 2.0)), 0.32)
+		ptw.tween_callback(holder.queue_free)
 	A.burst(raid.fx, a + fwd * minf(1.2, span * 0.35), {"amount": 4, "life": 0.42, "size": 0.45, "tex": A.smoke_tex(), "additive": false,
 		"dir": fwd, "spread": 18.0, "vmin": 1.2, "vmax": 3.5, "gravity": Vector3(0, 0.5, 0), "damp": 3.0,
 		"c0": Color(0.72, 0.70, 0.66, 0.42), "c1": Color(0.50, 0.48, 0.45, 0.0), "grow0": 0.5, "grow1": 1.7})
@@ -94,10 +103,10 @@ static func light(raid, p: Vector3, c: Color, energy := 3.0, rng := 5.0, dur := 
 
 ## 反应力场弧片：局部开放电离偏导弧片 + 脉冲激涌，避免塑料整球
 static func shell(parent: Node3D, c: Color, radius: float, dur: float, y := 1.6) -> MeshInstance3D:
-	var mat := A.reactive_arc_mat(Color(c.r, c.g, c.b, 0.88))
+	var mat := A.aegis_shield_mat(Color(c.r, c.g, c.b, 0.88))
 	mat.set_shader_parameter("surge", 1.0)
 	var mi := MeshInstance3D.new()
-	mi.mesh = A.reactive_arc_mesh(clampf(radius * 0.76, 0.9, 2.2), clampf(radius * 0.84, 1.0, 2.3), 4, 12)
+	mi.mesh = A.aegis_shield_mesh(clampf(radius * 0.76, 0.9, 2.2), clampf(radius * 0.84, 1.0, 2.3), 8, 32)
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position.y = y

@@ -169,7 +169,7 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 			var h: float = raid.rng.randf_range(1.8, 3.1)
 			var r: float = raid.rng.randf_range(0.32, 0.52)
 			var tilt := Vector3(sin(ang) * 16.0, raid.rng.randf_range(0.0, 360.0), -cos(ang) * 16.0)
-			A.add(lair, A.cyl(r * 0.18, h, r, 6), mat_chitin, sp + Vector3(0, h * 0.45, 0), tilt)
+			A.add(lair, A.cyl(r * 0.18, h, r, 6, true), mat_chitin, sp + Vector3(0, h * 0.45, 0), tilt)
 			A.add(lair, A.rock_mesh(0.28, 70 + k * 13), mat_glow, sp + Vector3(0, 0.36, 0), tilt * 0.5, Vector3(r * 1.4, r * 1.8, r * 1.4), false)
 	var light := OmniLight3D.new()
 	light.light_color = glow_c

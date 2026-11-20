@@ -5,6 +5,7 @@ extends Node
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
+const FM = preload("res://scripts/modules/field_models.gd")
 
 var raid
 var _t := 0.0
@@ -112,34 +113,17 @@ func _supply_drop(p: Vector3) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = Vector3(p.x, 60.0, p.z)
-	var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
-	var M_ST := A.metal(Color(0.34, 0.35, 0.34))
-	var chute := Node3D.new()
-	n.add_child(chute)
-	chute.position = Vector3(0, 6.4, 0)
-	chute.rotation_degrees = Vector3(12, 24.0, -8)
-	var M_CANOPY := A.paint(Color(0.60, 0.58, 0.48), 0.0, 0.92, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0})
-	A.add(chute, A.cyl(1.15, 1.45, 3.55, 12), M_CANOPY, Vector3(0, 0.4, 0))
-	A.add(chute, A.torus(0.95, 1.22, 16), A.paint(Color(0.72, 0.30, 0.12), 0.0, 0.88), Vector3(0, 1.12, 0), Vector3.ZERO, Vector3(1, 0.35, 1), false)
-	for i in 8:
-		var a := TAU * float(i) / 8.0
-		A.add(chute, A.tube([Vector3(cos(a) * 3.4, -0.25, sin(a) * 3.4), Vector3(cos(a) * 0.85, -4.1, sin(a) * 0.85)], 0.018, 5, 2), A.metal(Color(0.48, 0.46, 0.40)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	var pod := Node3D.new()
 	n.add_child(pod)
 	pod.position = Vector3(0, 1.55, 0)
 	var M_POD := A.paint(Color(0.38, 0.41, 0.34), 0.38, 0.58, {"wear": 0.6, "rust": 0.48, "dust": 0.45})
-	A.add(pod, A.cyl(0.95, 2.2, 1.18, 8), M_POD, Vector3(0, 0.05, 0))
-	A.add(pod, A.cyl(0.52, 0.42, 0.98, 8), M_DARK, Vector3(0, 1.32, 0))
-	A.add(pod, A.torus(0.28, 0.38, 14), M_ST, Vector3(0, 1.62, 0), Vector3(90, 0, 0), Vector3.ONE, false)
-	A.add(pod, A.cyl(1.16, 0.26, 1.20, 8), A.hazard(), Vector3(0, -0.45, 0))
-	for k in 4:
-		var ka := PI * 0.25 + PI * 0.5 * float(k)
-		var dir_v := Vector3(cos(ka), 0, sin(ka))
-		A.add(pod, A.bevel_box(Vector3(0.22, 2.15, 0.26), 0.03), M_DARK, dir_v * 1.06)
-		A.add(pod, A.cyl(0.08, 0.72, 0.11, 8), M_ST, dir_v * 1.22 + Vector3(0, -1.05, 0), Vector3(sin(ka) * -22.0, 0, cos(ka) * 22.0))
-		A.add(pod, A.bevel_box(Vector3(0.42, 0.10, 0.42), 0.02), M_DARK, dir_v * 1.38 + Vector3(0, -1.38, 0))
-		A.add(pod, A.cyl(0.14, 0.32, 0.20, 10), M_DARK, dir_v * 0.95 + Vector3(0, 0.85, 0), Vector3(sin(ka) * 28.0, 0, -cos(ka) * 28.0))
-	A.add(pod, A.bevel_box(Vector3(0.56, 0.12, 0.12), 0.01), A.emit(Color(1.0, 0.35, 0.12), 2.2), Vector3(0, 0.95, -1.08), Vector3.ZERO, Vector3.ONE, false)
+	var pod_info := FM.build_supply_pod(pod, M_POD)
+	var chute := Node3D.new()
+	n.add_child(chute)
+	chute.position = pod.position + (pod_info.top as Vector3) + Vector3(0, 0.9, 0)
+	chute.rotation_degrees = Vector3(10, 24.0, -7)
+	FM.build_parachute(chute)
+	A.add(pod, A.bevel_box(Vector3(0.56, 0.08, 0.05), 0.01), A.emit(Color(1.0, 0.35, 0.12), 2.2), Vector3(0, 0.95, -1.0), Vector3.ZERO, Vector3.ONE, false)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(1.0, 0.4, 0.15)
 	glow.light_energy = 2.4
@@ -156,21 +140,8 @@ func _distress(p: Vector3) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
-	var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
-	var M_ST := A.metal(Color(0.38, 0.39, 0.37))
 	var M_CASE := A.paint(Color(0.30, 0.34, 0.28), 0.42, 0.58, {"rust": 0.55, "wear": 0.55})
-	for lg in 3:
-		var la := TAU * float(lg) / 3.0 + 0.2
-		A.add(n, A.tube([Vector3(cos(la) * 0.82, 0.04, sin(la) * 0.82), Vector3(cos(la) * 0.18, 1.25, sin(la) * 0.18)], 0.042, 6, 2), M_ST)
-		A.add(n, A.bevel_box(Vector3(0.22, 0.08, 0.22), 0.02), M_DARK, Vector3(cos(la) * 0.82, 0.04, sin(la) * 0.82))
-	A.add(n, A.bevel_box(Vector3(0.76, 0.52, 0.56), 0.04), M_CASE, Vector3(0, 1.42, 0))
-	A.add(n, A.bevel_box(Vector3(0.78, 0.10, 0.58), 0.01), A.hazard(), Vector3(0, 1.24, 0))
-	A.add(n, A.bevel_box(Vector3(0.68, 0.05, 0.48), 0.01), A.paint(Color(0.10, 0.16, 0.24), 0.65, 0.28), Vector3(0, 1.52, 0.48), Vector3(34, 0, 0))
-	A.add(n, A.cyl(0.055, 1.85, 0.075, 10), M_ST, Vector3(0, 2.55, 0))
-	A.add(n, A.cyl(0.16, 0.28, 0.18, 12), M_DARK, Vector3(0, 3.48, 0))
-	A.add(n, A.cyl(0.11, 0.22, 0.11, 12), A.emit(Color(1.0, 0.18, 0.12), 3.0), Vector3(0, 3.68, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.torus(0.14, 0.17, 12), M_DARK, Vector3(0, 3.74, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.cyl(0.022, 1.75, 0.035, 6), M_ST, Vector3(0.28, 4.15, 0), Vector3(0, 0, -14))
+	FM.build_distress_beacon(n, M_CASE, Color(1.0, 0.18, 0.12))
 	A.emitter(raid.world, p + Vector3(0, 3.6, 0), {"amount": 10, "life": 4.0, "size": 1.6, "tex": A.smoke_tex(), "additive": false, "spread": 20.0,
 		"vmin": 0.6, "vmax": 1.2, "gravity": Vector3(0.2, 0.8, 0.1), "c0": Color(0.35, 0.3, 0.28, 0.4), "c1": Color(0.4, 0.38, 0.36, 0.0), "grow0": 0.5, "grow1": 2.4})
 	var l := OmniLight3D.new()

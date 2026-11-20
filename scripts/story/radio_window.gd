@@ -39,7 +39,7 @@ func _init() -> void:
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	position = Vector2(18, 16)
 	custom_minimum_size = Vector2(WIDTH, 0)
-	add_theme_stylebox_override("panel", UI.px9("panel9", 14, 14, 10, 8))
+	add_theme_stylebox_override("panel", UI.px9("panel9", 14, 14, 10, 8, Color(1, 1, 1, 0.72)))
 	modulate.a = 0.0
 
 	var v := VBoxContainer.new()
@@ -345,6 +345,7 @@ class AvatarMark extends Control:
 		m.set_shader_parameter("key_threshold", 0.02)
 		m.set_shader_parameter("key_softness", 0.03)
 		_rect.material = m
+		_rect.modulate.a = 0.90
 		_rect.visible = false
 		add_child(_rect)
 		resized.connect(_fit)
@@ -412,12 +413,12 @@ class AvatarMark extends Control:
 		var h := size.y
 		if w <= 0.0 or h <= 0.0:
 			return
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.08, 0.085, 0.09, 0.96))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.065, 0.072, 0.62))
 		if _clip == "":
 			if tex:
 				var s := minf(w / float(tex.get_width()), h / float(tex.get_height()))
 				var d := Vector2(float(tex.get_width()), float(tex.get_height())) * s
-				draw_texture_rect(tex, Rect2((size - d) * 0.5, d), false)
+				draw_texture_rect(tex, Rect2((size - d) * 0.5, d), false, Color(1, 1, 1, 0.90))
 			else:
 				var c := Vector2(w * 0.5, h * 0.56)
 				var hr := minf(w, h) * 0.16

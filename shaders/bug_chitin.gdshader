@@ -11,6 +11,8 @@ uniform float detail_scale = 1.0;
 uniform sampler2D noise_lo : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_hi : filter_linear_mipmap, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
+#include "res://shaders/occ_fade.gdshaderinc"
+uniform float occ_self_fade = 0.0;
 
 varying vec3 lpos;
 varying vec3 lnrm;
@@ -32,6 +34,16 @@ float tri(sampler2D t, vec3 p, vec3 w) {
 }
 
 void fragment() {
+	float occ_fade = 0.0;
+	if (occ_self_fade > 0.005) {
+		highp vec3 dc_s = INV_VIEW_MATRIX[3].xyz - occ_cam_pos;
+		if (dot(dc_s, dc_s) <= 0.25) {
+			occ_fade = clamp(occ_self_fade, 0.0, 0.92);
+			if (occ_ign(FRAGCOORD.xy) < occ_fade) {
+				discard;
+			}
+		}
+	}
 	vec3 w = tri_w(lnrm);
 	vec3 p = lpos * detail_scale;
 	float n1 = tri(noise_lo, p * 1.6, w);
@@ -69,4 +81,9 @@ void fragment() {
 	vec3 nm = texture(normal_tex, (w.x > 0.5 ? p.zy : (w.y > 0.5 ? p.xz : p.xy)) * 2.0).rgb;
 	float nfade = clamp(1.0 - length(fwidth(p * 2.0)) * 3.0, 0.0, 1.0);
 	NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nm, (0.24 + vein * 0.45) * nfade);
+	if (occ_fade > 0.01) {
+		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
+		CLEARCOAT *= 1.0 - occ_fade * 0.85;
+		SPECULAR *= 1.0 - occ_fade * 0.72;
+	}
 }

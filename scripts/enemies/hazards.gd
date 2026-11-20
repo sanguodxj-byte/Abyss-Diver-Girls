@@ -4,6 +4,8 @@ extends RefCounted
 ## 护盾挡下、能量耗尽这些判定都由机甲自己处理。
 
 const A = preload("res://scripts/art.gd")
+const DM = preload("res://scripts/modules/device_models.gd")
+const MM = preload("res://scripts/modules/munition_models.gd")
 
 ## 地面预警圈：贴地圆环从内向外亮起，到时自动消失。Boss 与炮击的落点在伤害前先亮这一圈。
 class Mark extends Node3D:
@@ -105,21 +107,8 @@ class LobShell extends Node3D:
 		arc = clampf(from.distance_to(to) * 0.28, 4.0, 14.0)
 		body = Node3D.new()
 		add_child(body)
-		var m_shell := A.metal(Color(0.22, 0.25, 0.26))
-		var m_rust := A.paint(Color(0.36, 0.24, 0.16), 0.48, 0.58, {"rust": 0.65})
-		var m_haz := A.hazard()
-		var m_band := A.paint(c.darkened(0.30), 0.38, 0.48, {"rust": 0.35, "wear": 0.3})
-		var m_brass := A.paint(Color(0.86, 0.65, 0.22), 0.88, 0.28, {"panel_scale": 0.0, "wear": 0.15})
-		# 重工业高抛迫击炮实体钢壳炮弹：锻钢弹体 + 收分装药风帽 + 车削黄铜碰炸引信 + 涂装识别环 + 黄黑高危环 + 尾管与四片安定钢翼
-		A.add(body, A.cyl(0.18, 0.58, 0.20, 12), m_shell, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.065, 0.24, 0.18, 12), m_rust, Vector3(0, 0.39, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.022, 0.10, 0.065, 10), m_brass, Vector3(0, 0.55, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.206, 0.08, 0.206, 12), m_haz, Vector3(0, 0.15, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.204, 0.14, 0.204, 12), m_band, Vector3(0, -0.03, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.085, 0.20, 0.13, 10), m_shell, Vector3(0, -0.36, 0), Vector3.ZERO, Vector3.ONE, false)
-		for i in 4:
-			var a := TAU * float(i) / 4.0
-			A.add(body, A.bevel_box(Vector3(0.032, 0.24, 0.18), 0.006), m_shell, Vector3(sin(a) * 0.17, -0.34, cos(a) * 0.17), Vector3(0, rad_to_deg(a), 0), Vector3.ONE, false)
+		# 重工业高抛迫击炮弹（低面数整改 P0-MSL-06）：泪滴车削弹体 + 引信 + 识别/高危环 + 闭气环 + 导气孔尾管 + 后掠尾翼
+		MM.build_lob_shell(body, c)
 		A.emitter(self, Vector3.ZERO, {"amount": 14, "life": 0.55, "size": 0.42, "tex": A.smoke_tex(), "additive": false, "spread": 55.0, "vmin": 0.15, "vmax": 0.55, "gravity": Vector3(0, 0.6, 0),
 			"c0": Color(0.26, 0.28, 0.24, 0.58), "c1": Color(0.18, 0.19, 0.17, 0.0), "grow0": 0.65, "grow1": 1.85})
 		mark = Mark.new()
@@ -255,12 +244,10 @@ class SpikeRow extends Node3D:
 		spk.rotation_degrees = Vector3(randf_range(-8, 8), randf() * 60.0, randf_range(-8, 8))
 		spk.scale.y = 0.1
 		add_child(spk)
-		var m_jkt := A.metal(Color(0.24, 0.26, 0.29))
-		var m_tip := A.emit(color, 1.5)
-		m_tip.albedo_color = color.darkened(0.62)
-		m_tip.roughness = 0.28
-		A.add(spk, A.cyl(0.30, h * 0.54, 0.44, 6), m_jkt, Vector3(0, h * 0.27, 0))
-		A.add(spk, A.cyl(0.04, h * 0.52, 0.28, 6), m_tip, Vector3(0, h * 0.74, 0))
+		# 多棱破甲地刺簇：碎石隆起基座 + 车削甲壳主刺 / 两根副刺 + 切削刃 + 熔芯
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(p) ^ i
+		DM.build_spike(spk, h, color, rng)
 		var tw := create_tween()
 		tw.tween_property(spk, "scale:y", 1.0, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		A.burst(raid.fx, p + Vector3(0, 0.2, 0), {"amount": 8, "life": 0.5, "size": 0.12, "vmin": 3.0, "vmax": 7.0, "gravity": Vector3(0, -16, 0),
@@ -352,20 +339,8 @@ class RocketSalvo extends Node3D:
 		arc = clampf(from.distance_to(to) * 0.18, 2.6, 8.5)
 		body = Node3D.new()
 		add_child(body)
-		var m_st := A.metal(Color(0.20, 0.22, 0.24))
-		var m_olive := A.paint(Color(0.28, 0.31, 0.24), 0.45, 0.52, {"rust": 0.42, "wear": 0.35})
-		var m_haz := A.hazard()
-		var m_brass := A.paint(Color(0.86, 0.66, 0.22), 0.88, 0.26, {"panel_scale": 0.0})
-		var m_flame := A.emit(Color(1.0, 0.55, 0.16), 2.1)
-		A.add(body, A.cyl(0.11, 0.72, 0.12, 12), m_olive, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.035, 0.28, 0.11, 12), m_st, Vector3(0, 0.50, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.016, 0.09, 0.035, 10), m_brass, Vector3(0, 0.68, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.125, 0.08, 0.125, 12), m_haz, Vector3(0, 0.20, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.09, 0.14, 0.065, 10), m_st, Vector3(0, -0.42, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.055, 0.10, 0.025, 8), m_flame, Vector3(0, -0.52, 0), Vector3.ZERO, Vector3.ONE, false)
-		for i in 4:
-			var a := TAU * float(i) / 4.0
-			A.add(body, A.bevel_box(Vector3(0.026, 0.24, 0.16), 0.005), m_st, Vector3(sin(a) * 0.13, -0.32, cos(a) * 0.13), Vector3(0, rad_to_deg(a), 0), Vector3.ONE, false)
+		# 高精火箭弹：卵形整流罩 + 级间法兰 + 后掠翼型尾翼 / 鸭翼 + 拉瓦尔喷管
+		DM.build_salvo_rocket(body)
 		# 火箭弹长尾曳光焰带（沿弹体 -Y 尾部拖出高可视度推进火舌）
 		var rk_rib := PlaneMesh.new()
 		rk_rib.size = Vector2(0.34, 3.6)
@@ -522,17 +497,9 @@ void fragment() {
 		add_child(body)
 		body.rotation_degrees.x = -90.0
 		body.scale = Vector3.ONE * shell_scale
-		var m_tung := A.metal(Color(0.22, 0.24, 0.28))
-		var m_brass := A.paint(Color(0.88, 0.68, 0.24), 0.90, 0.24, {"panel_scale": 0.0})
 		var m_tracer := A.emit(c.lightened(0.28), 3.2)
 		# 放大高可视度钨合金穿甲弹芯 + 炽热发光弹头风帽与曳光药柱
-		A.add(body, A.cyl(0.085, 0.86, 0.105, 10), m_tung, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.018, 0.34, 0.088, 10), m_tracer, Vector3(0, 0.58, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.130, 0.10, 0.130, 10), m_brass, Vector3(0, 0.12, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(body, A.cyl(0.082, 0.18, 0.068, 8), m_tracer, Vector3(0, -0.48, 0), Vector3.ZERO, Vector3.ONE, false)
-		for i in 4:
-			var a := TAU * float(i) / 4.0
-			A.add(body, A.bevel_box(Vector3(0.024, 0.22, 0.15), 0.004), m_tung, Vector3(sin(a) * 0.11, -0.32, cos(a) * 0.11), Vector3(0, rad_to_deg(a), 0), Vector3.ONE, false)
+		MM.build_kinetic_slug(body, m_tracer)
 
 		# 双交叉高亮度长曳光尾迹（沿 +Z 弹尾随飞行距离动态拉长至 tail_len，任意俯视/平视角度均清晰醒目）
 		tail_offset = 0.42 * shell_scale

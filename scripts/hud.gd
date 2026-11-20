@@ -61,6 +61,9 @@ var pause_dim: ColorRect
 var pause_panel: PanelContainer
 var settings_panel: PanelContainer
 var _view_opt: OptionButton
+var _fps_cb: CheckButton
+var _rs_opt: OptionButton
+var _radar_box: VBoxContainer
 var hurt_t := 0.0
 var smoke_rect: ColorRect
 var scope_rect: ColorRect
@@ -302,6 +305,8 @@ func notify_enemy_hit(node: Node3D, prev_hp: float, cur_hp: float, max_hp: float
 
 
 func _exit_tree() -> void:
+	if GameData.show_fps_changed.is_connected(_on_show_fps_changed):
+		GameData.show_fps_changed.disconnect(_on_show_fps_changed)
 	if radio != null and is_instance_valid(radio):
 		Story.detach_radio(radio)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -323,12 +328,12 @@ func _build_status() -> void:
 	status_root = L
 	var CH := 168.0  # 拐角面板边长
 	var base_y := 560.0 - CH
-	# 竖轨（子弹栏）：贴在拐角上方（HD2 扁平战术装甲背板）
+	# 竖轨（子弹栏）：贴在拐角上方（半透明工业战术背板，与拐角齐平衔接避免重叠暗带）
 	var rail_w := 100.0
 	var rail_h := 230.0
 	var rv := Control.new()
 	rv.position = Vector2(10, base_y - rail_h - 14)
-	rv.size = Vector2(rail_w, rail_h + 20)
+	rv.size = Vector2(rail_w, rail_h + 14)
 	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ammo_rail = rv
 	rv.draw.connect(func():
@@ -338,40 +343,41 @@ func _build_status() -> void:
 			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
 			Vector2(sz.x, sz.y), Vector2(0.0, sz.y),
 		])
-		rv.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.93))
+		rv.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.68))
 		var opt_pts := PackedVector2Array([
 			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
 			Vector2(sz.x, sz.y), Vector2(0.0, sz.y), Vector2(0.0, ch),
 		])
-		rv.draw_polyline(opt_pts, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
+		rv.draw_polyline(opt_pts, Color(0.26, 0.28, 0.30, 0.80), 1.5, true)
 		# 顶部工业灰黑护盖与做旧橙黄警示块
-		rv.draw_rect(Rect2(ch, 0.0, sz.x - ch, 4.0), Color(0.20, 0.22, 0.24, 0.96))
-		rv.draw_rect(Rect2(ch, 4.0, 26.0, 3.0), Color(0.78, 0.48, 0.16, 0.95))
-		rv.draw_rect(Rect2(sz.x - 20.0, 4.0, 14.0, 3.0), Color(0.78, 0.48, 0.16, 0.85))
+		rv.draw_rect(Rect2(ch, 0.0, sz.x - ch, 4.0), Color(0.20, 0.22, 0.24, 0.80))
+		rv.draw_rect(Rect2(ch, 4.0, 26.0, 3.0), Color(0.78, 0.48, 0.16, 0.86))
+		rv.draw_rect(Rect2(sz.x - 20.0, 4.0, 14.0, 3.0), Color(0.78, 0.48, 0.16, 0.78))
 		# 铆钉与中轴隔离梁
 		for rp in [Vector2(sz.x - 6.0, 10.0), Vector2(6.0, sz.y - 6.0), Vector2(sz.x - 6.0, sz.y - 6.0)]:
-			rv.draw_rect(Rect2(rp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), Color(0.44, 0.47, 0.50, 0.85))
-		rv.draw_line(Vector2(sz.x * 0.5, 10.0), Vector2(sz.x * 0.5, sz.y - 10.0), Color(0.34, 0.37, 0.39, 0.82), 1.5))
+			rv.draw_rect(Rect2(rp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), Color(0.44, 0.47, 0.50, 0.72))
+		rv.draw_line(Vector2(sz.x * 0.5, 10.0), Vector2(sz.x * 0.5, sz.y - 10.0), Color(0.34, 0.37, 0.39, 0.66), 1.5))
 	L.add_child(rv)
 	var k := rail_w / 76.0
 	var i := 0
 	for slot in ["arm_l", "arm_r"]:
 		var col = HL.AmmoColumn.new()
 		var cx: float = 10.0 + (20.0 if i == 0 else 56.0) * k
-		col.position = Vector2(cx - 15.0 * k, base_y - rail_h + 8)
-		col.size = Vector2(30.0 * k, rail_h - 4)
+		col.position = Vector2(cx - 15.0 * k, base_y - rail_h + 4)
+		col.size = Vector2(30.0 * k, rail_h - 8)
 		col.bw = 30.0 * k - 4.0
 		L.add_child(col)
 		col.setup(m, slot)
 		ammo_cols[slot] = col
 		i += 1
-	# 横轨（技能栏）：从拐角右侧伸出，仅保留 SPACE（底盘机动）与 F（背部挂载）两个核心主动子系统槽
+	# 横轨（技能栏）：从拐角右侧齐平伸出，包覆 SPACE（底盘机动）与 F（背部挂载）槽与底部能源条，避免双层叠色暗缝
 	var keys := [["space", Loc.space_key()], ["f", "F"]]
 	var sw := 92.0
-	var rh_w := sw * keys.size() + 26.0
+	var rh_w := sw * keys.size() + 18.0
+	var rh_h := 110.0
 	var rh := Control.new()
-	rh.position = Vector2(CH - 8, 560 - 104)
-	rh.size = Vector2(rh_w, 88)
+	rh.position = Vector2(CH, 560 - 126)
+	rh.size = Vector2(rh_w, rh_h)
 	rh.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rh.draw.connect(func():
 		var sz := rh.size
@@ -380,31 +386,31 @@ func _build_status() -> void:
 			Vector2(0.0, 0.0), Vector2(sz.x - ch, 0.0), Vector2(sz.x, ch),
 			Vector2(sz.x, sz.y), Vector2(0.0, sz.y),
 		])
-		rh.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.93))
+		rh.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.66))
 		var outline := PackedVector2Array([
 			Vector2(0.0, 0.0), Vector2(sz.x - ch, 0.0), Vector2(sz.x, ch),
 			Vector2(sz.x, sz.y), Vector2(0.0, sz.y), Vector2(0.0, 0.0),
 		])
-		rh.draw_polyline(outline, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
-		rh.draw_rect(Rect2(0.0, 0.0, sz.x - ch, 2.5), Color(0.24, 0.26, 0.28, 0.92))
-		rh.draw_rect(Rect2(sz.x - 5.0, ch + 2.0, 5.0, sz.y - ch - 6.0), Color(0.78, 0.48, 0.16, 0.94))
-		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.042, 0.047, 0.052, 0.94))
-		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.28, 0.31, 0.33, 0.85), false, 1.0))
+		rh.draw_polyline(outline, Color(0.26, 0.28, 0.30, 0.80), 1.5, true)
+		rh.draw_rect(Rect2(0.0, 0.0, sz.x - ch, 2.5), Color(0.24, 0.26, 0.28, 0.78))
+		rh.draw_rect(Rect2(sz.x - 5.0, ch + 2.0, 5.0, sz.y - ch - 6.0), Color(0.78, 0.48, 0.16, 0.84))
+		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.03, 0.035, 0.04, 0.48))
+		rh.draw_rect(Rect2(6.0, sz.y - 16.0, sz.x - 16.0, 10.0), Color(0.30, 0.33, 0.35, 0.72), false, 1.0))
 	L.add_child(rh)
 	for j in keys.size():
 		var ss = HL.SkillSlot.new()
-		ss.position = rh.position + Vector2(12 + j * sw, -18)
-		ss.size = Vector2(sw - 4, 100)
+		ss.position = rh.position + Vector2(4 + j * sw, 5)
+		ss.size = Vector2(sw - 4, 96)
 		L.add_child(ss)
 		ss.setup(m, keys[j][0], keys[j][1])
 		skill_slots[keys[j][0]] = ss
 	energy_strip = HL.EnergyStrip.new()
 	energy_strip.mech = m
-	energy_strip.position = rh.position + Vector2(8, 88 - 13)
+	energy_strip.position = rh.position + Vector2(8, rh_h - 13)
 	energy_strip.size = Vector2(rh_w - 20.0, 6)
 	energy_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	L.add_child(energy_strip)
-	# 拐角：底板 + 全息投影 + 货舱条（HD2 扁平直角护框）
+	# 拐角：半透明护框 + 全息投影 + 货舱条
 	var cr := Control.new()
 	cr.position = Vector2(0, base_y)
 	cr.size = Vector2(CH, CH)
@@ -416,23 +422,23 @@ func _build_status() -> void:
 			Vector2(ch, 0.0), Vector2(sz.x, 0.0), Vector2(sz.x, sz.y),
 			Vector2(0.0, sz.y), Vector2(0.0, ch),
 		])
-		cr.draw_colored_polygon(pts, Color(0.082, 0.088, 0.094, 0.95))
+		cr.draw_colored_polygon(pts, Color(0.082, 0.088, 0.094, 0.68))
 		var outline := PackedVector2Array([
 			Vector2(ch, 0.0), Vector2(sz.x, 0.0), Vector2(sz.x, sz.y),
 			Vector2(0.0, sz.y), Vector2(0.0, ch), Vector2(ch, 0.0),
 		])
-		cr.draw_polyline(outline, Color(0.22, 0.24, 0.26, 0.96), 1.5, true)
+		cr.draw_polyline(outline, Color(0.26, 0.28, 0.30, 0.80), 1.5, true)
 		# 顶部工业灰黑结构护沿 + 角部铆钉
-		cr.draw_rect(Rect2(ch + 1.0, 0.0, sz.x - ch - 2.0, 3.0), Color(0.22, 0.24, 0.26, 0.96))
-		cr.draw_rect(Rect2(0.0, ch + 1.0, 3.0, 28.0), Color(0.22, 0.24, 0.26, 0.85))
-		cr.draw_rect(Rect2(sz.x - 28.0, 3.0, 22.0, 2.5), Color(0.78, 0.48, 0.16, 0.92))
+		cr.draw_rect(Rect2(ch + 1.0, 0.0, sz.x - ch - 2.0, 3.0), Color(0.22, 0.24, 0.26, 0.80))
+		cr.draw_rect(Rect2(0.0, ch + 1.0, 3.0, 28.0), Color(0.22, 0.24, 0.26, 0.74))
+		cr.draw_rect(Rect2(sz.x - 28.0, 3.0, 22.0, 2.5), Color(0.78, 0.48, 0.16, 0.84))
 		var well := Rect2(10.0, 12.0, sz.x - 20.0, 128.0)
-		cr.draw_rect(well, Color(0.042, 0.048, 0.052, 0.96))
-		cr.draw_rect(well, Color(0.30, 0.34, 0.36, 0.92), false, 1.0)
+		cr.draw_rect(well, Color(0.02, 0.025, 0.03, 0.28))
+		cr.draw_rect(well, Color(0.32, 0.36, 0.38, 0.78), false, 1.0)
 		var wc := well.position + well.size * 0.5
 		cr.draw_line(Vector2(well.position.x + 8.0, wc.y), Vector2(well.end.x - 8.0, wc.y), Color(0.56, 0.62, 0.60, 0.14), 1.0)
 		cr.draw_line(Vector2(wc.x, well.position.y + 8.0), Vector2(wc.x, well.end.y - 8.0), Color(0.56, 0.62, 0.60, 0.14), 1.0)
-		var yc := Color(0.78, 0.48, 0.16, 0.94)
+		var yc := Color(0.78, 0.48, 0.16, 0.88)
 		var arm := 9.0
 		cr.draw_line(well.position, well.position + Vector2(arm, 0.0), yc, 2.0, true)
 		cr.draw_line(well.position, well.position + Vector2(0.0, arm), yc, 2.0, true)
@@ -444,8 +450,8 @@ func _build_status() -> void:
 		cr.draw_line(wbl, wbl + Vector2(0.0, -arm), yc, 2.0, true)
 		cr.draw_line(well.end, well.end + Vector2(-arm, 0.0), yc, 2.0, true)
 		cr.draw_line(well.end, well.end + Vector2(0.0, -arm), yc, 2.0, true)
-		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.04, 0.045, 0.05, 0.94))
-		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.32, 0.35, 0.37, 0.72), false, 1.0))
+		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.03, 0.035, 0.04, 0.48))
+		cr.draw_rect(Rect2(14.0, 145.0, sz.x - 28.0, 10.0), Color(0.32, 0.35, 0.37, 0.68), false, 1.0))
 	L.add_child(cr)
 	holo = HL.HoloPortrait.new()
 	holo.position = Vector2(12, base_y + 15)
@@ -467,6 +473,10 @@ func _hud_icon_btn(tip: String, tex: Texture2D = null, draw_pause := false) -> B
 	b.tooltip_text = tip
 	b.custom_minimum_size = Vector2(36, 30)
 	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_stylebox_override("normal", K.px9("btn9_n", 8, 8, 6, 4, Color(1, 1, 1, 0.70)))
+	b.add_theme_stylebox_override("hover", K.px9("btn9_h", 8, 8, 6, 4, Color(1, 1, 1, 0.84)))
+	b.add_theme_stylebox_override("pressed", K.px9("btn9_p", 8, 8, 6, 4, Color(1, 1, 1, 0.88)))
+	b.add_theme_stylebox_override("hover_pressed", K.px9("btn9_p", 8, 8, 6, 4, Color(1, 1, 1, 0.88)))
 	var cc := CenterContainer.new()
 	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -488,10 +498,13 @@ func _build_radar() -> void:
 	var v := VBoxContainer.new()
 	v.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	v.offset_right = -18
-	v.offset_top = 14
+	v.offset_top = 36 if GameData.show_fps else 14
 	v.offset_left = -258
 	v.add_theme_constant_override("separation", 6)
 	root.add_child(v)
+	_radar_box = v
+	if not GameData.show_fps_changed.is_connected(_on_show_fps_changed):
+		GameData.show_fps_changed.connect(_on_show_fps_changed)
 	var top_bar := HBoxContainer.new()
 	top_bar.alignment = BoxContainer.ALIGNMENT_END
 	top_bar.add_theme_constant_override("separation", 6)
@@ -531,10 +544,10 @@ func _build_radar() -> void:
 
 func _card(key: String, item_id := "") -> Dictionary:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", K.px9("card9", 6, 6, 6, 6))
+	p.add_theme_stylebox_override("panel", K.px9("card9", 6, 6, 6, 6, Color(1, 1, 1, 0.70)))
 	p.custom_minimum_size = Vector2(60, 60)
-	p.mouse_entered.connect(func(): p.add_theme_stylebox_override("panel", K.px9("card9_on", 6, 6, 6, 6)))
-	p.mouse_exited.connect(func(): p.add_theme_stylebox_override("panel", K.px9("card9", 6, 6, 6, 6)))
+	p.mouse_entered.connect(func(): p.add_theme_stylebox_override("panel", K.px9("card9_on", 6, 6, 6, 6, Color(1, 1, 1, 0.84))))
+	p.mouse_exited.connect(func(): p.add_theme_stylebox_override("panel", K.px9("card9", 6, 6, 6, 6, Color(1, 1, 1, 0.70))))
 	var box := Control.new()
 	box.custom_minimum_size = Vector2(48, 48)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -544,7 +557,7 @@ func _card(key: String, item_id := "") -> Dictionary:
 		ic.position = Vector2(5, 5)
 		ic.size = Vector2(38, 38)
 		box.add_child(ic)
-	var kc := UI.keycap(key, 11)
+	var kc := UI.keycap(key, 11, 0.76)
 	kc.position = Vector2(-2, -2)
 	kc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(kc)
@@ -771,7 +784,8 @@ func _build_center() -> void:
 	boss_bar.show_percentage = false
 	boss_bar.custom_minimum_size = Vector2(0, 10)
 	boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	boss_bar.add_theme_stylebox_override("fill", UI.flat_bar(Color(0.86, 0.2, 0.28), Color(1.0, 0.45, 0.52), 1, 0))
+	boss_bar.add_theme_stylebox_override("background", UI.flat_bar(Color(0.04, 0.045, 0.052, 0.56), Color(0.30, 0.33, 0.35, 0.65), 1, 1))
+	boss_bar.add_theme_stylebox_override("fill", UI.flat_bar(Color(0.86, 0.2, 0.28, 0.88), Color(1.0, 0.45, 0.52, 0.85), 1, 0))
 	bv.add_child(boss_bar)
 
 	extract_panel = PanelContainer.new()
@@ -794,11 +808,12 @@ func _build_center() -> void:
 	extract_bar.show_percentage = false
 	extract_bar.custom_minimum_size = Vector2(0, 10)
 	extract_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	extract_bar.add_theme_stylebox_override("fill", UI.flat_bar(UI.GOOD, Color(0, 0, 0, 0), 0, 0))
+	extract_bar.add_theme_stylebox_override("background", UI.flat_bar(Color(0.04, 0.045, 0.052, 0.56), Color(0.30, 0.33, 0.35, 0.65), 1, 1))
+	extract_bar.add_theme_stylebox_override("fill", UI.flat_bar(Color(UI.GOOD.r, UI.GOOD.g, UI.GOOD.b, 0.88), Color(0, 0, 0, 0), 0, 0))
 	ev.add_child(extract_bar)
 
 	prompt_panel = PanelContainer.new()
-	prompt_panel.add_theme_stylebox_override("panel", UI.tex9("prompt9", 10, 12))
+	prompt_panel.add_theme_stylebox_override("panel", UI.tex9("prompt9", 10, 12, Color(1, 1, 1, 0.72)))
 	prompt_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	prompt_panel.offset_top = 70
 	prompt_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -814,7 +829,7 @@ func _build_center() -> void:
 	var ph := HBoxContainer.new()
 	ph.add_theme_constant_override("separation", 8)
 	prompt_panel.add_child(ph)
-	ph.add_child(UI.keycap("G", 14))
+	ph.add_child(UI.keycap("G", 14, 0.78))
 	prompt_lbl = UI.label("", 16, Color(1, 0.92, 0.75))
 	ph.add_child(prompt_lbl)
 
@@ -979,6 +994,12 @@ func _build_settings_panel(initial_tab := "video") -> void:
 	vs.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	pgv.add_child(vs)
+	var fps_cb := CheckButton.new()
+	fps_cb.text = Loc.t("显示 FPS", "Show FPS")
+	fps_cb.button_pressed = GameData.show_fps
+	fps_cb.toggled.connect(func(on): GameData.set_show_fps(on))
+	pgv.add_child(fps_cb)
+	_fps_cb = fps_cb
 	pgv.add_child(UI.label(Loc.t("画质", "Quality"), 14, UI.MUTED))
 	var q := OptionButton.new()
 	for i in GameData.QUALITY_NAMES.size():
@@ -997,6 +1018,18 @@ func _build_settings_panel(initial_tab := "video") -> void:
 				GameData.apply_env_quality(r_we.environment, raid._sun_light)
 		GameData.save_game())
 	pgv.add_child(q)
+	if not OS.has_feature("mobile"):
+		pgv.add_child(UI.label(Loc.t("渲染精度", "Render Scale"), 14, UI.MUTED))
+		var rs := OptionButton.new()
+		var rs_opts := GameData.render_scale_options()
+		for i in rs_opts.size():
+			rs.add_item(str(rs_opts[i]), i)
+		rs.selected = GameData.render_scale_mode
+		rs.item_selected.connect(func(i):
+			GameData.set_render_scale_mode(i)
+			GameData.apply_quality(get_viewport()))
+		pgv.add_child(rs)
+		_rs_opt = rs
 
 	# ---- 声音 ----
 	var pgv2: VBoxContainer = pages["audio"]
@@ -1060,8 +1093,17 @@ func _build_settings_panel(initial_tab := "video") -> void:
 	line.add_child(back)
 
 
+func _on_show_fps_changed(on: bool) -> void:
+	if _radar_box != null and is_instance_valid(_radar_box):
+		_radar_box.offset_top = 36 if on else 14
+
+
 func _open_settings() -> void:
 	last_toggle_frame = Engine.get_process_frames()
+	if _fps_cb != null and is_instance_valid(_fps_cb):
+		_fps_cb.set_pressed_no_signal(GameData.show_fps)
+	if _rs_opt != null and is_instance_valid(_rs_opt):
+		_rs_opt.selected = GameData.render_scale_mode
 	pause_panel.visible = false
 	settings_panel.visible = true
 	get_tree().paused = not Net.active()

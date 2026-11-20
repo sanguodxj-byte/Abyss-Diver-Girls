@@ -89,8 +89,9 @@ static func get_prefab(id: String) -> Dictionary:
 		var p_xf: Transform3D = rp[2]
 		var res_m: Material = rp[3]
 		var shadow_on: bool = bool(rp[4])
+		var allow_prim: bool = bool(rp[5])
 		var m_id: int = res_m.get_rid().get_id() if res_m != null else 0
-		var is_prim: bool = (primary_rid != 0 and m_id == primary_rid)
+		var is_prim: bool = (primary_rid != 0 and m_id == primary_rid and allow_prim)
 		if is_prim:
 			var gk_p := "prim|%d|%d" % [m_id, 1 if shadow_on else 0]
 			if not groups.has(gk_p):
@@ -110,12 +111,17 @@ static func get_prefab(id: String) -> Dictionary:
 			(groups[gk_s]["parts"] as Array).append([p_mesh, p_si, p_xf, col_t])
 
 	var surfaces: Array = []
+	var vis_aabb := AABB()
+	var has_ab := false
 	for gk: String in groups:
 		var g: Dictionary = groups[gk]
 		var am: ArrayMesh = _merge_parts(g["parts"] as Array, int(g["tint"]))
 		if am == null or am.get_surface_count() == 0:
 			continue
 		am.set_meta("prefab_inst", true)
+		var ab := am.get_aabb()
+		vis_aabb = ab if not has_ab else vis_aabb.merge(ab)
+		has_ab = true
 		surfaces.append({
 			"mesh": am,
 			"mat": g["mat"],
@@ -126,6 +132,7 @@ static func get_prefab(id: String) -> Dictionary:
 	var entry := {
 		"id": id,
 		"base_sz": bsz,
+		"aabb": vis_aabb if has_ab else AABB(-bsz * 0.5, bsz),
 		"surfaces": surfaces,
 		"stencils": stencils,
 		"primary_mat": primary_mats.get(primary_rid, null),
@@ -167,7 +174,8 @@ static func _collect_recursive(
 					raw_m = mi.mesh.surface_get_material(si)
 				var res_m: Material = _resolve_material(id, cur_path, raw_m)
 				var m_id: int = res_m.get_rid().get_id() if res_m != null else 0
-				raw_parts.append([mi.mesh, si, cur_xf, res_m, shadow_on])
+				var allow_prim: bool = _allow_primary_tint(id, cur_path)
+				raw_parts.append([mi.mesh, si, cur_xf, res_m, shadow_on, allow_prim])
 				if _is_primary_candidate(id, cur_path, res_m):
 					var arrays: Array = mi.mesh.surface_get_arrays(si)
 					var v_arr: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -187,18 +195,59 @@ static func _collect_recursive(
 		_collect_recursive(id, ch, cur_xf, cur_path, raw_parts, primary_votes, primary_mats, stencils)
 
 
+static func _is_equip_or_trim_path(path: String) -> bool:
+	return path.contains("Window") or path.contains("Door") or path.contains("SecurityBar") \
+		or path.contains("SunHood") or path.contains("ShutterLeaf") or path.contains("Headlight") \
+		or path.contains("OpticalLens") or path.contains("Vent") or path.contains("TurbineVent") \
+		or path.contains("NBCFiltrationUnit") or path.contains("TacticalCommsMast") \
+		or path.contains("CommandCommsArray") or path.contains("LightningMast") \
+		or path.contains("RidgeMonitor") or path.contains("WaterTank") or path.contains("CoolingTower") \
+		or path.contains("SolarHeater") or path.contains("Chimney") or path.contains("ACBracket") \
+		or path.contains("WallACUnit") or path.contains("Balcony") or path.contains("Airlock") \
+		or path.contains("CableStayedCanopy") or path.contains("MonorailHoist") \
+		or path.contains("CycloneSeparator") or path.contains("AmmoniaCondenserSkid") \
+		or path.contains("CargoPallet") or path.contains("Sandbag") or path.contains("Ladder") \
+		or path.contains("Piston") or path.contains("Wheel") or path.contains("Track") \
+		or path.contains("RunningGear") or path.contains("Ripper") or path.contains("CavityCore")
+
+
+static func _allow_primary_tint(id: String, path: String) -> bool:
+	if _is_equip_or_trim_path(path):
+		return false
+	if path.contains("Plinth") or path.contains("Foundation") or path.contains("Apron"):
+		return false
+	if not id.begins_with("veh_"):
+		if path.contains("StructPier") or path.contains("CornerPilaster") or path.contains("PortalColumn"):
+			return false
+	return true
+
+
 static func _is_primary_candidate(id: String, path: String, mat: Material) -> bool:
 	if mat == null or not (mat is ShaderMaterial):
 		return false
-	if path.contains("Plinth") or path.contains("Foundation") or path.contains("Apron") \
-			or path.contains("CavityCore") or path.contains("Window") or path.contains("Door") \
-			or path.contains("Wheel") or path.contains("Track") or path.contains("Sandbag") \
-			or path.contains("Roof") or path.contains("Ladder") or path.contains("Piston"):
+	var sm: ShaderMaterial = mat as ShaderMaterial
+	var mb_v: Variant = sm.get_shader_parameter("metal_base")
+	var mb: float = float(mb_v) if mb_v != null else 0.15
+	# 排除 K.dark / K.gunmetal / K.frame / chrome / brass 等高金属度结构钢与五金配件，防止反客为主劫持主墙/车体材质
+	if mb >= 0.60:
+		return false
+	var col_v: Variant = sm.get_shader_parameter("base_color")
+	if col_v is Color:
+		var c: Color = col_v as Color
+		if maxf(c.r, maxf(c.g, c.b)) < 0.085 and mb < 0.10:
+			return false
+	if not _allow_primary_tint(id, path):
+		return false
+	if path.contains("Roof"):
 		return false
 	if id.begins_with("veh_"):
+		if path.contains("Turret"):
+			return false
 		return path.contains("Cab") or path.contains("Bed") or path.contains("Hull") \
 			or path.contains("Trailer") or path.contains("Hood") or path.contains("Blade")
-	return path.contains("Body") or path.contains("StructWall") or path.contains("Hall") \
+	if path.contains("StructWall"):
+		return true
+	return path.contains("Body") or path.contains("Hall") \
 		or path.contains("Wing") or path.contains("Store") or path.contains("House")
 
 
@@ -268,14 +317,20 @@ static func _resolve_material(id: String, path: String, mat: Material) -> Materi
 			"scratches": 0.0, "rust": 0.12, "dust": 0.46, "panel_scale": 0.0,
 		})
 
-	# 压型波纹钢屋面、卷帘门、粮仓筒体与轻钢厂房墙皮
-	if path.contains("RollerDoor") or path.contains("MaintenanceBayDoor") or path.contains("LocoBayDoor") \
-			or path.contains("PortalWarehouseBody") or path.contains("ArmoredBarrackBody") \
-			or path.contains("AmmoniaColdStore") or path.contains("GrainSilo") \
-			or path.contains("RoofSlopeDeck") or path.contains("TerracePitchedRoof") \
-			or path.contains("ArmoredQuonsetRoof") or path.contains("StructuredVaultRoof"):
-		if mb >= 0.12 or rb <= 0.78:
+	# 压型波纹钢卷帘门（含金属帘片）
+	if path.contains("RollerDoor") or path.contains("MaintenanceBayDoor") or path.contains("LocoBayDoor"):
+		if mb >= 0.12 and mb < 0.72:
 			return A.corrugated(c, clampf(mb, 0.34, 0.58), 0.34)
+
+	# 压型波纹钢屋面、粮仓筒体与轻钢厂房墙皮（排除门窗、机电设备、天线与高金属结构钢柱/拱肋）
+	if not _is_equip_or_trim_path(path) and not path.contains("StructPier") \
+			and not path.contains("CornerPilaster") and not path.contains("PortalColumn"):
+		if path.contains("PortalWarehouseBody") or path.contains("ArmoredBarrackBody") \
+				or path.contains("AmmoniaColdStore") or path.contains("GrainSilo") \
+				or path.contains("RoofSlopeDeck") or path.contains("TerracePitchedRoof") \
+				or path.contains("ArmoredQuonsetRoof") or path.contains("StructuredVaultRoof"):
+			if mb >= 0.12 and mb < 0.62:
+				return A.corrugated(c, clampf(mb, 0.34, 0.58), 0.34)
 
 	# 低金属高粗糙度建筑墙体、柱础、勒脚、暗堡与烟囱 -> 真实 2K 窑变红砖 / 现浇模板混凝土
 	if mb <= 0.10 and rb >= 0.78:
@@ -417,6 +472,9 @@ static func place_on_body(
 	)
 	var pos := Vector3(0.0, (-target_sz.y * 0.5) if y_off <= -900.0 else y_off, 0.0)
 	var rot_deg := Vector3(0.0, 180.0, 0.0) if flip_front else Vector3.ZERO
+	var pf_ab: AABB = pf.get("aabb", AABB(-bsz * 0.5, bsz))
+	var xf_vis := Transform3D(Basis.from_euler(rot_deg * (PI / 180.0)) * Basis.from_scale(scl), pos)
+	sb.set_meta("occ_vis_aabb", xf_vis * pf_ab)
 	var surfaces: Array = pf["surfaces"]
 	for s_info: Dictionary in surfaces:
 		var use_mat: Material = s_info["mat"]

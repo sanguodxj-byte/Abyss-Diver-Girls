@@ -15,15 +15,45 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/modules/kit.gd")
+const Prof = preload("res://scripts/prof.gd")
 
 const SLOTS := ["legs", "core", "arm_l", "arm_r", "back", "gen"]
 const PARENT := {"core": "legs", "arm_l": "core", "arm_r": "core", "back": "core", "gen": "core"}
 const EXPLODE := {"legs": 0.0, "core": 1.0, "arm_l": 1.5, "arm_r": 1.5, "back": 1.4, "gen": 1.4}
 const SIDE := {"arm_l": -1.0, "arm_r": 1.0}
+static var _builders := {}
+static var _loading_builders := {}
 
 
 static func _gd():
 	return Engine.get_main_loop().root.get_node("GameData")
+
+
+## 增援入队时提前请求脚本，主线程只在状态为 LOADED 后取结果，避免首次解析阻塞战斗。
+static func request_module(id: String) -> void:
+	if id.is_empty():
+		return
+	var path := "res://scripts/modules/%s.gd" % _gd().base_id(id)
+	if _builders.has(path) or _loading_builders.has(path) or not ResourceLoader.exists(path):
+		return
+	var err := ResourceLoader.load_threaded_request(path, "GDScript")
+	if err != OK:
+		push_error("Module request failed (%d): %s" % [err, path])
+	_loading_builders[path] = true
+
+
+static func module_ready(id: String) -> bool:
+	var path := "res://scripts/modules/%s.gd" % _gd().base_id(id)
+	if not _loading_builders.has(path):
+		return true
+	match ResourceLoader.load_threaded_get_status(path):
+		ResourceLoader.THREAD_LOAD_LOADED:
+			_builders[path] = ResourceLoader.load_threaded_get(path)
+			_loading_builders.erase(path)
+			return true
+		ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			push_error("Module load failed: " + path)
+	return false
 
 
 # ================================================================ 单个模块
@@ -42,7 +72,15 @@ static func build_module(slot: String, id: String, lights := true, serial := "00
 	var path := "res://scripts/modules/%s.gd" % base
 	var m: Node3D
 	if ResourceLoader.exists(path):
-		m = load(path).build(ctx)
+		var t := Prof.t0()
+		var builder = _builders.get(path)
+		if builder == null:
+			builder = load(path)
+			_builders[path] = builder
+		Prof.add("spawn.module_load", t)
+		t = Prof.t0()
+		m = builder.build(ctx)
+		Prof.add("spawn.module_build", t)
 	else:
 		m = _generic(slot, ctx)
 	# 接口校验：插头必须与该槽位的标准接口一致
@@ -116,6 +154,48 @@ static func build(lo: Dictionary, with_lights := true, with_shadow := true) -> N
 	for slot in SLOTS:
 		var id: String = legs_id if slot == "legs" else str(lo.get(slot, ""))
 		_install(root, slot, id, false)
+	_refresh_meta(root)
+	return root
+
+
+## 将分帧预构建（并已按单模块合批）的模块表组装为完整 MechVisual，消除单帧多机甲生成导致的秒级卡顿
+static func assemble_prebuilt(lo: Dictionary, prebuilt: Dictionary, with_lights := true, with_shadow := true) -> Node3D:
+	var root := Node3D.new()
+	root.name = "MechVisual"
+	root.set_meta("lights", with_lights)
+	root.set_meta("serial", "%02d" % (abs(hash(str(lo.get("core", "")) + str(lo.get("legs", "")))) % 90 + 10))
+	root.set_meta("modules", {})
+	root.set_meta("loadout", {})
+	root.set_meta("explode", 0.0)
+	if with_shadow:
+		A.add(root, A.quad(4.2, 4.2), A.contact_shadow_mat(0.56), Vector3(0, 0.034, 0), Vector3.ZERO, Vector3.ONE, false)
+	var mount := Node3D.new()
+	mount.name = "TorsoMount"
+	mount.set_meta("out", Vector3.UP)
+	root.add_child(mount)
+	var legs_id: String = lo.get("legs", "")
+	if legs_id == "":
+		legs_id = "legs_biped"
+	var mods: Dictionary = root.get_meta("modules")
+	var lo_meta: Dictionary = root.get_meta("loadout")
+	for slot in SLOTS:
+		var id: String = legs_id if slot == "legs" else str(lo.get(slot, ""))
+		var m: Node3D = prebuilt.get(slot, null)
+		if m == null and id != "":
+			m = build_module(slot, id, with_lights, root.get_meta("serial"))
+		lo_meta[slot] = id
+		if m == null:
+			continue
+		mods[slot] = m
+		var sock := _socket_for(root, slot)
+		if sock != null:
+			sock.add_child(m)
+			m.position = Vector3.ZERO
+		if slot == "legs":
+			var ls: Node3D = m.get_node_or_null("Socket_core")
+			var target := ls.position if ls else Vector3(0, 2.0, 0)
+			mount.position = target
+			mount.set_meta("target_y", target.y)
 	_refresh_meta(root)
 	return root
 

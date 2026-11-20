@@ -38,6 +38,8 @@ func run() -> void:
 	if not _expect(main.hub.process_mode == Node.PROCESS_MODE_INHERIT, "hub process mode was not restored"):
 		return
 	chrome = _chrome(main.hub)
+	if not _chrome_unchanged(main.hub):
+		return
 	await shot("transition_02_hub.png")
 	await frames(22)
 	for key: String in ["trade", "skills", "stash", "deploy", "codex", "maintenance"]:
@@ -279,7 +281,7 @@ func _deploy_settled(step: int) -> bool:
 func _chrome(hub: Control) -> Array:
 	var out: Array = []
 	for child in hub.get_children():
-		if child is Control:
+		if child is Control and child.name != "PageMotion":
 			out.append([child, Rect2(child.position, child.size), child.scale, child.z_index, child.mouse_filter])
 	for button in hub.nav_buttons.values():
 		out.append([button, Rect2(button.position, button.size), button.scale, button.z_index, button.mouse_filter])
@@ -290,6 +292,6 @@ func _chrome_unchanged(hub: Control) -> bool:
 	for saved: Array in chrome:
 		var control: Control = saved[0]
 		var same_scale: bool = control == hub.nav_buttons.deploy or control.scale.is_equal_approx(saved[2])
-		if not _expect(Rect2(control.position, control.size).is_equal_approx(saved[1]) and same_scale and control.z_index == saved[3] and control.mouse_filter == saved[4], "persistent UI geometry or input filter changed: %s" % control.get_path()):
+		if not _expect(Rect2(control.position, control.size).is_equal_approx(saved[1]) and same_scale and control.z_index == saved[3] and control.mouse_filter == saved[4] and is_equal_approx(control.modulate.a, 1.0), "persistent UI geometry, opacity, or input filter changed: %s (alpha=%f)" % [control.get_path(), control.modulate.a]):
 			return false
 	return true

@@ -198,9 +198,9 @@ static func panel(pad := 12, accent := true) -> PanelContainer:
 
 
 ## 键帽：[Q] 工业灰黑阳极氧化金属键帽，浅灰白丝印字标
-static func keycap(key: String, size := 13) -> PanelContainer:
+static func keycap(key: String, size := 13, bg_alpha := 1.0) -> PanelContainer:
 	var p := PanelContainer.new()
-	var sb := tex9("key9", 6, 6)
+	var sb := tex9("key9", 6, 6, Color(1, 1, 1, bg_alpha))
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 4
 	p.add_theme_stylebox_override("panel", sb)
@@ -367,7 +367,7 @@ class Radar extends Control:
 			pts.append(c + d * r)
 			var w := Vector2(mp.x, mp.z) + d * rng_m
 			uvs.append((w + Vector2(H, H)) / (H * 2.0))
-			cols.append(Color(0.82, 0.82, 0.82, 0.92))
+			cols.append(Color(0.84, 0.84, 0.84, 0.64))
 		draw_polygon(pts, cols, uvs, raid.map_tex)
 
 	func _to_screen(rel: Vector3, r: float) -> Vector2:
@@ -379,7 +379,7 @@ class Radar extends Control:
 			return
 		var c := size * 0.5
 		var r: float = min(size.x, size.y) * 0.5 - 2.0
-		draw_circle(c, r, Color(0.08, 0.088, 0.092, 0.92))
+		draw_circle(c, r, Color(0.06, 0.068, 0.074, 0.54))
 		_draw_terrain(c, r)
 		for k in [0.33, 0.66]:
 			draw_arc(c, r * k, 0, TAU, 48, Color(0.78, 0.48, 0.16, 0.18), 1.0, true)
@@ -476,9 +476,9 @@ class Radar extends Control:
 		# 自己：朝向躯干方向的工业浅灰方向箭头
 		draw_colored_polygon(PackedVector2Array([c + f * 9, c - f * 5 + side * 6, c - f * 2, c - f * 5 - side * 6]), Color(0.88, 0.89, 0.86))
 		# 外圈工业灰黑机加工罗盘表圈 + 做旧橙黄刻度弧
-		draw_arc(c, r + 1.0, 0, TAU, 72, Color(0.11, 0.12, 0.13, 0.96), 7.5, true)
-		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.34, 0.37, 0.39, 0.96), 1.6, true)
-		draw_arc(c, r - 3.0, 0, TAU, 72, Color(0.05, 0.055, 0.06, 0.90), 1.5, true)
+		draw_arc(c, r + 1.0, 0, TAU, 72, Color(0.11, 0.12, 0.13, 0.76), 7.5, true)
+		draw_arc(c, r + 4.5, 0, TAU, 72, Color(0.36, 0.39, 0.41, 0.82), 1.6, true)
+		draw_arc(c, r - 3.0, 0, TAU, 72, Color(0.05, 0.055, 0.06, 0.72), 1.5, true)
 		for k in 36:
 			var a := k * TAU / 36.0
 			var dd := Vector2(cos(a), sin(a))

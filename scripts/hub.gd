@@ -22,9 +22,11 @@ const Icons = preload("res://scripts/item_icons.gd")
 const WorldLink = preload("res://scripts/world_link.gd")
 const WorldMapView = preload("res://scripts/world_map_view.gd")
 const PageMotion = preload("res://scripts/ui_transition.gd")
+const AlbatrossAirship = preload("res://scripts/airship/airship_albatross.gd")
 
 ## 3D 机库背景与转台
 var preview_root: Node3D
+var airship: Node3D
 var preview_mech: Node3D
 var turntable: Node3D
 var preview_cam: Camera3D
@@ -47,6 +49,7 @@ var lead_xp_bar
 var _settings_overlay: Control
 var _settings_panel: PanelContainer
 var _settings_tab := "video"
+var _fps_spacer: Control
 
 ## 视图容器
 var views := {}
@@ -462,6 +465,11 @@ func _ready() -> void:
 	_switch_tab("maintenance")
 
 
+func _exit_tree() -> void:
+	if GameData.show_fps_changed.is_connected(_on_show_fps_changed):
+		GameData.show_fps_changed.disconnect(_on_show_fps_changed)
+
+
 ## 内容区里的一个视图根节点
 func _view(parent: Control, key: String) -> Control:
 	var v := Control.new()
@@ -649,7 +657,20 @@ func _build_top_bar() -> void:
 	settings_btn.custom_minimum_size = Vector2(58, 28)
 	settings_btn.pressed.connect(func(): _open_hub_settings())
 	th.add_child(settings_btn)
+
+	_fps_spacer = Control.new()
+	_fps_spacer.custom_minimum_size = Vector2(82, 1)
+	_fps_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_spacer.visible = GameData.show_fps
+	th.add_child(_fps_spacer)
+	if not GameData.show_fps_changed.is_connected(_on_show_fps_changed):
+		GameData.show_fps_changed.connect(_on_show_fps_changed)
 	_update_clock()
+
+
+func _on_show_fps_changed(on: bool) -> void:
+	if _fps_spacer != null and is_instance_valid(_fps_spacer):
+		_fps_spacer.visible = on
 
 
 func _update_clock() -> void:
@@ -748,8 +769,7 @@ func _transition_page(page: Control, key: Variant, show_page: bool, changed: boo
 	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT if show_page else Tween.EASE_IN_OUT)
 	tweens[key] = tw
 	tw.tween_property(effect, "progress", 1.0 if show_page else 0.0, PageMotion.ENTER if show_page else PageMotion.EXIT).set_delay(enter_delay if show_page else 0.0)
-	if show_page:
-		tw.tween_property(page, "modulate:a", 1.0, 0.01).set_delay(enter_delay)
+	tw.tween_property(page, "modulate:a", 1.0 if show_page else 0.0, PageMotion.ENTER if show_page else PageMotion.EXIT).set_delay(enter_delay if show_page else 0.0)
 	tw.finished.connect(_finish_page_transition.bind(page, key, not show_page, tweens, modes))
 
 
@@ -893,6 +913,12 @@ func _open_hub_settings(initial_tab := "video") -> void:
 	vs.toggled.connect(func(on): DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED))
 	pg_v.add_child(vs)
 
+	var fps_cb := CheckButton.new()
+	fps_cb.text = Loc.t("显示 FPS", "Show FPS")
+	fps_cb.button_pressed = GameData.show_fps
+	fps_cb.toggled.connect(func(on): GameData.set_show_fps(on))
+	pg_v.add_child(fps_cb)
+
 	pg_v.add_child(UI.label(Loc.t("画质", "Quality"), 12, K.CREAM_DIM))
 	var q_opt := OptionButton.new()
 	for i in GameData.QUALITY_NAMES.size():
@@ -902,9 +928,23 @@ func _open_hub_settings(initial_tab := "video") -> void:
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
 		if hangar_vp and is_instance_valid(hangar_vp):
-			GameData.apply_quality(hangar_vp)
+			GameData.apply_quality(hangar_vp, false)
 		GameData.save_game())
 	pg_v.add_child(q_opt)
+
+	if not OS.has_feature("mobile"):
+		pg_v.add_child(UI.label(Loc.t("渲染精度", "Render Scale"), 12, K.CREAM_DIM))
+		var rs_opt := OptionButton.new()
+		var rs_opts := GameData.render_scale_options()
+		for i in rs_opts.size():
+			rs_opt.add_item(str(rs_opts[i]), i)
+		rs_opt.selected = GameData.render_scale_mode
+		rs_opt.item_selected.connect(func(i):
+			GameData.set_render_scale_mode(i)
+			GameData.apply_quality(get_viewport())
+			if hangar_vp and is_instance_valid(hangar_vp):
+				GameData.apply_quality(hangar_vp, false))
+		pg_v.add_child(rs_opt)
 
 	pg_v.add_child(UI.label(Loc.t("画面风格", "Render Style"), 12, K.CREAM_DIM))
 	var st_opt := OptionButton.new()
@@ -1103,18 +1143,11 @@ func _item_tip(e: Dictionary) -> Control:
 				v.add_child(K.kv(names[k], val_txt, UI.GOOD if (k == "range" and float(m.range) > 10.0) else UI.INFO))
 		if slot_s == "arm":
 			var wpn := str(m.get("weapon", ""))
-			var am: Dictionary = GameData.AMMO.get(wpn, {})
 			v.add_child(K.kv(Loc.t("武器类型", "Weapon Type"), GameData.weapon_type_name(wpn), UI.ACCENT if wpn == "laser" else UI.INFO))
 			if m.has("speed"):
 				v.add_child(K.kv(Loc.t("弹道初速", "Muzzle Vel"), "%.0f m/s" % float(m.speed), K.CREAM_DIM))
-			if GameData.weapon_uses_ammo(wpn):
-				if not am.is_empty():
-					v.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1fs", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
-			else:
-				var mode := GameData.weapon_mode(wpn)
-				var en := int(round(GameData.shot_energy_cost(m)))
-				var res_txt := (Loc.t("能量 %d/发", "Energy %d/shot") % en) if mode == "energy" else (Loc.t("液压能量 %d/击", "Hydraulic %d/hit") % en)
-				v.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), res_txt, K.CREAM))
+			var en_s := str(snappedf(GameData.shot_energy_cost(m), 0.01))
+			v.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), Loc.t("能量 %s/发", "Energy %s/shot") % en_s, K.CREAM))
 		elif m.has("eff"):
 			v.add_child(K.kv(Loc.t("供电效率", "Power Eff."), Loc.t("耗电 %d%%", "%d%% Load") % int(round(float(m.eff) * 100.0)), UI.GOOD if float(m.eff) < 1.0 else K.CREAM))
 		var sk := GameData.module_skill_info(id)
@@ -1614,7 +1647,7 @@ func _build_deploy_view(parent: Control) -> void:
 	p1.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_at(p1, v_d, FILL, [0, 0, 0, 0])
 	deploy_pages.append(p1)
-	var wm := _tpanel(p1, Loc.t("战区大地图", "Sector World Map"), "World map", FILL, [K.M, top, -K.M - RW - K.GAP, -K.GAP])
+	var wm := _tpanel(p1, Loc.t("地区侦察图", "Regional Map"), "Region map", FILL, [K.M, top, -K.M - RW - K.GAP, -K.GAP])
 	var wm_mc := wm[1].get_parent() as MarginContainer
 	if wm_mc:
 		for k in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
@@ -2743,11 +2776,8 @@ func _show_codex(tab: String, id: String) -> void:
 						v_txt = "%d%%" % int(round(float(m[stat_k]) * 100.0))
 					_stat_cell(name_map[stat_k], v_txt, UI.INFO)
 			if str(m.get("slot", "")) == "arm":
-				var wpn := str(m.get("weapon", ""))
-				var am: Dictionary = GameData.AMMO.get(wpn, {})
-				if GameData.weapon_uses_ammo(wpn) and not am.is_empty():
-					_stat_cell(Loc.t("弹匣", "Mag"), Loc.t("%d发", "%d rds") % int(am.get("mag", 0)), UI.INFO)
-					_stat_cell(Loc.t("装填", "Reload"), Loc.t("%.1f秒", "%.1fs") % float(am.get("reload", 0.0)), UI.INFO)
+				var en_s := str(snappedf(GameData.shot_energy_cost(m), 0.01))
+				_stat_cell(Loc.t("能耗", "Energy"), Loc.t("%s/发", "%s/shot") % en_s, UI.INFO)
 		"enemy":
 			var e: Dictionary = GameData.ENEMIES.get(id, {})
 			codex_title_lbl.text = str(e.get("name", id))
@@ -2778,7 +2808,7 @@ func _build_hangar() -> void:
 	var sv: SubViewport = svc.sv
 	sv.own_world_3d = true
 	hangar_vp = sv
-	GameData.apply_quality(sv)
+	GameData.apply_quality(sv, false)
 	preview_root = Node3D.new()
 	sv.add_child(preview_root)
 
@@ -2824,131 +2854,23 @@ func _build_hangar() -> void:
 	we.environment = env
 	preview_root.add_child(we)
 
-	# 信天翁号重型机甲整备甲板（BAY 03）：铆接防滑钢甲板 + 纵向排水篦沟 + 沉降式液压回转检修井 + 桥式天车与二层廊道
-	var M_FLOOR := A.paint(Color(0.16, 0.17, 0.19), 0.72, 0.58, {"wear": 0.48, "rust": 0.25, "dust": 0.22, "panel_scale": 0.85})
-	var M_DARK := A.metal(Color(0.09, 0.095, 0.105))
-	var M_GUN := A.metal(Color(0.20, 0.21, 0.23))
-	var M_ST := A.metal(Color(0.32, 0.33, 0.35))
-	var M_CRANE := A.paint(Color(0.74, 0.48, 0.14), 0.35, 0.52, {"wear": 0.52, "rust": 0.38, "panel_scale": 0.5})
-	var M_OLIVE := A.paint(Color(0.28, 0.33, 0.25), 0.22, 0.65, {"wear": 0.45, "rust": 0.32, "panel_scale": 0.4})
-	var M_CAB := A.paint(Color(0.46, 0.20, 0.16), 0.35, 0.55, {"wear": 0.45, "rust": 0.35, "panel_scale": 0.0})
-	for x in range(-4, 5):
-		for z in range(-4, 3):
-			A.add(preview_root, A.bevel_box(Vector3(2.94, 0.20, 2.94), 0.03), M_FLOOR, Vector3(x * 3.0, -0.10, z * 3.0))
-			if absi(x) >= 2 and z >= -2 and z <= 1:
-				A.add(preview_root, A.torus(0.05, 0.09, 12), M_GUN, Vector3(x * 3.0 + 1.2, 0.01, z * 3.0 + 1.2), Vector3.ZERO, Vector3(1, 0.4, 1), false)
-	# 两侧纵向排水钢格栅沟槽 + 前沿安全黄黑警戒带
-	for sx in [-3.95, 3.95]:
-		A.add(preview_root, A.bevel_box(Vector3(0.46, 0.04, 18.0), 0.008), M_DARK, Vector3(sx, -0.015, -2.5))
-		for gi in 26:
-			A.add(preview_root, A.bevel_box(Vector3(0.40, 0.02, 0.10), 0.004), M_GUN, Vector3(sx, 0.016, -10.8 + gi * 0.65), Vector3.ZERO, Vector3.ONE, false)
-	A.add(preview_root, A.bevel_box(Vector3(27, 0.028, 0.42), 0.008), A.hazard(), Vector3(0, 0.008, 4.9))
-
-	# 沉降式重工机械回转台（取代悬浮霓虹发光圈：黄黑防撞井圈 + 法兰螺栓转盘 + 四角液压驻车卡钳 + 脐带油管）
-	turntable = Node3D.new()
-	preview_root.add_child(turntable)
+	# 装配完整 87.2m 信天翁号，将既有 BAY 03 重型机甲整备舱精确置于核心机库舱位（转盘与 MechPad_Anchor(0,1.56,0) 重合，世界坐标保持 0,0,0）
+	airship = AlbatrossAirship.build_integrated({
+		"obs2_fit_airship": true,
+		"include_obs2_lights": false,
+		"include_obs2_outside": false,
+		"bay03_fit_airship": false,
+		"include_bay03_lights": true,
+		"bay03_mob": mob,
+		"bay03_mob_ren": mob_ren,
+		"batch_static": true,
+	})
+	airship.position = -AlbatrossAirship.BAY03_MOUNT_POS
+	preview_root.add_child(airship)
+	AlbatrossAirship.set_cutaway_mode(airship, "legacy_bay03")
+	var bay_refs: Dictionary = airship.get_meta("bay03_refs")
+	turntable = bay_refs["turntable"]
 	preview_root.set_meta("_keep_tt", turntable)
-	A.add(preview_root, A.cyl(3.26, 0.11, 3.38, 48), M_GUN, Vector3(0, 0.045, 0))
-	A.add(preview_root, A.cyl(3.04, 0.13, 3.06, 48), M_DARK, Vector3(0, 0.05, 0))
-	A.add(preview_root, A.cyl(2.88, 0.14, 2.94, 48), A.paint(Color(0.22, 0.23, 0.25), 0.65, 0.52, {"wear": 0.55, "panel_scale": 0.9}), Vector3(0, 0.075, 0))
-	A.add(preview_root, A.cyl(2.32, 0.035, 2.36, 44), M_DARK, Vector3(0, 0.15, 0))
-	for bi in 24:
-		var ba := TAU * float(bi) / 24.0
-		A.add(preview_root, A.cyl(0.028, 0.03, 0.032, 6), M_ST, Vector3(cos(ba) * 2.66, 0.152, sin(ba) * 2.66), Vector3.ZERO, Vector3.ONE, false)
-		if bi % 3 == 0:
-			A.add(preview_root, A.bevel_box(Vector3(0.46, 0.035, 0.18), 0.008), A.hazard(), Vector3(cos(ba) * 3.18, 0.105, sin(ba) * 3.18), Vector3(0, -rad_to_deg(ba) + 90.0, 0), Vector3.ONE, false)
-	for ci in 4:
-		var ca := TAU * float(ci) / 4.0 + PI * 0.25
-		A.add(preview_root, A.bevel_box(Vector3(0.36, 0.16, 0.44), 0.02), M_CRANE, Vector3(cos(ca) * 3.14, 0.09, sin(ca) * 3.14), Vector3(0, -rad_to_deg(ca), 0))
-		A.add(preview_root, A.bevel_box(Vector3(0.08, 0.03, 0.14), 0.005), A.emit(Color(1.0, 0.62, 0.16), 1.4), Vector3(cos(ca) * 3.30, 0.16, sin(ca) * 3.30), Vector3(0, -rad_to_deg(ca), 0), Vector3.ONE, false)
-	# 右侧地面液压配电桩与脐带软管束接入转盘井
-	A.add(preview_root, A.bevel_box(Vector3(0.58, 0.68, 0.46), 0.03), M_GUN, Vector3(3.55, 0.34, -1.65))
-	A.hose(preview_root, Vector3(3.32, 0.22, -1.55), Vector3(2.85, 0.06, -1.25), Vector3(0.0, -0.10, 0.12), 0.038)
-	A.hose(preview_root, Vector3(3.32, 0.16, -1.75), Vector3(2.78, 0.05, -1.50), Vector3(0.0, -0.08, -0.10), 0.030)
-
-	# 后舱壁重型防爆整备闸门 + H型钢立柱 + 二层检修钢走廊 + 两侧百叶采光灯阵
-	var M_WALL := A.paint(Color(0.22, 0.24, 0.27), 0.38, 0.62, {"wear": 0.42, "rust": 0.28, "panel_scale": 0.6})
-	var M_DOOR := A.paint(Color(0.18, 0.195, 0.22), 0.52, 0.56, {"wear": 0.48, "panel_scale": 0.75})
-	for x in range(-5, 6):
-		A.add(preview_root, A.bevel_box(Vector3(2.85, 8.2, 0.40), 0.06), M_WALL, Vector3(x * 3.0, 4.1, -9.6))
-		A.add(preview_root, A.bevel_box(Vector3(0.32, 8.3, 0.65), 0.03), M_DARK, Vector3(x * 3.0 + 1.5, 4.15, -9.35))
-	# 中央重装甲对开气密闸门（BAY 03 背景框景，不抢前景机甲剪影）
-	A.add(preview_root, A.bevel_box(Vector3(5.6, 3.95, 0.34), 0.05), M_DARK, Vector3(0, 1.98, -9.32))
-	for sx in [-1.32, 1.32]:
-		A.add(preview_root, A.bevel_box(Vector3(2.54, 3.68, 0.22), 0.04), M_DOOR, Vector3(sx, 1.88, -9.16))
-		for ri in 4:
-			A.add(preview_root, A.bevel_box(Vector3(2.36, 0.10, 0.08), 0.015), M_GUN, Vector3(sx, 0.58 + ri * 0.86, -9.03))
-		A.add(preview_root, A.bevel_box(Vector3(0.28, 0.76, 0.10), 0.015), M_ST, Vector3(sx * 0.18, 1.85, -9.02))
-	A.add(preview_root, A.bevel_box(Vector3(5.8, 0.22, 0.42), 0.03), A.hazard(), Vector3(0, 3.84, -9.15))
-
-	# 二层横向检修走廊与安全栏杆（y = 4.02，恰位于机甲肩背上方）
-	A.add(preview_root, A.bevel_box(Vector3(18.6, 0.18, 1.35), 0.03), M_GUN, Vector3(0, 4.02, -8.65))
-	for rx in range(-9, 10, 2):
-		A.add(preview_root, A.bevel_box(Vector3(0.06, 0.92, 0.06), 0.01), M_ST, Vector3(float(rx), 4.52, -8.02))
-		A.add(preview_root, A.bevel_box(Vector3(0.14, 0.65, 1.15), 0.02), M_DARK, Vector3(float(rx), 3.62, -8.75), Vector3(26, 0, 0))
-	A.add(preview_root, A.bevel_box(Vector3(18.64, 0.07, 0.08), 0.01), M_CRANE, Vector3(0, 4.98, -8.02))
-	A.add(preview_root, A.bevel_box(Vector3(18.6, 0.04, 0.04), 0.01), M_ST, Vector3(0, 4.52, -8.02))
-
-	# 两侧百叶采光天窗（下移至视口清晰区，柔化辉光避免切顶）
-	for x in [-4.8, 4.8]:
-		A.add(preview_root, A.bevel_box(Vector3(2.9, 1.15, 0.12), 0.03), A.emit(Color(0.95, 0.64, 0.36), 0.58), Vector3(x, 5.28, -9.28), Vector3.ZERO, Vector3.ONE, false)
-		A.add(preview_root, A.bevel_box(Vector3(3.15, 0.15, 0.30), 0.02), M_DARK, Vector3(x, 5.90, -9.20))
-		A.add(preview_root, A.bevel_box(Vector3(3.15, 0.15, 0.30), 0.02), M_DARK, Vector3(x, 4.66, -9.20))
-		for lv in 3:
-			A.add(preview_root, A.bevel_box(Vector3(2.95, 0.05, 0.22), 0.008), M_GUN, Vector3(x, 4.94 + lv * 0.34, -9.18), Vector3(18, 0, 0))
-		if not mob and not mob_ren:
-			var wl := OmniLight3D.new()
-			wl.light_color = Color(1.0, 0.68, 0.40)
-			wl.light_energy = 1.25
-			wl.omni_range = 9.5
-			wl.position = Vector3(x, 5.2, -7.6)
-			preview_root.add_child(wl)
-
-	# 后舱门楣工业铭牌横匾（精确落在顶部状态栏下方、机甲背包上方 y = 4.85..5.65 净空窗内）
-	A.add(preview_root, A.bevel_box(Vector3(4.2, 0.88, 0.18), 0.03), M_DARK, Vector3(0, 5.28, -9.12))
-	var bay := Label3D.new()
-	bay.text = "BAY 03"
-	bay.font_size = 112
-	bay.pixel_size = 0.0072
-	bay.modulate = Color(0.92, 0.68, 0.28, 0.82)
-	bay.outline_size = 6
-	bay.outline_modulate = Color(0.05, 0.05, 0.06, 0.85)
-	bay.shaded = false
-	bay.position = Vector3(0, 5.42, -9.00)
-	preview_root.add_child(bay)
-	A.stencil(preview_root, "ALBATROSS · HEAVY MECH DECK", Vector3(0, 4.98, -9.00), Vector3.ZERO, 0.0032, Color(0.76, 0.78, 0.76, 0.68))
-
-	# 两侧重型 H 钢承重排架柱 + 纵向天车轨道梁 + 侧翼工位整备道具
-	for sx in [-1.0, 1.0]:
-		for cz in [-8.6, -4.4, 0.6]:
-			A.add(preview_root, A.bevel_box(Vector3(0.54, 7.6, 0.54), 0.04), M_DARK, Vector3(sx * 6.8, 3.8, cz))
-			A.add(preview_root, A.bevel_box(Vector3(0.22, 7.56, 0.66), 0.02), M_GUN, Vector3(sx * 6.8, 3.8, cz))
-			A.add(preview_root, A.bevel_box(Vector3(0.68, 0.32, 0.70), 0.03), A.hazard(), Vector3(sx * 6.8, 0.85, cz))
-			A.add(preview_root, A.bevel_box(Vector3(1.35, 0.22, 0.26), 0.02), M_GUN, Vector3(sx * 6.22, 5.22, cz), Vector3(0, 0, sx * 36.0))
-		A.add(preview_root, A.bevel_box(Vector3(0.40, 0.46, 15.6), 0.03), M_CRANE, Vector3(sx * 6.38, 5.38, -3.8))
-		# 左右工位整备道具：重型抽屉工具车、军械备件托盘、备用液压油桶（严格位于 x = ±4.9..6.4，绝不遮挡中央机甲）
-		A.add(preview_root, A.bevel_box(Vector3(1.55, 0.14, 1.25), 0.02), M_DARK, Vector3(sx * 5.4, 0.065, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.42, 0.98, 1.08), 0.05), M_OLIVE, Vector3(sx * 5.4, 0.610, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.50, 0.10, 1.16), 0.02), M_DARK, Vector3(sx * 5.4, 1.140, -5.4))
-		A.add(preview_root, A.bevel_box(Vector3(1.06, 0.72, 0.88), 0.04), M_CRANE, Vector3(sx * 5.55, 1.545, -5.3), Vector3(0, sx * 14.0, 0))
-		# 车间红色重型工具柜 + 液压油桶
-		A.add(preview_root, A.bevel_box(Vector3(0.86, 1.24, 1.48), 0.04), M_CAB, Vector3(sx * 5.15, 0.66, -1.8), Vector3(0, sx * -12.0, 0))
-		A.add(preview_root, A.bevel_box(Vector3(0.90, 0.06, 1.52), 0.015), M_DARK, Vector3(sx * 5.15, 1.30, -1.8), Vector3(0, sx * -12.0, 0))
-		for dy in [0.34, 0.62, 0.90, 1.12]:
-			A.add(preview_root, A.bevel_box(Vector3(0.05, 0.03, 1.12), 0.006), M_ST, Vector3(sx * 4.70, dy, -1.8), Vector3(0, sx * -12.0, 0))
-		A.add(preview_root, A.cyl(0.32, 0.96, 0.32, 18), M_OLIVE if sx < 0.0 else M_GUN, Vector3(sx * 6.05, 0.48, 1.0))
-		A.add(preview_root, A.torus(0.30, 0.34, 18), M_DARK, Vector3(sx * 6.05, 0.68, 1.0), Vector3.ZERO, Vector3(1, 0.4, 1), false)
-
-	# 顶部横跨双梁工业天车 + 起重滑车与锻钢吊钩（停泊在 z = -6.0, y = 5.56，完整收入镜头净空框右上方）
-	for gz in [-6.32, -5.68]:
-		A.add(preview_root, A.bevel_box(Vector3(13.2, 0.42, 0.28), 0.03), M_CRANE, Vector3(0, 5.56, gz))
-	A.add(preview_root, A.bevel_box(Vector3(1.28, 0.34, 1.04), 0.03), M_DARK, Vector3(2.25, 5.76, -6.00))
-	for cx_off in [-0.20, 0.20]:
-		A.add(preview_root, A.cyl(0.018, 1.48, 0.018, 8), M_ST, Vector3(2.25 + cx_off, 4.92, -6.00))
-	A.add(preview_root, A.bevel_box(Vector3(0.58, 0.36, 0.28), 0.03), A.hazard(), Vector3(2.25, 4.12, -6.00))
-	A.add(preview_root, A.torus(0.10, 0.16, 14), M_GUN, Vector3(2.25, 3.80, -6.00), Vector3(0, 90, 0), Vector3.ONE, false)
-	for tz in [-8.6, -4.4, 0.6]:
-		A.add(preview_root, A.bevel_box(Vector3(14.0, 0.32, 0.28), 0.02), M_DARK, Vector3(0, 6.22, tz))
 
 	var key := SpotLight3D.new()
 	key.position = Vector3(2.5, 9.0, 4.0)
@@ -3015,7 +2937,6 @@ func _build_hangar() -> void:
 	preview_root.add_child(cam)
 	cam.look_at(Vector3(0, 1.9, 0))
 	preview_cam = cam
-	MechScript._batch_visual(preview_root)
 
 
 func _toggle_explode() -> void:
@@ -3046,6 +2967,8 @@ func _process(delta: float) -> void:
 		if not drag:
 			spin += delta * 0.35
 		turntable.rotation.y = lerp_angle(turntable.rotation.y, spin, clamp(delta * 8.0, 0.0, 1.0))
+	if airship:
+		AlbatrossAirship.spin_propellers(airship, delta, 10.0)
 
 
 
@@ -3500,18 +3423,10 @@ func _on_stash_selected(i: int) -> void:
 					v_txt = "%.0f%s" % [rv, Loc.t("（远距视距）", " (Long)") if rv > 10.0 else (Loc.t("（标准视距）", " (Standard)") if is_equal_approx(rv, 10.0) else Loc.t("（近距）", " (Short)"))]
 				stash_kv_box.add_child(K.kv(names[k], v_txt, UI.GOOD if (k == "range" and float(m.range) > 10.0) else UI.INFO))
 		if slot_s == "arm":
-			var wpn := str(m.get("weapon", ""))
-			var am: Dictionary = GameData.AMMO.get(wpn, {})
 			if m.has("speed"):
 				stash_kv_box.add_child(K.kv(Loc.t("弹道初速", "Muzzle Vel."), "%.0f m/s" % float(m.speed), K.CREAM_DIM))
-			if GameData.weapon_uses_ammo(wpn):
-				if not am.is_empty():
-					stash_kv_box.add_child(K.kv(Loc.t("弹匣 / 装填", "Mag / Reload"), Loc.t("%d 发 · %.1f秒", "%d rds · %.1fs") % [int(am.get("mag", 0)), float(am.get("reload", 0.0))], K.CREAM))
-			else:
-				var mode := GameData.weapon_mode(wpn)
-				var en := int(round(GameData.shot_energy_cost(m)))
-				var res_txt := (Loc.t("能量 %d/发", "Energy %d/shot") % en) if mode == "energy" else (Loc.t("液压能量 %d/击", "Hydraulic %d/hit") % en)
-				stash_kv_box.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), res_txt, K.CREAM))
+			var en_s := str(snappedf(GameData.shot_energy_cost(m), 0.01))
+			stash_kv_box.add_child(K.kv(Loc.t("射击资源", "Fire Resource"), Loc.t("能量 %s/发", "Energy %s/shot") % en_s, K.CREAM))
 		var sk := GameData.module_skill_info(selected_stash)
 		if not sk.is_empty():
 			stash_kv_box.add_child(K.kv(Loc.t("车载分系统 [%s]", "Subsystem [%s]") % str(sk.key), str(sk.name), UI.ACCENT))

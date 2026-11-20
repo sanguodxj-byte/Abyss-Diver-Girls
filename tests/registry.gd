@@ -118,13 +118,15 @@ func _items_modules() -> void:
 	for lt_k: String in allowed_leg_types:
 		if int(leg_type_counts[lt_k]) != 4:
 			p("底盘类型 %s 必须做满 4 款，当前为 %d 款" % [lt_k, int(leg_type_counts[lt_k])])
-	for w: String in GameData.AMMO:
-		var a: Dictionary = GameData.AMMO[w]
-		for k in ["mag", "reload", "tex"]:
-			if not a.has(k):
-				p("弹匣 %s 缺少字段 %s" % [w, k])
-		if a.has("tex") and not ResourceLoader.exists("res://assets/ui/%s.png" % a.tex):
-			p("弹匣 %s 的子弹贴图 assets\\ui\\%s.png 不存在" % [w, a.tex])
+		for w: String in GameData.AMMO:
+			var a: Dictionary = GameData.AMMO[w]
+			for k in ["cost", "tex"]:
+				if not a.has(k):
+					p("武器类型 %s 缺少字段 %s" % [w, k])
+			if a.has("cost") and float(a.cost) <= 0.0:
+				p("武器类型 %s 的单发能耗 cost 必须大于 0" % w)
+			if a.has("tex") and not ResourceLoader.exists("res://assets/ui/%s.png" % a.tex):
+				p("武器类型 %s 的贴图 assets\\ui\\%s.png 不存在" % [w, a.tex])
 	for s: String in GameData.SKILLS:
 		var sk: Dictionary = GameData.SKILLS[s]
 		if not sk.has("name") or not sk.has("icon"):

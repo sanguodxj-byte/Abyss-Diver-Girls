@@ -131,6 +131,9 @@ static func keel(w: float, h: float, top := 0.6, keel_d := 0.25) -> Array:
 
 ## 放样：secs = [[z, Vector2 scale, Vector2 offset], ...]，base 为截面点（所有截面同一拓扑），或者每节给自己的 pts（第 4 项）
 static func loft(base: Array, secs: Array, cap0 := true, cap1 := true) -> ArrayMesh:
+	var key := "lf|%s|%s|%d|%d" % [str(base), str(secs), int(cap0), int(cap1)]
+	if _cache.has(key):
+		return _cache[key]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var rings: Array = []
@@ -182,7 +185,9 @@ static func loft(base: Array, secs: Array, cap0 := true, cap1 := true) -> ArrayM
 				_tri(st, A0, C0, B0)
 			else:
 				_tri(st, A0, B0, C0)
-	return st.commit()
+	var mesh := st.commit()
+	_cache[key] = mesh
+	return mesh
 
 
 ## 放样肢节：从 a 到 b，截面切角矩形，w/h 为起点尺寸，taper 为末端比例，bulge 为 35% 处鼓起比例

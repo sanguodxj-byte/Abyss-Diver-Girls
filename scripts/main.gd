@@ -9,11 +9,13 @@ const RaidScript = preload("res://scripts/raid.gd")
 const ResultScript = preload("res://scripts/result_screen.gd")
 const LoadingScreenScript = preload("res://scripts/loading_screen.gd")
 const PageMotion = preload("res://scripts/ui_transition.gd")
+const FpsOverlayScript = preload("res://scripts/fps_overlay.gd")
 const TEST_DIR := "res://tests"
 
 var hub
 var raid
 var result_layer
+var fps_overlay
 var _deploying := false
 var _network_committed := false
 var _network_result := false
@@ -35,7 +37,11 @@ func _ready() -> void:
 	_apply_mobile_ui_scale()
 	if OS.has_feature("mobile") and not get_viewport().size_changed.is_connected(_apply_mobile_ui_scale):
 		get_viewport().size_changed.connect(_apply_mobile_ui_scale)
+	if not get_viewport().size_changed.is_connected(_on_viewport_resized):
+		get_viewport().size_changed.connect(_on_viewport_resized)
 	GameData.apply_quality(get_viewport())
+	fps_overlay = FpsOverlayScript.new()
+	add_child(fps_overlay)
 	var names := _test_args()
 	if names.is_empty():
 		show_menu()
@@ -100,6 +106,10 @@ func _start_dedicated_if_requested() -> bool:
 	return true
 
 
+func _on_viewport_resized() -> void:
+	GameData.apply_quality(get_viewport())
+
+
 func _apply_mobile_ui_scale() -> void:
 	if not OS.has_feature("mobile"):
 		return
@@ -144,6 +154,47 @@ func _fade_targets(screen: Node) -> Array[CanvasItem]:
 	return targets
 
 
+func _cancel_screen_fade(screen: Node) -> void:
+	if screen == null or not is_instance_valid(screen):
+		return
+	var id := screen.get_instance_id()
+	var previous: Tween = _screen_tweens.get(id)
+	if previous != null and previous.is_valid():
+		previous.kill()
+	_screen_tweens.erase(id)
+	_screen_modes.erase(id)
+	for child in screen.get_children():
+		if child is CanvasItem:
+			_screen_base_alpha.erase(child.get_instance_id())
+
+
+func _finish_screen_fade(screen_ref: WeakRef, id: int, target_refs: Array, free_when_done: bool) -> void:
+	_screen_tweens.erase(id)
+	var screen := screen_ref.get_ref() as Node
+	if screen == null or not is_instance_valid(screen):
+		_screen_modes.erase(id)
+		for ref: WeakRef in target_refs:
+			var it := ref.get_ref() as CanvasItem
+			if it != null and is_instance_valid(it):
+				_screen_base_alpha.erase(it.get_instance_id())
+		return
+	if free_when_done:
+		_screen_modes.erase(id)
+		for ref: WeakRef in target_refs:
+			var it := ref.get_ref() as CanvasItem
+			if it != null and is_instance_valid(it):
+				_screen_base_alpha.erase(it.get_instance_id())
+		screen.queue_free()
+	else:
+		PageMotion.clear(screen)
+		for ref: WeakRef in target_refs:
+			var it := ref.get_ref() as CanvasItem
+			if it != null and is_instance_valid(it):
+				it.modulate.a = float(_screen_base_alpha.get(it.get_instance_id(), 1.0))
+		screen.process_mode = int(_screen_modes.get(id, Node.PROCESS_MODE_INHERIT))
+		_screen_modes.erase(id)
+
+
 func _fade_screen(screen: Node, fade_in: bool, free_when_done := false, enter_delay := 0.0) -> void:
 	if screen == null or not is_instance_valid(screen):
 		return
@@ -156,44 +207,31 @@ func _fade_screen(screen: Node, fade_in: bool, free_when_done := false, enter_de
 	screen.process_mode = int(_screen_modes[id]) if fade_in else Node.PROCESS_MODE_DISABLED
 	PageMotion.clear(screen)
 	var targets := _fade_targets(screen)
+	var target_refs: Array = []
 	for item in targets:
 		var item_id := item.get_instance_id()
 		if not _screen_base_alpha.has(item_id):
-			_screen_base_alpha[item_id] = item.modulate.a
+			_screen_base_alpha[item_id] = item.modulate.a if item.modulate.a > 0.001 else 1.0
 		if fade_in:
 			item.modulate.a = 0.0
-	var effect: Control = PageMotion.attach(screen, "result" if screen is CanvasLayer else "hatch")
+		target_refs.append(weakref(item))
+	var is_result := screen is CanvasLayer
+	var effect: Control = PageMotion.attach(screen, "result" if is_result else "hatch")
 	effect.set("progress", 0.0 if fade_in else 1.0)
 	var delayed_entry := fade_in and enter_delay > 0.0
 	effect.visible = not delayed_entry
+	var dur := (PageMotion.ENTER if is_result else PageMotion.SCREEN_ENTER) if fade_in else PageMotion.SCREEN_EXIT
 	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT if fade_in else Tween.EASE_IN_OUT)
 	_screen_tweens[id] = tw
 	if delayed_entry:
 		tw.tween_callback(effect.show).set_delay(enter_delay)
-	tw.tween_property(effect, "progress", 1.0 if fade_in else 0.0, PageMotion.ENTER if fade_in else PageMotion.SCREEN_EXIT).set_delay(enter_delay if fade_in else 0.0)
+	tw.tween_property(effect, "progress", 1.0 if fade_in else 0.0, dur).set_delay(enter_delay if fade_in else 0.0)
 	for item in targets:
 		var item_id := item.get_instance_id()
 		var alpha := float(_screen_base_alpha[item_id]) if fade_in else 0.0
-		var alpha_delay := enter_delay if fade_in else PageMotion.SCREEN_EXIT - 0.08
-		tw.tween_property(item, "modulate:a", alpha, 0.10 if fade_in else 0.08).set_delay(alpha_delay)
-	tw.finished.connect(func():
-		_screen_tweens.erase(id)
-		if not is_instance_valid(screen):
-			_screen_modes.erase(id)
-			for item in targets:
-				if is_instance_valid(item):
-					_screen_base_alpha.erase(item.get_instance_id())
-			return
-		if free_when_done:
-			_screen_modes.erase(id)
-			for item in targets:
-				if is_instance_valid(item):
-					_screen_base_alpha.erase(item.get_instance_id())
-			screen.queue_free()
-		else:
-			PageMotion.clear(screen)
-			screen.process_mode = int(_screen_modes.get(id, Node.PROCESS_MODE_INHERIT))
-			_screen_modes.erase(id))
+		var alpha_delay := enter_delay if fade_in else maxf(0.0, dur - 0.10)
+		tw.tween_property(item, "modulate:a", alpha, 0.14 if fade_in else 0.10).set_delay(alpha_delay)
+	tw.finished.connect(_finish_screen_fade.bind(weakref(screen), id, target_refs, free_when_done))
 
 
 
@@ -288,6 +326,7 @@ func start_raid() -> void:
 	GameData.save_game()
 	if GameData.test_mode and not RaidScript.force_async_load:
 		if hub and is_instance_valid(hub):
+			_cancel_screen_fade(hub)
 			hub.queue_free()
 		hub = null
 		raid = RaidScript.new()
@@ -303,6 +342,7 @@ func start_raid() -> void:
 	Audio.stop_music(0.35)
 	await loader.play_close(0.34)
 	if hub and is_instance_valid(hub):
+		_cancel_screen_fade(hub)
 		hub.queue_free()
 	hub = null
 	raid = RaidScript.new()
@@ -429,6 +469,7 @@ func _start_network_raid(config: Dictionary) -> void:
 		return
 	for old in [hub, raid, result_layer]:
 		if is_instance_valid(old):
+			_cancel_screen_fade(old)
 			old.get_parent().remove_child(old)
 			old.queue_free()
 	hub = null

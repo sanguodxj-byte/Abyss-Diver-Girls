@@ -115,7 +115,7 @@ var _fire_held := {"arm_l": 0.0, "arm_r": 0.0}   ## 持续喷射类武器：距�
 var _quad_lift: Array = []
 
 
-func setup(lo: Dictionary, carry: Array) -> void:
+func setup(lo: Dictionary, carry: Array, prebuilt_visual: Node3D = null) -> void:
 	loadout = lo.duplicate()
 	stats = Net.stats_for(loadout, net_peer)
 	max_hp = max(30.0, stats.hp)
@@ -125,16 +125,9 @@ func setup(lo: Dictionary, carry: Array) -> void:
 	_last_drain = float(stats.drain)
 	cargo = carry.duplicate()
 	for slot in ["arm_l", "arm_r"]:
-		var wid: String = lo.get(slot, "")
-		if wid != "":
-			var w := str(GameData.module(wid).get("weapon", "mg"))
-			if GameData.weapon_uses_ammo(w):
-				mag[slot] = int(GameData.AMMO.get(w, {}).get("mag", 30))
-				# 出发时用一个携带弹匣完成装填；没有弹匣就是空仓
-				ammo[slot] = mag[slot] if _take_mag(w) else 0
-			else:
-				mag[slot] = 0
-				ammo[slot] = 0
+		mag[slot] = 0
+		ammo[slot] = 0
+		reload_t[slot] = 0.0
 	_overloaded = GameData.speed_factor(stats, cargo_weight()) < 0.99
 	var legs_mod: Dictionary = GameData.module(loadout.get("legs", ""))
 	acid_immune = bool(legs_mod.get("acid_immune", false))
@@ -148,8 +141,11 @@ func setup(lo: Dictionary, carry: Array) -> void:
 	cs.shape = cap
 	cs.position.y = 1.4
 	add_child(cs)
-	visual = MechVisual.build(loadout)
-	_batch_visual(visual)
+	if prebuilt_visual != null:
+		visual = prebuilt_visual
+	else:
+		visual = MechVisual.build(loadout)
+		_batch_visual(visual)
 	add_child(visual)
 	_anchor_visual()
 	torso = visual.get_meta("torso")
@@ -159,8 +155,8 @@ func setup(lo: Dictionary, carry: Array) -> void:
 	leg_type = visual.get_meta("leg_type")
 	torso_base_y = visual.get_meta("torso_base_y")
 	shield_mesh = MeshInstance3D.new()
-	shield_mesh.mesh = A.reactive_arc_mesh(1.52, 1.55, 5, 14)
-	shield_mesh.material_override = A.reactive_arc_mat(Color(0.42, 0.78, 1.0, 0.88))
+	shield_mesh.mesh = A.aegis_shield_mesh(1.52, 1.55, 6, 36)
+	shield_mesh.material_override = A.aegis_shield_mat(Color(0.42, 0.78, 1.0, 0.88))
 	shield_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	shield_mesh.position.y = 1.55
 	shield_mesh.visible = false
@@ -170,6 +166,7 @@ func setup(lo: Dictionary, carry: Array) -> void:
 		player_ring.set_meta("player_ring", true)
 	if leg_type == "tread":
 		Audio.loop_start(_lk("legs"), "legs_tread_loop", self)
+	_mark_occ_exempt()
 	if _fp_passthrough:
 		set_fp_passthrough(true)
 
@@ -318,19 +315,7 @@ func _physics_tick(delta: float) -> void:
 	stealth_t = max(0.0, stealth_t - delta)
 	overdrive_t = max(0.0, overdrive_t - delta)
 	for k in reload_t:
-		if reload_t[k] > 0.0:
-			reload_t[k] -= delta
-			if reload_t[k] <= 0.0:
-				reload_t[k] = 0.0
-				var wc := str(GameData.module(str(loadout.get(k, ""))).get("weapon", ""))
-				# 装填完成才真正取走弹匣；期间被取走则空仓
-				if _take_mag(wc):
-					ammo[k] = mag[k]
-					_mag_warn_t[k] = 0.0
-					reloaded.emit(k)
-					Audio.play_sfx("wpn_reload_done", global_position + Vector3(0, 2.0, 0))
-				else:
-					ammo[k] = 0
+		reload_t[k] = 0.0
 	for k in _mag_warn_t:
 		_mag_warn_t[k] = maxf(0.0, _mag_warn_t[k] - delta)
 	for k in _fire_held:
@@ -850,12 +835,9 @@ func can_spend(amount: float) -> bool:
 
 func _arm_ready(slot: String) -> bool:
 	var id: String = loadout.get(slot, "")
-	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0:
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0:
 		return false
 	var m: Dictionary = GameData.module(id)
-	var w := str(m.get("weapon", "mg"))
-	if GameData.weapon_uses_ammo(w) and ammo[slot] <= 0:
-		return false
 	return can_spend(GameData.shot_energy_cost(m))
 
 
@@ -863,17 +845,12 @@ func _arm_active(slot: String) -> bool:
 	return str(loadout.get(slot, "")) != "" and float(parts.get(slot, 1.0)) > 0.0
 
 
-## 交替射击：左键点击/按住轮流触发左臂与右臂武装（单臂可用/另一臂冷却或换弹时自动接管）
+## 交替射击：左键点击/按住轮流触发左臂与右臂武装（单臂可用/另一臂冷却时自动接管）
 func fire_alternating(force_click := false) -> void:
 	if not force_click and _alt_stagger_t > 0.0:
 		return
 	var primary := "arm_l" if _alt_next == 0 else "arm_r"
 	var secondary := "arm_r" if _alt_next == 0 else "arm_l"
-	# 主次槽位均空弹且未在装填时先触发装填（仅实弹武器有弹匣）
-	for sl in [primary, secondary]:
-		var mid := str(loadout.get(sl, ""))
-		if mid != "" and float(parts.get(sl, 1.0)) > 0.0 and GameData.weapon_uses_ammo(str(GameData.module(mid).get("weapon", "mg"))) and ammo[sl] <= 0 and reload_t[sl] <= 0.0:
-			start_reload(sl)
 	var chosen := ""
 	if _arm_ready(primary):
 		chosen = primary
@@ -894,16 +871,12 @@ func fire_alternating(force_click := false) -> void:
 
 func try_fire(slot: String) -> void:
 	var id: String = loadout.get(slot, "")
-	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0:
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0:
 		return
 	if emergency > 0.0:
 		return
 	var m: Dictionary = GameData.module(id)
 	var w := str(m.get("weapon", "mg"))
-	var uses_ammo := GameData.weapon_uses_ammo(w)
-	if uses_ammo and ammo[slot] <= 0:
-		start_reload(slot)
-		return
 	var en_cost := GameData.shot_energy_cost(m)
 	if en_cost > 0.0:
 		if not can_spend(en_cost):
@@ -921,12 +894,7 @@ func try_fire(slot: String) -> void:
 	else:
 		origin.y = clamp(origin.y, 1.2, 2.6)
 	_fire_sfx(slot, w, origin)
-	if uses_ammo and overdrive_t <= 0.0:
-		ammo[slot] -= 1
-		fired.emit(slot)
-		if ammo[slot] <= 0:
-			Audio.play_sfx("wpn_empty", origin)
-			start_reload(slot)
+	fired.emit(slot)
 	# 子弹沿躯干实际朝向射出（躯干转向有惯性，准星内圈显示真实落点）；所有武器统一发射实体弹药
 	var dir := aim_dir()
 	var to_aim := aim_point - origin
@@ -996,52 +964,20 @@ func noise(radius: float) -> float:
 	return radius * (0.2 if stealth_t > 0.0 else 1.0) * elite_mul
 
 
-## 货舱里是否有对应弹匣
-func _has_mag(weapon: String) -> bool:
-	var mid: String = GameData.mag_item_for(weapon)
-	return mid != "" and cargo.has(mid)
+func _has_mag(_weapon: String) -> bool:
+	return false
 
 
-## 从货舱取走一个弹匣（装填消耗，打空后弹匣消失）
-func _take_mag(weapon: String) -> bool:
-	var mid: String = GameData.mag_item_for(weapon)
-	if mid == "":
-		return false
-	var idx: int = cargo.find(mid)
-	if idx < 0:
-		return false
-	cargo.remove_at(idx)
-	check_overload()
-	return true
+func _take_mag(_weapon: String) -> bool:
+	return false
 
 
 func start_reload(slot: String) -> void:
-	var id: String = loadout.get(slot, "")
-	if id == "" or reload_t[slot] > 0.0 or ammo[slot] >= mag[slot]:
-		return
-	var w: String = GameData.module(id).weapon
-	if not GameData.weapon_uses_ammo(w):
-		return
-	if not _has_mag(w):
-		if _is_local_actor() and float(_mag_warn_t.get(slot, 0.0)) <= 0.0:
-			_mag_warn_t[slot] = 3.0
-			var mn := str(GameData.item(GameData.mag_item_for(w)).get("name", "弹匣"))
-			message.emit(Loc.t("没有可用的%s，搜一个或回艇补货" % mn, "No %s — find or buy more" % mn))
-		return
-	reload_t[slot] = _reload_dur(slot)
-	if _is_local_actor():
-		Growth.record_skill_xp("ab_firearm", 0.42)
-	if w == "sniper":
-		Audio.play_sfx(["wpn_sniper_reload", "wpn_mg_reload"], global_position + Vector3(0, 2.0, 0))
-	else:
-		Audio.play_sfx("wpn_%s_reload" % w, global_position + Vector3(0, 2.0, 0))
+	reload_t[slot] = 0.0
 
 
-func reload_frac(slot: String) -> float:
-	var id: String = loadout.get(slot, "")
-	if id == "" or reload_t[slot] <= 0.0:
-		return 0.0
-	return reload_t[slot] / maxf(0.1, _reload_dur(slot))
+func reload_frac(_slot: String) -> float:
+	return 0.0
 
 
 ## 技能槽状态，HUD 用：{name, icon, cd(剩余), cd_max, ok}
@@ -1237,14 +1173,8 @@ func equip_module_in_raid(slot: String, new_id: String) -> String:
 	if slot == "arm_l" or slot == "arm_r":
 		Audio.loop_stop(_lk("fire_" + slot))
 		_fire_held[slot] = 0.0
-		var wpn := str(GameData.module(new_id).get("weapon", "mg"))
-		if GameData.weapon_uses_ammo(wpn):
-			mag[slot] = int(GameData.AMMO.get(wpn, {}).get("mag", 30))
-			# 战地换枪同样消耗一个弹匣；没有就空仓
-			ammo[slot] = mag[slot] if _take_mag(wpn) else 0
-		else:
-			mag[slot] = 0
-			ammo[slot] = 0
+		mag[slot] = 0
+		ammo[slot] = 0
 		reload_t[slot] = 0.0
 		arm_cd[slot] = 0.0
 	elif slot == "legs":
@@ -1283,6 +1213,7 @@ func equip_module_in_raid(slot: String, new_id: String) -> String:
 	_foot_prev = [0.0, 0.0]
 	if leg_type == "tread":
 		Audio.loop_start(_lk("legs"), "legs_tread_loop", self)
+	_mark_occ_exempt()
 	if _fp_passthrough:
 		set_fp_passthrough(true)
 	if raid != null and raid.mech == self and raid.hud != null:
@@ -1530,6 +1461,31 @@ const FP_HIDE_LAYER := 1 << 19
 var _fp_passthrough := false
 
 
+static var _occ_exempt_mats := {}
+
+## 标记机甲自身涂装材质免于前景建筑虚化裁切（静态缓存去重副本，绝不污染建筑共享材质，也不占用实例着色器缓冲）
+func _mark_occ_exempt() -> void:
+	if visual == null or not is_instance_valid(visual):
+		return
+	for n in visual.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		mi.material_override = occ_exempt_material(mi.material_override)
+
+
+static func occ_exempt_material(material: Material) -> Material:
+	if material is ShaderMaterial and material.shader != null and material.shader.resource_path.contains("mech_paint"):
+		var id := material.get_instance_id()
+		var exempt: ShaderMaterial = _occ_exempt_mats.get(id)
+		if exempt == null:
+			exempt = material.duplicate() as ShaderMaterial
+			exempt.set_shader_parameter("occ_exempt", 1.0)
+			_occ_exempt_mats[id] = exempt
+		return exempt
+	return material
+
+
 ## 第一人称自身机体穿透控制：躯干/底盘/背包/动力炉/护盾穿透，左右双臂武器严禁被穿透并保持完整可见
 func set_fp_passthrough(on: bool) -> void:
 	_fp_passthrough = on
@@ -1619,7 +1575,11 @@ static func _collect_refs(v, out: Dictionary) -> void:
 			_collect_refs(e, out)
 
 
-static func _batch_visual(root: Node3D) -> void:
+## tree 非空时用于战斗中增援：每组完成后检查 2 ms 预算，保留完整网格和原来的合批分组。
+## 常规装配仍同步执行；退出战区释放 root 后，挂起任务在恢复时立即结束。
+static func _batch_visual(root: Node3D, tree: SceneTree = null) -> void:
+	var slice_start := Prof.t0()
+	var deadline := Time.get_ticks_usec() + 2000 if tree != null else 0
 	var keep := {root.get_instance_id(): true}
 	var all: Array = root.find_children("*", "", true, false)
 	for n in all:
@@ -1721,12 +1681,21 @@ static func _batch_visual(root: Node3D) -> void:
 			for mi: MeshInstance3D in list:
 				mi.get_parent().remove_child(mi)
 				mi.free()
+			if tree != null and Time.get_ticks_usec() >= deadline:
+				Prof.add("spawn.batch_slice", slice_start)
+				await tree.process_frame
+				if not is_instance_valid(root):
+					return
+				slice_start = Prof.t0()
+				deadline = Time.get_ticks_usec() + 2000
 	for i in range(all.size() - 1, -1, -1):
 		var n = all[i]
 		if is_instance_valid(n) and n is Node3D and n.get_class() == "Node3D" and not keep.has(n.get_instance_id()) and n.get_child_count() == 0:
 			if n.get_parent():
 				n.get_parent().remove_child(n)
 			n.free()
+	if tree != null:
+		Prof.add("spawn.batch_slice", slice_start)
 
 
 func _net_action(action: String, args: Array) -> bool:

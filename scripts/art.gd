@@ -5,6 +5,9 @@ extends RefCounted
 static var _mesh_cache := {}
 static var _mat_cache := {}
 static var _tex_cache := {}
+## 软管也用于世界坐标电缆，限制独特路径的驻留数量；淘汰不影响仍持有网格的实例。
+const TUBE_CACHE_LIMIT := 128
+static var _tube_cache := {}
 
 
 static func is_mobile_perf() -> bool:
@@ -94,15 +97,24 @@ static func bevel_box(size: Vector3, bevel := 0.06, taper := 1.0) -> ArrayMesh:
 	return m
 
 
-static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28) -> CylinderMesh:
+## 曲面分段下限（低面数红线 §二）：桌面 16/24/36/48，移动 12/18/28/36。
+static func curve_seg_floor(r: float) -> int:
+	if is_mobile_perf():
+		return 12 if r < 0.08 else (18 if r < 0.4 else (28 if r < 2.0 else 36))
+	return 16 if r < 0.08 else (24 if r < 0.4 else (36 if r < 2.0 else 48))
+
+
+## 圆柱 / 圆锥。seg 低于下限时一律抬升到下限（不再有 seg<8 放行漏洞），高于下限照用（上限 64）。
+## allow_poly：仅限白名单中“有意为之的多棱体”（六角螺母、晶柱、四棱锥屋顶等）显式开启，原样保留 seg。
+## 半径 ≤ 0.035m 的 6 边件视为六角螺母/铆钉头（白名单 §1.2），自动保留。
+static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28, allow_poly := false) -> CylinderMesh:
 	var rb := r if r2 < 0 else r2
 	var rmax := maxf(r, rb)
 	var s_seg := seg
-	if seg >= 8:
-		var mob := is_mobile_perf()
-		var cap_seg := (12 if rmax < 0.08 else (14 if rmax < 0.2 else (18 if rmax < 0.45 else (22 if rmax < 1.2 else 28)))) if mob \
-			else (16 if rmax < 0.08 else (20 if rmax < 0.2 else (24 if rmax < 0.45 else (28 if rmax < 1.2 else 36))))
-		s_seg = cap_seg if seg == 28 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
+	var hex_nut := seg == 6 and rmax <= 0.035
+	if not (allow_poly or hex_nut):
+		var lo := curve_seg_floor(rmax)
+		s_seg = lo if seg == 28 else clampi(seg, lo, 64)
 	var key := "cy%.3f|%.3f|%.3f|%d" % [r, hgt, r2, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -111,18 +123,17 @@ static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28) -> CylinderMesh:
 	c.bottom_radius = rb
 	c.height = hgt
 	c.radial_segments = s_seg
-	c.rings = 1
+	# 锥体加环，避免细长圆锥的法线插值发糊/出现斜向折痕
+	c.rings = 1 if absf(r - rb) < 0.001 else clampi(int(hgt / maxf(rmax, 0.01)), 2, 6)
 	_mesh_cache[key] = c
 	return c
 
 
-static func sphere(r: float, hgt := -1.0, seg := 28) -> SphereMesh:
-	var s_seg := seg
-	if seg >= 8:
-		var mob := is_mobile_perf()
-		var cap_seg := (12 if r < 0.08 else (14 if r < 0.2 else (18 if r < 0.5 else (22 if r < 1.2 else 28)))) if mob \
-			else (16 if r < 0.08 else (20 if r < 0.2 else (24 if r < 0.5 else (28 if r < 1.2 else 32))))
-		s_seg = cap_seg if seg == 28 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
+## 球体 / 穹顶：小球（r<0.15）≥20×10，大球 ≥32×16（移动 16×8 / 24×12）。
+static func sphere(r: float, hgt := -1.0, seg := 28, allow_poly := false) -> SphereMesh:
+	var mob := is_mobile_perf()
+	var lo := (16 if r < 0.15 else 24) if mob else (20 if r < 0.15 else 32)
+	var s_seg := seg if allow_poly else (lo if seg == 28 else clampi(seg, lo, 64))
 	var key := "sp%.3f|%.3f|%d" % [r, hgt, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -130,16 +141,16 @@ static func sphere(r: float, hgt := -1.0, seg := 28) -> SphereMesh:
 	s.radius = r
 	s.height = r * 2.0 if hgt < 0 else hgt
 	s.radial_segments = s_seg
-	s.rings = maxi(6, s_seg / 2)
+	s.rings = maxi(lo / 2, s_seg / 2)
 	_mesh_cache[key] = s
 	return s
 
 
 ## 自然多面岩体网格（中心在原点，基础半径约 0.92，底面平稳、硬朗切面节理与沉积岩层台，按 variant 缓存）
-static func rock_mesh(variant := 0, detail := 18) -> ArrayMesh:
+static func rock_mesh(variant := 0, detail := 24) -> ArrayMesh:
 	var v_id := posmod(variant, 12)
-	var nu := maxi(14, detail)
-	var nv := maxi(10, detail / 2 + 2)
+	var nu := maxi(20 if is_mobile_perf() else 24, detail)
+	var nv := maxi(12, detail / 2 + 2)
 	var key := "rk%d|%d" % [v_id, nu]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -224,11 +235,34 @@ static func rock_mesh(variant := 0, detail := 18) -> ArrayMesh:
 	return m
 
 
+## 悬崖 / 大岩体（放大到 10m 以上时用）：高细分变体
+static func cliff_rock_mesh(variant := 0) -> ArrayMesh:
+	return rock_mesh(variant, 28)
+
+
 ## 内部辅助：向 SurfaceTool 追加一段圆锥/弯曲树干或树枝管段（保证正面朝外）
-static func _branch_tube(st: SurfaceTool, pts: Array, radii: Array, seg := 7) -> void:
-	var n_rings := pts.size()
-	if n_rings < 2:
+## 控制点经 Catmull-Rom 每段 3 细分，截面带树皮纵向棱脊起伏。
+static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg := 12) -> void:
+	seg = maxi(seg, 8)
+	if pts_in.size() < 2:
 		return
+	var pts: Array = []
+	var radii: Array = []
+	var nin := pts_in.size()
+	for i in nin - 1:
+		var p0: Vector3 = pts_in[maxi(i - 1, 0)]
+		var p1: Vector3 = pts_in[i]
+		var p2: Vector3 = pts_in[i + 1]
+		var p3: Vector3 = pts_in[mini(i + 2, nin - 1)]
+		for k in 3:
+			var t := float(k) / 3.0
+			var t2 := t * t
+			var t3 := t2 * t
+			pts.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
+			radii.append(lerpf(float(radii_in[i]), float(radii_in[i + 1]), t))
+	pts.append(pts_in[nin - 1])
+	radii.append(radii_in[nin - 1])
+	var n_rings := pts.size()
 	var up := Vector3.FORWARD
 	var rings: Array = []
 	var v_acc := 0.0
@@ -250,6 +284,8 @@ static func _branch_tube(st: SurfaceTool, pts: Array, radii: Array, seg := 7) ->
 			var nrm := nx * cos(a) + ny * sin(a)
 			# 根部带自然板根棱脊起伏
 			var flare := 1.0 + (0.24 * cos(a * 4.0 + 0.7) if i == 0 and rad > 0.08 else 0.0)
+			# 树皮纵向棱脊（沿长度缓慢扭转）
+			flare *= 1.0 + 0.045 * sin(a * float(seg / 2) + v_acc * 3.0) if rad > 0.02 else 1.0
 			ring.append([(pts[i] as Vector3) + nrm * (rad * flare), nrm, v_acc])
 		rings.append(ring)
 	for i in range(n_rings - 1):
@@ -292,7 +328,7 @@ static func tree_trunk_mesh(variant := 0, gnarled := false) -> ArrayMesh:
 		Vector3(lean_x * 1.05, 0.95, lean_z * 1.05),
 	]
 	var main_r := [r_base * 1.42, r_base, r_base * 0.74, r_base * 0.46, r_base * 0.16]
-	_branch_tube(st, main_pts, main_r, 8)
+	_branch_tube(st, main_pts, main_r, 16)
 
 	var n_limbs := 7 if gnarled else 5
 	for b in n_limbs:
@@ -305,12 +341,12 @@ static func tree_trunk_mesh(variant := 0, gnarled := false) -> ArrayMesh:
 		var p1 := p0 + dir * (reach * 0.52) + Vector3(0.0, rise * 0.55, 0.0)
 		var p2 := p0 + dir * reach + Vector3(rng.randf_range(-0.04, 0.04), rise, rng.randf_range(-0.04, 0.04))
 		var rb := r_base * lerpf(0.54, 0.30, (t_h - 0.32) / 0.55)
-		_branch_tube(st, [p0, p1, p2], [rb, rb * 0.62, rb * 0.18], 5)
+		_branch_tube(st, [p0, p1, p2], [rb, rb * 0.62, rb * 0.18], 12)
 		if gnarled and b < 4:
 			var sub_az := az + rng.randf_range(0.55, 0.95) * (1.0 if b % 2 == 0 else -1.0)
 			var sdir := Vector3(cos(sub_az), 0.0, sin(sub_az))
 			var sp2 := p1 + sdir * (reach * 0.55) + Vector3(0.0, rise * 0.65, 0.0)
-			_branch_tube(st, [p1, (p1 + sp2) * 0.5 + Vector3(0, 0.03, 0), sp2], [rb * 0.52, rb * 0.32, rb * 0.10], 4)
+			_branch_tube(st, [p1, (p1 + sp2) * 0.5 + Vector3(0, 0.03, 0), sp2], [rb * 0.52, rb * 0.32, rb * 0.10], 10)
 
 	st.generate_tangents()
 	var m := st.commit()
@@ -518,25 +554,31 @@ static func capsule(r: float, hgt: float) -> CapsuleMesh:
 	var c := CapsuleMesh.new()
 	c.radius = r
 	c.height = hgt
-	c.radial_segments = 10 if r < 0.2 else (14 if r < 0.5 else 18)
-	c.rings = 4
+	if is_mobile_perf():
+		c.radial_segments = 16 if r < 0.2 else (20 if r < 0.5 else 24)
+		c.rings = 6
+	else:
+		c.radial_segments = 20 if r < 0.2 else (24 if r < 0.5 else 28)
+		c.rings = 8 if r < 0.2 else 10
 	_mesh_cache[key] = c
 	return c
 
 
+## 圆环 / 法兰：环向 rings 小环 ≥24、大环（外径 ≥1m）≥36；管截面 ≥16/18（移动 18/28 与 12/14）。
 static func torus(inner: float, outer: float, seg := 36) -> TorusMesh:
 	var mob := is_mobile_perf()
-	var cap_seg := (14 if outer < 0.12 else (18 if outer < 0.35 else (22 if outer < 1.0 else 28))) if mob \
-		else (18 if outer < 0.12 else (24 if outer < 0.35 else (28 if outer < 1.0 else 36)))
-	var s_seg := mini(seg, cap_seg) if seg >= 24 else clampi(max(seg, cap_seg - 2), 8, cap_seg + 4)
-	var key := "to%.3f|%.3f|%d" % [inner, outer, s_seg]
+	var lo := (18 if outer < 1.0 else 28) if mob else (24 if outer < 1.0 else 36)
+	var s_seg := clampi(seg, lo, 72) if seg != 36 else maxi(lo, 36 if outer >= 0.35 else lo)
+	var thick := outer - inner
+	var tube_seg := (12 if thick < 0.15 else 14) if mob else (16 if thick < 0.15 else 18)
+	var key := "to%.3f|%.3f|%d|%d" % [inner, outer, s_seg, tube_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var t := TorusMesh.new()
 	t.inner_radius = inner
 	t.outer_radius = outer
 	t.rings = s_seg
-	t.ring_segments = 10 if (outer - inner) < 0.15 else 12
+	t.ring_segments = tube_seg
 	_mesh_cache[key] = t
 	return t
 
@@ -1632,19 +1674,28 @@ float cracks(vec2 p){
 	return d2 - d1;
 }
 vec2 rot2(vec2 q){ return vec2(q.x * 0.80 - q.y * 0.60, q.x * 0.60 + q.y * 0.80); }
+vec3 sample_dual(sampler2D tex, vec2 uv_a, vec2 uv_b, float sa, float sb, float mb, vec2 dpx, vec2 dpy, vec2 drx, vec2 dry){
+	if (mb <= 0.005) return textureGrad(tex, uv_a, dpx * sa, dpy * sa).rgb;
+	if (mb >= 0.995) return textureGrad(tex, uv_b, drx * sb, dry * sb).rgb;
+	return mix(textureGrad(tex, uv_a, dpx * sa, dpy * sa).rgb, textureGrad(tex, uv_b, drx * sb, dry * sb).rgb, mb);
+}
 
 void vertex(){ wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 void fragment(){
 	vec2 p = wp.xz;
+	vec2 dpx = dFdx(p);
+	vec2 dpy = dFdy(p);
+	vec2 drx = rot2(dpx);
+	vec2 dry = rot2(dpy);
 	float low = texture(n_low, p * 0.0055).r;
 	float med2 = texture(n_low, p * 0.0085 + vec2(0.19, 0.71)).r;
 	float mid = texture(n_low, p * 0.021 + 0.37).r;
 	float hi = texture(n_hi, p * 0.095).r;
 	float hi2 = texture(n_hi, p * 0.42 + 0.2).r;
-	float fw = clamp(1.0 - length(fwidth(p)) * 0.42, 0.0, 1.0);
+	float fw = clamp(1.0 - length(abs(dpx) + abs(dpy)) * 0.42, 0.0, 1.0);
 	float hi2_aa = mix(0.5, hi2, fw);
 
-	// 写实废土双角旋转混合：保留中频碎石/干土/风化混凝土板肌理与龟裂，远距自动降频防沙粒闪点
+	// 预先计算各层权重，只对权重非零的材质执行双角各向异性采样（视觉 1:1 保持，大幅降低 4K 片元带宽）
 	vec2 uv_a = p * 0.20;
 	vec2 uv_b = rot2(p * 0.14 + vec2(7.3, 11.9));
 	float m_blend = smoothstep(0.28, 0.72, med2);
@@ -1652,28 +1703,15 @@ void fragment(){
 	vec2 uv_gb = rot2(p * 0.15 + vec2(3.7, 5.1));
 	vec2 uv_ca = p * 0.14;
 	vec2 uv_cb = rot2(p * 0.10 + vec2(9.1, 2.3));
-	vec3 s_col = mix(vec3(0.72), mix(texture(soil_a, uv_a).rgb, texture(soil_a, uv_b).rgb, m_blend) * 1.16, 0.64);
-	vec3 g_col = mix(vec3(0.72), mix(texture(grav_a, uv_ga).rgb, texture(grav_a, uv_gb).rgb, m_blend) * 1.18, 0.66);
-	vec3 c_col = mix(vec3(0.74), mix(texture(conc_a, uv_ca).rgb, texture(conc_a, uv_cb).rgb, m_blend) * 1.15, 0.58);
 
-	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
-
-	// 废土干涸泥滩龟裂与压实泥泞过渡
 	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12);
-	float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
-	float crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm;
-	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
-	col *= 1.0 - crack_mud * 0.34;
-
-	// 荒原衰草与尘苔：克制脱饱和的枯绿与褐草
+	float crack_mud = 0.0;
+	if (mudm > 0.005) {
+		float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
+		crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm;
+	}
 	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.38 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.55);
-	vec3 gcol = mix(grass, grass2, smoothstep(0.26, 0.74, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42);
-	col = mix(col, gcol, gm * 0.78 * smoothstep(0.18, 0.62, hi2_aa + 0.18));
-
-	// 散落粗骨料与废墟碎砾斑块
 	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.72);
-	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
-	col *= mix(0.87, 1.12, low * 0.55 + med2 * 0.45);
 
 	// 分区地表：R 风化混凝土场坪 / G 废土荒草 / B 翻耕泥土 / A 工业压实油渣道砟
 	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
@@ -1681,49 +1719,87 @@ void fragment(){
 	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
 	vec4 zt = texture(zone_tex, z_uv) * zfade;
 
-	float row_id = floor(p.y / 2.4);
-	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
-	vec2 tf = abs(fract(slab_uv) - 0.5);
-	float seam_mask = smoothstep(0.46, 0.80, zt.r) * (1.0 - smoothstep(0.66, 0.88, mid));
-	float seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * seam_mask;
-	float tar_seal = smoothstep(0.486, 0.498, max(tf.x, tf.y)) * seam_mask;
-	float slab_var = fract(sin(dot(floor(slab_uv), vec2(41.3, 289.1))) * 43758.5453);
-	vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + med2 * 0.4) * (0.91 + slab_var * 0.16);
-	pave *= 1.0 - seam * 0.34;
-	pave = mix(pave, vec3(0.10, 0.105, 0.11), tar_seal * 0.58);
-	pave = mix(pave, vec3(0.22, 0.215, 0.20) * c_col * 1.20, smoothstep(0.60, 0.86, mid) * 0.28);
 	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.08 + (hi - 0.5) * 0.05);
-	col = mix(col, pave, pm);
-
-	vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42) * (0.90 + low * 0.20);
 	float gmm = smoothstep(0.24, 0.76, zt.g + (low - 0.5) * 0.15 + (mid - 0.5) * 0.18 + (hi - 0.5) * 0.08) * (1.0 - pm * 0.84);
-	col = mix(col, gr, gmm);
-
-	float furrow = 0.5 + 0.5 * sin((p.x * 0.35 + p.y * 0.94) * 2.1 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4) * fw;
-	vec3 soil = mix(vec3(0.22, 0.18, 0.13), vec3(0.31, 0.25, 0.17), smoothstep(0.2, 0.8, mix(mid, furrow, 0.34))) * s_col * 1.24;
 	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14 + (hi - 0.5) * 0.08);
-	col = mix(col, soil, smm);
-
-	float rut = smoothstep(0.66, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.42, 0.72, mid) * fw;
-	vec3 grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.65 + med2 * 0.35) * g_col * 1.24;
-	grv = mix(grv, vec3(0.16, 0.155, 0.145) * g_col * 1.22, smoothstep(0.64, 0.86, mid) * 0.26 + rut * 0.16);
 	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10 + (hi - 0.5) * 0.06) * (1.0 - pm * 0.55);
-	col = mix(col, grv, am);
 
-	float zone_cov = clamp(pm + gmm * 0.88 + smm * 0.88 + am * 0.88, 0.0, 0.94);
-	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.70, 0.88, mid) * (1.0 - crack_mud * 0.85);
-	col = mix(col, col * 0.76, wet_film * 0.36);
 	float road_v = 0.0;
 	float bldg_contact = 0.0;
+	float s_in = 0.0;
 	if (abs(sector_on) > 0.5) {
 		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
-		float s_in = 0.0;
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
 			vec3 sec = texture(sector_tex, s_uv).rgb;
 			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
 			road_v = sec.g * smoothstep(0.25, 0.80, 0.55 + (low - 0.5) * 0.30 + (mid - 0.5) * 0.25) * (1.0 - pm * 0.48);
 			bldg_contact = sec.b;
 		}
+	}
+
+	bool need_soil = (pm < 0.995) || (gmm > 0.005) || (smm > 0.005);
+	bool need_grav = (grav_patch > 0.005 && pm < 0.995) || (am > 0.005) || (road_v > 0.005);
+	bool need_conc = (pm > 0.005);
+
+	vec3 s_col = need_soil ? mix(vec3(0.72), sample_dual(soil_a, uv_a, uv_b, 0.20, 0.14, m_blend, dpx, dpy, drx, dry) * 1.16, 0.64) : vec3(0.72);
+	vec3 g_col = need_grav ? mix(vec3(0.72), sample_dual(grav_a, uv_ga, uv_gb, 0.22, 0.15, m_blend, dpx, dpy, drx, dry) * 1.18, 0.66) : vec3(0.72);
+	vec3 c_col = need_conc ? mix(vec3(0.74), sample_dual(conc_a, uv_ca, uv_cb, 0.14, 0.10, m_blend, dpx, dpy, drx, dry) * 1.15, 0.58) : vec3(0.74);
+
+	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
+	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
+	col *= 1.0 - crack_mud * 0.34;
+
+	// 荒原衰草与尘苔：克制脱饱和的枯绿与褐草
+	vec3 gcol = mix(grass, grass2, smoothstep(0.26, 0.74, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42);
+	col = mix(col, gcol, gm * 0.78 * smoothstep(0.18, 0.62, hi2_aa + 0.18));
+
+	// 散落粗骨料与废墟碎砾斑块
+	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
+	col *= mix(0.87, 1.12, low * 0.55 + med2 * 0.45);
+
+	float seam = 0.0;
+	float tar_seal = 0.0;
+	if (need_conc) {
+		float row_id = floor(p.y / 2.4);
+		vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
+		vec2 tf = abs(fract(slab_uv) - 0.5);
+		float seam_mask = smoothstep(0.46, 0.80, zt.r) * (1.0 - smoothstep(0.66, 0.88, mid));
+		seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * seam_mask;
+		tar_seal = smoothstep(0.486, 0.498, max(tf.x, tf.y)) * seam_mask;
+		float slab_var = fract(sin(dot(floor(slab_uv), vec2(41.3, 289.1))) * 43758.5453);
+		vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + med2 * 0.4) * (0.91 + slab_var * 0.16);
+		pave *= 1.0 - seam * 0.34;
+		pave = mix(pave, vec3(0.10, 0.105, 0.11), tar_seal * 0.58);
+		pave = mix(pave, vec3(0.22, 0.215, 0.20) * c_col * 1.20, smoothstep(0.60, 0.86, mid) * 0.28);
+		col = mix(col, pave, pm);
+	}
+
+	if (gmm > 0.005) {
+		vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42) * (0.90 + low * 0.20);
+		col = mix(col, gr, gmm);
+	}
+
+	if (smm > 0.005) {
+		float furrow = 0.5 + 0.5 * sin((p.x * 0.35 + p.y * 0.94) * 2.1 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4) * fw;
+		vec3 soil = mix(vec3(0.22, 0.18, 0.13), vec3(0.31, 0.25, 0.17), smoothstep(0.2, 0.8, mix(mid, furrow, 0.34))) * s_col * 1.24;
+		col = mix(col, soil, smm);
+	}
+
+	float rut = 0.0;
+	vec3 grv = vec3(0.24);
+	if (am > 0.005 || road_v > 0.005) {
+		rut = smoothstep(0.66, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.42, 0.72, mid) * fw;
+		grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.65 + med2 * 0.35) * g_col * 1.24;
+		grv = mix(grv, vec3(0.16, 0.155, 0.145) * g_col * 1.22, smoothstep(0.64, 0.86, mid) * 0.26 + rut * 0.16);
+		if (am > 0.005) {
+			col = mix(col, grv, am);
+		}
+	}
+
+	float zone_cov = clamp(pm + gmm * 0.88 + smm * 0.88 + am * 0.88, 0.0, 0.94);
+	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.70, 0.88, mid) * (1.0 - crack_mud * 0.85);
+	col = mix(col, col * 0.76, wet_film * 0.36);
+	if (abs(sector_on) > 0.5) {
 		col = mix(col, grv * 0.86, road_v * 0.65);
 		// 沉稳烟灰冷调建筑接地接触暗影
 		col *= mix(vec3(1.0), vec3(0.48, 0.50, 0.54), bldg_contact * 0.68);
@@ -1745,13 +1821,19 @@ void fragment(){
 	col = mix(col, mix(col * 0.72, mix(col * 0.50, vec3(0.020, 0.024, 0.030), 0.40), p_deep), puddle);
 	ALBEDO = col;
 
-	// 中频实感地表法线（远距 fw 自动平滑防闪点，近中景呈现碎石与混凝土块面微凹凸）
-	vec3 ns = mix(texture(soil_n, uv_a).rgb, texture(soil_n, uv_b).rgb, m_blend);
-	vec3 ng = mix(texture(grav_n, uv_ga).rgb, texture(grav_n, uv_gb).rgb, m_blend);
-	vec3 nc = mix(texture(conc_n, uv_ca).rgb, texture(conc_n, uv_cb).rgb, m_blend);
+	// 中频实感地表法线（按权重按需采样，避免无关法线层白做 16x 各向异性采样）
+	float grav_n_w = clamp(am + grav_patch * 0.45 + road_v * 0.55, 0.0, 1.0);
+	vec3 n_det = vec3(0.5, 0.5, 1.0);
+	if (pm < 0.995) {
+		vec3 ns = (grav_n_w < 0.995) ? sample_dual(soil_n, uv_a, uv_b, 0.20, 0.14, m_blend, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
+		vec3 ng = (grav_n_w > 0.005) ? sample_dual(grav_n, uv_ga, uv_gb, 0.22, 0.15, m_blend, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
+		n_det = mix(ns, ng, grav_n_w);
+	}
+	if (pm > 0.005) {
+		vec3 nc = sample_dual(conc_n, uv_ca, uv_cb, 0.14, 0.10, m_blend, dpx, dpy, drx, dry);
+		n_det = mix(n_det, nc, pm);
+	}
 	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
-	vec3 n_det = mix(ns, ng, clamp(am + grav_patch * 0.45 + road_v * 0.55, 0.0, 1.0));
-	n_det = mix(n_det, nc, pm);
 	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.32, 0.66, fw) + (n_macro * 2.0 - 1.0) * 0.40 + vec3(0.0, 0.0, 0.72));
 	vec2 rip_sl = vec2(0.0);
 	if (puddle > 0.02 && weather_rain > 0.01) {
@@ -2259,9 +2341,51 @@ static func reactive_arc_mat(c: Color) -> ShaderMaterial:
 	return m
 
 
-static func reactive_arc_mesh(radius := 1.48, height := 1.50, blades := 5, segs := 14) -> ArrayMesh:
+## 月牙刀光：沿局部 Y 展开、向 -Z 弓起的弧形薄刃带（≥24 段，头尾收尖，双面），
+## 顶点色 alpha 由刃口(1) 向尾缘(0.15) 渐变，UV.x 沿长度、UV.y 跨宽度。
+static func slash_arc_mesh(length := 2.2, width := 0.16, bow := 0.42, segs := 28) -> ArrayMesh:
+	segs = maxi(segs, 24)
+	var key := "slash%.3f|%.3f|%.3f|%d" % [length, width, bow, segs]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var edge: Array = []
+	var tail: Array = []
+	for i in range(segs + 1):
+		var t := float(i) / float(segs)
+		var s_t := t * 2.0 - 1.0
+		var y := s_t * length * 0.5
+		var zc := -bow * (1.0 - s_t * s_t)
+		var w := width * pow(sin(t * PI), 0.8)
+		edge.append(Vector3(0, y, zc - w * 0.5))
+		tail.append(Vector3(0, y * 0.97, zc + w * 0.5))
+	for i in range(segs):
+		var t0 := float(i) / float(segs)
+		var t1 := float(i + 1) / float(segs)
+		var quad := [[edge[i], t0, 0.0], [edge[i + 1], t1, 0.0], [tail[i + 1], t1, 1.0], [tail[i], t0, 1.0]]
+		for tri in [[0, 1, 2, 0, 2, 3], [0, 2, 1, 0, 3, 2]]:
+			for k in tri:
+				var q: Array = quad[k]
+				st.set_color(Color(1, 1, 1, lerpf(1.0, 0.15, float(q[2]))))
+				st.set_uv(Vector2(float(q[1]), float(q[2])))
+				st.set_normal(Vector3.RIGHT)
+				st.add_vertex(q[0])
+	var m := st.commit()
+	_mesh_cache[key] = m
+	return m
+
+
+## 反应式电磁偏转弧幕：blades 片弧形力场叶，每片 segs 段（强钳制 ≥24，移动 ≥20），
+## 截面 4 行微拱曲（中部外鼓，消除纸片感），法线按曲面平滑，UV.y 0→1 供着色器做边缘羽化。
+static func reactive_arc_mesh(radius := 1.48, height := 1.50, blades := 6, segs := 28) -> ArrayMesh:
+	segs = maxi(segs, 20 if is_mobile_perf() else 24)
+	var key := "rarc%.3f|%.3f|%d|%d" % [radius, height, blades, segs]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	const ROWS := [0.0, 0.33, 0.67, 1.0]
 	for bi in blades:
 		var t_b := float(bi) / float(maxi(blades, 1))
 		var base_a := t_b * TAU + sin(float(bi) * 2.3) * 0.25
@@ -2270,32 +2394,177 @@ static func reactive_arc_mesh(radius := 1.48, height := 1.50, blades := 5, segs 
 		var tilt := ((float((bi * 7) % 5) / 4.0) - 0.5) * 0.42
 		var half_w := lerpf(0.14, 0.22, fmod(float(bi) * 0.61 + 0.2, 1.0)) * (height / 1.5)
 		var rad := radius * lerpf(0.92, 1.08, fmod(float(bi) * 0.43, 1.0))
-		var prev_top := Vector3.ZERO
-		var prev_bot := Vector3.ZERO
-		var prev_nrm := Vector3.UP
+		var grid: Array = []
 		for si in range(segs + 1):
 			var u := float(si) / float(segs)
 			var ang := base_a + (u - 0.5) * span
-			var taper := sin(u * PI)
-			var w_here := half_w * (0.28 + 0.72 * taper)
+			# 头尾平滑收尖（smoothstep 包络代替线性 sin，避免端部折角）
+			var env := sin(u * PI)
+			env = env * env * (3.0 - 2.0 * env)
+			var w_here := half_w * (0.22 + 0.78 * env)
 			var r_here := rad + sin(u * PI * 2.0 + float(bi)) * 0.06
 			var center := Vector3(cos(ang) * r_here, y_off + sin((u - 0.5) * 2.2) * tilt * r_here, sin(ang) * r_here)
 			var radial := Vector3(cos(ang), sin(ang) * 0.12 * tilt, sin(ang)).normalized()
 			var tang := Vector3(-sin(ang), tilt * cos((u - 0.5) * 2.2), cos(ang)).normalized()
 			var binorm := radial.cross(tang).normalized()
-			var top := center + binorm * w_here
-			var bot := center - binorm * w_here
-			if si > 0:
-				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 1.0)); st.add_vertex(prev_top)
-				st.set_normal(radial);   st.set_uv(Vector2(u, 1.0)); st.add_vertex(top)
-				st.set_normal(radial);   st.set_uv(Vector2(u, 0.0)); st.add_vertex(bot)
-				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 1.0)); st.add_vertex(prev_top)
-				st.set_normal(radial);   st.set_uv(Vector2(u, 0.0)); st.add_vertex(bot)
-				st.set_normal(prev_nrm); st.set_uv(Vector2(float(si - 1) / float(segs), 0.0)); st.add_vertex(prev_bot)
-			prev_top = top
-			prev_bot = bot
-			prev_nrm = radial
-	return st.commit()
+			var col: Array = []
+			for v in ROWS:
+				var s_v: float = float(v) * 2.0 - 1.0
+				var bulge := (1.0 - s_v * s_v) * w_here * 0.35
+				var pos := center + binorm * (w_here * s_v) + radial * bulge
+				var nrm := (radial - binorm * s_v * 0.55).normalized()
+				col.append([pos, nrm, Vector2(u, float(v))])
+			grid.append(col)
+		for si in range(segs):
+			for ri in range(ROWS.size() - 1):
+				var a = grid[si][ri]
+				var b = grid[si + 1][ri]
+				var c = grid[si + 1][ri + 1]
+				var d = grid[si][ri + 1]
+				for vv in [d, c, b, d, b, a]:
+					st.set_normal(vv[1])
+					st.set_uv(vv[2])
+					st.add_vertex(vv[0])
+	var m := st.commit()
+	_mesh_cache[key] = m
+	return m
+
+
+## 蜂窝相位护盾：panels 块带厚度的椭球曲面护板（板间留缝、顶部开孔），
+## 每块外/内两层曲面 + 四周侧边厚度面；COLOR.r = 距板边距离(0 边缘→1 内部)，COLOR.g = 1 表示侧边厚度面；
+## UV 以米为单位，供着色器铺六边形蜂窝格。segs 为整圈分段（强钳制 ≥24，移动 ≥20）。
+static func aegis_shield_mesh(radius := 1.5, height := 1.5, panels := 6, segs := 32) -> ArrayMesh:
+	segs = maxi(segs, 20 if is_mobile_perf() else 24)
+	panels = maxi(panels, 3)
+	var key := "aegis%.3f|%.3f|%d|%d" % [radius, height, panels, segs]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var gap := 0.075
+	var phi0 := -0.40
+	var phi1 := 1.02
+	var su := maxi(6, int(ceil(float(segs) * 1.5 / float(panels))))
+	var sv := 12
+	var thick := radius * 0.045
+	for p in panels:
+		var a0 := TAU * float(p) / float(panels) + gap * 0.5
+		var a1 := TAU * float(p + 1) / float(panels) - gap * 0.5
+		# 交错双层：奇偶护板半径错开，形成叠甲层次
+		var rr := radius * (1.04 if p % 2 == 0 else 0.985)
+		var hh := height * (rr / radius)
+		var lay := [rr, rr - thick]
+		var grids: Array = []
+		for li in 2:
+			var r_l: float = lay[li]
+			var h_l: float = hh * (r_l / rr)
+			var g: Array = []
+			for i in range(su + 1):
+				var th := lerpf(a0, a1, float(i) / float(su))
+				var col: Array = []
+				for j in range(sv + 1):
+					var ph := lerpf(phi0, phi1, float(j) / float(sv))
+					var pos := Vector3(cos(ph) * cos(th) * r_l, sin(ph) * h_l, cos(ph) * sin(th) * r_l)
+					var nrm := Vector3(cos(ph) * cos(th) / r_l, sin(ph) / h_l, cos(ph) * sin(th) / r_l).normalized()
+					var du := minf(th - a0, a1 - th) * r_l * cos(ph)
+					var dv := minf(ph - phi0, phi1 - ph) * r_l
+					var e := clampf(minf(du, dv) / 0.28, 0.0, 1.0)
+					col.append([pos, nrm, Vector2(th * r_l, ph * r_l), e])
+				g.append(col)
+			grids.append(g)
+		for li in 2:
+			var g: Array = grids[li]
+			for i in range(su):
+				for j in range(sv):
+					var q := [g[i][j], g[i + 1][j], g[i + 1][j + 1], g[i][j + 1]]
+					for k in [0, 1, 2, 0, 2, 3]:
+						var v: Array = q[k]
+						st.set_color(Color(float(v[3]), 0.0, 0.0, 1.0))
+						st.set_normal(v[1] if li == 0 else -v[1])
+						st.set_uv(v[2])
+						st.add_vertex(v[0])
+		# 四周厚度侧边
+		var o: Array = grids[0]
+		var n: Array = grids[1]
+		var ring: Array = []
+		for i in range(su + 1): ring.append([i, 0])
+		for j in range(1, sv + 1): ring.append([su, j])
+		for i in range(su - 1, -1, -1): ring.append([i, sv])
+		for j in range(sv - 1, -1, -1): ring.append([0, j])
+		for k in range(ring.size() - 1):
+			var c0: Array = ring[k]
+			var c1: Array = ring[k + 1]
+			var o0: Array = o[c0[0]][c0[1]]
+			var o1: Array = o[c1[0]][c1[1]]
+			var n0: Array = n[c0[0]][c0[1]]
+			var n1: Array = n[c1[0]][c1[1]]
+			var side_n: Vector3 = ((o1[0] - o0[0]).cross(o0[1])).normalized()
+			for v in [o0, o1, n1, o0, n1, n0]:
+				st.set_color(Color(0.0, 1.0, 0.0, 1.0))
+				st.set_normal(side_n)
+				st.set_uv(v[2])
+				st.add_vertex(v[0])
+	var m := st.commit()
+	_mesh_cache[key] = m
+	return m
+
+
+static func _aegis_shader() -> Shader:
+	var key := "_aegis_sh"
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled, blend_add;
+uniform vec4 col : source_color = vec4(0.42, 0.78, 1.0, 1.0);
+uniform float surge = 0.0;
+uniform float fade = 1.0;
+uniform float cell = 0.20;
+vec2 hex_local(vec2 uv) {
+	vec2 r = vec2(1.0, 1.7320508);
+	vec2 h = r * 0.5;
+	vec2 a = mod(uv, r) - h;
+	vec2 b = mod(uv - h, r) - h;
+	return dot(a, a) < dot(b, b) ? a : b;
+}
+float hexd(vec2 p) {
+	p = abs(p);
+	return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x);
+}
+void fragment() {
+	vec2 uv = UV / cell;
+	vec2 g = hex_local(uv);
+	float d = hexd(g);
+	float line = smoothstep(0.40, 0.475, d);
+	vec2 id = floor((uv - g) * 4.0 + 0.5);
+	float rnd = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453);
+	float flick = 0.5 + 0.5 * sin(TIME * 2.6 + rnd * 6.2831);
+	float ndv = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 2.0);
+	float edge = pow(1.0 - clamp(COLOR.r, 0.0, 1.0), 3.0);
+	float side = COLOR.g;
+	float sweep = smoothstep(0.92, 1.0, 0.5 + 0.5 * sin(UV.y * 2.4 - TIME * 2.2));
+	float fill = 0.025 + 0.07 * flick * step(0.82, rnd);
+	float base = fill + 0.08 * rim + 0.20 * line + 0.18 * sweep * line + 0.28 * edge + 0.22 * side;
+	float hit = surge * (0.55 + 1.1 * line + 0.6 * rim + 0.4 * edge);
+	float a = clamp((base + hit) * fade * col.a, 0.0, 0.75);
+	ALBEDO = col.rgb * (0.62 + 1.1 * surge + 0.35 * edge + 0.25 * side);
+	ALPHA = a;
+}
+"""
+	_mat_cache[key] = sh
+	return sh
+
+
+static func aegis_shield_mat(c: Color) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = _aegis_shader()
+	m.render_priority = 6
+	m.set_shader_parameter("col", c)
+	m.set_shader_parameter("surge", 0.0)
+	m.set_shader_parameter("fade", 1.0)
+	return m
 
 
 static func _acid_pool_shader() -> Shader:
@@ -2386,10 +2655,38 @@ static func _burst_done(p: CPUParticles3D) -> void:
 	_burst_pool[key] = pool
 
 
+static func _burst_key(parent: Node, opts: Dictionary) -> String:
+	var pid := parent.get_instance_id()
+	if opts.has("pool"):
+		return "%d|%s" % [pid, str(opts["pool"])]
+	var parts := PackedStringArray([str(pid)])
+	for k in opts:
+		if k != "dir":
+			parts.append(str(k))
+			parts.append(str(opts[k]))
+	return "|".join(parts)
+
+
+static func _prune_burst_pool() -> void:
+	var dead_keys: Array = []
+	for k in _burst_pool:
+		var arr: Array = _burst_pool[k]
+		var i := arr.size() - 1
+		while i >= 0:
+			var n = arr[i]
+			if not is_instance_valid(n) or not n.is_inside_tree():
+				arr.remove_at(i)
+			i -= 1
+		if arr.is_empty():
+			dead_keys.append(k)
+	for k in dead_keys:
+		_burst_pool.erase(k)
+
+
 static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3D:
-	var o := opts.duplicate()
-	o.erase("dir")
-	var key := "%d|%s" % [parent.get_instance_id(), o]
+	if _burst_pool.size() > 96:
+		_prune_burst_pool()
+	var key := _burst_key(parent, opts)
 	var flat_val: float = float(opts.get("flat", 0.0))
 	var pool: Array = _burst_pool.get(key, [])
 	while not pool.is_empty():
@@ -2606,25 +2903,74 @@ static func prism(outline: PackedVector2Array, thick: float, bevel := 0.03) -> A
 	return m
 
 
-static func tube(pts: Array, r: float, seg := 7, sub := 6) -> ArrayMesh:
+static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars := false) -> ArrayMesh:
+	# 低面数红线：截面 ≥14（移动 ≥10），路径插值 ≥8（移动 ≥6）
+	# 管件结构：collars 时内部控制点处加管卡箍（凸起 1.42r、宽 1.4r），两端封闭倒角端盖；rib>0 时为波纹管（周期 1.1r 的凸筋）
+	var mob := is_mobile_perf()
+	seg = maxi(seg, 10 if mob else (14 if r < 0.4 else 20))
+	sub = maxi(sub, 6 if mob else 8)
+	# 使用完整二进制参数，避免字符串小数舍入让相邻控制点/半径错误共用几何。
+	var key := var_to_bytes([PackedVector3Array(pts), r, seg, sub, rib, collars, mob])
+	var cached: ArrayMesh = _tube_cache.get(key)
+	if cached != null:
+		return cached
 	var path: Array = []
+	var ctrl: Array = []
 	for i in pts.size() - 1:
 		var p0: Vector3 = pts[max(i - 1, 0)]
 		var p1: Vector3 = pts[i]
 		var p2: Vector3 = pts[i + 1]
 		var p3: Vector3 = pts[min(i + 2, pts.size() - 1)]
-		for k in sub:
-			var t := float(k) / sub
+		var sub_i := sub
+		if rib > 0.0:
+			sub_i = maxi(sub, mini(128, int(ceil(p1.distance_to(p2) / (r * 0.25)))))
+		for k in sub_i:
+			var t := float(k) / sub_i
 			var t2 := t * t
 			var t3 := t2 * t
 			path.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
+			ctrl.append(k == 0 and i > 0)
 	path.append(pts[pts.size() - 1])
+	ctrl.append(false)
+	# 采样：位置 / 半径 / 切线
+	var samples: Array = []
+	var s_len := 0.0
+	var cw := r * 0.70
+	var collar_pts: Array = []
+	for i in path.size():
+		if ctrl[i]:
+			collar_pts.append(path[i])
+	for i in path.size():
+		if i > 0:
+			s_len += (path[i] as Vector3).distance_to(path[i - 1])
+		var tng: Vector3 = (path[min(i + 1, path.size() - 1)] - path[max(i - 1, 0)]).normalized()
+		var rad := r
+		if rib > 0.0:
+			rad = r * (1.0 + rib * pow(absf(sin(s_len / (r * 1.1) * PI)), 2.0))
+		var near_collar := false
+		if collars and not mob and not ctrl[i] and i > 0 and i < path.size() - 1:
+			for cp in collar_pts:
+				if (path[i] as Vector3).distance_to(cp) < cw * 1.05:
+					near_collar = true
+					break
+		if near_collar:
+			continue
+		if collars and ctrl[i] and not mob:
+			var pc: Vector3 = path[i]
+			samples.append([pc - tng * cw, r, tng])
+			samples.append([pc - tng * cw, r * 1.30, tng])
+			samples.append([pc - tng * cw * 0.8, r * 1.42, tng])
+			samples.append([pc + tng * cw * 0.8, r * 1.42, tng])
+			samples.append([pc + tng * cw, r * 1.30, tng])
+			samples.append([pc + tng * cw, r, tng])
+		else:
+			samples.append([path[i], rad, tng])
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var up := Vector3.UP
 	var rings: Array = []
-	for i in path.size():
-		var tng: Vector3 = (path[min(i + 1, path.size() - 1)] - path[max(i - 1, 0)]).normalized()
+	for si in samples.size():
+		var tng: Vector3 = samples[si][2]
 		if abs(tng.dot(up)) > 0.95:
 			up = Vector3.RIGHT
 		var nx := tng.cross(up).normalized()
@@ -2633,7 +2979,8 @@ static func tube(pts: Array, r: float, seg := 7, sub := 6) -> ArrayMesh:
 		var ring: Array = []
 		for j in seg:
 			var a := TAU * j / seg
-			ring.append([path[i] + (nx * cos(a) + ny * sin(a)) * r, (nx * cos(a) + ny * sin(a))])
+			var dir := nx * cos(a) + ny * sin(a)
+			ring.append([samples[si][0] + dir * float(samples[si][1]), dir])
 		rings.append(ring)
 	for i in rings.size() - 1:
 		for j in seg:
@@ -2646,31 +2993,78 @@ static func tube(pts: Array, r: float, seg := 7, sub := 6) -> ArrayMesh:
 				st.set_normal(k[0][1])
 				st.set_uv(Vector2(float(k[1]) / seg, float(k[2]) * 0.15))
 				st.add_vertex(k[0][0])
+	# 两端封闭端盖（微凸，避免看到空心管口）
+	for e in [[0, -1.0], [rings.size() - 1, 1.0]]:
+		var ri: int = e[0]
+		var sg: float = e[1]
+		var tn: Vector3 = samples[ri][2]
+		var ctr: Vector3 = samples[ri][0] + tn * sg * r * 0.18
+		var nrm: Vector3 = tn * sg
+		for j in seg:
+			var j2 := (j + 1) % seg
+			var va: Vector3 = rings[ri][j][0]
+			var vb: Vector3 = rings[ri][j2][0]
+			var tri := [ctr, vb, va] if sg > 0.0 else [ctr, va, vb]
+			for v in tri:
+				st.set_normal(nrm)
+				st.set_uv(Vector2(0.5, 0.5))
+				st.add_vertex(v)
 	st.generate_tangents()
-	return st.commit()
+	var mesh := st.commit()
+	if _tube_cache.size() >= TUBE_CACHE_LIMIT:
+		_tube_cache.erase(_tube_cache.keys()[0])
+	_tube_cache[key] = mesh
+	return mesh
 
 
-## 两点之间带下垂的软管
+## 刚性工业管线：同 tube，但在每个折弯控制点加管卡箍（机械模块的液压 / 冷却 / 燃油管路用）
+static func pipe(pts: Array, r: float, seg := 14, sub := 10) -> ArrayMesh:
+	return tube(pts, r, seg, sub, 0.0, true)
+
+
+## 两点之间带下垂的波纹软管（16 边，周期 1.1r 的凸筋波纹 + 两端工业液压接头）
 static func hose(parent: Node3D, a: Vector3, b: Vector3, sag: Vector3, r := 0.035, m: Material = null) -> MeshInstance3D:
 	var mid := (a + b) * 0.5 + sag
 	var pts := [a, a.lerp(mid, 0.6) + sag * 0.3, mid, b.lerp(mid, 0.6) + sag * 0.3, b]
 	var mi := MeshInstance3D.new()
-	mi.mesh = tube(pts, r)
+	mi.mesh = tube(pts, r, 16, 10, 0.20, false)
 	mi.material_override = m if m else rubber()
 	parent.add_child(mi)
-	A_end_caps(parent, a, b, r)
+	A_end_caps(parent, a, b, r, (pts[1] - a).normalized(), (pts[3] - b).normalized())
 	return mi
 
 
-static func A_end_caps(parent: Node3D, a: Vector3, b: Vector3, r: float) -> void:
-	for p in [a, b]:
-		add(parent, sphere(r * 1.5, -1, 8), metal(Color(0.5, 0.48, 0.42)), p, Vector3.ZERO, Vector3.ONE, false)
+## 软管两端接头：六角压紧螺母 + 倒角缩口套筒 + 橡胶护套。da/db 为接头朝向软管内侧的方向（缺省按 a→b）。
+static func A_end_caps(parent: Node3D, a: Vector3, b: Vector3, r: float, da := Vector3.ZERO, db := Vector3.ZERO) -> void:
+	if da == Vector3.ZERO:
+		da = (b - a).normalized()
+	if db == Vector3.ZERO:
+		db = (a - b).normalized()
+	var nut := metal(Color(0.52, 0.5, 0.44))
+	var sleeve := chrome()
+	var boot := rubber()
+	for e in [[a, da], [b, db]]:
+		var p: Vector3 = e[0]
+		var d: Vector3 = e[1]
+		if d.length() < 0.5:
+			d = Vector3.UP
+		var fit := Node3D.new()
+		parent.add_child(fit)
+		fit.position = p
+		var up := Vector3.UP if absf(d.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+		var bx := up.cross(d).normalized()
+		fit.basis = Basis(bx, d, bx.cross(d).normalized())
+		# 局部 +Y 指向软管内侧
+		add(fit, cyl(r * 1.55, r * 0.9, r * 1.55, 6, true), nut, Vector3(0, r * 0.45, 0), Vector3.ZERO, Vector3.ONE, false)
+		add(fit, cyl(r * 1.40, r * 0.22, r * 1.62, 24), nut, Vector3(0, r * 1.0, 0), Vector3.ZERO, Vector3.ONE, false)
+		add(fit, cyl(r * 1.12, r * 1.3, r * 1.32, 24), sleeve, Vector3(0, r * 1.75, 0), Vector3.ZERO, Vector3.ONE, false)
+		add(fit, cyl(r * 1.06, r * 1.6, r * 1.18, 20), boot, Vector3(0, r * 3.1, 0), Vector3.ZERO, Vector3.ONE, false)
 
 
 ## 一排铆钉。normal_rot：让铆钉圆柱轴朝外的旋转（度）
 static func rivets(parent: Node3D, from: Vector3, to: Vector3, n: int, r := 0.022, normal_rot := Vector3(90, 0, 0)) -> void:
 	var m := metal(Color(0.35, 0.35, 0.36))
-	var mesh := cyl(r, r * 1.2, r * 1.3, 6)
+	var mesh := cyl(r, r * 1.2, r * 1.3, 6, true)
 	for i in n:
 		var t: float = float(i) / max(1, n - 1)
 		add(parent, mesh, m, from.lerp(to, t), normal_rot, Vector3.ONE, false)

@@ -106,7 +106,7 @@ static func build(raid, c: Vector3, pid: String) -> void:
 			var w = r.randf_range(0.42, 0.82)
 			var q_m: Vector3 = p + Vector3(r.randf_range(-0.9, 0.9), h * 0.40, r.randf_range(-0.9, 0.9))
 			var rot_m := Vector3(r.randf_range(-14, 14), r.randf() * 360.0, r.randf_range(-14, 14))
-			A.add(raid.world, A.cyl(w * 0.28, h, w * 0.82, 6), M_ORE, q_m, rot_m, Vector3(1.0, 1.0, 0.78), false)
+			A.add(raid.world, A.cyl(w * 0.28, h, w * 0.82, 6, true), M_ORE, q_m, rot_m, Vector3(1.0, 1.0, 0.78), false)
 			if k == 0:
 				A.add(raid.world, A.bevel_box(Vector3(0.07, h * 0.48, w * 0.92), 0.01), m_vein, q_m + Vector3(0, -h * 0.08, 0), rot_m, Vector3.ONE, false)
 	# 矿渣沉降痕与散落的钻头、管道

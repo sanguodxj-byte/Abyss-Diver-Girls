@@ -38,8 +38,8 @@ static func build(ctx: Dictionary) -> Node3D:
 	for sy in [-1.0, 1.0]:
 		K.cy(b, 0.055, 0.08, M_DARK, Vector3(0, sy * 0.19, 0.26), Vector3.ZERO, 0.035, 10)
 	var cm := K.canopy(gc, 1.15)
-	A.add(b, A.cyl(0.015, 0.17, 0.085, 6), cm, Vector3(0, 0.085, 0.26), Vector3(0, 18, 0), Vector3.ONE, false)
-	A.add(b, A.cyl(0.085, 0.17, 0.015, 6), cm, Vector3(0, -0.085, 0.26), Vector3(0, 18, 0), Vector3.ONE, false)
+	A.add(b, A.cyl(0.015, 0.17, 0.085, 6, true), cm, Vector3(0, 0.085, 0.26), Vector3(0, 18, 0), Vector3.ONE, false)
+	A.add(b, A.cyl(0.085, 0.17, 0.015, 6, true), cm, Vector3(0, -0.085, 0.26), Vector3(0, 18, 0), Vector3.ONE, false)
 	# 尾部重型联锁插销与高压引线
 	K.bb(b, Vector3(0.32, 0.055, 0.04), K.accent(), Vector3(0, 0.265, 0.48), Vector3.ZERO, 0.005)
 	for sx in [-1.0, 1.0]:

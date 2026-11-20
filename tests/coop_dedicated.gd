@@ -32,15 +32,18 @@ func run() -> void:
 		return
 	var m = r.mech
 	var start_pos: Vector3 = m.position
-	var start_ammo: int = m.ammo.arm_l
+	var start_energy: float = m.energy
+	var fired_seen := [false]
 	Input.action_press("move_up")
 	Input.action_press("fire_left")
 	await wait_real(0.8)
+	if float(m.arm_cd.get("arm_l", 0.0)) > 0.0 or float(m.arm_cd.get("arm_r", 0.0)) > 0.0 or r.projectiles.get_child_count() > 0:
+		fired_seen[0] = true
 	Input.action_release("move_up")
 	Input.action_release("fire_left")
-	if not await _wait_for(func(): return m.position.distance_to(start_pos) > 0.3 and m.ammo.arm_l < start_ammo, "专服未响应移动/开火输入", 10.0):
+	if not await _wait_for(func(): return m.position.distance_to(start_pos) > 0.3 and (fired_seen[0] or m.energy < start_energy - 0.15), "专服未响应移动/开火输入", 10.0):
 		return
-	log_line("dedicated server client movement=%.2fm ammo=%d->%d" % [m.position.distance_to(start_pos), start_ammo, m.ammo.arm_l])
+	log_line("dedicated server client movement=%.2fm energy=%.2f->%.2f" % [m.position.distance_to(start_pos), start_energy, m.energy])
 	Net.leave()
 	await wait_real(0.4)
 	log_line("dedicated server e2e passed")

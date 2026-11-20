@@ -26,19 +26,19 @@ func run() -> void:
 	raid.aim_override = bug.global_position + Vector3(0, 1.8, 0)
 	await wait(0.4)
 	var hp0: float = bug.hp
-	var l_ammo0: int = int(m.ammo.get("arm_l", 0))
-	var r_ammo0: int = int(m.ammo.get("arm_r", 0))
+	var fired_cnt := {"arm_l": 0, "arm_r": 0}
+	var on_f := func(s: String): fired_cnt[s] = int(fired_cnt.get(s, 0)) + 1
+	m.fired.connect(on_f)
 	var energy0: float = m.energy
 	Input.action_press("fire_left")
 	await wait(1.5)
 	Input.action_release("fire_left")
+	m.fired.disconnect(on_f)
 	var hp1: float = bug.hp
-	var l_ammo1: int = int(m.ammo.get("arm_l", 0))
-	var r_ammo1: int = int(m.ammo.get("arm_r", 0))
-	results["alt_fire"] = [hp0, hp1, l_ammo0 - l_ammo1, r_ammo0 - r_ammo1, energy0 - m.energy]
+	results["alt_fire"] = [hp0, hp1, fired_cnt["arm_l"], fired_cnt["arm_r"], energy0 - m.energy]
 	bug.queue_free()
 	await wait(0.2)
-	if not check(hp1 < hp0 and r_ammo1 < r_ammo0 and m.energy < energy0, "左键交替射击未同时触发左右臂并造成伤害（激光耗能、火焰耗弹）：%s" % [results["alt_fire"]]):
+	if not check(hp1 < hp0 and fired_cnt["arm_l"] > 0 and fired_cnt["arm_r"] > 0 and m.energy < energy0, "左键交替射击未同时触发左右臂并消耗能量造成伤害：%s" % [results["alt_fire"]]):
 		return
 	var z0: float = raid.cam_zoom
 	Input.action_press("fire_right")

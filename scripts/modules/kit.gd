@@ -92,7 +92,14 @@ static func accent() -> ShaderMaterial:
 	return A.paint(ACCENT, 0.14, 0.52, {"wear": 0.68, "panel_scale": 0.0})
 
 
+static var _canopy_cache := {}
+
+## 与装甲材质一样共享只读资源；稳定的材质标识也让重复装配命中网格合批缓存。
 static func canopy(c := VISOR, energy := 0.18) -> StandardMaterial3D:
+	var key := var_to_bytes([c, energy])
+	var cached: StandardMaterial3D = _canopy_cache.get(key)
+	if cached != null:
+		return cached
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.025, 0.04, 0.045)
 	m.metallic = 0.85
@@ -103,6 +110,7 @@ static func canopy(c := VISOR, energy := 0.18) -> StandardMaterial3D:
 	m.clearcoat_enabled = true
 	m.clearcoat = 1.0
 	m.clearcoat_roughness = 0.04
+	_canopy_cache[key] = m
 	return m
 
 
@@ -173,7 +181,7 @@ static func holes(p: Node3D, pos: Vector3, rot: Vector3, cols: int, rows: int, p
 	var M := A.metal(Color(0.03, 0.03, 0.035))
 	for i in cols:
 		for j in rows:
-			A.add(g, A.cyl(r, 0.02, r, 8), M, Vector3((i - (cols - 1) * 0.5) * pitch, (j - (rows - 1) * 0.5) * pitch, 0), Vector3(90, 0, 0), Vector3.ONE, false)
+			A.add(g, A.cyl(r, 0.02, r, 16), M, Vector3((i - (cols - 1) * 0.5) * pitch, (j - (rows - 1) * 0.5) * pitch, 0), Vector3(90, 0, 0), Vector3.ONE, false)
 
 
 ## 机体编号贴花（大号白字）
@@ -202,7 +210,7 @@ static func node(p: Node3D, pos := Vector3.ZERO, rot := Vector3.ZERO, name := ""
 		n.name = name
 	n.position = pos
 	n.rotation_degrees = rot
-	p.add_child(n)
+	p.add_child(n, name != "")
 	return n
 
 
@@ -227,20 +235,20 @@ static func piston(p: Node3D, from: Vector3, to: Vector3, r := 0.04) -> void:
 	holder.position = mid
 	if len > 0.01:
 		holder.look_at_from_position(mid, to, Vector3.UP if abs((to - from).normalized().y) < 0.95 else Vector3.FORWARD)
-	A.add(holder, A.cyl(r * 1.75, len * 0.56, r * 1.75, 12), gunmetal(), Vector3(0, 0, len * 0.20), Vector3(90, 0, 0))
-	A.add(holder, A.cyl(r * 1.98, 0.045, r * 1.98, 12), brass(), Vector3(0, 0, -len * 0.08), Vector3(90, 0, 0))
-	A.add(holder, A.cyl(r * 1.95, 0.045, r * 1.95, 12), dark(), Vector3(0, 0, len * 0.46), Vector3(90, 0, 0))
-	A.add(holder, A.cyl(r, len * 0.95, r, 10), A.chrome(), Vector3(0, 0, -len * 0.02), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.75, len * 0.56, r * 1.75, 20), gunmetal(), Vector3(0, 0, len * 0.20), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.98, 0.045, r * 1.98, 20), brass(), Vector3(0, 0, -len * 0.08), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r * 1.95, 0.045, r * 1.95, 20), dark(), Vector3(0, 0, len * 0.46), Vector3(90, 0, 0))
+	A.add(holder, A.cyl(r, len * 0.95, r, 18), A.chrome(), Vector3(0, 0, -len * 0.02), Vector3(90, 0, 0))
 	for e in [-1.0, 1.0]:
 		A.add(holder, A.bevel_box(Vector3(r * 3.1, r * 2.4, r * 2.8), 0.008), dark(), Vector3(0, 0, e * len * 0.49))
-		A.add(holder, A.cyl(r * 0.75, r * 3.6, r * 0.75, 8), A.chrome(), Vector3(0, 0, e * len * 0.50), Vector3(0, 0, 90), Vector3.ONE, false)
+		A.add(holder, A.cyl(r * 0.75, r * 3.6, r * 0.75, 16), A.chrome(), Vector3(0, 0, e * len * 0.50), Vector3(0, 0, 90), Vector3.ONE, false)
 
 
 ## 枪炮膛口：车削膛口冠 + 内倒角 + 深黑枪膛（彻底消除实心灰柱封死感；局部 -Z 朝前）
 static func barrel_bore(p: Node3D, r_outer: float, r_inner: float, pos: Vector3, depth := 0.06, rot := Vector3(90, 0, 0)) -> void:
 	var dir := Basis.from_euler(rot * PI / 180.0)
-	A.add(p, A.torus(r_inner * 0.92, r_outer * 1.02, 18), gunmetal(), pos, rot, Vector3(1, 0.36, 1), false)
-	A.add(p, A.cyl(r_inner, depth, r_inner, 14), bore_mat(), pos - dir * Vector3(0, depth * 0.45, 0), rot, Vector3.ONE, false)
+	A.add(p, A.torus(r_inner * 0.92, r_outer * 1.02, 28), gunmetal(), pos, rot, Vector3(1, 0.36, 1), false)
+	A.add(p, A.cyl(r_inner, depth, r_inner, 24), bore_mat(), pos - dir * Vector3(0, depth * 0.45, 0), rot, Vector3.ONE, false)
 
 
 ## 制退器（轴沿 -Z，pos 为制退器中心）：侧开泄气槽 + 锁紧箍 + 真实深膛孔
@@ -257,7 +265,7 @@ static func muzzle_brake(p: Node3D, r: float, len: float, m: Material, pos: Vect
 static func bolt_ring(p: Node3D, r: float, n_bolts: int, bolt_r := 0.018, pos := Vector3.ZERO, rot := Vector3(90, 0, 0)) -> void:
 	var dir := Basis.from_euler(rot * PI / 180.0)
 	var bm := A.chrome()
-	var mesh := A.cyl(bolt_r, bolt_r * 1.4, bolt_r * 1.15, 6)
+	var mesh := A.cyl(bolt_r, bolt_r * 1.4, bolt_r * 1.15, 6, true)
 	for i in n_bolts:
 		var a := TAU * float(i) / float(n_bolts)
 		var off := dir * Vector3(cos(a) * r, 0, sin(a) * r)
@@ -393,7 +401,7 @@ static func _receiver(v: Node3D, iface: String) -> void:
 			bb(v, Vector3(0.86, 0.05, 0.055), M_Y, Vector3(0, 0.36, 0.022), Vector3.ZERO, 0.01)
 			bb(v, Vector3(0.86, 0.05, 0.055), M_Y, Vector3(0, -0.36, 0.022), Vector3.ZERO, 0.01)
 			for i in 4:
-				A.add(v, A.cyl(0.024, 0.05, 0.024, 8), brass(), Vector3(-0.18 + i * 0.12, -0.20, 0.0), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(v, A.cyl(0.024, 0.05, 0.024, 16), brass(), Vector3(-0.18 + i * 0.12, -0.20, 0.0), Vector3(90, 0, 0), Vector3.ONE, false)
 
 
 ## 公插头外观（局部 -Z 指向父模块；接合面在 z=0，插头本体在 +Z 侧即模块内部）

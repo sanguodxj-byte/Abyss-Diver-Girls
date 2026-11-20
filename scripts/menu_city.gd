@@ -25,8 +25,79 @@ var city: Node3D
 var cols := {}              ## 世界列号 -> MultiMeshInstance3D
 var offset := 0.0
 
+static var _cloud_lut2d: ImageTexture
+static var _cloud_lut3d: ImageTexture3D
+
+
+static func _ensure_cloud_luts() -> void:
+	if _cloud_lut2d != null and _cloud_lut3d != null:
+		return
+	# 2D 512x512 无缝贴图：R = 4+2 层水平云覆盖率（匹配 0.0021 / 0.00055 频谱），G = 积云穹顶起伏（匹配 0.0065 / 0.016）
+	var n1 := FastNoiseLite.new()
+	n1.noise_type = FastNoiseLite.TYPE_VALUE
+	n1.seed = 2026
+	n1.frequency = 8.0 / 512.0
+	n1.fractal_type = FastNoiseLite.FRACTAL_FBM
+	n1.fractal_octaves = 4
+	n1.fractal_lacunarity = 2.03
+	n1.fractal_gain = 0.5
+	var img1 := n1.get_seamless_image(512, 512, false, false, 0.15, true)
+
+	var n2 := FastNoiseLite.new()
+	n2.noise_type = FastNoiseLite.TYPE_VALUE
+	n2.seed = 7319
+	n2.frequency = 2.0 / 512.0
+	n2.fractal_type = FastNoiseLite.FRACTAL_FBM
+	n2.fractal_octaves = 2
+	n2.fractal_lacunarity = 2.03
+	n2.fractal_gain = 0.5
+	var img2 := n2.get_seamless_image(512, 512, false, false, 0.15, true)
+
+	var nh := FastNoiseLite.new()
+	nh.noise_type = FastNoiseLite.TYPE_VALUE
+	nh.seed = 4111
+	nh.frequency = 24.0 / 512.0
+	nh.fractal_type = FastNoiseLite.FRACTAL_FBM
+	nh.fractal_octaves = 2
+	nh.fractal_lacunarity = 2.46
+	nh.fractal_gain = 0.54
+	var imgh := nh.get_seamless_image(512, 512, false, false, 0.15, true)
+	for im: Image in [img1, img2, imgh]:
+		if im.get_format() != Image.FORMAT_L8:
+			im.convert(Image.FORMAT_L8)
+
+	var b1 := img1.get_data()
+	var b2 := img2.get_data()
+	var bh := imgh.get_data()
+	var out2d := PackedByteArray()
+	var npx := 512 * 512
+	out2d.resize(npx * 2)
+	for i in npx:
+		var v1 := (float(b1[i]) / 255.0) * 0.9375
+		var v2 := (float(b2[i]) / 255.0) * 0.75
+		var cov_raw := clampf(v1 * 0.70 + v2 * 0.55, 0.0, 1.0)
+		out2d[i * 2] = int(round(cov_raw * 255.0))
+		out2d[i * 2 + 1] = bh[i]
+	var lut_img := Image.create_from_data(512, 512, false, Image.FORMAT_RG8, out2d)
+	_cloud_lut2d = ImageTexture.create_from_image(lut_img)
+
+	# 3D 64x64x64 无缝体积细节贴图（匹配 vnoise3 0.018 / 0.047 / 0.11 三层权重）
+	var n3 := FastNoiseLite.new()
+	n3.noise_type = FastNoiseLite.TYPE_VALUE
+	n3.seed = 9053
+	n3.frequency = 4.0 / 64.0
+	n3.fractal_type = FastNoiseLite.FRACTAL_FBM
+	n3.fractal_octaves = 3
+	n3.fractal_lacunarity = 2.45
+	n3.fractal_gain = 0.45
+	var slices: Array[Image] = n3.get_seamless_image_3d(64, 64, 64, false, 0.15, true)
+	var t3 := ImageTexture3D.new()
+	t3.create(slices[0].get_format(), 64, 64, 64, false, slices)
+	_cloud_lut3d = t3
+
 
 func setup(sky_mat: ShaderMaterial, sun_dir: Vector3) -> void:
+	_ensure_cloud_luts()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20261102
 	var texs: Array = []
@@ -51,6 +122,9 @@ func setup(sky_mat: ShaderMaterial, sun_dir: Vector3) -> void:
 		common[p] = sky_mat.get_shader_parameter(p)
 	common["sun_dir"] = sun_dir
 	common["cloud_y"] = CLOUD_Y
+	common["cloud_lut_on"] = 1.0
+	common["cloud_lut2d"] = _cloud_lut2d
+	common["cloud_lut3d"] = _cloud_lut3d
 	# 地面
 	ground_mat = ShaderMaterial.new()
 	ground_mat.shader = load("res://shaders/menu_ground.gdshader")

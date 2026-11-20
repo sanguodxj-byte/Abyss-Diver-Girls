@@ -15,6 +15,7 @@ uniform float dirt_amount : hint_range(0.0, 1.0) = 0.42;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 global uniform float weather_wet;
 global uniform vec3 sun_dir_world;
+#include "res://shaders/occ_fade.gdshaderinc"
 
 varying vec3 lpos;
 varying vec3 lnrm;
@@ -52,6 +53,16 @@ void vertex() {
 }
 
 void fragment() {
+	float occ_fade = 0.0;
+	if (occ_clip_whole_bldg(wpos, INV_VIEW_MATRIX[3].xyz)) {
+		discard;
+	}
+	if (occ_params.x > 0.005) {
+		occ_fade = occ_calc_fade(wpos, INV_VIEW_MATRIX[3].xyz, occ_params.x, 0.40);
+		if (occ_fade > 0.005 && occ_ign(FRAGCOORD.xy) < clamp(occ_fade * 1.06, 0.0, 1.0)) {
+			discard;
+		}
+	}
 	vec3 an = abs(normalize(lnrm));
 	vec2 p2;
 	vec2 b_ext;
@@ -145,4 +156,10 @@ void fragment() {
 	float riv_dx = (texture(noise_tex, vec2(p2.x * 3.1 + 0.02, p2.y * 0.28) + wp_g.xz * 0.07).r - 0.5) * rain_riv * 0.22;
 	vec2 fn = vec2(mx * sign(fg.x) * 0.35 + riv_dx, my * sign(fg.y) * 0.35) * fade;
 	NORMAL_MAP = vec3(clamp(0.5 + fn.x, 0.1, 0.9), clamp(0.5 + fn.y, 0.1, 0.9), 1.0);
+	if (occ_fade > 0.01) {
+		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
+		EMISSION *= 1.0 - occ_fade * 0.85;
+		CLEARCOAT *= 1.0 - occ_fade * 0.85;
+		SPECULAR *= 1.0 - occ_fade * 0.72;
+	}
 }

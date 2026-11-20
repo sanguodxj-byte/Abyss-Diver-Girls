@@ -83,14 +83,14 @@ static func px_tex(name: String) -> Texture2D:
 
 ## 像素九宫格：mlr / mtb 为贴图左右 / 上下边距（贴图像素 = 逻辑像素，2 倍像素格的偶数），
 ## plr / ptb 为内容边距；中段按整像素平铺（TILE_FIT），不拉伸像素。贴图缺失时退回平涂描边盒。
-static func px9(name: String, mlr: int, mtb := -1, plr := -1, ptb := -1) -> StyleBox:
+static func px9(name: String, mlr: int, mtb := -1, plr := -1, ptb := -1, tint := Color(1, 1, 1)) -> StyleBox:
 	if mtb < 0:
 		mtb = mlr
 	if plr < 0:
 		plr = mlr
 	if ptb < 0:
 		ptb = plr
-	return UI.PixelTheme.px9(name, mlr, mtb, plr, ptb)
+	return UI.PixelTheme.px9(name, mlr, mtb, plr, ptb, tint)
 
 
 static func hazard_strip(h := 8) -> Control:

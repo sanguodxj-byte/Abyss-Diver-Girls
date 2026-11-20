@@ -106,7 +106,12 @@ static func split_tint(m: Material, mode: int) -> Array:
 		out.set_shader_parameter("rust", ru)
 		out.set_shader_parameter("grime", gr)
 		out.set_shader_parameter("dust", du)
+		out.set_shader_parameter("detail_scale", ds)
 		out.set_shader_parameter("normal_strength", nstr)
+		out.set_shader_parameter("bare_metal", Color(0.66, 0.67, 0.69, 1.0))
+		if use_tex > 0.5:
+			out.set_shader_parameter("albedo_tex_scale", ascale)
+			out.set_shader_parameter("albedo_tex_strength", astr)
 		_tint_mats[key] = out
 	sm.set_meta(mk, out)
 	return [out, col]

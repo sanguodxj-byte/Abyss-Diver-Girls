@@ -93,7 +93,7 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.bb(n_9, Vector3(0.087, 0.066, 0.075), K.dark(), Vector3(0, 0, -0.288), Vector3.ZERO, 0.006)
 	K.bb(n_9, Vector3(0.087, 0.066, 0.075), K.dark(), Vector3(0, 0, 0.288), Vector3.ZERO, 0.006)
 	var n_10 := K.node(n_4, Vector3.ZERO, Vector3.ZERO, "Hose")
-	A.add(n_10, A.tube([Vector3(side * 0.18, 0.09, -0.12), Vector3(side * 0.223, 0.121, -0.329), Vector3(side * 0.23, 0.125, -0.46), Vector3(side * 0.223, 0.117, -0.585), Vector3(side * 0.18, 0.08, -0.76)], 0.022), A.rubber(), Vector3.ZERO, Vector3.ZERO)
+	A.add(n_10, A.tube([Vector3(side * 0.18, 0.09, -0.12), Vector3(side * 0.223, 0.121, -0.329), Vector3(side * 0.23, 0.125, -0.46), Vector3(side * 0.223, 0.117, -0.585), Vector3(side * 0.18, 0.08, -0.76)], 0.022, 16, 10, 0.20), A.rubber(), Vector3.ZERO, Vector3.ZERO)
 	var n_11 := K.node(n_10, Vector3(0.18, 0.09, -0.12), Vector3(8.27, -11.494, 0), "FittingA")
 	K.cy(n_11, 0.032, 0.033, K.gunmetal(), Vector3(0, 0, -0.018), Vector3(90, 0, 0), 0.032, 6)
 	K.cy(n_11, 0.026, 0.03, K.brass(), Vector3(0, 0, -0.047), Vector3(90, 0, 0), 0.024, 10)

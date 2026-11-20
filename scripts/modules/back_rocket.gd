@@ -3,6 +3,7 @@ extends RefCounted
 ## 接口：插头 HP-B1 → b1_mount（导轨卡箍 + 横梁）→ 发射巢；局部 +Y 远离躯干
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/modules/kit.gd")
+const DM = preload("res://scripts/modules/device_models.gd")
 
 
 static func build(ctx: Dictionary) -> Node3D:
@@ -16,12 +17,12 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_WARHEAD := A.paint(Color(0.29, 0.32, 0.24), 0.20, 0.52, {"wear": 0.42, "panel_scale": 0.0})
 	# 中央点火分配盒 + 旋转测角传感器
 	K.bb(top, Vector3(0.34, 0.20, 0.42), M_A2, Vector3(0, 0.10, 0.05), Vector3.ZERO, 0.02)
-	K.cy(top, 0.08, 0.05, M_GUN, Vector3(0, 0.22, 0.02), Vector3.ZERO, -1.0, 12)
+	K.cy(top, 0.08, 0.05, M_GUN, Vector3(0, 0.22, 0.02), Vector3.ZERO, -1.0, 20)
 	A.stencil(top, "RK-4", Vector3(0, 0.202, 0.14), Vector3(-90, 0, 0), 0.003, Color(0.92, 0.90, 0.84, 0.78))
 	for sx in [-1.0, 1.0]:
 		# 重型耳轴立座 + 法兰轴承 + 点火脐带软管
 		K.bb(top, Vector3(0.11, 0.34, 0.24), M_DARK, Vector3(sx * 0.25, 0.17, 0.0), Vector3.ZERO, 0.016)
-		K.cy(top, 0.085, 0.14, M_GUN, Vector3(sx * 0.30, 0.27, 0.0), Vector3(0, 0, 90), -1.0, 14)
+		K.cy(top, 0.085, 0.14, M_GUN, Vector3(sx * 0.30, 0.27, 0.0), Vector3(0, 0, 90), -1.0, 20)
 		K.bolt_ring(top, 0.068, 6, 0.012, Vector3(sx * 0.23, 0.27, 0.0), Vector3(0, 0, 90))
 		A.hose(top, Vector3(sx * 0.16, 0.14, 0.20), Vector3(sx * 0.42, 0.22, 0.34), Vector3(0, -0.05, 0.06), 0.020)
 		var pod := K.node(top, Vector3(sx * 0.56, 0.33, 0.0), Vector3(-6, 0, 0), "Pod%d" % (0 if sx < 0 else 1))
@@ -37,13 +38,11 @@ static func build(ctx: Dictionary) -> Node3D:
 		for i in 2:
 			for j in 2:
 				var tp := Vector3(-0.115 + i * 0.23, -0.115 + j * 0.23, 0)
-				# 深凹火箭发射管 + 内缩重型高爆战斗部 + 黄铜机械碰炸引信
-				K.barrel_bore(pod, 0.098, 0.084, tp + Vector3(0, 0, -0.528), 0.16)
-				K.cy(pod, 0.072, 0.12, M_WARHEAD, tp + Vector3(0, 0, -0.475), Vector3(-90, 0, 0), 0.028, 12)
-				K.cy(pod, 0.024, 0.036, K.brass(), tp + Vector3(0, 0, -0.545), Vector3(-90, 0, 0), 0.010, 8)
+				# 已装填 MLRS 火箭：加厚倒圆管口唇 + 探出管口的高爆战斗部（黄色识别环 + 黄铜引信）
+				DM.launch_tube(pod, tp + Vector3(0, 0, -0.528), 0.084, Color(0.29, 0.32, 0.24))
 				# 尾部易碎防潮封盖（带十字预刻破片筋）
 				var M_CAP := A.paint(Color(0.44, 0.42, 0.36), 0.05, 0.82, {"wear": 0.25, "panel_scale": 0.0})
-				K.cy(pod, 0.088, 0.022, M_CAP, tp + Vector3(0, 0, 0.525), Vector3(90, 0, 0), -1.0, 14)
+				K.cy(pod, 0.088, 0.022, M_CAP, tp + Vector3(0, 0, 0.525), Vector3(90, 0, 0), -1.0, 20)
 				K.bb(pod, Vector3(0.15, 0.012, 0.008), M_DARK, tp + Vector3(0, 0, 0.538), Vector3(0, 0, 45), 0.002)
 				K.bb(pod, Vector3(0.15, 0.012, 0.008), M_DARK, tp + Vector3(0, 0, 0.538), Vector3(0, 0, -45), 0.002)
 		K.bb(pod, Vector3(0.49, 0.045, 0.065), K.accent(), Vector3(0, 0.232, -0.40), Vector3.ZERO, 0.005)

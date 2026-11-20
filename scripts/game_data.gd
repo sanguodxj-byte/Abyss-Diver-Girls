@@ -1,6 +1,8 @@
 extends Node
 ## 全局数据：物品库、机甲模块库、仓库、装配、存档；启动时把 data\ext 下各团队的扩展数据并入核心表。
 
+signal show_fps_changed(enabled: bool)
+
 const MapsData = preload("res://scripts/maps.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 const AudioReg = preload("res://scripts/audio/audio_registry.gd")
@@ -13,6 +15,8 @@ const SAVE_FILE := "salvage_save.json"
 const SAVE_SLOT_COUNT := 3
 ## 当前存档位（1 起）。主菜单选位/载入时切换，跨启动保留在 SLOT_CFG。
 const SLOT_CFG := "user://active_slot.txt"
+## 跨存档保留的全局界面配置（与 Loc 共用）。
+const UI_CFG_PATH := "user://menu.cfg"
 ## 需要迁移存档的旧数据目录名（与当前数据目录同在 app_userdata 下）。
 ## 正常启动时当前目录没有存档而旧目录有，就复制一份过来，旧文件保留。
 const LEGACY_DATA_DIRS := ["潜渊少女 Abyss Diver Girls", "残骸打捞团 Salvage Crew"]
@@ -41,42 +45,35 @@ var CAT_NAMES := _ZH_CAT_NAMES.duplicate()
 var ITEMS := {}
 
 ## 武器类型（现实枪械分类）与射击资源：
-##   mode = ammo  —— 实弹武器：消耗弹匣，打空自动换弹，不耗能量
-##   mode = energy—— 激光/轨道：不占弹匣，每发直接消耗能量
-##   mode = melee —— 近战工程臂：不占弹匣，每击消耗少量能量（液压/燃气伺服）
+## 所有武器均通过动力炉供能射击，同类型武器每发能量消耗（cost）固定一致。
 ## fire_loop = true 的武器按住扳机时播放持续循环的 wpn_<weapon>_loop，而不是每发一次 wpn_<weapon>_fire
-## sfx = 每发开火音效（缺省按 weapon 命名约定）；tex = HUD 子弹贴图
+## sfx = 每发开火音效（缺省按 weapon 命名约定）；tex = HUD 能量弹药条贴图
 var AMMO := {
-	"mg": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
-	"autocannon": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
-	"cannon": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"shotgun": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"sniper": {"mode": "ammo", "mag": 5, "reload": 2.4, "tex": "ammo_mg", "sfx": "wpn_railgun_fire"},
-	"launcher": {"mode": "ammo", "mag": 10, "reload": 2.6, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"flamer": {"mode": "ammo", "mag": 60, "reload": 2.4, "tex": "ammo_fuel", "fire_loop": true},
-	"laser": {"mode": "energy", "mag": 0, "reload": 0.0, "tex": "ammo_cell", "sfx": "wpn_laser_fire"},
-	"melee": {"mode": "melee", "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
+	"mg": {"mode": "energy", "cost": 0.05, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"flamer": {"mode": "energy", "cost": 0.06, "mag": 0, "reload": 0.0, "tex": "ammo_fuel", "fire_loop": true},
+	"autocannon": {"mode": "energy", "cost": 0.20, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"melee": {"mode": "energy", "cost": 0.30, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
+	"shotgun": {"mode": "energy", "cost": 0.50, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"sniper": {"mode": "energy", "cost": 1.20, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_railgun_fire"},
+	"cannon": {"mode": "energy", "cost": 1.40, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"launcher": {"mode": "energy", "cost": 1.50, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"laser": {"mode": "energy", "cost": 1.60, "mag": 0, "reload": 0.0, "tex": "ammo_cell", "sfx": "wpn_laser_fire"},
 }
 
-## 弹匣物品：每种实弹武器对应一个实体弹匣，装填消耗一个，打空即消失
-const MAG_ITEM := {
-	"mg": "mag_mg", "autocannon": "mag_ac", "cannon": "mag_cannon",
-	"shotgun": "mag_shotgun", "sniper": "mag_sniper",
-	"launcher": "mag_launcher", "flamer": "mag_fuel",
-}
+const MAG_ITEM := {}
 
 
-## 武器对应的弹匣物品 id；激光 / 近战返回空串
-func mag_item_for(weapon: String) -> String:
-	return str(MAG_ITEM.get(weapon, ""))
+func mag_item_for(_weapon: String) -> String:
+	return ""
 
-## 武器的射击资源模式：ammo（实弹弹匣）/ energy（激光耗能）/ melee（近战少量耗能）
+
+## 武器的射击资源模式：统一为动力炉能量供能（energy）
 func weapon_mode(weapon: String) -> String:
-	return str(AMMO.get(weapon, {}).get("mode", "ammo"))
+	return str(AMMO.get(weapon, {}).get("mode", "energy"))
 
 
-func weapon_uses_ammo(weapon: String) -> bool:
-	return weapon_mode(weapon) == "ammo"
+func weapon_uses_ammo(_weapon: String) -> bool:
+	return false
 
 
 ## 距离衰减：near = 满伤距离（米），far = 衰减到 min 的距离，min = 最低伤害倍率。
@@ -117,10 +114,18 @@ func weapon_type_name(weapon: String) -> String:
 	return weapon
 
 
-## 每发开火消耗的能量：实弹武器为 0，激光按 cost，近战按 cost（默认 0.3）
+## 按武器类型返回固定的单发能量消耗
+func weapon_energy_cost(weapon: String) -> float:
+	if AMMO.has(weapon) and AMMO[weapon].has("cost"):
+		return maxf(0.0, float(AMMO[weapon].get("cost", 0.3)))
+	return 0.3
+
+
+## 每发开火消耗的能量：同武器类型固定一致
 func shot_energy_cost(m: Dictionary) -> float:
-	if weapon_mode(str(m.get("weapon", ""))) == "ammo":
-		return 0.0
+	var w := str(m.get("weapon", ""))
+	if AMMO.has(w) and AMMO[w].has("cost"):
+		return maxf(0.0, float(AMMO[w].get("cost", 0.3)))
 	return maxf(0.0, float(m.get("cost", 0.3)))
 
 ## 技能：Space=底盘机动，F=背部挂载。icon 对应 assets/ui/ic_<icon>.png
@@ -138,10 +143,18 @@ var SKILLS := {
 var MODULES := {}
 
 var LOOT_TABLES := {
-	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 30, "water_tab": 25, "coffee": 4, "fuel_cell": 12, "repair_kit": 6, "mag_mg": 14, "mag_shotgun": 6}},
-	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 25, "bolts": 30, "hdd": 5, "toy": 8, "fuel_cell": 8, "mag_ac": 6, "mag_fuel": 6}},
-	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 28, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10, "mag_cannon": 10, "mag_sniper": 6, "mag_launcher": 4}},
+	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 30, "water_tab": 25, "coffee": 4, "fuel_cell": 12, "repair_kit": 6}},
+	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 25, "bolts": 30, "hdd": 5, "toy": 8, "fuel_cell": 8}},
+	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 45, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10}},
 	"safe": {"name": "保险柜", "rolls": [1, 3], "pool": {"credit_s": 40, "credit_l": 15, "gold": 4, "hdd": 10, "coffee": 6}},
+	"ammo": {"name": "弹药箱", "rolls": [2, 4], "pool": {"fuel_cell": 34, "energy_rod": 18, "coolant_pack": 14, "surge_cell": 8, "repair_kit": 12, "credit_s": 10}},
+	"med": {"name": "医疗箱", "rolls": [2, 3], "pool": {"repair_kit": 30, "coolant_pack": 12, "can_food": 18, "water_tab": 18, "energy_rod": 6, "biscuit": 10}},
+	"tech": {"name": "技术物资箱", "rolls": [2, 3], "pool": {"circuit": 28, "wire": 16, "hdd": 12, "energy_rod": 12, "surge_cell": 8}},
+	"register": {"name": "结算终端", "rolls": [1, 3], "pool": {"credit_s": 55, "credit_l": 16, "hdd": 10, "gold": 5}},
+	"weapon": {"name": "武器柜", "rolls": [2, 4], "pool": {"@module": 38, "fuel_cell": 22, "energy_rod": 14, "repair_kit": 14, "surge_cell": 6, "credit_s": 10}},
+	"car_wreck": {"name": "车辆残骸", "rolls": [2, 3], "pool": {"wire": 22, "bolts": 22, "circuit": 12, "toy": 8, "credit_s": 10, "fuel_cell": 10}},
+	"container": {"name": "集装箱", "rolls": [3, 5], "pool": {"@module": 34, "fuel_cell": 20, "repair_kit": 14, "credit_s": 12, "wire": 12}},
+	"cache": {"name": "埋藏桶", "rolls": [1, 2], "pool": {"bug_crystal": 24, "gen_crystal": 10, "credit_l": 12, "hdd": 10, "energy_rod": 8, "repair_kit": 8}},
 	"bug": {"name": "虫尸", "rolls": [1, 1], "pool": {"chitin": 85, "bug_crystal": 12, "fuel_cell": 6}},
 	"nest": {"name": "巢穴残骸", "rolls": [2, 3], "pool": {"bug_crystal": 45, "chitin": 50, "gen_crystal": 3, "legs_hex_beetle": 2}},
 }
@@ -166,6 +179,14 @@ const LOOT_NAMES := {
 	"tool": ["工具箱", "维修工具箱", "工兵器材柜"],
 	"military": ["军用储物箱", "军械箱", "指挥所军械柜"],
 	"safe": ["保险柜", "加固保险柜", "加密保管柜"],
+	"ammo": ["弹药箱", "军需弹药箱", "装甲弹药柜"],
+	"med": ["医疗箱", "野战医疗箱", "医疗储备柜"],
+	"tech": ["技术箱", "技术物资箱", "研究器材柜"],
+	"register": ["收银机", "加密收银机", "加密结算终端"],
+	"weapon": ["武器架", "军械武器架", "指挥所武器柜"],
+	"car_wreck": ["废弃轿车", "塞满杂物的轿车", "满载轿车残骸"],
+	"container": ["废弃集装箱", "军用集装箱", "武装集装箱"],
+	"cache": ["埋藏桶", "加固埋藏桶", "密封埋藏桶"],
 	"bug": ["虫尸", "虫尸", "虫尸"],
 	"nest": ["巢穴残骸", "巢穴残骸", "巢穴残骸"],
 }
@@ -174,6 +195,14 @@ const LOOT_NAMES_EN := {
 	"tool": ["Toolbox", "Maintenance Chest", "Engineer Locker"],
 	"military": ["Military Crate", "Arms Crate", "Command Armory Locker"],
 	"safe": ["Safe", "Reinforced Safe", "Encrypted Storage Locker"],
+	"ammo": ["Ammo Box", "Military Ammo Crate", "Armored Ammo Locker"],
+	"med": ["Medkit Crate", "Field Medbag", "Medical Reserve Locker"],
+	"tech": ["Tech Crate", "Technical Supply Crate", "Research Locker"],
+	"register": ["Cash Register", "Encrypted Register", "Encrypted Settlement Terminal"],
+	"weapon": ["Weapon Rack", "Arms Rack", "Command Weapon Locker"],
+	"car_wreck": ["Abandoned Car", "Cluttered Car", "Loaded Car Wreck"],
+	"container": ["Abandoned Container", "Military Container", "Armed Container"],
+	"cache": ["Buried Barrel", "Reinforced Barrel", "Sealed Cache"],
 	"bug": ["Bug Carcass", "Bug Carcass", "Bug Carcass"],
 	"nest": ["Nest Remains", "Nest Remains", "Nest Remains"],
 }
@@ -182,6 +211,20 @@ const LOOT_NAMES_EN := {
 ## 每件物资的基础搜刮耗时（秒）：高档箱要拆装甲锁具，站桩时间明显更长
 ## 实际耗时 = 基础 × 精英专精 ab_search 系数 × 底盘承重破拆系数
 const LOOT_TIER_TIME := {1: 0.55, 2: 1.00, 3: 2.00}
+
+## 稀有产出层：每件物资有小概率改从稀有池抽取，让低级箱也有开出高价值物品的惊喜。
+## 稀有池平均价值约 ¥570（3 档约 ¥660），单箱期望 +¥57~+¥344。
+## 抽中「@module」时按当前档位抽模块——补给箱/医疗箱也可能开出军械。
+const RARE_POOL := {
+	"credit_l": 30, "hdd": 20, "energy_rod": 12, "surge_cell": 10,
+	"coffee": 8, "@module": 14,
+}
+const RARE_CHANCE := 0.05
+const RARE_TIER_MUL := {1: 1.0, 2: 1.6, 3: 2.6}
+
+
+func rare_chance(tier: int) -> float:
+	return RARE_CHANCE * float(RARE_TIER_MUL.get(clampi(tier, 1, 3), 1.0))
 
 
 ## 箱子显示名：按所在区块档位取对应写实名称（bug/nest 等无档位的保持原名）
@@ -193,8 +236,7 @@ func loot_title(kind: String, tier: int) -> String:
 	var i := clampi(tier - 1, 0, zh.size() - 1)
 	return Loc.t(str(zh[i]), str(en[mini(i, en.size() - 1)]))
 
-var SHOP := ["mag_mg", "mag_shotgun", "mag_ac", "mag_cannon", "mag_sniper", "mag_launcher", "mag_fuel",
-	"fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_biped_scout", "legs_tread_light", "legs_tread", "gen_reactor"]
+var SHOP := ["fuel_cell", "repair_kit", "beacon", "arm_mg", "arm_shotgun", "back_cargo", "core_std", "legs_biped_scout", "legs_tread_light", "legs_tread", "gen_reactor"]
 
 const STARTER := {"core": "core_scout", "legs": "legs_biped", "arm_l": "arm_mg", "arm_r": "arm_mg", "back": "back_cargo", "gen": "gen_cell"}
 
@@ -273,6 +315,10 @@ var quality := 1
 var render_style := 0  # 0 写实 1 三渲二
 var view_mode := 0     # 0 第三人称 1 第一人称
 var mouse_sens := 1.0  # 鼠标视角灵敏度倍率（0.2 ~ 2.5）
+var show_fps := false  # 右上角显示实时 FPS
+var _has_global_show_fps := false
+var render_scale_mode := 0  # 0 自动（4K+高分屏FSR优化）/ 1 100%原生 / 2 85% / 3 75% / 4 67%
+var _has_global_render_scale := false
 var _cfg_save_t: Timer
 var map_id := "greyport"  ## 出击战区
 var extracts_ok := 0
@@ -296,6 +342,7 @@ var _zh_base := {}
 
 func _ready() -> void:
 	_init_save_path()
+	_load_global_ui_prefs()
 	_cfg_save_t = Timer.new()
 	_cfg_save_t.one_shot = true
 	_cfg_save_t.wait_time = 0.35
@@ -303,6 +350,9 @@ func _ready() -> void:
 	add_child(_cfg_save_t)
 	_merge_content()
 	for id in MODULES:
+		var mod: Dictionary = MODULES[id]
+		if str(mod.get("slot", "")) == "arm":
+			mod["cost"] = shot_energy_cost(mod)
 		_module_item(id)
 	_setup_input()
 	_run_ext_register()
@@ -681,7 +731,12 @@ func roll_loot(table: String, rng: RandomNumberGenerator, tier := 1) -> Array:
 		pool["@module"] = float(pool["@module"]) * float(tr.module)
 	var out: Array = []
 	for i in n:
-		var id := _weighted(pool, rng)
+		var id: String
+		if rng.randf() < rare_chance(tier):
+			# 稀有产出层：普通箱小概率开出高价值物品（信用芯片/硬盘/能量棒/反应炉/模块）
+			id = _weighted(RARE_POOL, rng)
+		else:
+			id = _weighted(pool, rng)
 		if id == "@module":
 			id = _random_module(rng, tier)
 		for f: Callable in _loot_hooks:
@@ -936,8 +991,8 @@ func mark_enemy_seen(kind: String) -> bool:
 func new_game() -> void:
 	money = 1500
 	loadout = STARTER.duplicate()
-	stash = ["mag_mg", "mag_mg", "mag_mg", "mag_mg", "fuel_cell", "fuel_cell", "repair_kit", "beacon", "arm_shotgun", "can_food"]
-	cargo = ["mag_mg", "mag_mg", "mag_mg", "mag_mg", "fuel_cell", "repair_kit", "beacon"]
+	stash = ["fuel_cell", "fuel_cell", "repair_kit", "beacon", "arm_shotgun", "can_food"]
+	cargo = ["fuel_cell", "repair_kit", "beacon"]
 	raids = 0
 	extracts_ok = 0
 	seen_enemies = []
@@ -958,9 +1013,53 @@ func _payload() -> Dictionary:
 		sec[k] = _sections[k][0].call()
 	var prog: Dictionary = sec.get("progress", {}) if typeof(sec.get("progress", {})) == TYPE_DICTIONARY else {}
 	return {"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
-		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "view_mode": view_mode, "mouse_sens": mouse_sens, "map_id": map_id,
+		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "view_mode": view_mode, "mouse_sens": mouse_sens, "show_fps": show_fps, "render_scale_mode": render_scale_mode, "map_id": map_id,
 		"seen_enemies": seen_enemies, "sections": sec,
 		"meta": {"slot": slot, "saved_at": Time.get_unix_time_from_system(), "name": str(prog.get("player_name", ""))}}
+
+func _load_global_ui_prefs() -> void:
+	_has_global_show_fps = false
+	_has_global_render_scale = false
+	if test_mode:
+		return
+	var cfg := ConfigFile.new()
+	if cfg.load(UI_CFG_PATH) == OK:
+		if cfg.has_section_key("video", "show_fps"):
+			show_fps = bool(cfg.get_value("video", "show_fps", false))
+			_has_global_show_fps = true
+		if cfg.has_section_key("video", "render_scale_mode"):
+			render_scale_mode = clampi(int(cfg.get_value("video", "render_scale_mode", 0)), 0, 4)
+			_has_global_render_scale = true
+
+func set_show_fps(on: bool) -> void:
+	show_fps = on
+	if not test_mode:
+		var cfg := ConfigFile.new()
+		cfg.load(UI_CFG_PATH)
+		cfg.set_value("video", "show_fps", show_fps)
+		cfg.save(UI_CFG_PATH)
+		_has_global_show_fps = true
+	save_game()
+	show_fps_changed.emit(show_fps)
+
+func set_render_scale_mode(mode: int) -> void:
+	render_scale_mode = clampi(mode, 0, 4)
+	if not test_mode:
+		var cfg := ConfigFile.new()
+		cfg.load(UI_CFG_PATH)
+		cfg.set_value("video", "render_scale_mode", render_scale_mode)
+		cfg.save(UI_CFG_PATH)
+		_has_global_render_scale = true
+	save_game()
+
+func render_scale_options() -> Array:
+	return [
+		Loc.t("自动（高分屏优化）", "Auto (HiDPI)"),
+		Loc.t("100%（原生）", "100% (Native)"),
+		"85%",
+		"75%",
+		"67%",
+	]
 
 func schedule_save() -> void:
 	if _closing or _cfg_save_t == null:
@@ -1020,6 +1119,11 @@ func load_game() -> bool:
 	render_style = int(d.get("render_style", 0))
 	view_mode = clampi(int(d.get("view_mode", 0)), 0, 1)
 	mouse_sens = clampf(float(d.get("mouse_sens", 1.0)), 0.2, 2.5)
+	if not _has_global_show_fps and d.has("show_fps"):
+		show_fps = bool(d.get("show_fps", false))
+	if not _has_global_render_scale and d.has("render_scale_mode"):
+		render_scale_mode = clampi(int(d.get("render_scale_mode", 0)), 0, 4)
+	show_fps_changed.emit(show_fps)
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
 	seen_enemies = Array(d.get("seen_enemies", []))
@@ -1054,7 +1158,10 @@ func _migrate_item_id(id: String) -> String:
 func _migrate_item_list(arr: Array) -> Array:
 	var out: Array = []
 	for raw in arr:
-		out.append(_migrate_item_id(str(raw)))
+		var id := _migrate_item_id(str(raw))
+		if base_id(id).begins_with("mag_"):
+			continue
+		out.append(id)
 	return out
 
 
@@ -1340,14 +1447,12 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 				sun.light_angular_distance = 0.24
 				sun.shadow_blur = 0.72
 				sun.directional_shadow_blend_splits = true
-				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-				sun.directional_shadow_split_1 = 0.16
-				sun.directional_shadow_split_2 = 0.36
-				sun.directional_shadow_split_3 = 0.62
-				sun.directional_shadow_max_distance = 72.0
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+				sun.directional_shadow_split_1 = 0.42
+				sun.directional_shadow_max_distance = 64.0
 		1:
 			env.ssr_enabled = not compat and not mobile_renderer
-			env.ssr_max_steps = 48
+			env.ssr_max_steps = 32
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
 			env.ssao_radius = 2.10
@@ -1357,21 +1462,22 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			env.ssao_sharpness = 0.92
 			env.ssao_light_affect = 0.34
 			env.glow_enabled = true
-			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_LOW, false)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
-			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
 				sun.shadow_bias = 0.045
 				sun.shadow_normal_bias = 1.80
 				sun.light_angular_distance = 0.28
 				sun.shadow_blur = 0.82
 				sun.directional_shadow_blend_splits = true
-				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-				sun.directional_shadow_max_distance = 84.0
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+				sun.directional_shadow_split_1 = 0.40
+				sun.directional_shadow_max_distance = 76.0
 		_:
 			env.ssr_enabled = not compat and not mobile_renderer
-			env.ssr_max_steps = 64
+			env.ssr_max_steps = 48
 			env.ssil_enabled = not compat and not mobile_renderer
 			env.ssao_enabled = not compat and not mobile_renderer
 			env.ssao_radius = 2.20
@@ -1381,23 +1487,23 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			env.ssao_sharpness = 0.92
 			env.ssao_light_affect = 0.34
 			env.glow_enabled = true
-			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_HIGH, true)
-			RenderingServer.directional_shadow_atlas_set_size(8192, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
-			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
+			RenderingServer.directional_shadow_atlas_set_size(4096, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 			if sun:
 				sun.shadow_bias = 0.04
 				sun.shadow_normal_bias = 1.75
 				sun.light_angular_distance = 0.32
-				sun.shadow_blur = 0.92
+				sun.shadow_blur = 0.90
 				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-				sun.directional_shadow_max_distance = 92.0
+				sun.directional_shadow_max_distance = 86.0
 
 
-## 应用抗锯齿 / 渲染缩放到主视口。
-## 桌面流畅：MSAA 2x + 16x 各向异性；移动端流畅：FSR 锐化缩放 (0.76~0.84) + 4x 各向异性，杜绝低画质发糊发毛。
-func apply_quality(vp: Viewport = null) -> void:
+## 应用抗锯齿 / 渲染缩放到主视口或子视口。
+## 桌面端 ≤1440p 保持 100% 原生；4K(>1440p) 在「自动」模式下启用 FSR 1.0 清晰缩放（UI 保持原生 4K），并可随时切回 100% 原生。
+func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
 	if vp == null:
 		vp = get_tree().root
 	if OS.has_feature("mobile"):
@@ -1418,26 +1524,43 @@ func apply_quality(vp: Viewport = null) -> void:
 				vp.scaling_3d_scale = 1.0
 				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 		return
-	# 桌面端使用硬件 MSAA + 16x 各向异性，保持道路/地面贴图与硬表面几何锐度
+	# 桌面端：硬件 MSAA + 各向异性过滤 + 高分屏 FSR 清晰缩放（2D UI 永远保持原生窗口分辨率）
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	vp.use_taa = false
 	match quality:
 		0:
 			vp.msaa_3d = Viewport.MSAA_2X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-			vp.use_taa = false
-			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 1.0
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
+			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 		1:
-			vp.msaa_3d = Viewport.MSAA_4X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-			vp.use_taa = false
-			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 1.0
+			vp.msaa_3d = Viewport.MSAA_2X
 			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
 		_:
 			vp.msaa_3d = Viewport.MSAA_4X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-			vp.use_taa = false
-			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 1.0
 			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
+	var vp_h: int = (vp as SubViewport).size.y if vp is SubViewport else DisplayServer.window_get_size().y
+	var scale := 1.0
+	match render_scale_mode:
+		1:
+			scale = 1.0
+		2:
+			scale = 0.85
+		3:
+			scale = 0.75
+		4:
+			scale = 0.67
+		_:
+			if allow_auto_scale and vp_h > 1440:
+				match quality:
+					0:
+						scale = clampf(1260.0 / float(vp_h), 0.58, 1.0)
+					1:
+						scale = clampf(1550.0 / float(vp_h), 0.72, 1.0)
+					_:
+						scale = clampf(1728.0 / float(vp_h), 0.78, 1.0)
+	if scale < 0.995:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+		vp.fsr_sharpness = 0.28
+		vp.scaling_3d_scale = scale
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = 1.0

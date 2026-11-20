@@ -5,6 +5,7 @@ extends RefCounted
 ## build(root) 返回动画需要的节点引用。
 const A = preload("res://scripts/art.gd")
 const HS = preload("res://scripts/hs.gd")
+const MechScript = preload("res://scripts/mech.gd")
 
 const WIN_C := Vector3(1.0, 0.0, 0.0)     # 观景窗中心（x）
 const PANES := [1.05, 2.5, 1.05]     # 中央整块大玻璃，两侧窄窗
@@ -33,7 +34,10 @@ static func _brass() -> ShaderMaterial:
 	return A.paint(Color(0.72, 0.52, 0.24), 0.9, 0.32, {"panel_scale": 0.0, "wear": 0.2, "scratches": 0.3, "grime": 0.3})
 
 
-static func build(root: Node3D) -> Dictionary:
+static func build(root: Node3D, opts := {}) -> Dictionary:
+	var include_lights: bool = bool(opts.get("include_lights", true))
+	var include_outside: bool = bool(opts.get("include_outside", true))
+	var fit_airship: bool = bool(opts.get("fit_airship", false))
 	var refs := {}
 	var HULL := _hull()
 	var HULL2 := _hull2()
@@ -106,15 +110,26 @@ static func build(root: Node3D) -> Dictionary:
 		A.add(sh, A.cyl(0.045, 0.22, 0.045, 12), A.chrome(), Vector3(sx * (W * 0.5 + 0.32), 0.0, 0.0), Vector3(0, 0, 90))
 	A.stencil(sh, "ARMOR SHUTTER  ·  遮蔽装甲  3-A", Vector3(-W * 0.25, 0.05, 0.192), Vector3.ZERO, 0.0035, Color(0.9, 0.86, 0.75, 0.7))
 	# 窗墙其余部分：左右与上方墙板（分格 + 铆钉 + 通风格栅）
+	# 整艇外景/剖视模式中由信天翁号左舷装甲壳承接外围墙面，避免外倾墙翼穿出 Z=-7.2 外壳
+	var wall_legacy := Node3D.new()
+	wall_legacy.name = "WallLegacySurround"
+	wall.add_child(wall_legacy)
 	var wall_l := -3.2
 	var wall_r := 4.8
 	var top := PANE_H + 1.4
-	A.add(wall, HS.cbox(Vector3((x0 - 0.28) - wall_l, top + 0.95, 0.2), 0.02), HULL, Vector3((wall_l + x0 - 0.28) * 0.5, top * 0.5 - 0.47, -0.12))
-	A.add(wall, HS.cbox(Vector3(wall_r - (x1 + 0.28), top + 0.95, 0.2), 0.02), HULL, Vector3((wall_r + x1 + 0.28) * 0.5, top * 0.5 - 0.47, -0.12))
-	A.add(wall, HS.cbox(Vector3(W + 0.6, top - PANE_H - 0.34, 0.2), 0.02), HULL, Vector3(WIN_C.x, (top + PANE_H + 0.34) * 0.5, -0.12))
-	A.vent(wall, Vector3(0.9, 0.5, 0.05), Vector3(x1 + 1.05, 2.1, 0.0), Vector3(0, 180, 0), 7)
-	A.vent(wall, Vector3(0.6, 0.35, 0.05), Vector3(x0 - 1.0, 0.45, 0.0), Vector3(0, 180, 0), 5)
-	A.stencil(wall, "OBS-2  左舷观测窗", Vector3(x1 + 1.05, 2.55, 0.03), Vector3.ZERO, 0.004, Color(0.95, 0.62, 0.15, 0.75))
+	A.add(wall_legacy, HS.cbox(Vector3((x0 - 0.28) - wall_l, top + 0.95, 0.2), 0.02), HULL, Vector3((wall_l + x0 - 0.28) * 0.5, top * 0.5 - 0.47, -0.12))
+	A.add(wall_legacy, HS.cbox(Vector3(wall_r - (x1 + 0.28), top + 0.95, 0.2), 0.02), HULL, Vector3((wall_r + x1 + 0.28) * 0.5, top * 0.5 - 0.47, -0.12))
+	A.add(wall_legacy, HS.cbox(Vector3(W + 0.6, top - PANE_H - 0.34, 0.2), 0.02), HULL, Vector3(WIN_C.x, (top + PANE_H + 0.34) * 0.5, -0.12))
+	A.vent(wall_legacy, Vector3(0.9, 0.5, 0.05), Vector3(x1 + 1.05, 2.1, 0.0), Vector3(0, 180, 0), 7)
+	A.vent(wall_legacy, Vector3(0.6, 0.35, 0.05), Vector3(x0 - 1.0, 0.45, 0.0), Vector3(0, 180, 0), 5)
+	A.stencil(wall_legacy, "OBS-2  左舷观测窗", Vector3(x1 + 1.05, 2.55, 0.03), Vector3.ZERO, 0.004, Color(0.95, 0.62, 0.15, 0.75))
+	var wall_trim := Node3D.new()
+	wall_trim.name = "WallAirshipTrim"
+	wall.add_child(wall_trim)
+	# 整艇模式补齐窗框外缘至左舷装甲窗罩（X_ship[11.48..17.52]）之间的接缝
+	A.add(wall_trim, HS.cbox(Vector3(0.32, PANE_H + 0.62, 0.36), 0.02), FR, Vector3(x0 - 0.42, PANE_H * 0.5, 0.0))
+	A.add(wall_trim, HS.cbox(Vector3(0.32, PANE_H + 0.62, 0.36), 0.02), FR, Vector3(x1 + 0.42, PANE_H * 0.5, 0.0))
+	A.add(wall_trim, HS.cbox(Vector3(W + 1.16, 0.22, 0.36), 0.02), FR, Vector3(WIN_C.x, PANE_H + 0.36, 0.0))
 
 	# ============================================================ 窗台仪表台
 	var sill := Node3D.new()
@@ -162,7 +177,15 @@ static func build(root: Node3D) -> Dictionary:
 		A.add(sill, A.cyl(0.032, 0.2, 0.028, 14), DARK, Vector3(WIN_C.x + 0.95 + bx, 0.06, 0.4), Vector3(90, 25, 0))
 	# ============================================================ 舱室：地板、侧墙、肋骨梁、顶部
 	var floor_m := A.paint(Color(0.16, 0.16, 0.165), 0.3, 0.6, {"panel_scale": 1.2, "wear": 0.6, "scratches": 0.6, "dust": 0.3})
-	A.add(root, HS.cbox(Vector3(8.4, 0.12, 7.0), 0.02), floor_m, Vector3(0.8, -0.06, 3.3))
+	var shell_legacy := Node3D.new()
+	shell_legacy.name = "ShellLegacy"
+	root.add_child(shell_legacy)
+	var shell_fitted := Node3D.new()
+	shell_fitted.name = "ShellAirshipFitted"
+	root.add_child(shell_fitted)
+	A.add(shell_legacy, HS.cbox(Vector3(8.4, 0.12, 7.0), 0.02), floor_m, Vector3(0.8, -0.06, 3.3))
+	# 整艇模式地板/顶板/侧墙严格收敛在 OBS-2 舱室净空内（Z_local[0.08..6.36] → Z_ship[-7.04..-0.76]）
+	A.add(shell_fitted, HS.cbox(Vector3(8.4, 0.10, 6.28), 0.02), floor_m, Vector3(0.8, -0.04, 3.22))
 	A.add(root, HS.cbox(Vector3(W + 0.9, 0.02, 0.9), 0.005), DARK, Vector3(WIN_C.x, 0.005, 1.15))
 	for k in 18:
 		A.add(root, HS.cbox(Vector3(0.02, 0.025, 0.86), 0.004), FR, Vector3(x0 - 0.4 + k * (W + 0.8) / 17.0, 0.02, 1.15), Vector3.ZERO, Vector3.ONE, false)
@@ -178,9 +201,12 @@ static func build(root: Node3D) -> Dictionary:
 		A.add(root, HS.cbox(Vector3(6.4, 0.34, 0.2), 0.04), FR, Vector3(0.8, ceil_y - 0.12, zi))
 		A.add(root, HS.cbox(Vector3(6.4, 0.12, 0.36), 0.02), FR, Vector3(0.8, ceil_y - 0.12, zi))
 	# 顶板与侧墙板
-	A.add(root, HS.cbox(Vector3(8.4, 0.1, 8.0), 0.02), HULL, Vector3(0.8, ceil_y + 0.1, 2.2))
+	A.add(shell_legacy, HS.cbox(Vector3(8.4, 0.1, 8.0), 0.02), HULL, Vector3(0.8, ceil_y + 0.1, 2.2))
 	for sx in [-3.3, 4.9]:
-		A.add(root, HS.cbox(Vector3(0.1, ceil_y + 0.4, 8.0), 0.02), HULL, Vector3(sx, ceil_y * 0.5, 2.2))
+		A.add(shell_legacy, HS.cbox(Vector3(0.1, ceil_y + 0.4, 8.0), 0.02), HULL, Vector3(sx, ceil_y * 0.5, 2.2))
+	A.add(shell_fitted, HS.cbox(Vector3(8.4, 0.08, 6.24), 0.02), HULL, Vector3(0.8, ceil_y - 0.06, 3.20))
+	for sx in [-3.3, 4.9]:
+		A.add(shell_fitted, HS.cbox(Vector3(0.1, ceil_y - 0.04, 6.24), 0.02), HULL, Vector3(sx, ceil_y * 0.5, 3.20))
 	# 顶部管线：沿舷向（x）走三根，带法兰与阀门手轮
 	var pipe_m := A.paint(Color(0.3, 0.3, 0.29), 0.7, 0.4, {"panel_scale": 0.0, "wear": 0.3, "rust": 0.15})
 	var pipe2 := A.paint(Color(0.55, 0.22, 0.1), 0.3, 0.55, {"panel_scale": 0.0, "wear": 0.4, "rust": 0.2})
@@ -205,25 +231,27 @@ static func build(root: Node3D) -> Dictionary:
 	for k in 4:
 		var a := k * PI * 0.5
 		A.add(lamp, A.cyl(0.008, 0.2, 0.008, 4), FR, Vector3(cos(a) * 0.12, -0.78, sin(a) * 0.12))
-	var ll := OmniLight3D.new()
-	ll.light_color = Color(1.0, 0.68, 0.38)
-	ll.light_energy = 2.2
-	ll.omni_range = 7.5
-	ll.shadow_enabled = false
-	ll.position = Vector3(0, -0.8, 0)
-	lamp.add_child(ll)
+	if include_lights:
+		var ll := OmniLight3D.new()
+		ll.light_color = Color(1.0, 0.68, 0.38)
+		ll.light_energy = 2.2
+		ll.omni_range = 7.5
+		ll.shadow_enabled = false
+		ll.position = Vector3(0, -0.8, 0)
+		lamp.add_child(ll)
 	refs["lamp"] = lamp
 	# 窗口漫射补光（模拟窗外天光照进舱内）
-	var wl := SpotLight3D.new()
-	wl.light_color = Color(1.0, 0.78, 0.58)
-	wl.light_energy = 4.0
-	wl.spot_range = 9.0
-	wl.spot_angle = 60.0
-	wl.position = Vector3(WIN_C.x, 2.6, -0.3)
-	wl.rotation_degrees = Vector3(-35, 0, 0)
-	wl.rotate_y(PI)
-	root.add_child(wl)
-	wl.look_at_from_position(Vector3(WIN_C.x, 2.8, -0.2), Vector3(WIN_C.x - 0.6, 0.0, 4.0))
+	if include_lights:
+		var wl := SpotLight3D.new()
+		wl.light_color = Color(1.0, 0.78, 0.58)
+		wl.light_energy = 4.0
+		wl.spot_range = 9.0
+		wl.spot_angle = 60.0
+		wl.position = Vector3(WIN_C.x, 2.6, -0.3)
+		wl.rotation_degrees = Vector3(-35, 0, 0)
+		wl.rotate_y(PI)
+		root.add_child(wl)
+		wl.look_at_from_position(Vector3(WIN_C.x, 2.8, -0.2), Vector3(WIN_C.x - 0.6, 0.0, 4.0))
 	# 窗框两侧壁灯（笼罩 + 暖光）
 	for sx in [x0 - 0.62, x1 + 0.62]:
 		var sc := Node3D.new()
@@ -233,21 +261,23 @@ static func build(root: Node3D) -> Dictionary:
 		A.add(sc, A.cyl(0.09, 0.2, 0.09, 14), A.emit(Color(1.0, 0.75, 0.45), 6.0), Vector3(0, 0, 0.06), Vector3.ZERO, Vector3.ONE, false)
 		for k in 3:
 			A.add(sc, HS.cbox(Vector3(0.012, 0.22, 0.012), 0.002), FR, Vector3(-0.09 + k * 0.09, 0, 0.16), Vector3.ZERO, Vector3.ONE, false)
-		var so := OmniLight3D.new()
-		so.light_color = Color(1.0, 0.7, 0.42)
-		so.light_energy = 1.4
-		so.omni_range = 4.5
-		so.position = Vector3(0, 0, 0.3)
-		sc.add_child(so)
+		if include_lights:
+			var so := OmniLight3D.new()
+			so.light_color = Color(1.0, 0.7, 0.42)
+			so.light_energy = 1.4
+			so.omni_range = 4.5
+			so.position = Vector3(0, 0, 0.3)
+			sc.add_child(so)
 	# 扶手下的琥珀色灯带
 	A.add(sill, HS.cbox(Vector3(sw - 0.3, 0.015, 0.02), 0.003), A.emit(Color(1.0, 0.6, 0.18), 2.5), Vector3(WIN_C.x, -0.09, 0.665), Vector3.ZERO, Vector3.ONE, false)
 	# 舱内补光：仪表台琥珀色
-	var gl := OmniLight3D.new()
-	gl.light_color = Color(1.0, 0.6, 0.25)
-	gl.light_energy = 0.5
-	gl.omni_range = 1.4
-	gl.position = Vector3(WIN_C.x - 1.25, SILL_Y + 0.35, 0.8)
-	root.add_child(gl)
+	if include_lights:
+		var gl := OmniLight3D.new()
+		gl.light_color = Color(1.0, 0.6, 0.25)
+		gl.light_energy = 0.5
+		gl.omni_range = 1.4
+		gl.position = Vector3(WIN_C.x - 1.25, SILL_Y + 0.35, 0.8)
+		root.add_child(gl)
 
 	# ============================================================ 窗外
 	var outside := Node3D.new()
@@ -255,22 +285,50 @@ static func build(root: Node3D) -> Dictionary:
 	root.add_child(outside)
 	# 近景云团（广告牌），缓缓向船尾方向流过
 	var clouds: Array = []
-	var cloud_cnt := 6 if A.is_mobile_perf() else 14
-	var cm := StandardMaterial3D.new()
-	cm.albedo_texture = A.cloud_tex()
-	cm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	cm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	cm.albedo_color = Color(1.0, 0.85, 0.74, 0.55)
-	cm.disable_receive_shadows = true
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	for i in cloud_cnt:
-		var q := QuadMesh.new()
-		var s := rng.randf_range(30, 70)
-		q.size = Vector2(s * 1.8, s)
-		var c := A.add(outside, q, cm, Vector3(rng.randf_range(-260, 260), rng.randf_range(-70, -18), rng.randf_range(-320, -90)), Vector3.ZERO, Vector3.ONE, false)
-		c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		clouds.append(c)
+	if include_outside:
+		var cloud_cnt := 6 if A.is_mobile_perf() else 14
+		var cm := StandardMaterial3D.new()
+		cm.albedo_texture = A.cloud_tex()
+		cm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		cm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		cm.albedo_color = Color(1.0, 0.85, 0.74, 0.55)
+		cm.disable_receive_shadows = true
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 11
+		for i in cloud_cnt:
+			var q := QuadMesh.new()
+			var s := rng.randf_range(30, 70)
+			q.size = Vector2(s * 1.8, s)
+			var c := A.add(outside, q, cm, Vector3(rng.randf_range(-260, 260), rng.randf_range(-70, -18), rng.randf_range(-320, -90)), Vector3.ZERO, Vector3.ONE, false)
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			clouds.append(c)
 	refs["clouds"] = clouds
+	refs["outside"] = outside
+	root.set_meta("obs2_parts", {
+		"wall": wall,
+		"wall_legacy": wall_legacy,
+		"wall_trim": wall_trim,
+		"shell_legacy": shell_legacy,
+		"shell_fitted": shell_fitted,
+		"outside": outside,
+		"lamp": lamp,
+		"needles": refs["needles"],
+		"clouds": clouds,
+		"has_outside": include_outside,
+	})
+	if bool(opts.get("batch_static", true)):
+		MechScript._batch_visual(root)
+	set_airship_fit(root, fit_airship)
 	return refs
+
+
+static func set_airship_fit(obs2_root: Node3D, fitted: bool) -> void:
+	if obs2_root == null or not obs2_root.has_meta("obs2_parts"):
+		return
+	var p: Dictionary = obs2_root.get_meta("obs2_parts")
+	(p["wall_legacy"] as Node3D).visible = not fitted
+	(p["wall_trim"] as Node3D).visible = fitted
+	(p["shell_legacy"] as Node3D).visible = not fitted
+	(p["shell_fitted"] as Node3D).visible = fitted
+	(p["outside"] as Node3D).visible = (not fitted) and bool(p["has_outside"])

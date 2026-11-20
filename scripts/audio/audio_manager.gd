@@ -188,15 +188,36 @@ func _resolve(id: String) -> Array:
 
 
 func warm_combat_sfx() -> void:
-	for id: String in [
+	var ids: Array = [
 		"wpn_mg_fire", "wpn_shotgun_fire", "wpn_laser_fire", "wpn_railgun_fire",
-		"wpn_flamer_ignite", "wpn_reload_done", "wpn_empty",
+		"wpn_flamer_ignite", "wpn_empty",
 		"hit_metal", "hit_chitin", "hit_spit", "explosion",
 		"step_biped", "step_quad", "mech_hurt", "shield_hit",
 		"bug_ling_appear", "bug_ling_windup", "bug_ling_attack", "bug_ling_hurt", "bug_ling_death",
 		"bug_spitter_appear", "bug_spitter_windup", "bug_spitter_attack", "bug_spitter_hurt", "bug_spitter_death",
 		"bug_beetle_appear", "bug_beetle_windup", "bug_beetle_attack", "bug_beetle_hurt", "bug_beetle_death",
-	]:
+	]
+	for w in GameData.AMMO:
+		var am: Dictionary = GameData.AMMO[w]
+		var sfx_id := str(am.get("sfx", ""))
+		if sfx_id != "" and not ids.has(sfx_id):
+			ids.append(sfx_id)
+		if bool(am.get("fire_loop", false)):
+			for extra in ["wpn_%s_ignite" % w, "wpn_%s_loop" % w]:
+				if not ids.has(extra):
+					ids.append(extra)
+	var seen_bug_sfx := {"ling": true, "spitter": true, "beetle": true}
+	if is_inside_tree():
+		for b in get_tree().get_nodes_in_group("bugs"):
+			if not is_instance_valid(b):
+				continue
+			var bs: String = str(b.get("sfx"))
+			if bs == "" or seen_bug_sfx.has(bs):
+				continue
+			seen_bug_sfx[bs] = true
+			for act_k in ["appear", "windup", "attack", "hurt", "death"]:
+				ids.append("bug_%s_%s" % [bs, act_k])
+	for id: String in ids:
 		_resolve(id)
 
 
@@ -327,6 +348,10 @@ func stop_all_loops() -> void:
 ## 进程结束时仍按引用算作「资源还在占用」，引擎会报 resources still in use at exit。
 func stop_all() -> void:
 	stop_all_loops()
+	for i in _deck_tw.size():
+		if _deck_tw[i]:
+			_deck_tw[i].kill()
+			_deck_tw[i] = null
 	if _voice:
 		_voice.stop()
 		_voice.stream = null

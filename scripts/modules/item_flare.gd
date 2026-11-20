@@ -4,6 +4,7 @@ extends RefCounted
 
 const A = preload("res://scripts/art.gd")
 const FX = preload("res://scripts/modules/weapon_fx.gd")
+const MM = preload("res://scripts/modules/munition_models.gd")
 
 const SMOKE := Color(1.0, 0.62, 0.24)
 
@@ -25,7 +26,13 @@ static func use(mech, _id) -> bool:
 	var before := float(zone.need)
 	zone.need = maxf(1.5, before * 0.55)
 	var tree: SceneTree = raid.get_tree()
-	var e = A.emitter(zone, Vector3(0, 0.4, 0), {"amount": 42, "life": 2.6, "size": 2.4, "tex": A.smoke_tex(), "additive": false, "dir": Vector3.UP, "spread": 22.0,
+	# 落地实体：斜躺的金属信号弹罐（排烟口即烟柱源头）
+	var can_root := Node3D.new()
+	zone.add_child(can_root)
+	can_root.position = Vector3(0.6, 0, 0.4)
+	can_root.rotation_degrees.y = randf() * 360.0
+	var vent: Vector3 = can_root.transform * MM.build_flare_canister(can_root, SMOKE)
+	var e = A.emitter(zone, vent + Vector3(0, 0.15, 0), {"amount": 42, "life": 2.6, "size": 2.4, "tex": A.smoke_tex(), "additive": false, "dir": Vector3.UP, "spread": 22.0,
 		"vmin": 2.2, "vmax": 4.5, "gravity": Vector3(0, 0.6, 0), "box": Vector3(0.6, 0.1, 0.6),
 		"c0": Color(SMOKE.r, SMOKE.g, SMOKE.b, 0.75), "c1": Color(0.8, 0.45, 0.2, 0.0), "grow0": 0.4, "grow1": 2.4})
 	FX.light(raid, zone.global_position + Vector3(0, 1.2, 0), SMOKE, 3.5, 9.0, 0.6)

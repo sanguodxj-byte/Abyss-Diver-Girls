@@ -5,6 +5,7 @@ extends Node3D
 const A = preload("res://scripts/art.gd")
 const FX = preload("res://scripts/modules/weapon_fx.gd")
 const Status = preload("res://scripts/modules/status.gd")
+const DM = preload("res://scripts/modules/device_models.gd")
 
 const FIELD := Color(0.45, 0.95, 0.8)
 
@@ -29,10 +30,20 @@ func _ready() -> void:
 	for i in 4:
 		var a := TAU * i / 4.0 + PI * 0.25
 		var p := Vector3(cos(a) * radius * 0.82, 0.0, sin(a) * radius * 0.82)
-		A.add(self, A.bevel_box(Vector3(0.14, 1.42, 0.14), 0.02), A.metal(Color(0.20, 0.22, 0.22)), p + Vector3(0, 0.71, 0))
-		A.add(self, A.bevel_box(Vector3(0.22, 0.16, 0.22), 0.02), A.metal(Color(0.14, 0.15, 0.16)), p + Vector3(0, 1.48, 0))
-		A.add(self, A.bevel_box(Vector3(0.08, 0.18, 0.08), 0.01), A.emit(FIELD.darkened(0.15), 1.6), p + Vector3(0, 1.56, 0), Vector3.ZERO, Vector3.ONE, false)
+		# 重工野战力场桩（三脚锚爪 + 配电箱 + 圆盘散热器 + 电磁线圈 + 护笼频闪头）
+		var post := Node3D.new()
+		post.position = p
+		post.rotation.y = -a + PI * 0.5
+		add_child(post)
+		DM.build_barrier_post(post, FIELD)
 		_posts.append(p)
+	# 柱间微弧力场幕（≥32 段平滑弧带，底亮顶羽化）
+	var cm := DM.curtain_mat(FIELD)
+	for i in 4:
+		var pa: Vector3 = _posts[i]
+		var pb: Vector3 = _posts[(i + 1) % 4]
+		var mi := A.add(self, DM.field_curtain(pa, pb, Vector3.ZERO, 0.14, 1.62, radius * 0.16, Color(FIELD.r, FIELD.g, FIELD.b, 0.75), 40), cm, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	A.add(self, A.quad(radius * 2.04, radius * 2.04), A.extract_pad_mat(Color(FIELD.r * 0.85, FIELD.g * 0.85, FIELD.b * 0.85, 0.48), 0.44, 3), Vector3(0, 0.126, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.emitter(self, Vector3(0, 0.25, 0), {"tex": A.smoke_tex(), "additive": false, "soft_depth": 0.45, "amount": 14, "life": 1.8, "size": 0.65,
 		"spread": 180.0, "vmin": 0.25, "vmax": 0.85, "gravity": Vector3(0, 0.35, 0),

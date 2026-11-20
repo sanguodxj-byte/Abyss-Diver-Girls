@@ -156,7 +156,7 @@ static func _central_terminus(raid, p: Vector3, rot: float) -> void:
 		for cz_p: float in [-1.42, 1.42]:
 			A.add(n, A.bevel_box(Vector3(0.48, 7.4, 0.48), 0.03), M_CON, Vector3(cx_p, 13.2, -12.0 + cz_p))
 	A.add(n, A.bevel_box(Vector3(5.6, 0.55, 3.6), 0.05), M_CON, Vector3(0, 17.0, -12.0))
-	A.add(n, A.cyl(0.35, 2.6, 2.5, 4), A.roof_mat(Color(0.24, 0.27, 0.29), 0.48, true), Vector3(0, 18.5, -12.0), Vector3(0, 45, 0))
+	A.add(n, A.cyl(0.35, 2.6, 2.5, 4, true), A.roof_mat(Color(0.24, 0.27, 0.29), 0.48, true), Vector3(0, 18.5, -12.0), Vector3(0, 45, 0))
 	# 四面工业车站大钟面与钢指针
 	for cz_s: float in [-1.66, 1.66]:
 		A.add(n, A.cyl(1.28, 0.10, 1.28, 24), A.concrete(Color(0.76, 0.74, 0.68), false), Vector3(0, 14.2, -12.0 + cz_s), Vector3(90, 0, 0), Vector3.ONE, false)
@@ -505,7 +505,7 @@ static func _geothermal_vault(raid, p: Vector3, rot: float) -> void:
 			vc + Vector3(sx * 5.8, 14.2, 1.8),
 			tc + Vector3(0, 11.8, 0),
 		]
-		A.add(n, A.tube(pipe_pts, 0.48, 12, 4), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.pipe(pipe_pts, 0.48, 12, 4), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 		A.add(n, A.torus(0.52, 0.68, 14), M_COP, vc + Vector3(sx * 4.2, 13.6, 1.3), Vector3(0, 0, sx * 72.0), Vector3.ONE, false)
 
 

@@ -60,7 +60,7 @@ static func _bone() -> StandardMaterial3D:
 	return BugBase._vmat_solid(BONE)
 
 
-static func _tube(h, parent: Node3D, pts: Array, radii: Array, m, rx := 1.0, ry := 1.0, up := Vector3.UP, steps := 5, rad := 10, hard := true) -> MeshInstance3D:
+static func _tube(h, parent: Node3D, pts: Array, radii: Array, m, rx := 1.0, ry := 1.0, up := Vector3.UP, steps := 8, rad := 18, hard := true) -> MeshInstance3D:
 	var c0 := C_CH
 	var c1 := BONE
 	if m is Material and m.has_meta("_vc_tint"):
@@ -99,16 +99,16 @@ static func _shard(h, parent: Node3D, base: Vector3, dir: Vector3, length: float
 	var z := x.cross(y)
 	var b_xform := Basis(x, y, z)
 	var core_r := r * 0.68
-	var mi: MeshInstance3D = h._p(parent, ART.cyl(core_r * 0.42, length * 0.92, core_r, 6), _mineral_glow(c, minf(glow, 0.58)), Vector3.ZERO, Vector3.ZERO)
+	var mi: MeshInstance3D = h._p(parent, ART.cyl(core_r * 0.42, length * 0.92, core_r, 6, true), _mineral_glow(c, minf(glow, 0.58)), Vector3.ZERO, Vector3.ZERO)
 	mi.transform = Transform3D(b_xform, base + d * (length * 0.48))
 	mi.set_meta("base_scale", Vector3.ONE)
 	# 下半段重钢绝缘护套 + 黄铜锁紧压环 + 顶部镀铬电极端头
 	var sl_len := length * 0.56
-	var col_mi: MeshInstance3D = h._p(parent, ART.cyl(r * 0.94, sl_len, r * 1.24, 6), h._vmat_solid(Color(0.16, 0.17, 0.19)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var col_mi: MeshInstance3D = h._p(parent, ART.cyl(r * 0.94, sl_len, r * 1.24, 6, true), h._vmat_solid(Color(0.16, 0.17, 0.19)), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	col_mi.transform = Transform3D(b_xform, base + d * (sl_len * 0.5))
-	var ring_mi: MeshInstance3D = h._p(parent, ART.cyl(r * 1.04, r * 0.18, r * 1.08, 6), h._brass(), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var ring_mi: MeshInstance3D = h._p(parent, ART.cyl(r * 1.04, r * 0.18, r * 1.08, 6, true), h._brass(), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	ring_mi.transform = Transform3D(b_xform, base + d * (sl_len + r * 0.06))
-	var tip_mi: MeshInstance3D = h._p(parent, ART.cyl(core_r * 0.14, length * 0.14, core_r * 0.48, 6), h._chrome(), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var tip_mi: MeshInstance3D = h._p(parent, ART.cyl(core_r * 0.14, length * 0.14, core_r * 0.48, 6, true), h._chrome(), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	tip_mi.transform = Transform3D(b_xform, base + d * (length * 0.95))
 	return mi
 

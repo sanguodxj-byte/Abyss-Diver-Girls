@@ -46,6 +46,14 @@ var flash_t := 0.0
 var _hit_meshes: Array = []
 var _hit_meshes_ready := false
 var _hit_flash_q := 0
+var _occ_fade := 0.0
+var _occ_meshes: Array = []
+var _occ_shader_mats: Array = []
+var _occ_emit_mats: Array = []
+var _occ_mob_mats: Array = []      ## 移动端（Forward Mobile 不支持 GeometryInstance3D.transparency）材质级透明虚化缓存
+var _occ_meshes_ready := false
+static var _bug_occ_exempt_mats := {}
+static var _occ_use_mat_alpha := -1
 var _cached_bar_y := -1.0
 const FLASH_DUR := 0.13
 static var _dead_eye_mat: StandardMaterial3D
@@ -65,6 +73,9 @@ var sfx := ""
 var _last_state := "idle"
 var anim_t := 0.0
 var strafe := 1.0
+var _body_node: Node3D
+var _leg_anim: Array = []
+var _leg_anim_cnt := -1
 
 
 func setup(k: String, r, tgt) -> void:
@@ -76,6 +87,8 @@ func setup(k: String, r, tgt) -> void:
 	raid = r
 	target = tgt
 	add_to_group("bugs")
+	if bool(data.get("boss", false)) or float(data.get("scale", 1.0)) >= 1.45:
+		add_to_group("occ_fade_bugs")
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4 | 16 | 32   # 16 流浪者机甲 / 32 战斗队友机甲
 	# 8 = 河湖护堤 / 湖面：地面虫子也过不了水（飞行种照飞）
@@ -90,6 +103,8 @@ func setup(k: String, r, tgt) -> void:
 	add_child(cs)
 	strafe = 1.0 if randf() < 0.5 else -1.0
 	anim_t = randf() * 10.0
+	_lod_acc = randf() * 0.5
+	_perc_t = randf()
 	_build_visual()
 	# 静态零件按材质合批：一只虫近百个网格压到十几个，动画部件（腿/颚/镰/翼等）保持独立
 	_batch_static()
@@ -105,12 +120,170 @@ func setup(k: String, r, tgt) -> void:
 		var big := float(data.get("scale", 1.0)) >= 2.0
 		mob_vis_end = 135.0 if big else (74.0 if GameData.quality == 0 else 92.0)
 	for mi in parts:
-		if is_instance_valid(mi):
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if mob_vis_end > 0.0 and not (mi.mesh is PlaneMesh):
-				mi.visibility_range_end = mob_vis_end
-				mi.visibility_range_end_margin = 5.0
+		if is_instance_valid(mi) and mi is MeshInstance3D:
+			var mi3: MeshInstance3D = mi as MeshInstance3D
+			mi3.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var mo: Material = mi3.material_override
+			if mo is ShaderMaterial:
+				var sm := mo as ShaderMaterial
+				if sm.shader != null and sm.shader.resource_path.contains("mech_paint"):
+					var mid := sm.get_instance_id()
+					var ex_m: ShaderMaterial = _bug_occ_exempt_mats.get(mid)
+					if ex_m == null:
+						ex_m = sm.duplicate() as ShaderMaterial
+						ex_m.set_shader_parameter("occ_exempt", 1.0)
+						_bug_occ_exempt_mats[mid] = ex_m
+					mi3.material_override = ex_m
+			if mob_vis_end > 0.0 and not (mi3.mesh is PlaneMesh):
+				mi3.visibility_range_end = mob_vis_end
+				mi3.visibility_range_end_margin = 5.0
 	_anchor_visual()
+
+
+## 遮挡玩家机甲时由 raid.gd 平滑驱动的大型敌人虚化透明度（strength 0..1）
+## Forward+ 使用原生 GeometryInstance3D.transparency；Forward Mobile / Compatibility 自动回退到材质级 TRANSPARENCY_ALPHA，
+## 并在多舱段超巨型首领（六足要塞/浮空母舰）上按视线距离梯度加深中心穿透（外缘 0.62 → 核心 0.91），同步衰减自发光核心。
+func set_occ_fade(strength: float, cam_p := Vector3.ZERO, mech_c := Vector3.ZERO) -> void:
+	var clamped := clampf(strength, 0.0, 1.0)
+	var is_giant := has_meta("modular_glb") or float(data.get("scale", 1.0)) >= 3.5
+	if not is_giant and absf(clamped - _occ_fade) < 0.004 and not (clamped == 0.0 and _occ_fade > 0.0):
+		return
+	if clamped == 0.0 and _occ_fade == 0.0:
+		return
+	_occ_fade = clamped
+	if _occ_use_mat_alpha < 0:
+		_occ_use_mat_alpha = 0 if RenderingServer.get_current_rendering_method() == "forward_plus" else 1
+	var use_mat_alpha := (_occ_use_mat_alpha == 1)
+
+	if not _occ_meshes_ready:
+		_occ_meshes_ready = true
+		_occ_meshes.clear()
+		_occ_shader_mats.clear()
+		_occ_emit_mats.clear()
+		_occ_mob_mats.clear()
+		var local_sm_map := {}
+		var local_em_map := {}
+		var local_mob_map := {}
+		if visual != null and is_instance_valid(visual):
+			for n in visual.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				if mi == null or mi.mesh == null or (mi.mesh is PlaneMesh):
+					continue
+				var mo: Material = mi.material_override
+				if mo is ShaderMaterial:
+					var sm := mo as ShaderMaterial
+					if sm.shader != null and (sm.shader.resource_path.contains("mech_paint") or sm.shader.resource_path.contains("bug_chitin")):
+						var sid := sm.get_instance_id()
+						var dup_sm: ShaderMaterial = local_sm_map.get(sid)
+						if dup_sm == null:
+							dup_sm = sm.duplicate() as ShaderMaterial
+							if sm.shader.resource_path.contains("mech_paint"):
+								dup_sm.set_shader_parameter("occ_exempt", 1.0)
+							local_sm_map[sid] = dup_sm
+							_occ_shader_mats.append(dup_sm)
+						mi.material_override = dup_sm
+				elif use_mat_alpha:
+					if mo is BaseMaterial3D:
+						var bm := mo as BaseMaterial3D
+						var dup_bm: BaseMaterial3D
+						if is_giant:
+							dup_bm = bm.duplicate() as BaseMaterial3D
+						else:
+							var bid := bm.get_instance_id()
+							dup_bm = local_mob_map.get(bid)
+							if dup_bm == null:
+								dup_bm = bm.duplicate() as BaseMaterial3D
+								local_mob_map[bid] = dup_bm
+						mi.material_override = dup_bm
+						_occ_mob_mats.append([mi, dup_bm, bm.albedo_color.a, bm.transparency, bm.emission_enabled, bm.emission_energy_multiplier])
+					elif mo == null:
+						for si in mi.mesh.get_surface_count():
+							var smat: Material = mi.get_active_material(si)
+							if smat is BaseMaterial3D:
+								var bm2 := smat as BaseMaterial3D
+								var dup_bm2: BaseMaterial3D
+								if is_giant:
+									dup_bm2 = bm2.duplicate() as BaseMaterial3D
+								else:
+									var bid2 := bm2.get_instance_id()
+									dup_bm2 = local_mob_map.get(bid2)
+									if dup_bm2 == null:
+										dup_bm2 = bm2.duplicate() as BaseMaterial3D
+										local_mob_map[bid2] = dup_bm2
+								mi.set_surface_override_material(si, dup_bm2)
+								_occ_mob_mats.append([mi, dup_bm2, bm2.albedo_color.a, bm2.transparency, bm2.emission_enabled, bm2.emission_energy_multiplier])
+				elif mo is StandardMaterial3D and (mo as StandardMaterial3D).emission_enabled:
+					var std := mo as StandardMaterial3D
+					var eid := std.get_instance_id()
+					var dup_em: StandardMaterial3D = local_em_map.get(eid)
+					if dup_em == null:
+						dup_em = std.duplicate() as StandardMaterial3D
+						local_em_map[eid] = dup_em
+						_occ_emit_mats.append([dup_em, std.emission_energy_multiplier])
+					mi.material_override = dup_em
+				_occ_meshes.append(mi)
+
+	var has_ray := is_giant and clamped > 0.005 and cam_p != mech_c
+	var sight_dir := (mech_c - cam_p).normalized() if has_ray else Vector3.ZERO
+	var sight_len := cam_p.distance_to(mech_c) if has_ray else 1.0
+	var base_tr := clamped * (0.90 if is_giant else 0.76)
+
+	if use_mat_alpha:
+		var applied := {}
+		for rec in _occ_mob_mats:
+			var mi: MeshInstance3D = rec[0]
+			var bm: BaseMaterial3D = rec[1]
+			if not is_instance_valid(mi) or not is_instance_valid(bm):
+				continue
+			var bmid := bm.get_instance_id()
+			if not is_giant and applied.has(bmid):
+				continue
+			applied[bmid] = true
+			var tr := base_tr
+			if has_ray:
+				var mp_w := mi.global_position
+				var s_p := clampf((mp_w - cam_p).dot(sight_dir), 0.0, sight_len)
+				var d_p := (cam_p + sight_dir * s_p).distance_to(mp_w)
+				var k := 1.0 - smoothstep(4.5, 11.5, d_p)
+				tr = clamped * lerpf(0.62, 0.91, k)
+			var orig_a: float = float(rec[2])
+			var orig_t: int = int(rec[3])
+			var c := bm.albedo_color
+			if tr <= 0.004:
+				c.a = orig_a
+				bm.albedo_color = c
+				bm.transparency = orig_t as BaseMaterial3D.Transparency
+				if bool(rec[4]):
+					bm.emission_energy_multiplier = float(rec[5])
+			else:
+				c.a = orig_a * (1.0 - tr)
+				bm.albedo_color = c
+				bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				if bool(rec[4]):
+					bm.emission_energy_multiplier = float(rec[5]) * pow(maxf(1.0 - tr, 0.0), 2.2)
+	else:
+		for mi in _occ_meshes:
+			if not is_instance_valid(mi):
+				continue
+			var tr := base_tr
+			if has_ray:
+				var mp_w := (mi as MeshInstance3D).global_position
+				var s_p := clampf((mp_w - cam_p).dot(sight_dir), 0.0, sight_len)
+				var d_p := (cam_p + sight_dir * s_p).distance_to(mp_w)
+				var k := 1.0 - smoothstep(4.5, 11.5, d_p)
+				tr = clamped * lerpf(0.62, 0.91, k)
+			(mi as MeshInstance3D).transparency = tr
+		var em_scale := pow(maxf(1.0 - base_tr, 0.0), 2.2)
+		for rec in _occ_emit_mats:
+			var em_m: StandardMaterial3D = rec[0]
+			if is_instance_valid(em_m):
+				em_m.emission_energy_multiplier = float(rec[1]) * em_scale
+
+	# 对自定义不透明 ShaderMaterial 补足一致的溶解穿透，避免与 StandardMaterial3D 脱节
+	var sm_fade := clamped * (0.86 if is_giant else 0.74)
+	for sm in _occ_shader_mats:
+		if is_instance_valid(sm):
+			sm.set_shader_parameter("occ_self_fade", sm_fade)
 
 
 ## 两点之间放一段锥形肢节（圆柱 UV：v 沿长度，贴图的关节环/刚毛会顺着肢节走）
@@ -361,8 +534,8 @@ static func _ball() -> SphereMesh:
 	var s := SphereMesh.new()
 	s.radius = 0.5
 	s.height = 1.0
-	s.rings = 9
-	s.radial_segments = 16
+	s.rings = 14
+	s.radial_segments = 28
 	_sm["ball"] = s
 	return s
 
@@ -515,7 +688,11 @@ static func _cr(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: float) ->
 ## 扫掠体：沿控制点（Catmull-Rom 平滑）扫出椭圆截面管，半径逐点插值，末端可收成尖。
 ## rx = 侧向（tangent×up）缩放，ry = 法向缩放；c0→c1 顶点色沿长度渐变（甲壳→骨白）。
 ## 这是所有刃、刺、腿、甲带、蛇颈的共同基元。
-func _sweep(parent: Node3D, pts: Array, radii: Array, c0: Color, c1: Color, rx := 1.0, ry := 1.0, up := Vector3.UP, steps := 6, rad := 10, m: Material = null, grad_start := 0.45, hard := false) -> MeshInstance3D:
+func _sweep(parent: Node3D, pts: Array, radii: Array, c0: Color, c1: Color, rx := 1.0, ry := 1.0, up := Vector3.UP, steps := 8, rad := 18, m: Material = null, grad_start := 0.45, hard := false) -> MeshInstance3D:
+	# 低面数红线：有机扫掠截面 ≥18（移动 ≥14），路径插值 ≥8（移动 ≥6）
+	var _mob := A.is_mobile_perf()
+	rad = maxi(rad, 14 if _mob else 18)
+	steps = maxi(steps, 6 if _mob else 8)
 	var key := "sw%s|%s|%s|%s|%.3f|%.3f|%s|%d|%d|%.3f|%d" % [str(pts), str(radii), c0.to_html(), c1.to_html(), rx, ry, str(up), steps, rad, grad_start, 1 if hard else 0]
 	var smesh: ArrayMesh = _sm.get(key)
 	if smesh == null:
@@ -1566,7 +1743,8 @@ func _sleep() -> void:
 	_sleep_frame = Engine.get_physics_frames()
 	set_physics_process(false)
 	var pd := get_physics_process_delta_time()
-	get_tree().create_timer(pd * SLEEP_TICKS, false, true).timeout.connect(_wake)
+	var ticks := SLEEP_TICKS + randi_range(-3, 3)
+	get_tree().create_timer(pd * ticks, false, true).timeout.connect(_wake)
 
 
 ## 叫醒：恢复物理回调，睡过的物理帧（不含醒来这一帧，它会照常传 delta 进来）补进 LOD 累计时间
@@ -2119,6 +2297,22 @@ func _animate(delta: float, mv: float) -> void:
 	Prof.add("bug.anim", _pt)
 
 
+func _rebuild_leg_anim() -> void:
+	_leg_anim_cnt = legs.size()
+	_leg_anim.clear()
+	for hip in legs:
+		if not is_instance_valid(hip):
+			continue
+		var kj: Node3D = hip.get_meta("knee") if hip.has_meta("knee") else null
+		_leg_anim.append([
+			hip,
+			float(hip.get_meta("phase", 0.0)),
+			float(hip.get_meta("side", 1.0)),
+			float(hip.get_meta("base_y", hip.rotation.y)),
+			kj if is_instance_valid(kj) else null,
+		])
+
+
 func _animate_impl(delta: float, mv: float) -> void:
 	move_amt = move_toward(move_amt, clampf(mv, 0.0, 1.0), delta * 6.0)
 	var cad: float = 14.0 if beh == "ling" else (9.0 if beh == "spitter" else 6.5)
@@ -2127,12 +2321,15 @@ func _animate_impl(delta: float, mv: float) -> void:
 	var swing := 0.42 if beh != "beetle" else 0.4
 	var liftk := 0.45 if beh == "ling" else (0.32 if beh == "spitter" else 0.32)
 	var k := clampf(16.0 * delta, 0.0, 1.0)
-	for hip in legs:
-		var ph: float = anim_t * cad + float(hip.get_meta("phase", 0.0))
-		var side: float = float(hip.get_meta("side", 1.0))
+	if _leg_anim_cnt != legs.size():
+		_rebuild_leg_anim()
+	for la in _leg_anim:
+		var hip: Node3D = la[0]
+		var ph: float = anim_t * cad + float(la[1])
+		var side: float = float(la[2])
 		var s_ph := sin(ph)
 		var c_ph := cos(ph)
-		var sy := float(hip.get_meta("base_y", hip.rotation.y)) - s_ph * swing * amt * side
+		var sy := float(la[3]) - s_ph * swing * amt * side
 		var lz := (pow(c_ph, 0.82) * liftk if c_ph > 0.0 else c_ph * 0.08) * amt * side
 		var kz := ((-0.48 * c_ph + 0.28 * s_ph * c_ph) * liftk if c_ph > 0.0 else -c_ph * 0.15) * amt * side
 		if act == "wind":
@@ -2144,12 +2341,15 @@ func _animate_impl(delta: float, mv: float) -> void:
 		hip.rotation.y = lerp_angle(hip.rotation.y, sy, k)
 		hip.rotation.x = 0.0
 		hip.rotation.z = lerp(hip.rotation.z, lz, k)
-		if hip.has_meta("knee"):
-			var kj: Node3D = hip.get_meta("knee")
-			if is_instance_valid(kj):
-				kj.rotation.z = lerp(kj.rotation.z, kz, k)
-				kj.rotation.x = lerp(kj.rotation.x, c_ph * 0.14 * amt, k)
-	var body: Node3D = visual.get_node("Body")
+		var kj: Node3D = la[4]
+		if kj != null:
+			kj.rotation.z = lerp(kj.rotation.z, kz, k)
+			kj.rotation.x = lerp(kj.rotation.x, c_ph * 0.14 * amt, k)
+	if _body_node == null or not is_instance_valid(_body_node):
+		_body_node = visual.get_node_or_null("Body")
+	var body: Node3D = _body_node
+	if body == null:
+		return
 	# 受击后仰（弹簧）
 	hit_v += (-hit_tilt * 160.0 - hit_v * 13.0) * delta
 	hit_tilt += hit_v * delta
@@ -2332,17 +2532,27 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 	var dmg := amount * (1.0 - eff_arm) if ap > 0.0 else amount
 	var prev_hp := hp
 	hp -= dmg
+	var damage_t := Prof.t0()
 	if raid != null and raid.hud != null and raid.hud.has_method("notify_enemy_hit") and not bool(data.get("boss", false)):
 		raid.hud.notify_enemy_hit(self, prev_hp, hp, float(data.get("hp", 30.0)))
+	Prof.add("damage.bar", damage_t)
+	damage_t = Prof.t0()
 	_aggro_on_hit()
+	Prof.add("damage.aggro", damage_t)
+	damage_t = Prof.t0()
 	flash_t = FLASH_DUR
 	_update_flash()
+	Prof.add("damage.flash", damage_t)
 	# 受击倾斜冲击：按来弹方位沿受击侧倾仰
 	var push := clampf(amount / float(data.hp) * 6.0, 0.15, 1.0) / float(data.scale)
 	_apply_hit_jolt(from, push)
 	if hp <= 0.0:
+		damage_t = Prof.t0()
 		raid.on_bug_killed(self)
+		Prof.add("damage.kill_event", damage_t)
+		damage_t = Prof.t0()
 		_die()
+		Prof.add("damage.die", damage_t)
 
 
 ## 死亡：移出战斗、残骸塌落（腿外撇、机身砸地侧翻）、冒火花与黑烟，数秒后沉入地面

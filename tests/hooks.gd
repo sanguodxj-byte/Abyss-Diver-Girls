@@ -8,7 +8,7 @@ const FIX := "res://tests/lib/hook_fixture.gd"
 func run() -> void:
 	await wait(0.3)
 	GameData.RAID_SCRIPTS.append(FIX)
-	GameData.AMMO["zz_gun"] = {"mag": 4, "reload": 1.0, "tex": "ammo_mg", "script": FIX}
+	GameData.AMMO["zz_gun"] = {"mode": "energy", "cost": 0.1, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "script": FIX}
 	var arm: Dictionary = GameData.MODULES["arm_mg"].duplicate()
 	arm["name"] = "zz_gun"
 	arm["weapon"] = "zz_gun"

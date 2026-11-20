@@ -21,6 +21,9 @@ uniform float roof_uv = 0.0;                            // 1 = 朝上斜面按 (
 global uniform float mech_damage;
 global uniform float weather_wet;
 global uniform float weather_rain;
+#include "res://shaders/occ_fade.gdshaderinc"
+uniform float occ_exempt = 0.0;
+uniform float occ_self_fade = 0.0;
 uniform vec4 bare_metal : source_color = vec4(0.66, 0.67, 0.69, 1.0);
 uniform vec4 dust_color : source_color = vec4(0.48, 0.43, 0.36, 1.0);
 uniform vec4 rust_color : source_color = vec4(0.32, 0.16, 0.08, 1.0);
@@ -121,6 +124,26 @@ vec2 rain_ripple(vec2 p, float t) {
 }
 
 void fragment() {
+	float occ_fade = 0.0;
+	if (occ_self_fade > 0.005) {
+		highp vec3 dc_s = INV_VIEW_MATRIX[3].xyz - occ_cam_pos;
+		if (dot(dc_s, dc_s) <= 0.25) {
+			occ_fade = clamp(occ_self_fade, 0.0, 0.92);
+			if (occ_ign(FRAGCOORD.xy) < occ_fade) {
+				discard;
+			}
+		}
+	} else if (occ_exempt < 0.5) {
+		if (occ_clip_whole_bldg(wpos, INV_VIEW_MATRIX[3].xyz)) {
+			discard;
+		}
+		if (occ_params.x > 0.005) {
+			occ_fade = occ_calc_fade(wpos, INV_VIEW_MATRIX[3].xyz, occ_params.x, 0.40);
+			if (occ_fade > 0.005 && occ_ign(FRAGCOORD.xy) < clamp(occ_fade * 1.06, 0.0, 1.0)) {
+				discard;
+			}
+		}
+	}
 	vec3 n_loc = normalize(lnrm);
 	vec3 w = tri_w(n_loc);
 	vec3 p = lpos * detail_scale;
@@ -365,4 +388,10 @@ void fragment() {
 	float wet_coat = max(puddle * 0.46, max(soak * 0.20, surf_wet * mix(0.05, 0.11, metal_wear)));
 	CLEARCOAT = max(dry_coat, wet_coat);
 	CLEARCOAT_ROUGHNESS = mix(clamp(0.34 + min(1.5 * var_n, 0.28), 0.24, 1.0), mix(0.24, 0.12, puddle), clamp(puddle * 1.25 + soak * 0.45, 0.0, 1.0));
+	if (occ_fade > 0.01) {
+		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
+		ROUGHNESS = mix(ROUGHNESS, 0.96, occ_fade * 0.65);
+		SPECULAR *= 1.0 - occ_fade * 0.72;
+		CLEARCOAT *= 1.0 - occ_fade * 0.85;
+	}
 }

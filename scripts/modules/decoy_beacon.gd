@@ -5,6 +5,7 @@ extends Node3D
 
 const A = preload("res://scripts/art.gd")
 const FX = preload("res://scripts/modules/weapon_fx.gd")
+const DM = preload("res://scripts/modules/device_models.gd")
 
 const LURE := Color(1.0, 0.72, 0.22)
 
@@ -26,15 +27,9 @@ func setup(r) -> void:
 
 func _ready() -> void:
 	add_to_group("decoy")
-	# 三脚架 + 喇叭口 + 天线 + 闪灯
-	var m := A.metal(Color(0.24, 0.25, 0.27))
-	for i in 3:
-		var a := TAU * i / 3.0
-		A.add(self, A.bevel_box(Vector3(0.07, 0.8, 0.07), 0.02), m, Vector3(cos(a) * 0.26, 0.4, sin(a) * 0.26), Vector3(sin(a) * 16.0, 0, -cos(a) * 16.0))
-	A.add(self, A.cyl(0.16, 0.24, 0.2, 14), m, Vector3(0, 0.86, 0))
-	A.add(self, A.cyl(0.34, 0.32, 0.1, 18), A.metal(Color(0.32, 0.33, 0.36)), Vector3(0, 1.12, 0), Vector3(0, 0, 0))
-	A.add(self, A.cyl(0.02, 0.6, 0.02, 6), m, Vector3(0.18, 1.5, 0))
-	_lamp = A.add(self, A.cyl(0.055, 0.11, 0.055, 10), A.emit(LURE, 2.6), Vector3(0.18, 1.82, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 战术声波诱饵台：液压三脚 + 主控机箱 + 多级扩音号角 + 鞭状天线 + 护笼频闪灯
+	var built: Dictionary = DM.build_decoy(self, LURE)
+	_lamp = built["lamp"]
 	A.add(self, A.quad(3.6, 3.6), A.extract_pad_mat(Color(LURE.r * 0.9, LURE.g * 0.9, LURE.b * 0.9, 0.52), 0.44, 3), Vector3(0, 0.118, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.emitter(self, Vector3(0, 1.15, 0), {"amount": 10, "life": 1.4, "size": 0.3, "spread": 60.0, "vmin": 0.4, "vmax": 1.2, "gravity": Vector3(0, 0.8, 0),
 		"c0": Color(1.0, 0.8, 0.3, 0.6), "c1": Color(0.6, 0.3, 0.0, 0.0), "grow0": 0.6, "grow1": 1.4})
