@@ -87,13 +87,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 		A.add(raid.world, A.bevel_box(Vector3(0.45, 0.32, 0.24), 0.06), A.paint(Color(0.3, 0.32, 0.36), 0.1, 0.9, {"wear": 0.5, "dust": 0.7}), p, Vector3(0, r.randf() * 180, 0))
 	for i in 3:
 		A.add(raid.world, A.sphere(0.16, -1, 10), A.paint(Color(0.5, 0.28, 0.14), 0.0, 0.8, {"wear": 0.5}), c + Vector3(r.randf_range(-8, 8), 0.16, r.randf_range(0, 6)), Vector3.ZERO, Vector3.ONE, false)
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(10.8, 0, 3.0), "safe")
-	K.crate(raid, c + Vector3(3.6, 0, 4.0), "supply")
-	K.crate(raid, c + Vector3(-9.6, 0, 4.0), "supply")
-	K.crate(raid, c + Vector3(-10.4, 0, -1.0), "tool")
-	K.crate(raid, c + Vector3(2.0, 0, 7.0), "tool")
-	K.fixed(raid, c + Vector3(-8.2, 0, 0.4), ["arch_child_drawing"], "tool")
+	# 容器与环境叙事（东翼教务保险柜 / 操场急救医疗箱 / 教室与体育馆疏散补给 / 维修工具箱）
+	K.crate(raid, c + Vector3(10.8, 0, 3.0), "safe", [], 90.0)
+	K.crate(raid, c + Vector3(3.6, 0, 4.0), "med", [], 180.0)
+	K.crate(raid, c + Vector3(-9.6, 0, 4.0), "supply", [], -90.0)
+	K.crate(raid, c + Vector3(-10.4, 0, -1.0), "tool", [], -90.0)
+	K.crate(raid, c + Vector3(2.0, 0, 7.0), "supply", [], 0.0)
+	K.fixed(raid, c + Vector3(-8.2, 0, 0.4), ["arch_child_drawing"], "supply", -90.0)
 	K.lamp(raid, c + Vector3(-13.0, 0, 8.4), Color(1.0, 0.8, 0.5))
 	K.lamp(raid, c + Vector3(12.0, 0, -5.0), Color(0.7, 0.85, 1.0))
 	K.rubble(raid, c + Vector3(4.0, 0, -5.6), 1.5)

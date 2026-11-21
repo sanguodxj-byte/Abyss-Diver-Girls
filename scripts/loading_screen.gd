@@ -320,7 +320,7 @@ func step(ratio: float, text: String) -> void:
 	_process(0.016)
 	if is_inside_tree():
 		await get_tree().process_frame
-		if DisplayServer.get_name() != "headless":
+		if is_inside_tree() and DisplayServer.get_name() != "headless":
 			await RenderingServer.frame_post_draw
 
 
@@ -328,6 +328,7 @@ func step(ratio: float, text: String) -> void:
 func play_close(dur := 0.34) -> void:
 	Audio.play_sfx("drop_retro")
 	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.tween_property(self, "shutter_close", 1.0, dur * 0.75).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(bg_rect, "color:a", 0.96, dur * 0.7)
 	tw.tween_property(body_panel, "modulate:a", 1.0, dur * 0.45).set_trans(Tween.TRANS_SINE)
@@ -339,13 +340,40 @@ func play_close(dur := 0.34) -> void:
 ## 阶段三：100% 就绪后收起面板、拉开装甲舱门并销毁加载层
 func play_open(dur := 0.55) -> void:
 	await step(1.0, Loc.t("机甲火控与战术系统自检完成 · 舱门解锁投放！", "Fire-control & tactical systems online — unlocking drop doors!"))
+	if root != null and is_instance_valid(root):
+		root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.tween_interval(0.12)
 	tw.tween_property(body_panel, "modulate:a", 0.0, dur * 0.38).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(self, "shutter_close", 0.0, dur * 0.68).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	tw.parallel().tween_property(bg_rect, "color:a", 0.0, dur * 0.62)
 	await tw.finished
 	queue_free()
+
+
+## 由加载层自身（挂载在 parent 下）托管局内跨战区异步转场：
+## 防止旧 raid.queue_free() 连带释放旧 WorldLink，导致旧协程在 await start_async 后被引擎中止、加载画面永久卡死。
+func run_transit(parent: Node, old_raid: Node, new_raid: Node, to_map: String, lo_copy: Dictionary, cargo_copy: Array, state: Dictionary, keep_map: String) -> void:
+	if is_inside_tree():
+		get_tree().paused = false
+	Audio.stop_music(0.35)
+	await play_close(0.32)
+	if is_instance_valid(old_raid):
+		if old_raid.get_parent() != null:
+			old_raid.get_parent().remove_child(old_raid)
+		old_raid.queue_free()
+	GameData.map_id = to_map
+	if is_instance_valid(parent) and is_instance_valid(new_raid):
+		parent.add_child(new_raid)
+		if "raid" in parent:
+			parent.raid = new_raid
+		await new_raid.start_async(lo_copy, cargo_copy, state, self)
+		GameData.map_id = keep_map
+		Events.deployed.emit(new_raid.map_id, lo_copy)
+	else:
+		GameData.map_id = keep_map
+	await play_open(0.48)
 
 
 # ================================================================ 子画布：装甲舱门

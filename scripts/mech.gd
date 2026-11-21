@@ -66,7 +66,6 @@ var ammo := {"arm_l": 0, "arm_r": 0}
 var mag := {"arm_l": 0, "arm_r": 0}
 var reload_t := {"arm_l": 0.0, "arm_r": 0.0}
 ## 缺弹提示冷却，避免每次扣扳机都刷一条消息
-var _mag_warn_t := {"arm_l": 0.0, "arm_r": 0.0}
 ## 部位完好度 0~1（HUD 全息投影着色；0 = 部位缺失，失去对应功能）
 var parts := {"core": 1.0, "legs": 1.0, "arm_l": 1.0, "arm_r": 1.0, "back": 1.0, "gen": 1.0}
 const PART_W := {"core": 0.3, "legs": 0.24, "arm_l": 0.13, "arm_r": 0.13, "back": 0.1, "gen": 0.1}
@@ -99,7 +98,7 @@ var DASH_DUR := 0.6
 var _emerg_was := false
 var _alt_next := 0               ## 交替射击：0 = 优先左臂，1 = 优先右臂
 var _alt_stagger_t := 0.0        ## 双臂连射交替半周期节流
-var is_aiming := false           ## 右键瞄准态（拉远视角 / 开启狙击镜 / 收紧散布）
+var is_aiming := false           ## 右键远距观察 / 狙击镜 / 收紧散布 / 半速移动
 const PLAYER_RING_COLORS := [
 	Color(0.28, 0.88, 1.0, 0.62),
 	Color(0.45, 0.96, 0.42, 0.62),
@@ -125,9 +124,16 @@ func setup(lo: Dictionary, carry: Array, prebuilt_visual: Node3D = null) -> void
 	_last_drain = float(stats.drain)
 	cargo = carry.duplicate()
 	for slot in ["arm_l", "arm_r"]:
-		mag[slot] = 0
-		ammo[slot] = 0
-		reload_t[slot] = 0.0
+		var wid: String = lo.get(slot, "")
+		if wid != "":
+			var w := str(GameData.module(wid).get("weapon", "mg"))
+			if GameData.weapon_uses_ammo(w):
+				mag[slot] = int(GameData.AMMO.get(w, {}).get("mag", 30))
+				# 出发默认满装；装填只限制连续射击，不消耗货舱物品。
+				ammo[slot] = mag[slot]
+			else:
+				mag[slot] = 0
+				ammo[slot] = 0
 	_overloaded = GameData.speed_factor(stats, cargo_weight()) < 0.99
 	var legs_mod: Dictionary = GameData.module(loadout.get("legs", ""))
 	acid_immune = bool(legs_mod.get("acid_immune", false))
@@ -215,7 +221,7 @@ func speed_mult() -> float:
 	elif float(parts.legs) < 0.5:
 		# 底盘受损（完好度 < 50%）：液压管路渗漏导致渐进式减速
 		f *= lerpf(0.78, 1.0, float(parts.legs) / 0.5)
-	return f
+	return f * (0.5 if is_aiming else 1.0)
 
 
 ## 人机工效倍率（0.72 ~ 1.22）：由整机人机工效 stats.ergo 决定躯干回转跟手度与装填速度
@@ -315,9 +321,13 @@ func _physics_tick(delta: float) -> void:
 	stealth_t = max(0.0, stealth_t - delta)
 	overdrive_t = max(0.0, overdrive_t - delta)
 	for k in reload_t:
-		reload_t[k] = 0.0
-	for k in _mag_warn_t:
-		_mag_warn_t[k] = maxf(0.0, _mag_warn_t[k] - delta)
+		if reload_t[k] > 0.0:
+			reload_t[k] -= delta
+			if reload_t[k] <= 0.0:
+				reload_t[k] = 0.0
+				ammo[k] = mag[k]
+				reloaded.emit(k)
+				Audio.play_sfx("wpn_reload_done", global_position + Vector3(0, 2.0, 0))
 	for k in _fire_held:
 		if _fire_held[k] > 0.0:
 			_fire_held[k] -= delta
@@ -835,11 +845,13 @@ func can_spend(amount: float) -> bool:
 
 func _arm_ready(slot: String) -> bool:
 	var id: String = loadout.get(slot, "")
-	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0:
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0:
 		return false
 	var m: Dictionary = GameData.module(id)
+	var w := str(m.get("weapon", "mg"))
+	if GameData.weapon_uses_ammo(w) and ammo[slot] <= 0:
+		return false
 	return can_spend(GameData.shot_energy_cost(m))
-
 
 func _arm_active(slot: String) -> bool:
 	return str(loadout.get(slot, "")) != "" and float(parts.get(slot, 1.0)) > 0.0
@@ -851,6 +863,11 @@ func fire_alternating(force_click := false) -> void:
 		return
 	var primary := "arm_l" if _alt_next == 0 else "arm_r"
 	var secondary := "arm_r" if _alt_next == 0 else "arm_l"
+	# 主次槽位均空弹且未在装填时先触发装填（仅实弹武器有弹匣）
+	for sl in [primary, secondary]:
+		var mid := str(loadout.get(sl, ""))
+		if mid != "" and float(parts.get(sl, 1.0)) > 0.0 and GameData.weapon_uses_ammo(str(GameData.module(mid).get("weapon", "mg"))) and ammo[sl] <= 0 and reload_t[sl] <= 0.0:
+			start_reload(sl)
 	var chosen := ""
 	if _arm_ready(primary):
 		chosen = primary
@@ -868,15 +885,18 @@ func fire_alternating(force_click := false) -> void:
 	else:
 		_alt_stagger_t = 0.0
 
-
 func try_fire(slot: String) -> void:
 	var id: String = loadout.get(slot, "")
-	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0:
+	if id == "" or arm_cd[slot] > 0.0 or parts[slot] <= 0.0 or reload_t[slot] > 0.0:
 		return
 	if emergency > 0.0:
 		return
 	var m: Dictionary = GameData.module(id)
 	var w := str(m.get("weapon", "mg"))
+	var uses_ammo := GameData.weapon_uses_ammo(w)
+	if uses_ammo and ammo[slot] <= 0:
+		start_reload(slot)
+		return
 	var en_cost := GameData.shot_energy_cost(m)
 	if en_cost > 0.0:
 		if not can_spend(en_cost):
@@ -894,6 +914,11 @@ func try_fire(slot: String) -> void:
 	else:
 		origin.y = clamp(origin.y, 1.2, 2.6)
 	_fire_sfx(slot, w, origin)
+	if uses_ammo and overdrive_t <= 0.0:
+		ammo[slot] -= 1
+		if ammo[slot] <= 0:
+			Audio.play_sfx("wpn_empty", origin)
+			start_reload(slot)
 	fired.emit(slot)
 	# 子弹沿躯干实际朝向射出（躯干转向有惯性，准星内圈显示真实落点）；所有武器统一发射实体弹药
 	var dir := aim_dir()
@@ -926,7 +951,6 @@ func try_fire(slot: String) -> void:
 	raid.alert_noise(global_position, noise(noise_r))
 	if w != "melee":
 		raid.muzzle_flash(origin, m.color, dir, w, float(m.get("dmg", 10.0)))
-
 
 ## 开火音效：fire_loop 类武器（弹匣表里标注）按住扳机时持续循环，其余每发一次 wpn_<weapon>_fire
 func _fire_sfx(slot: String, weapon: String, origin: Vector3) -> void:
@@ -964,21 +988,26 @@ func noise(radius: float) -> float:
 	return radius * (0.2 if stealth_t > 0.0 else 1.0) * elite_mul
 
 
-func _has_mag(_weapon: String) -> bool:
-	return false
-
-
-func _take_mag(_weapon: String) -> bool:
-	return false
-
-
 func start_reload(slot: String) -> void:
-	reload_t[slot] = 0.0
+	var id: String = loadout.get(slot, "")
+	if id == "" or reload_t[slot] > 0.0 or ammo[slot] >= mag[slot]:
+		return
+	var w: String = GameData.module(id).weapon
+	if not GameData.weapon_uses_ammo(w):
+		return
+	reload_t[slot] = _reload_dur(slot)
+	if _is_local_actor():
+		Growth.record_skill_xp("ab_firearm", 0.42)
+	if w == "sniper":
+		Audio.play_sfx(["wpn_sniper_reload", "wpn_mg_reload"], global_position + Vector3(0, 2.0, 0))
+	else:
+		Audio.play_sfx("wpn_%s_reload" % w, global_position + Vector3(0, 2.0, 0))
 
-
-func reload_frac(_slot: String) -> float:
-	return 0.0
-
+func reload_frac(slot: String) -> float:
+	var id: String = loadout.get(slot, "")
+	if id == "" or reload_t[slot] <= 0.0:
+		return 0.0
+	return reload_t[slot] / maxf(0.1, _reload_dur(slot))
 
 ## 技能槽状态，HUD 用：{name, icon, cd(剩余), cd_max, ok}
 func skill_info(key: String) -> Dictionary:
@@ -1173,8 +1202,14 @@ func equip_module_in_raid(slot: String, new_id: String) -> String:
 	if slot == "arm_l" or slot == "arm_r":
 		Audio.loop_stop(_lk("fire_" + slot))
 		_fire_held[slot] = 0.0
-		mag[slot] = 0
-		ammo[slot] = 0
+		var wpn := str(GameData.module(new_id).get("weapon", "mg"))
+		if GameData.weapon_uses_ammo(wpn):
+			mag[slot] = int(GameData.AMMO.get(wpn, {}).get("mag", 30))
+			# 战地换装初始化武器装填量，不需要库存弹匣。
+			ammo[slot] = mag[slot]
+		else:
+			mag[slot] = 0
+			ammo[slot] = 0
 		reload_t[slot] = 0.0
 		arm_cd[slot] = 0.0
 	elif slot == "legs":

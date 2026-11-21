@@ -188,9 +188,12 @@ func _resolve(id: String) -> Array:
 
 
 func warm_combat_sfx() -> void:
+	# 战斗/首领/撤离切歌发生在交战中，音轨首次读取放在加载阶段。
+	for slot in ["combat", "boss", "extract"]:
+		_music_stream(slot)
 	var ids: Array = [
 		"wpn_mg_fire", "wpn_shotgun_fire", "wpn_laser_fire", "wpn_railgun_fire",
-		"wpn_flamer_ignite", "wpn_empty",
+		"wpn_flamer_ignite", "wpn_empty", "transport_arrive", "drop_fall", "ui_open",
 		"hit_metal", "hit_chitin", "hit_spit", "explosion",
 		"step_biped", "step_quad", "mech_hurt", "shield_hit",
 		"bug_ling_appear", "bug_ling_windup", "bug_ling_attack", "bug_ling_hurt", "bug_ling_death",
@@ -582,7 +585,9 @@ func _load_state(d: Dictionary) -> void:
 func _ensure_buses() -> void:
 	for b: String in BUSES:
 		if AudioServer.get_bus_index(b) < 0:
-			AudioServer.add_bus()
+			# add_bus 的末尾位置仍会转为 -1；Web 4.7.2 会错误移动 Master。
+			# 扩展总线数量走 setCount，只追加并保留已有的主总线连接。
+			AudioServer.bus_count += 1
 			var i := AudioServer.bus_count - 1
 			AudioServer.set_bus_name(i, b)
 			AudioServer.set_bus_send(i, "Master")

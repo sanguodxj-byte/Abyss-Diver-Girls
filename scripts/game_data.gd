@@ -45,35 +45,38 @@ var CAT_NAMES := _ZH_CAT_NAMES.duplicate()
 var ITEMS := {}
 
 ## 武器类型（现实枪械分类）与射击资源：
-## 所有武器均通过动力炉供能射击，同类型武器每发能量消耗（cost）固定一致。
+##   mode = ammo  —— 实弹武器：消耗当前装填量，打空自动装填，不耗库存物品与射击能量
+##   mode = energy—— 激光/轨道：不占弹匣，每发直接消耗能量
+##   mode = melee —— 近战工程臂：不占弹匣，每击消耗少量能量（液压/燃气伺服）
 ## fire_loop = true 的武器按住扳机时播放持续循环的 wpn_<weapon>_loop，而不是每发一次 wpn_<weapon>_fire
-## sfx = 每发开火音效（缺省按 weapon 命名约定）；tex = HUD 能量弹药条贴图
+## sfx = 每发开火音效（缺省按 weapon 命名约定）；tex = HUD 子弹贴图
 var AMMO := {
-	"mg": {"mode": "energy", "cost": 0.05, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
-	"flamer": {"mode": "energy", "cost": 0.06, "mag": 0, "reload": 0.0, "tex": "ammo_fuel", "fire_loop": true},
-	"autocannon": {"mode": "energy", "cost": 0.20, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
-	"melee": {"mode": "energy", "cost": 0.30, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
-	"shotgun": {"mode": "energy", "cost": 0.50, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"sniper": {"mode": "energy", "cost": 1.20, "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_railgun_fire"},
-	"cannon": {"mode": "energy", "cost": 1.40, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"launcher": {"mode": "energy", "cost": 1.50, "mag": 0, "reload": 0.0, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
-	"laser": {"mode": "energy", "cost": 1.60, "mag": 0, "reload": 0.0, "tex": "ammo_cell", "sfx": "wpn_laser_fire"},
+	"mg": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"autocannon": {"mode": "ammo", "mag": 36, "reload": 1.8, "tex": "ammo_mg", "sfx": "wpn_mg_fire"},
+	"cannon": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"shotgun": {"mode": "ammo", "mag": 6, "reload": 2.2, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"sniper": {"mode": "ammo", "mag": 5, "reload": 2.4, "tex": "ammo_mg", "sfx": "wpn_railgun_fire"},
+	"launcher": {"mode": "ammo", "mag": 10, "reload": 2.6, "tex": "ammo_shell", "sfx": "wpn_shotgun_fire"},
+	"flamer": {"mode": "ammo", "mag": 60, "reload": 2.4, "tex": "ammo_fuel", "fire_loop": true},
+	"laser": {"mode": "energy", "mag": 0, "reload": 0.0, "tex": "ammo_cell", "sfx": "wpn_laser_fire"},
+	"melee": {"mode": "melee", "mag": 0, "reload": 0.0, "tex": "ammo_mg", "sfx": "wpn_drill_ignite"},
 }
 
-const MAG_ITEM := {}
+## 兼容误加实体弹匣的旧存档：移除物品时按原价格返还信用点。
+## 这些 id 不注册为物品，也不会出现在商店或战利品中。
+const LEGACY_MAG_REFUND := {
+	"mag_mg": 216, "mag_ac": 900, "mag_cannon": 1080,
+	"mag_shotgun": 240, "mag_sniper": 1500, "mag_launcher": 5000, "mag_fuel": 300,
+}
 
 
-func mag_item_for(_weapon: String) -> String:
-	return ""
-
-
-## 武器的射击资源模式：统一为动力炉能量供能（energy）
+## 武器的射击资源模式：ammo（有限装填量）/ energy（激光耗能）/ melee（近战少量耗能）
 func weapon_mode(weapon: String) -> String:
-	return str(AMMO.get(weapon, {}).get("mode", "energy"))
+	return str(AMMO.get(weapon, {}).get("mode", "ammo"))
 
 
-func weapon_uses_ammo(_weapon: String) -> bool:
-	return false
+func weapon_uses_ammo(weapon: String) -> bool:
+	return weapon_mode(weapon) == "ammo"
 
 
 ## 距离衰减：near = 满伤距离（米），far = 衰减到 min 的距离，min = 最低伤害倍率。
@@ -114,21 +117,18 @@ func weapon_type_name(weapon: String) -> String:
 	return weapon
 
 
-## 按武器类型返回固定的单发能量消耗
+## 实弹通过装填时间限制持续射击；能量武器和近战保留对应能耗
 func weapon_energy_cost(weapon: String) -> float:
-	if AMMO.has(weapon) and AMMO[weapon].has("cost"):
-		return maxf(0.0, float(AMMO[weapon].get("cost", 0.3)))
-	return 0.3
+	return 0.0 if weapon_uses_ammo(weapon) else (1.6 if weapon == "laser" else 0.3)
 
-
-## 每发开火消耗的能量：同武器类型固定一致
+## 每发开火能耗：实弹为零，能量/近战按模块配置
 func shot_energy_cost(m: Dictionary) -> float:
-	var w := str(m.get("weapon", ""))
-	if AMMO.has(w) and AMMO[w].has("cost"):
-		return maxf(0.0, float(AMMO[w].get("cost", 0.3)))
+	if weapon_mode(str(m.get("weapon", ""))) == "ammo":
+		return 0.0
 	return maxf(0.0, float(m.get("cost", 0.3)))
 
 ## 技能：Space=底盘机动，F=背部挂载。icon 对应 assets/ui/ic_<icon>.png
+
 var SKILLS := {
 	"biped": {"name": "矢量推进规避", "icon": "dash", "cd": 0.9, "cost": 4.0, "desc": "点火髋部固体矢量推进器，朝移动方向短距高速规避机动。"},
 	"tread": {"name": "全扭矩碾压冲锋", "icon": "ram", "cd": 4.0, "cost": 8.0, "dmg": 28.0, "r": 3.2, "desc": "解除变速箱限速器全扭矩冲撞，碾退路径目标并造成 28 点钝击伤害。"},
@@ -143,17 +143,17 @@ var SKILLS := {
 var MODULES := {}
 
 var LOOT_TABLES := {
-	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 30, "water_tab": 25, "coffee": 4, "fuel_cell": 12, "repair_kit": 6}},
-	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 25, "bolts": 30, "hdd": 5, "toy": 8, "fuel_cell": 8}},
+	"supply": {"name": "补给箱", "rolls": [2, 4], "pool": {"can_food": 30, "biscuit": 28, "water_tab": 24, "coffee": 5, "toy": 6, "fuel_cell": 10, "repair_kit": 6}},
+	"tool": {"name": "工具箱", "rolls": [2, 4], "pool": {"circuit": 20, "wire": 28, "bolts": 34, "hdd": 5, "repair_kit": 8, "fuel_cell": 9}},
 	"military": {"name": "军用储物箱", "rolls": [1, 3], "pool": {"@module": 45, "fuel_cell": 18, "repair_kit": 14, "beacon": 5, "credit_s": 10}},
 	"safe": {"name": "保险柜", "rolls": [1, 3], "pool": {"credit_s": 40, "credit_l": 15, "gold": 4, "hdd": 10, "coffee": 6}},
-	"ammo": {"name": "弹药箱", "rolls": [2, 4], "pool": {"fuel_cell": 34, "energy_rod": 18, "coolant_pack": 14, "surge_cell": 8, "repair_kit": 12, "credit_s": 10}},
-	"med": {"name": "医疗箱", "rolls": [2, 3], "pool": {"repair_kit": 30, "coolant_pack": 12, "can_food": 18, "water_tab": 18, "energy_rod": 6, "biscuit": 10}},
-	"tech": {"name": "技术物资箱", "rolls": [2, 3], "pool": {"circuit": 28, "wire": 16, "hdd": 12, "energy_rod": 12, "surge_cell": 8}},
-	"register": {"name": "结算终端", "rolls": [1, 3], "pool": {"credit_s": 55, "credit_l": 16, "hdd": 10, "gold": 5}},
-	"weapon": {"name": "武器柜", "rolls": [2, 4], "pool": {"@module": 38, "fuel_cell": 22, "energy_rod": 14, "repair_kit": 14, "surge_cell": 6, "credit_s": 10}},
-	"car_wreck": {"name": "车辆残骸", "rolls": [2, 3], "pool": {"wire": 22, "bolts": 22, "circuit": 12, "toy": 8, "credit_s": 10, "fuel_cell": 10}},
-	"container": {"name": "集装箱", "rolls": [3, 5], "pool": {"@module": 34, "fuel_cell": 20, "repair_kit": 14, "credit_s": 12, "wire": 12}},
+	"ammo": {"name": "弹药箱", "rolls": [2, 4], "pool": {"fuel_cell": 30, "energy_rod": 18, "coolant_pack": 14, "surge_cell": 8, "repair_kit": 10, "extract_flare": 7, "sonic_decoy": 6, "extract_barrier": 5, "credit_s": 8}},
+	"med": {"name": "医疗箱", "rolls": [2, 3], "pool": {"repair_kit": 34, "coolant_pack": 14, "water_tab": 20, "can_food": 14, "biscuit": 10, "energy_rod": 6}},
+	"tech": {"name": "技术物资箱", "rolls": [2, 3], "pool": {"circuit": 28, "wire": 16, "hdd": 14, "energy_rod": 12, "surge_cell": 8, "coolant_pack": 8, "sonic_decoy": 6}},
+	"register": {"name": "结算终端", "rolls": [1, 3], "pool": {"credit_s": 52, "credit_l": 16, "hdd": 10, "gold": 5, "coffee": 6}},
+	"weapon": {"name": "武器柜", "rolls": [2, 4], "pool": {"@module": 40, "fuel_cell": 20, "energy_rod": 14, "repair_kit": 12, "surge_cell": 6, "credit_s": 8}},
+	"car_wreck": {"name": "车辆残骸", "rolls": [2, 3], "pool": {"wire": 20, "bolts": 20, "circuit": 10, "toy": 10, "can_food": 10, "water_tab": 8, "repair_kit": 6, "credit_s": 10, "fuel_cell": 10}},
+	"container": {"name": "集装箱", "rolls": [3, 5], "pool": {"@module": 32, "fuel_cell": 18, "repair_kit": 14, "credit_s": 12, "wire": 12, "bolts": 10, "circuit": 10, "can_food": 8}},
 	"cache": {"name": "埋藏桶", "rolls": [1, 2], "pool": {"bug_crystal": 24, "gen_crystal": 10, "credit_l": 12, "hdd": 10, "energy_rod": 8, "repair_kit": 8}},
 	"bug": {"name": "虫尸", "rolls": [1, 1], "pool": {"chitin": 85, "bug_crystal": 12, "fuel_cell": 6}},
 	"nest": {"name": "巢穴残骸", "rolls": [2, 3], "pool": {"bug_crystal": 45, "chitin": 50, "gen_crystal": 3, "legs_hex_beetle": 2}},
@@ -324,6 +324,17 @@ var map_id := "greyport"  ## 出击战区
 var extracts_ok := 0
 ## 遭遇过的敌人种类（跨行动累计，随存档保存）
 var seen_enemies: Array = []
+## 玩家在出击前地区侦察图上自定义打点与手写备注（随存档保存，进图后同步显示在战区战术图与雷达上）
+const MAP_MARKER_MAX := 60
+const MAP_MARKER_COLORS := {
+	"amber": Color("f0b95a"),
+	"red": Color("ef5a5a"),
+	"cyan": Color("58d1e8"),
+	"green": Color("6fe39c"),
+	"purple": Color("c988ff"),
+}
+var map_markers: Array = []
+var _marker_seq := 0
 
 ## 合并后的注册表：敌人种类（核心表在 scripts\bug.gd 的 KINDS）、战区（scripts\maps.gd 的 MAPS）、
 ## 遗迹 POI 类型（scripts\maps.gd 的 POIS）、各战区的虫群分布（只来自扩展数据，没有登记的战区按 raid.gd 的默认分布）
@@ -987,6 +998,119 @@ func mark_enemy_seen(kind: String) -> bool:
 	return true
 
 
+# ---------- 玩家自定义地图标记 ----------
+func marker_color(key: String) -> Color:
+	return MAP_MARKER_COLORS.get(key, MAP_MARKER_COLORS["amber"]) as Color
+
+
+func _sanitize_marker_text(raw: String) -> String:
+	var s := raw.replace("\n", " ").replace("\r", " ").strip_edges()
+	if s.length() > 32:
+		s = s.substr(0, 32)
+	return s
+
+
+func _sanitize_marker_color(key: String) -> String:
+	return key if MAP_MARKER_COLORS.has(key) else "amber"
+
+
+func _next_marker_id() -> String:
+	_marker_seq += 1
+	return "mk_%d_%d" % [Time.get_ticks_msec(), _marker_seq]
+
+
+func add_map_marker(sector_id: String, world_pos: Vector2, local_pos: Vector2, text: String, color_key := "amber") -> Dictionary:
+	var clean_text := _sanitize_marker_text(text)
+	if clean_text.is_empty():
+		clean_text = Loc.t("自定义标记", "Custom Pin")
+	var entry := {
+		"id": _next_marker_id(),
+		"map_id": sector_id,
+		"wx": snappedf(world_pos.x, 0.1),
+		"wz": snappedf(world_pos.y, 0.1),
+		"lx": snappedf(local_pos.x, 0.1),
+		"lz": snappedf(local_pos.y, 0.1),
+		"text": clean_text,
+		"color": _sanitize_marker_color(color_key),
+	}
+	if map_markers.size() >= MAP_MARKER_MAX:
+		map_markers.remove_at(0)
+	map_markers.append(entry)
+	save_game()
+	return entry
+
+
+func update_map_marker(marker_id: String, text: String, color_key: String) -> bool:
+	var clean_text := _sanitize_marker_text(text)
+	if clean_text.is_empty():
+		clean_text = Loc.t("自定义标记", "Custom Pin")
+	var col := _sanitize_marker_color(color_key)
+	for m in map_markers:
+		if typeof(m) == TYPE_DICTIONARY and str(m.get("id", "")) == marker_id:
+			m["text"] = clean_text
+			m["color"] = col
+			save_game()
+			return true
+	return false
+
+
+func remove_map_marker(marker_id: String) -> bool:
+	for i in range(map_markers.size() - 1, -1, -1):
+		var m = map_markers[i]
+		if typeof(m) == TYPE_DICTIONARY and str(m.get("id", "")) == marker_id:
+			map_markers.remove_at(i)
+			save_game()
+			return true
+	return false
+
+
+func clear_map_markers(sector_id := "") -> void:
+	if sector_id == "":
+		map_markers.clear()
+	else:
+		var kept: Array = []
+		for m in map_markers:
+			if typeof(m) == TYPE_DICTIONARY and str(m.get("map_id", "")) != sector_id:
+				kept.append(m)
+		map_markers = kept
+	save_game()
+
+
+func markers_for_map(sector_id: String) -> Array:
+	var out: Array = []
+	for m in map_markers:
+		if typeof(m) == TYPE_DICTIONARY and str(m.get("map_id", "")) == sector_id:
+			out.append(m)
+	return out
+
+
+func _sanitize_loaded_markers(raw_list: Array) -> Array:
+	var out: Array = []
+	for raw in raw_list:
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = raw
+		var mid := str(d.get("id", ""))
+		if mid.is_empty():
+			mid = _next_marker_id()
+		var txt := _sanitize_marker_text(str(d.get("text", "")))
+		if txt.is_empty():
+			txt = Loc.t("自定义标记", "Custom Pin")
+		out.append({
+			"id": mid,
+			"map_id": str(d.get("map_id", "")),
+			"wx": float(d.get("wx", 0.0)),
+			"wz": float(d.get("wz", 0.0)),
+			"lx": float(d.get("lx", 0.0)),
+			"lz": float(d.get("lz", 0.0)),
+			"text": txt,
+			"color": _sanitize_marker_color(str(d.get("color", "amber"))),
+		})
+		if out.size() >= MAP_MARKER_MAX:
+			break
+	return out
+
+
 # ---------- 存档 ----------
 func new_game() -> void:
 	money = 1500
@@ -996,7 +1120,8 @@ func new_game() -> void:
 	raids = 0
 	extracts_ok = 0
 	seen_enemies = []
-	if OS.has_feature("mobile"):
+	map_markers = []
+	if OS.has_feature("mobile") or OS.has_feature("web"):
 		quality = 0
 	quests = {}
 	quest_state = {}
@@ -1014,7 +1139,7 @@ func _payload() -> Dictionary:
 	var prog: Dictionary = sec.get("progress", {}) if typeof(sec.get("progress", {})) == TYPE_DICTIONARY else {}
 	return {"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
 		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "view_mode": view_mode, "mouse_sens": mouse_sens, "show_fps": show_fps, "render_scale_mode": render_scale_mode, "map_id": map_id,
-		"seen_enemies": seen_enemies, "sections": sec,
+		"seen_enemies": seen_enemies, "map_markers": map_markers, "sections": sec,
 		"meta": {"slot": slot, "saved_at": Time.get_unix_time_from_system(), "name": str(prog.get("player_name", ""))}}
 
 func _load_global_ui_prefs() -> void:
@@ -1108,6 +1233,8 @@ func load_game() -> bool:
 				var m := key.get_slice(":", 0)
 				quests[m] = int(quests.get(m, 0)) + 1
 	money = int(d.get("money", 1500))
+	for old_item in Array(d.get("stash", [])) + Array(d.get("cargo", [])):
+		money += int(LEGACY_MAG_REFUND.get(base_id(str(old_item)), 0))
 	stash = _migrate_item_list(Array(d.get("stash", [])))
 	cargo = _migrate_item_list(Array(d.get("cargo", [])))
 	loadout = Dictionary(d.get("loadout", STARTER.duplicate()))
@@ -1115,7 +1242,7 @@ func load_game() -> bool:
 		var cur_id := _migrate_item_id(str(loadout.get(slot_k, STARTER[slot_k])))
 		loadout[slot_k] = cur_id if MODULES.has(cur_id) else STARTER[slot_k]
 	raids = int(d.get("raids", 0))
-	quality = int(d.get("quality", 0 if OS.has_feature("mobile") else 1))
+	quality = int(d.get("quality", 0 if OS.has_feature("mobile") or OS.has_feature("web") else 1))
 	render_style = int(d.get("render_style", 0))
 	view_mode = clampi(int(d.get("view_mode", 0)), 0, 1)
 	mouse_sens = clampf(float(d.get("mouse_sens", 1.0)), 0.2, 2.5)
@@ -1127,6 +1254,7 @@ func load_game() -> bool:
 	map_id = str(d.get("map_id", "greyport"))
 	extracts_ok = int(d.get("extracts_ok", 0))
 	seen_enemies = Array(d.get("seen_enemies", []))
+	map_markers = _sanitize_loaded_markers(Array(d.get("map_markers", [])))
 	var sec = d.get("sections", {})
 	_sections_data = sec if typeof(sec) == TYPE_DICTIONARY else {}
 	if _sections_data.has("progress") and typeof(_sections_data["progress"]) == TYPE_DICTIONARY:
@@ -1159,7 +1287,7 @@ func _migrate_item_list(arr: Array) -> Array:
 	var out: Array = []
 	for raw in arr:
 		var id := _migrate_item_id(str(raw))
-		if base_id(id).begins_with("mag_"):
+		if LEGACY_MAG_REFUND.has(base_id(id)):
 			continue
 		out.append(id)
 	return out
@@ -1393,7 +1521,7 @@ static func list_scripts(dir: String) -> Array:
 ## 按画质档位调整战场环境的重型后处理（保证低画质/移动端也具备清晰柔影、自发光辉光、色彩统一与无锯齿质感）。
 ## 流畅(0)：柔化中档 4096 阴影（移动端 2048 双分段柔影）+ 保留 SSAO/轻量辉光/LUT；高(1)：+SSR；极致(2)：+SSIL + 8192 阴影。
 func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void:
-	var mob := OS.has_feature("mobile")
+	var mob := OS.has_feature("mobile") or OS.has_feature("web")
 	var mobile_renderer := RenderingServer.get_current_rendering_method() == "mobile"
 	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	if mob or mobile_renderer:
@@ -1401,7 +1529,7 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 		env.ssr_enabled = false
 		env.ssil_enabled = false
 		env.ssao_enabled = false
-		env.glow_enabled = true
+		env.glow_enabled = not OS.has_feature("web") or quality >= 1
 		env.glow_intensity = 0.20 if quality == 0 else 0.25
 		env.set_glow_level(0, 0.0)
 		env.set_glow_level(1, 0.58)
@@ -1443,49 +1571,49 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
 				sun.shadow_bias = 0.045
-				sun.shadow_normal_bias = 1.75
+				sun.shadow_normal_bias = 1.55
 				sun.light_angular_distance = 0.24
 				sun.shadow_blur = 0.72
 				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-				sun.directional_shadow_split_1 = 0.42
-				sun.directional_shadow_max_distance = 64.0
+				sun.directional_shadow_split_1 = 0.38
+				sun.directional_shadow_max_distance = 74.0
 		1:
 			env.ssr_enabled = not compat and not mobile_renderer
 			env.ssr_max_steps = 32
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
 			env.ssao_radius = 2.10
-			env.ssao_intensity = 2.35
-			env.ssao_power = 1.60
+			env.ssao_intensity = 2.25
+			env.ssao_power = 1.55
 			env.ssao_detail = 0.72
 			env.ssao_sharpness = 0.92
-			env.ssao_light_affect = 0.34
+			env.ssao_light_affect = 0.30
 			env.glow_enabled = true
 			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_LOW, false)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
-				sun.shadow_bias = 0.045
-				sun.shadow_normal_bias = 1.80
-				sun.light_angular_distance = 0.28
-				sun.shadow_blur = 0.82
+				sun.shadow_bias = 0.042
+				sun.shadow_normal_bias = 1.25
+				sun.light_angular_distance = 0.34
+				sun.shadow_blur = 1.35
 				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-				sun.directional_shadow_split_1 = 0.40
-				sun.directional_shadow_max_distance = 76.0
+				sun.directional_shadow_split_1 = 0.52
+				sun.directional_shadow_max_distance = 92.0
 		_:
 			env.ssr_enabled = not compat and not mobile_renderer
 			env.ssr_max_steps = 48
 			env.ssil_enabled = not compat and not mobile_renderer
 			env.ssao_enabled = not compat and not mobile_renderer
 			env.ssao_radius = 2.20
-			env.ssao_intensity = 2.45
-			env.ssao_power = 1.60
+			env.ssao_intensity = 2.35
+			env.ssao_power = 1.55
 			env.ssao_detail = 0.75
 			env.ssao_sharpness = 0.92
-			env.ssao_light_affect = 0.34
+			env.ssao_light_affect = 0.30
 			env.glow_enabled = true
 			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
@@ -1493,19 +1621,32 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 			if sun:
 				sun.shadow_bias = 0.04
-				sun.shadow_normal_bias = 1.75
+				sun.shadow_normal_bias = 1.50
 				sun.light_angular_distance = 0.32
-				sun.shadow_blur = 0.90
+				sun.shadow_blur = 0.86
 				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-				sun.directional_shadow_max_distance = 86.0
+				sun.directional_shadow_max_distance = 112.0
 
 
 ## 应用抗锯齿 / 渲染缩放到主视口或子视口。
-## 桌面端 ≤1440p 保持 100% 原生；4K(>1440p) 在「自动」模式下启用 FSR 1.0 清晰缩放（UI 保持原生 4K），并可随时切回 100% 原生。
+## 自动档以 1080/1260/1440p 等效像素预算限制 3D，超过预算使用 FSR；UI 保持原生分辨率。
+## 显式选择 100% 原生时不自动缩放。
 func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
 	if vp == null:
 		vp = get_tree().root
+	if OS.has_feature("web"):
+		Engine.max_fps = 60
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		vp.use_taa = false
+		vp.msaa_3d = Viewport.MSAA_DISABLED if quality == 0 else Viewport.MSAA_2X
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		var pixels := DisplayServer.window_get_size()
+		var pixel_height := maxi(1, mini(pixels.x, pixels.y))
+		var target_height: float = [720.0, 900.0, 1080.0][clampi(quality, 0, 2)]
+		vp.scaling_3d_scale = clampf(target_height / pixel_height, 0.25, 1.0)
+		vp.anisotropic_filtering_level = Viewport.ANISOTROPY_4X
+		return
 	if OS.has_feature("mobile"):
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		vp.use_taa = false
@@ -1537,7 +1678,7 @@ func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
 		_:
 			vp.msaa_3d = Viewport.MSAA_4X
 			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
-	var vp_h: int = (vp as SubViewport).size.y if vp is SubViewport else DisplayServer.window_get_size().y
+	var pixel_size := (vp as SubViewport).size if vp is SubViewport else DisplayServer.window_get_size()
 	var scale := 1.0
 	match render_scale_mode:
 		1:
@@ -1549,14 +1690,11 @@ func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
 		4:
 			scale = 0.67
 		_:
-			if allow_auto_scale and vp_h > 1440:
-				match quality:
-					0:
-						scale = clampf(1260.0 / float(vp_h), 0.58, 1.0)
-					1:
-						scale = clampf(1550.0 / float(vp_h), 0.72, 1.0)
-					_:
-						scale = clampf(1728.0 / float(vp_h), 0.78, 1.0)
+			if allow_auto_scale:
+				# 以总像素限制自动档，覆盖 4K/超宽屏和菜单、机库的子视口。
+				var target_height: float = [1080.0, 1260.0, 1440.0][clampi(quality, 0, 2)]
+				var pixel_budget := target_height * target_height * (16.0 / 9.0)
+				scale = clampf(sqrt(pixel_budget / maxf(1.0, float(pixel_size.x) * pixel_size.y)), 0.25, 1.0)
 	if scale < 0.995:
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
 		vp.fsr_sharpness = 0.28

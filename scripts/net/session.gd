@@ -61,6 +61,14 @@ func _ready() -> void:
 func active() -> bool:
 	return state != "offline"
 
+func available() -> bool:
+	return not OS.has_feature("web")
+
+func _check_transport() -> bool:
+	if available(): return true
+	last_error = Loc.t("网页版暂不支持联机，请使用桌面或安卓客户端。", "Co-op is not available in the browser version. Use the desktop or Android client.")
+	return false
+
 func is_host() -> bool:
 	return active() and multiplayer.is_server()
 
@@ -135,6 +143,7 @@ func _preferences() -> void:
 	cfg.save("user://coop.cfg")
 
 func host(nickname: String, listen_port := DEFAULT_PORT, password := "") -> Error:
+	if not _check_transport(): return ERR_UNAVAILABLE
 	if active():
 		return ERR_ALREADY_IN_USE
 	if listen_port < 1024 or listen_port > 65535 or password.length() > 64:
@@ -162,6 +171,7 @@ func host(nickname: String, listen_port := DEFAULT_PORT, password := "") -> Erro
 	return OK
 
 func host_dedicated(listen_port := DEFAULT_PORT, password := "", initial_map := "greyport") -> Error:
+	if not _check_transport(): return ERR_UNAVAILABLE
 	if active():
 		return ERR_ALREADY_IN_USE
 	if listen_port < 1024 or listen_port > 65535 or password.length() > 64:
@@ -188,6 +198,7 @@ func host_dedicated(listen_port := DEFAULT_PORT, password := "", initial_map := 
 	return OK
 
 func join(nickname: String, host_address: String, host_port := DEFAULT_PORT, password := "") -> Error:
+	if not _check_transport(): return ERR_UNAVAILABLE
 	if active():
 		return ERR_ALREADY_IN_USE
 	if host_address.strip_edges().is_empty() or host_address.length() > 253 or host_port < 1024 or host_port > 65535 or password.length() > 64:

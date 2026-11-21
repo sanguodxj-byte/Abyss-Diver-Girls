@@ -104,13 +104,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	# 舱体尾部断裂面：露出的骨架与线束
 	for i in 5:
 		A.add(raid.world, A.cyl(0.06, 1.6, 0.06, 5), A.metal(Color(0.3, 0.29, 0.26)), c + Vector3(-5.4 + i * 0.7, 1.3, -4.8), Vector3(r.randf_range(-30, 30), r.randf_range(-30, 30), r.randf_range(-30, 30)))
-	# 容器与环境叙事
-	K.fixed(raid, bb + Vector3(2.4, 0, 0.6), ["arch_flight_log", "hdd", "bug_crystal"], "military")
-	K.crate(raid, c + Vector3(-6.4, 0, -7.4), "military")
-	K.crate(raid, c + Vector3(-4.8, 0, -7.8), "military")
-	K.crate(raid, c + Vector3(8.2, 0, 6.0), "tool")
-	K.crate(raid, c + Vector3(-8.6, 0, 6.4), "supply")
-	K.crate(raid, c + Vector3(6.4, 0, -8.0), "supply")
+	# 容器与环境叙事（黑匣子航电技术箱 / 舰桥武器架与弹药箱 / 航电技术箱 / 乘员急救箱 / 舰载军需箱）
+	K.fixed(raid, bb + Vector3(2.4, 0, 0.6), ["arch_flight_log", "hdd", "bug_crystal"], "tech", 180.0)
+	K.crate(raid, c + Vector3(-6.4, 0, -7.4), "weapon", [], 180.0)
+	K.crate(raid, c + Vector3(-4.8, 0, -7.8), "ammo", [], 180.0)
+	K.crate(raid, c + Vector3(8.2, 0, 6.0), "tech", [], 0.0)
+	K.crate(raid, c + Vector3(-8.6, 0, 6.4), "med", [], 0.0)
+	K.crate(raid, c + Vector3(6.4, 0, -8.0), "supply", [], 180.0)
 	K.lamp(raid, c + Vector3(-9.6, 0, -8.4), Color(1.0, 0.72, 0.4))
 	K.lamp(raid, c + Vector3(10.0, 0, 3.0), Color(0.62, 0.85, 1.0))
 	K.rubble(raid, c + Vector3(0.0, 0, -8.0), 2.2, HULL_DARK)

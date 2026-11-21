@@ -324,6 +324,10 @@ class AvatarMark extends Control:
 	func _ready() -> void:
 		clip_contents = true
 		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		resized.connect(queue_redraw)
+		if not AP.animated_portraits_enabled():
+			set_process(false)
+			return
 		_view = SubViewport.new()
 		_view.size = Vector2i(384, 384)
 		_view.transparent_bg = true

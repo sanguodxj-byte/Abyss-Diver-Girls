@@ -19,22 +19,22 @@ class RaidStub extends Node:
 
 func run() -> void:
 	var pts := [Vector3.ZERO, Vector3(0.3, 0.4, 0.5), Vector3.ONE]
-	var first := A.tube(pts, 0.03, 7, 6)
+	var first := A.tube(pts, 0.03, 16, 10)
 	var original: Array = first.surface_get_arrays(0)
-	if not check(first == A.tube(pts.duplicate(), 0.03, 7, 6), "相同软管未复用网格"):
+	if not check(first == A.tube(pts.duplicate(), 0.03, 16, 10), "相同软管未复用网格"):
 		return
-	for other in [A.tube(pts, 0.030001, 7, 6), A.tube(pts, 0.03, 8, 6), A.tube(pts, 0.03, 7, 5)]:
+	for other in [A.tube(pts, 0.030001, 16, 10), A.tube(pts, 0.03, 18, 10), A.tube(pts, 0.03, 16, 12)]:
 		if not check(first != other, "不同参数的软管错误共用网格"):
 			return
 	pts[1].x += 0.00001
-	if not check(first != A.tube(pts, 0.03, 7, 6), "修改控制点未产生新几何"):
+	if not check(first != A.tube(pts, 0.03, 16, 10), "修改控制点未产生新几何"):
 		return
 	pts[1].x = 0.3
 	for i in A.TUBE_CACHE_LIMIT + 1:
 		A.tube([Vector3.ZERO, Vector3(float(i) + 2.0, 0, 0)], 0.02, 3, 1)
 	if not check(A._tube_cache.size() <= A.TUBE_CACHE_LIMIT, "软管缓存超出容量"):
 		return
-	var rebuilt := A.tube(pts, 0.03, 7, 6)
+	var rebuilt := A.tube(pts, 0.03, 16, 10)
 	if not check(original == rebuilt.surface_get_arrays(0), "缓存淘汰重建改变了顶点、法线或切线"):
 		return
 	if not check(original == first.surface_get_arrays(0), "淘汰破坏了仍在使用的网格"):

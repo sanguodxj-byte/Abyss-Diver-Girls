@@ -44,6 +44,7 @@ const EXTEND := {
 		"supply": {"pool": {"gift_cocoa": 4}},
 		"tool": {"pool": {"gift_wrench": 3}},
 		"safe": {"pool": {"gift_watch": 5, "gift_chart": 4, "gift_flask": 4}},
+		"register": {"pool": {"gift_watch": 4}},
 	},
 }
 

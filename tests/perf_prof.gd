@@ -60,6 +60,9 @@ func run() -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	if not headless():
 		var requested_size := DisplayServer.window_get_size()
+		if _arg("win", "max") == "keep":
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+			DisplayServer.window_set_position(Vector2i(60, 60))
 		get_window().unresizable = true
 		# Windows 切换不可调整大小的边框可能改变客户区尺寸，恢复实际请求值。
 		DisplayServer.window_set_size(requested_size)
@@ -144,7 +147,9 @@ func run() -> void:
 			_phys_script = 0; _phys_engine = 0; _ticks = 0; _proc_script = 0
 			await get_tree().process_frame
 			var now := Time.get_ticks_usec()
-			window_changed = window_changed or DisplayServer.window_get_size() != sample_window
+			if not window_changed and DisplayServer.window_get_size() != sample_window:
+				print("[perf_prof] INVALID window changed %s -> %s" % [sample_window, DisplayServer.window_get_size()])
+				window_changed = true
 			_post_t = 0
 			var ft := now - last
 			last = now
@@ -216,6 +221,8 @@ func run() -> void:
 		"deploy_ms": deploy_ms, "frames": n, "frame_avg_ms": sum.call("ft", rows),
 		"p50_ms": fts[n / 2] / 1000.0, "p95_ms": fts[int(n * 0.95)] / 1000.0,
 		"p99_ms": fts[int(n * 0.99)] / 1000.0, "max_ms": fts[-1] / 1000.0,
+		"spikes_33ms": rows.filter(func(r): return r.ft > 33333).size(),
+		"spikes_16ms": rows.filter(func(r): return r.ft > 16667).size(),
 		"spikes_45ms": spikes.size(), "gpu_avg_ms": sum.call("gpu", rows),
 		"keys_total_us": keys_tot, "keys_max_us": keys_max, "rows": rows,
 		"phase_states": phase_states,

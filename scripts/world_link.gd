@@ -23,6 +23,7 @@ const HOLD := 1.2           ## 停留多久触发转场
 const GATE_COLOR := Color(0.35, 0.85, 1.0)
 
 const A = preload("res://scripts/art.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 const WC = preload("res://scripts/world_city.gd")
 const LoadingScreenScript = preload("res://scripts/loading_screen.gd")
 
@@ -132,8 +133,6 @@ func _build_gate(g: Dictionary) -> void:
 	n.rotation.y = atan2(inw.x, inw.z)   # 本地 +z 朝地图内侧，本地 x 沿边界
 	var M_CON := A.concrete(Color(0.46, 0.44, 0.41), false)
 	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
-	var M_ST := A.paint(Color(0.26, 0.28, 0.30), 0.58, 0.54, {"wear": 0.52, "rust": 0.48})
-	var M_BRASS := A.paint(Color(0.58, 0.44, 0.22), 0.78, 0.36, {"wear": 0.4})
 	var m_glow := A.emit(c, 3.2 if g.open else 0.9)
 	m_glow.albedo_color = c.darkened(0.45)
 	# 界门两侧立柱低对比度边界雾汽粒子（取代大面积平滑矩形光幕）
@@ -142,45 +141,15 @@ func _build_gate(g: Dictionary) -> void:
 			"dir": Vector3(-signf(sx_fog), 0.35, 0.0).normalized(), "spread": 25.0, "vmin": 0.6, "vmax": 1.4, "gravity": Vector3(0, 0.15, 0),
 			"c0": Color(c.r * 0.55 + 0.2, c.g * 0.55 + 0.2, c.b * 0.55 + 0.2, 0.20 if g.open else 0.12),
 			"c1": Color(c.r * 0.4 + 0.15, c.g * 0.4 + 0.15, c.b * 0.4 + 0.15, 0.0), "grow0": 0.6, "grow1": 2.2, "box": Vector3(0.4, 1.6, 0.3)})
-	# 两侧重工战区封锁龙门塔柱：阶梯钢筋混凝土防撞墩 + 双工字钢主立柱 + 内侧力场发射线圈阵 + 侧翼泽西护栏
+	# 战损版跨图传送装甲闸门主体（env_world_portal_gate，正面 +Z 朝战区内侧，中央闸口净宽 ~6.8m 供机甲通过）
+	PrefabLib.place_at_ground(raid, n, "env_world_portal_gate", Vector3(0.0, -0.05, 0.0), 0.0, Vector3(17.6, 15.5, 9.4), false, null, false)
+	# 外翼混凝土防撞泽西护栏与端头状态信标柱，平顺衔接 ±HALF_SPAN 边界缺口
 	for sx_s in [-1.0, 1.0]:
-		var sx: float = sx_s * HALF_SPAN
-		A.add(n, A.bevel_box(Vector3(2.40, 0.48, 2.80), 0.06), M_CON, Vector3(sx, 0.24, 0))
-		A.add(n, A.bevel_box(Vector3(1.85, 1.45, 2.20), 0.08, 0.86), M_CON, Vector3(sx, 1.15, 0))
-		A.add(n, A.bevel_box(Vector3(1.92, 0.22, 2.26), 0.02), A.hazard(), Vector3(sx, 0.62, 0))
-		for pz in [-0.62, 0.62]:
-			A.add(n, A.bevel_box(Vector3(0.42, 7.60, 0.44), 0.03), M_ST, Vector3(sx, 5.45, pz))
-		for by in [2.6, 4.6, 6.6, 8.4]:
-			A.add(n, A.bevel_box(Vector3(0.52, 0.24, 1.68), 0.02), M_DARK, Vector3(sx, by, 0))
-		# 面向通道内侧的装甲力场发生器环组
-		var ix: float = sx - sx_s * 0.52
-		for cy in [2.4, 4.2, 6.0]:
-			A.add(n, A.bevel_box(Vector3(0.46, 0.56, 0.72), 0.03), M_DARK, Vector3(ix, cy, 0))
-			A.add(n, A.bevel_box(Vector3(0.18, 0.38, 0.54), 0.02), M_BRASS, Vector3(ix - sx_s * 0.22, cy, 0))
-			A.add(n, A.bevel_box(Vector3(0.08, 0.26, 0.40), 0.01), m_glow, Vector3(ix - sx_s * 0.30, cy, 0), Vector3.ZERO, Vector3.ONE, false)
-		# 塔顶装甲信标灯笼 + 内倾道路防撞泽西护栏
-		A.add(n, A.bevel_box(Vector3(1.15, 0.36, 1.15), 0.04), M_DARK, Vector3(sx, 9.38, 0))
-		A.add(n, A.cyl(0.32, 0.52, 0.32, 12), m_glow, Vector3(sx, 9.78, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(n, A.cyl(0.42, 0.10, 0.38, 12), M_DARK, Vector3(sx, 10.08, 0))
-		A.add(n, A.bevel_box(Vector3(2.40, 0.95, 0.68), 0.06, 0.76), M_CON, Vector3(sx + sx_s * 2.15, 0.48, 1.85), Vector3(0, sx_s * -18.0, 0))
-	# 高空横跨钢结构龙门桁架梁（净空 8.3m，4 跨分段确保单件远小于合批分块上限）
-	var seg_n := 4
-	var span_w := HALF_SPAN * 2.0
-	var bw := span_w / float(seg_n)
-	for bi in seg_n:
-		var bx := -HALF_SPAN + (float(bi) + 0.5) * bw
-		A.add(n, A.bevel_box(Vector3(bw - 0.03, 0.24, 0.62), 0.02), M_DARK, Vector3(bx, 8.02, 0))
-		for ty in [8.35, 9.15]:
-			A.add(n, A.bevel_box(Vector3(bw - 0.03, 0.22, 1.38), 0.02), M_ST, Vector3(bx, ty, 0))
-		for sd_z in [-0.58, 0.58]:
-			A.add(n, A.bevel_box(Vector3(0.16, 0.80, 0.16), 0.01), M_DARK, Vector3(bx - bw * 0.5, 8.75, sd_z), Vector3.ZERO, Vector3.ONE, false)
-			A.add(n, A.bevel_box(Vector3(bw * 0.52, 0.10, 0.10), 0.01), M_DARK, Vector3(bx - bw * 0.25, 8.75, sd_z), Vector3(0, 0, 18), Vector3.ONE, false)
-			A.add(n, A.bevel_box(Vector3(bw * 0.52, 0.10, 0.10), 0.01), M_DARK, Vector3(bx + bw * 0.25, 8.75, sd_z), Vector3(0, 0, -18), Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(6.4, 0.62, 0.22), 0.03), M_DARK, Vector3(0, 8.75, 0.76))
-	A.add(n, A.bevel_box(Vector3(6.2, 0.16, 0.24), 0.01), A.hazard(), Vector3(0, 8.38, 0.77))
-	for fx_l in [-4.5, 4.5]:
-		A.add(n, A.bevel_box(Vector3(0.68, 0.30, 0.42), 0.02), M_DARK, Vector3(fx_l, 8.16, 0.72), Vector3(22, 0, 0))
-		A.add(n, A.bevel_box(Vector3(0.54, 0.18, 0.06), 0.01), m_glow, Vector3(fx_l, 8.12, 0.92), Vector3(22, 0, 0), Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(6.2, 1.05, 0.82), 0.06, 0.76), M_CON, Vector3(sx_s * 12.6, 0.52, 0.65), Vector3(0, sx_s * -10.0, 0))
+		A.add(n, A.bevel_box(Vector3(6.0, 0.18, 0.86), 0.015), A.hazard(), Vector3(sx_s * 12.6, 0.84, 0.65), Vector3(0, sx_s * -10.0, 0), Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(1.15, 2.2, 1.15), 0.05), M_DARK, Vector3(sx_s * HALF_SPAN, 1.1, 0.0))
+		A.add(n, A.cyl(0.28, 0.48, 0.28, 20), m_glow, Vector3(sx_s * HALF_SPAN, 2.44, 0.0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.cyl(0.38, 0.10, 0.34, 20), M_DARK, Vector3(sx_s * HALF_SPAN, 2.72, 0.0))
 	# 地面装甲导引减速带与三道做旧铁灰减速钢板（两端仅留小型嵌入式指示灯钉，取代大面积发光灯条）
 	var m_plate := A.paint(Color(0.22, 0.23, 0.25), 0.52, 0.62, {"wear": 0.65, "rust": 0.45})
 	var am := A.emit(c.darkened(0.2), 1.1 if g.open else 0.4)
@@ -347,16 +316,9 @@ func go_to_map(to_map: String, arrival_edge: String, banner := "") -> void:
 	var loader = LoadingScreenScript.new()
 	parent.add_child(loader)
 	loader.setup(to_map, lo_copy, state)
-	await loader.play_close(0.32)
-	raid.queue_free()
-	GameData.map_id = to_map
-	parent.add_child(nr)
-	if "raid" in parent:
-		parent.raid = nr
-	await nr.start_async(lo_copy, cargo_copy, state, loader)
-	GameData.map_id = keep_map
-	Events.deployed.emit(nr.map_id, lo_copy)
-	await loader.play_open(0.48)
+	# 必须把异步跨区协程交给挂载在 parent 下的 loader 执行；
+	# 若在当前 WorldLink 里 await start_async，旧 raid.queue_free() 会先释放自身导致协程被中止、play_open 永不触发！
+	loader.run_transit(parent, raid, nr, to_map, lo_copy, cargo_copy, state, keep_map)
 
 
 ## 转场时要带走的状态
@@ -432,14 +394,15 @@ func _build_shaft(pos: Vector3) -> void:
 	var m_dark := A.metal(Color(0.14, 0.15, 0.17))
 	var m_emit := A.emit(col, 2.2)
 	m_emit.albedo_color = col.darkened(0.45)
-	A.add(n, A.cyl(4.4, 0.24, 4.6, 16), A.concrete(Color(0.32, 0.31, 0.30), false), Vector3(0, 0.12, 0))
-	A.add(n, A.cyl(3.6, 0.28, 3.8, 16), m_dark, Vector3(0, 0.145, 0))
-	A.add(n, A.cyl(3.8, 0.08, 3.9, 16), A.hazard(), Vector3(0, 0.26, 0))
+	A.add(n, A.cyl(4.4, 0.24, 4.6, 36), A.concrete(Color(0.32, 0.31, 0.30), false), Vector3(0, 0.12, 0))
+	A.add(n, A.cyl(3.6, 0.28, 3.8, 36), m_dark, Vector3(0, 0.145, 0))
+	A.add(n, A.cyl(3.8, 0.08, 3.9, 36), A.hazard(), Vector3(0, 0.26, 0))
+	PrefabLib.place_at_ground(raid, n, "env_world_portal_gate", Vector3(0.0, -0.04, -3.4), 0.0, Vector3(9.8, 8.6, 5.2), false, null, false)
 	for ai in 4:
 		var ang := float(ai) * PI * 0.5 + PI * 0.25
 		var p_off := Vector3(cos(ang) * 3.8, 1.3, sin(ang) * 3.8)
 		A.add(n, A.bevel_box(Vector3(0.38, 2.6, 0.38), 0.03), m_dark, p_off)
-		A.add(n, A.cyl(0.20, 0.32, 0.20, 10), m_emit, p_off + Vector3(0, 1.45, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.cyl(0.20, 0.32, 0.20, 20), m_emit, p_off + Vector3(0, 1.45, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.quad(9.2, 9.2), A.extract_pad_mat(Color(col.r, col.g, col.b, 0.36), 0.25, 3), Vector3(0, 0.31, 0), Vector3.ZERO, Vector3.ONE, false)
 	var l := OmniLight3D.new()
 	l.light_color = col
@@ -463,6 +426,10 @@ func entry_point(edge: String, fallback: Vector3) -> Vector3:
 func arrive(state: Dictionary, at: Vector3) -> void:
 	var m = raid.mech
 	var ms: Dictionary = state.get("mech", {})
+	# 跨图以捕获货舱为准，恢复原有携行物。
+	if ms.has("cargo"):
+		m.cargo = (ms.cargo as Array).duplicate()
+		m.check_overload()
 	m.hp = clampf(float(ms.get("hp", m.hp)), 1.0, m.max_hp)
 	m.energy = clampf(float(ms.get("energy", m.energy)), 0.0, m.max_energy)
 	for k in ms.get("parts", {}):
@@ -490,7 +457,7 @@ func arrive(state: Dictionary, at: Vector3) -> void:
 	raid.camera.global_position = end_pos + raid.CAM_OFFSET * raid.cam_zoom
 	raid.camera.look_at(end_pos, Vector3.UP)
 	_cool = 2.5
-	if GameData.test_mode:
+	if GameData.test_mode and not raid.force_async_load:
 		var ov := _overlay(1.0)
 		var tw := ov.create_tween()
 		tw.tween_interval(0.25)

@@ -46,6 +46,9 @@ var prompt_lbl: Label
 var log_box: VBoxContainer
 var status_root: Control
 var ammo_rail: Control
+var _ammo_h_l := 0.0
+var _ammo_h_r := 0.0
+var _ammo_layout_sig := Vector3i(-1, -1, -1)
 var sys_clip: Control
 var sys_col: VBoxContainer
 var coop_bar: PanelContainer
@@ -313,6 +316,167 @@ func _exit_tree() -> void:
 
 
 # ============================================================ 构建
+const STATUS_H := 560.0
+const CORNER_H := 168.0
+const AMMO_RAIL_W := 100.0
+const AMMO_TOP_PAD := 14.0
+const AMMO_BOT_PAD := 6.0
+const AMMO_MIN_COL_H := 28.0
+const AMMO_MAX_TOTAL_H := 244.0
+
+
+func _ammo_rail_max_total_h() -> float:
+	var vp_h: float = get_viewport().get_visible_rect().size.y if get_viewport() != null else 720.0
+	# 预留顶部无线电窗 + 系统消息区最小高度 + 底部拐角与边距，避免遮挡
+	return clampf(vp_h - 470.0, 96.0, AMMO_MAX_TOTAL_H)
+
+
+func _layout_ammo_rail() -> void:
+	if ammo_rail == null or not is_instance_valid(ammo_rail):
+		return
+	var base_y := STATUS_H - CORNER_H
+	var max_total_h := _ammo_rail_max_total_h()
+	var max_col_h := maxf(AMMO_MIN_COL_H, max_total_h - AMMO_TOP_PAD - AMMO_BOT_PAD)
+	var hs := {"arm_l": 0.0, "arm_r": 0.0}
+	for slot in ["arm_l", "arm_r"]:
+		var col = ammo_cols.get(slot)
+		if col == null or not is_instance_valid(col):
+			continue
+		var col_h: float = col.preferred_height(max_col_h, AMMO_MIN_COL_H)
+		if col_h > 0.0:
+			col.position.y = base_y - AMMO_BOT_PAD - col_h
+			col.size.y = col_h
+			col._layout()
+			col.queue_redraw()
+			hs[slot] = col_h + AMMO_TOP_PAD + AMMO_BOT_PAD
+		else:
+			col.position.y = base_y
+			col.size.y = 0.0
+	_ammo_h_l = float(hs["arm_l"])
+	_ammo_h_r = float(hs["arm_r"])
+	var max_h := maxf(_ammo_h_l, _ammo_h_r)
+	ammo_rail.visible = max_h > 0.5
+	ammo_rail.position = Vector2(10.0, base_y - max_h)
+	ammo_rail.size = Vector2(AMMO_RAIL_W, max_h)
+	ammo_rail.queue_redraw()
+	if raid != null and raid.mech != null:
+		var vp_hi := int(round(get_viewport().get_visible_rect().size.y)) if get_viewport() != null else 720
+		_ammo_layout_sig = Vector3i(int(raid.mech.mag.get("arm_l", 0)), int(raid.mech.mag.get("arm_r", 0)), vp_hi)
+	if sys_clip != null and is_instance_valid(sys_clip):
+		var want_bottom := -(14.0 + CORNER_H + max_h + 7.0)
+		if not is_equal_approx(sys_clip.offset_bottom, want_bottom):
+			sys_clip.offset_bottom = want_bottom
+			_trim_log_box()
+
+
+func _draw_ammo_rail() -> void:
+	if ammo_rail == null:
+		return
+	var rv := ammo_rail
+	var sz := rv.size
+	var hl := _ammo_h_l
+	var hr := _ammo_h_r
+	var max_h := maxf(hl, hr)
+	if max_h <= 0.5 or sz.y <= 0.5:
+		return
+	var w := sz.x
+	var mid := w * 0.5
+	var bg_col := Color(0.085, 0.092, 0.098, 0.68)
+	var line_col := Color(0.26, 0.28, 0.30, 0.80)
+	var cap_col := Color(0.20, 0.22, 0.24, 0.80)
+	var warn_l := Color(0.78, 0.48, 0.16, 0.86)
+	var warn_r := Color(0.78, 0.48, 0.16, 0.78)
+	var rivet_col := Color(0.44, 0.47, 0.50, 0.72)
+	var div_col := Color(0.34, 0.37, 0.39, 0.66)
+	var pts := PackedVector2Array()
+	var rivets: Array[Vector2] = []
+	var draw_div := false
+	var div_y0 := 10.0
+
+	if hl > 0.5 and hr > 0.5:
+		if absf(hl - hr) < 1.0:
+			var ch := minf(10.0, sz.y * 0.25)
+			pts = PackedVector2Array([
+				Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(w, 0.0),
+				Vector2(w, sz.y), Vector2(0.0, sz.y),
+			])
+			rv.draw_colored_polygon(pts, bg_col)
+			rv.draw_rect(Rect2(ch, 0.0, w - ch, 4.0), cap_col)
+			rv.draw_rect(Rect2(ch, 4.0, 26.0, 3.0), warn_l)
+			rv.draw_rect(Rect2(w - 20.0, 4.0, 14.0, 3.0), warn_r)
+			rivets = [Vector2(w - 6.0, 10.0), Vector2(6.0, sz.y - 6.0), Vector2(w - 6.0, sz.y - 6.0)]
+			draw_div = sz.y > 22.0
+			div_y0 = 10.0
+		elif hl > hr:
+			var yr := sz.y - hr
+			var ch := minf(10.0, hl * 0.25)
+			pts = PackedVector2Array([
+				Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(mid, 0.0),
+				Vector2(mid, yr), Vector2(w, yr),
+				Vector2(w, sz.y), Vector2(0.0, sz.y),
+			])
+			rv.draw_colored_polygon(pts, bg_col)
+			rv.draw_rect(Rect2(ch, 0.0, mid - ch, 4.0), cap_col)
+			rv.draw_rect(Rect2(ch, 4.0, minf(22.0, mid - ch - 4.0), 3.0), warn_l)
+			rv.draw_rect(Rect2(mid, yr, w - mid, 4.0), cap_col)
+			rv.draw_rect(Rect2(w - 20.0, yr + 4.0, 14.0, 3.0), warn_r)
+			rivets = [Vector2(mid - 6.0, 10.0), Vector2(w - 6.0, yr + 10.0), Vector2(6.0, sz.y - 6.0), Vector2(w - 6.0, sz.y - 6.0)]
+			draw_div = hr > 22.0
+			div_y0 = yr + 10.0
+		else:
+			var yl := sz.y - hl
+			var ch_l := minf(10.0, hl * 0.25)
+			var ch_r := minf(10.0, hr * 0.25) if yl >= 10.0 else 0.0
+			if ch_r > 0.0:
+				pts = PackedVector2Array([
+					Vector2(0.0, yl + ch_l), Vector2(ch_l, yl), Vector2(mid, yl),
+					Vector2(mid, ch_r), Vector2(mid + ch_r, 0.0), Vector2(w, 0.0),
+					Vector2(w, sz.y), Vector2(0.0, sz.y),
+				])
+			else:
+				pts = PackedVector2Array([
+					Vector2(0.0, yl + ch_l), Vector2(ch_l, yl), Vector2(mid, yl),
+					Vector2(mid, 0.0), Vector2(w, 0.0),
+					Vector2(w, sz.y), Vector2(0.0, sz.y),
+				])
+			rv.draw_colored_polygon(pts, bg_col)
+			rv.draw_rect(Rect2(ch_l, yl, mid - ch_l, 4.0), cap_col)
+			rv.draw_rect(Rect2(ch_l, yl + 4.0, minf(22.0, mid - ch_l - 4.0), 3.0), warn_l)
+			rv.draw_rect(Rect2(mid + ch_r, 0.0, w - mid - ch_r, 4.0), cap_col)
+			rv.draw_rect(Rect2(w - 20.0, 4.0, 14.0, 3.0), warn_r)
+			rivets = [Vector2(w - 6.0, 10.0), Vector2(mid - 6.0, yl + 10.0), Vector2(6.0, sz.y - 6.0), Vector2(w - 6.0, sz.y - 6.0)]
+			draw_div = hl > 22.0
+			div_y0 = yl + 10.0
+	elif hl > 0.5:
+		var ch := minf(10.0, sz.y * 0.25)
+		pts = PackedVector2Array([
+			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(mid, 0.0),
+			Vector2(mid, sz.y), Vector2(0.0, sz.y),
+		])
+		rv.draw_colored_polygon(pts, bg_col)
+		rv.draw_rect(Rect2(ch, 0.0, mid - ch, 4.0), cap_col)
+		rv.draw_rect(Rect2(ch, 4.0, minf(22.0, mid - ch - 4.0), 3.0), warn_l)
+		rivets = [Vector2(mid - 6.0, 10.0), Vector2(6.0, sz.y - 6.0), Vector2(mid - 4.0, sz.y - 5.0)]
+	else:
+		var ch := minf(10.0, sz.y * 0.25)
+		pts = PackedVector2Array([
+			Vector2(mid, ch), Vector2(mid + ch, 0.0), Vector2(w, 0.0),
+			Vector2(w, sz.y), Vector2(mid, sz.y),
+		])
+		rv.draw_colored_polygon(pts, bg_col)
+		rv.draw_rect(Rect2(mid + ch, 0.0, w - mid - ch, 4.0), cap_col)
+		rv.draw_rect(Rect2(w - 20.0, 4.0, 14.0, 3.0), warn_r)
+		rivets = [Vector2(w - 6.0, 10.0), Vector2(mid + 4.0, sz.y - 5.0), Vector2(w - 6.0, sz.y - 6.0)]
+
+	var opt_pts := pts.duplicate()
+	opt_pts.append(pts[0])
+	rv.draw_polyline(opt_pts, line_col, 1.5, true)
+	for rp in rivets:
+		rv.draw_rect(Rect2(rp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), rivet_col)
+	if draw_div:
+		rv.draw_line(Vector2(mid, div_y0), Vector2(mid, sz.y - 10.0), div_col, 1.5)
+
+
 func _build_status() -> void:
 	# 左下角 L：拐角（全息投影）+ 竖线（子弹栏）+ 横线（技能栏）
 	var m = raid.mech
@@ -320,56 +484,36 @@ func _build_status() -> void:
 	L.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	L.offset_left = 14
 	L.offset_bottom = -14
-	L.offset_top = -14 - 560
+	L.offset_top = -14 - STATUS_H
 	L.offset_right = 14 + 620
 	L.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	L.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	root.add_child(L)
 	status_root = L
-	var CH := 168.0  # 拐角面板边长
-	var base_y := 560.0 - CH
-	# 竖轨（子弹栏）：贴在拐角上方（半透明工业战术背板，与拐角齐平衔接避免重叠暗带）
-	var rail_w := 100.0
-	var rail_h := 230.0
+	var CH := CORNER_H  # 拐角面板边长
+	var base_y := STATUS_H - CH
+	# 竖轨（子弹栏）：贴在拐角上方，按左右臂各自单弹匣容量自适应高度
+	var rail_w := AMMO_RAIL_W
 	var rv := Control.new()
-	rv.position = Vector2(10, base_y - rail_h - 14)
-	rv.size = Vector2(rail_w, rail_h + 14)
+	rv.position = Vector2(10, base_y)
+	rv.size = Vector2(rail_w, 0.0)
 	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ammo_rail = rv
-	rv.draw.connect(func():
-		var sz := rv.size
-		var ch := 10.0
-		var pts := PackedVector2Array([
-			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
-			Vector2(sz.x, sz.y), Vector2(0.0, sz.y),
-		])
-		rv.draw_colored_polygon(pts, Color(0.085, 0.092, 0.098, 0.68))
-		var opt_pts := PackedVector2Array([
-			Vector2(0.0, ch), Vector2(ch, 0.0), Vector2(sz.x, 0.0),
-			Vector2(sz.x, sz.y), Vector2(0.0, sz.y), Vector2(0.0, ch),
-		])
-		rv.draw_polyline(opt_pts, Color(0.26, 0.28, 0.30, 0.80), 1.5, true)
-		# 顶部工业灰黑护盖与做旧橙黄警示块
-		rv.draw_rect(Rect2(ch, 0.0, sz.x - ch, 4.0), Color(0.20, 0.22, 0.24, 0.80))
-		rv.draw_rect(Rect2(ch, 4.0, 26.0, 3.0), Color(0.78, 0.48, 0.16, 0.86))
-		rv.draw_rect(Rect2(sz.x - 20.0, 4.0, 14.0, 3.0), Color(0.78, 0.48, 0.16, 0.78))
-		# 铆钉与中轴隔离梁
-		for rp in [Vector2(sz.x - 6.0, 10.0), Vector2(6.0, sz.y - 6.0), Vector2(sz.x - 6.0, sz.y - 6.0)]:
-			rv.draw_rect(Rect2(rp - Vector2(1.5, 1.5), Vector2(3.0, 3.0)), Color(0.44, 0.47, 0.50, 0.72))
-		rv.draw_line(Vector2(sz.x * 0.5, 10.0), Vector2(sz.x * 0.5, sz.y - 10.0), Color(0.34, 0.37, 0.39, 0.66), 1.5))
+	rv.draw.connect(_draw_ammo_rail)
 	L.add_child(rv)
 	var k := rail_w / 76.0
 	var i := 0
 	for slot in ["arm_l", "arm_r"]:
 		var col = HL.AmmoColumn.new()
 		var cx: float = 10.0 + (20.0 if i == 0 else 56.0) * k
-		col.position = Vector2(cx - 15.0 * k, base_y - rail_h + 4)
-		col.size = Vector2(30.0 * k, rail_h - 8)
+		col.position = Vector2(cx - 15.0 * k, base_y)
+		col.size = Vector2(30.0 * k, 0.0)
 		col.bw = 30.0 * k - 4.0
 		L.add_child(col)
 		col.setup(m, slot)
 		ammo_cols[slot] = col
 		i += 1
+	_layout_ammo_rail()
 	# 横轨（技能栏）：从拐角右侧齐平伸出，包覆 SPACE（底盘机动）与 F（背部挂载）槽与底部能源条，避免双层叠色暗缝
 	var keys := [["space", Loc.space_key()], ["f", "F"]]
 	var sw := 92.0
@@ -841,7 +985,8 @@ func _build_center() -> void:
 	sys_clip.offset_left = 18.0
 	sys_clip.offset_right = 374.0
 	sys_clip.offset_top = 134.0
-	sys_clip.offset_bottom = -433.0
+	var init_rail_h := ammo_rail.size.y if ammo_rail != null else 0.0
+	sys_clip.offset_bottom = -(14.0 + CORNER_H + init_rail_h + 7.0)
 	sys_clip.clip_contents = true
 	sys_clip.z_index = 18
 	sys_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1192,6 +1337,7 @@ func on_loadout_changed() -> void:
 	for slot in ["arm_l", "arm_r"]:
 		if ammo_cols.has(slot):
 			ammo_cols[slot].setup(m, slot)
+	_layout_ammo_rail()
 	for pair in [["space", Loc.space_key()], ["f", "F"]]:
 		var k: String = pair[0]
 		if skill_slots.has(k):
@@ -1290,7 +1436,8 @@ func _trim_log_box() -> void:
 		return
 	var vp_h: float = get_viewport().get_visible_rect().size.y if get_viewport() != null else 720.0
 	var top_off: float = sys_clip.offset_top if sys_clip != null else 134.0
-	var avail_h: float = sys_clip.size.y if (sys_clip != null and sys_clip.size.y > 40.0) else (vp_h - 433.0 - top_off)
+	var bot_off: float = absf(sys_clip.offset_bottom) if sys_clip != null else (14.0 + CORNER_H + AMMO_MAX_TOTAL_H + 7.0)
+	var avail_h: float = sys_clip.size.y if (sys_clip != null and sys_clip.size.y > 40.0) else (vp_h - bot_off - top_off)
 	if coop_bar != null and coop_bar.visible:
 		avail_h -= maxf(26.0, coop_bar.get_combined_minimum_size().y) + 4.0
 	while log_box.get_child_count() > 1:
@@ -1495,6 +1642,13 @@ func _refresh_fast(m) -> void:
 			scm.set_shader_parameter("vp_size", vp_sz)
 			scm.set_shader_parameter("center_px", cpx)
 			scm.set_shader_parameter("radius_px", minf(vp_sz.x, vp_sz.y) * 0.34)
+	var vp_hi := int(round(get_viewport().get_visible_rect().size.y)) if get_viewport() != null else 720
+	var cur_sig := Vector3i(int(m.mag.get("arm_l", 0)), int(m.mag.get("arm_r", 0)), vp_hi)
+	if cur_sig != _ammo_layout_sig:
+		for slot in ["arm_l", "arm_r"]:
+			if ammo_cols.has(slot) and ammo_cols[slot].mag != int(m.mag.get(slot, 0)):
+				ammo_cols[slot].mag = int(m.mag.get(slot, 0))
+		_layout_ammo_rail()
 	if sys_clip != null:
 		var min_top := 134.0
 		if radio != null and is_instance_valid(radio) and radio.size.y > 0.0:

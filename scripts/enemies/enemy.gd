@@ -182,7 +182,9 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 			_cancel_act()
 	if hp <= 0.0:
 		_sfx("death")
+		var death_t := Prof.t0()
 		_on_killed()
+		Prof.add("enemy.killed", death_t)
 	else:
 		_sfx("hurt")
 
@@ -245,11 +247,20 @@ func _on_killed() -> void:
 		var dm := blast_dmg
 		var pd := pool_dur
 		var pdp := pool_dps
-		get_tree().create_timer(0.35).timeout.connect(func(): bomber_blast(r, p, rad, dm, pd, pdp))
+		# 引信属于本次战区：尸体清理不能取消爆炸，退出战区则取消待执行回调。
+		var fuse: Tween = r.create_tween()
+		fuse.tween_interval(0.35)
+		fuse.tween_callback(bomber_blast.bind(r, p, rad, dm, pd, pdp))
+	var death_t := Prof.t0()
 	_loot()
+	Prof.add("enemy.loot", death_t)
+	death_t = Prof.t0()
 	if raid:
 		raid.on_bug_killed(self)
+	Prof.add("enemy.kill_event", death_t)
+	death_t = Prof.t0()
 	_die()
+	Prof.add("enemy.die", death_t)
 
 
 ## 残骸：按 data 里的 loot 表开箱；data.drop 已被本类置零，基础类不会再开一个。
@@ -606,6 +617,12 @@ func _advance() -> void:
 
 
 func _act_enter(name: String) -> void:
+	var action_t := Prof.t0()
+	_enter_action(name)
+	Prof.add("enemy.action." + ai + "." + name, action_t)
+
+
+func _enter_action(name: String) -> void:
 	step_len = act_t
 	match name:
 		"wind":
@@ -727,6 +744,12 @@ func _dash_trail(p: Vector3, dir: Vector3) -> void:
 	var e := ART.emitter(raid.fx, p + Vector3(0, 0.7, 0), {"amount": 12, "life": 0.34, "size": 0.7, "tex": ART.smoke_tex(), "additive": false, "dir": -dir, "spread": 8.0,
 		"vmin": 1.0, "vmax": 2.0, "gravity": Vector3.ZERO, "damp": 6.0, "c0": Color(0.72, 0.66, 0.56, 0.45), "c1": Color(0.7, 0.64, 0.56, 0.0), "grow0": 0.6, "grow1": 2.0})
 	e.flatness = 0.8
+	# 冲刺只留下短促烟迹；停止发射后让最后一批粒子自然消散，再释放节点。
+	var trail := e.create_tween()
+	trail.tween_interval(0.20)
+	trail.tween_callback(func(): e.emitting = false)
+	trail.tween_interval(e.lifetime)
+	trail.tween_callback(e.queue_free)
 
 
 func _strike() -> void:
@@ -894,10 +917,16 @@ func _self_destruct() -> void:
 	hp = 0.0
 	bomber_blast(raid, global_position, blast_r, blast_dmg, pool_dur, pool_dps)
 	_sfx("death")
+	var death_t := Prof.t0()
 	_loot()
+	Prof.add("enemy.loot", death_t)
+	death_t = Prof.t0()
 	if raid:
 		raid.on_bug_killed(self)
+	Prof.add("enemy.kill_event", death_t)
+	death_t = Prof.t0()
 	_die()
+	Prof.add("enemy.die", death_t)
 
 
 # ================= 程序动画 =================

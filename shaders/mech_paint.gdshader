@@ -92,9 +92,9 @@ vec3 tri_w(vec3 n) {
 
 float tri(sampler2D t, vec3 p, vec3 w) {
 	float s = 0.0;
-	if (w.x > 0.01) s += texture(t, p.zy).r * w.x;
-	if (w.y > 0.01) s += texture(t, p.xz).r * w.y;
-	if (w.z > 0.01) s += texture(t, p.xy).r * w.z;
+	if (w.x > 0.035) s += texture(t, p.zy).r * w.x;
+	if (w.y > 0.035) s += texture(t, p.xz).r * w.y;
+	if (w.z > 0.035) s += texture(t, p.xy).r * w.z;
 	return s;
 }
 
@@ -148,10 +148,11 @@ void fragment() {
 	vec3 w = tri_w(n_loc);
 	vec3 p = lpos * detail_scale;
 	float n_lo = tri(noise_lo, p * 0.35 + wpos * 0.02, w);
-	float macro_w = tri(noise_lo, wpos * 0.032 + vec3(1.7, 0.4, 2.9), w);
+	float macro_w = texture(noise_lo, wpos.xz * 0.032 + vec2(wpos.y * 0.017 + 1.7, wpos.y * 0.023 + 2.9)).r;
 	float n_mid = tri(noise_lo, p * 1.05 + vec3(0.41, 0.17, 0.73), w);
 	float n_hi = tri(noise_hi, p * 2.4, w);
-	float n_sc = tri(noise_hi, p * vec3(9.5, 1.1, 9.5), w);
+	float vert = 1.0 - abs(wnrm.y);
+	float n_sc = ((rust > 0.01 && vert > 0.05) || scratches > 0.01) ? tri(noise_hi, p * vec3(9.5, 1.1, 9.5), w) : 0.5;
 
 	// 墙面立面令 -p.y 对应贴图 +v（向下），保证砖缝阴影、波纹板搭接锈水与混凝土孔流痕均严格顺重力朝下
 	vec2 uv_x = vec2(p.z, -p.y);
@@ -170,9 +171,9 @@ void fragment() {
 		if (use_albedo_tex > 0.5) {
 			float ts = albedo_tex_scale * 1.6;
 			vec3 at = vec3(0.0);
-			if (w.x > 0.01) at += texture(albedo_tex, uv_x * ts).rgb * w.x;
-			if (w.y > 0.01) at += texture(albedo_tex, uv_y * ts).rgb * w.y;
-			if (w.z > 0.01) at += texture(albedo_tex, uv_z * ts).rgb * w.z;
+			if (w.x > 0.035) at += texture(albedo_tex, uv_x * ts).rgb * w.x;
+			if (w.y > 0.035) at += texture(albedo_tex, uv_y * ts).rgb * w.y;
+			if (w.z > 0.035) at += texture(albedo_tex, uv_z * ts).rgb * w.z;
 			tex_luma = dot(at, vec3(0.333));
 			// 中性校准：柔和融入贴图微结构，避免远距高频噪点与发脏
 			col *= mix(vec3(1.0), at * 1.48, albedo_tex_strength);
@@ -236,14 +237,17 @@ void fragment() {
 	col = mix(col, dust_color.rgb * 0.62, grime * low * 0.24 * smoothstep(0.38, 0.72, n_lo));
 
 	// 锈迹、雨水烟熏垂向流痕与机械油渍（突出末世废土岁月侵蚀与重工沧桑）
-	float vert = 1.0 - abs(wnrm.y);
-	float streak = smoothstep(0.54, 0.86, n_sc) * vert * smoothstep(0.34, 0.72, n_lo);
-	vec3 eff_rust = metal_wear > 0.5 ? rust_color.rgb : (base_c * 0.50 + vec3(0.026, 0.022, 0.018));
-	col = mix(col, eff_rust, rust * streak * 0.66);
-	rough = mix(rough, 0.94, rust * streak * 0.76);
-	float oil = smoothstep(0.70, 0.94, tri(noise_hi, p * vec3(7.0, 0.65, 7.0) + 0.5, w)) * vert * metal_wear * grime;
-	col *= 1.0 - oil * 0.24;
-	rough = mix(rough, 0.30, oil * 0.55);
+	float streak = (rust > 0.01 && vert > 0.05) ? smoothstep(0.54, 0.86, n_sc) * vert * smoothstep(0.34, 0.72, n_lo) : 0.0;
+	if (streak > 0.005) {
+		vec3 eff_rust = metal_wear > 0.5 ? rust_color.rgb : (base_c * 0.50 + vec3(0.026, 0.022, 0.018));
+		col = mix(col, eff_rust, rust * streak * 0.66);
+		rough = mix(rough, 0.94, rust * streak * 0.76);
+	}
+	if (metal_wear > 0.01 && vert > 0.05 && grime > 0.01) {
+		float oil = smoothstep(0.70, 0.94, tri(noise_hi, p * vec3(7.0, 0.65, 7.0) + 0.5, w)) * vert * metal_wear * grime;
+		col *= 1.0 - oil * 0.24;
+		rough = mix(rough, 0.30, oil * 0.55);
+	}
 
 	// 战损刮擦与金属倒角掉漆露底（非卡通描边：仅在金属边缘与磨损处露出真实冷钢反光）
 	col *= 1.0 + edge * 0.045 * (1.0 - low * 0.65);
@@ -311,16 +315,16 @@ void fragment() {
 		float damp = 0.0;
 		float p_deep = 0.0;
 		if (flat_up > 0.01 && near_ground > 0.01) {
-			float wb1 = texture(noise_lo, wpos.xz * 0.026 + vec2(0.31, 0.73)).r;
-			float wb2 = texture(noise_lo, wpos.xz * 0.068 + vec2(4.17, 1.89)).r;
-			float rut_bias = stripes > 0.5 ? -0.06 : clamp(0.28 - dot(base_c, vec3(0.333)), -0.04, 0.06) * 0.38;
-			float pf_raw = 0.50 + (wb1 - 0.5) * 1.12 + (wb2 - 0.5) * 0.62;
+			float wb1 = texture(noise_lo, wpos.xz * 0.022 + vec2(0.31, 0.73)).r;
+			float wb2 = texture(noise_lo, wpos.xz * 0.055 + vec2(4.17, 1.89)).r;
+			float rut_bias = stripes > 0.5 ? -0.06 : clamp(0.28 - dot(base_c, vec3(0.333)), -0.04, 0.06) * 0.30;
+			float pf_raw = 0.50 + (wb1 - 0.5) * 0.88 + (wb2 - 0.5) * 0.36;
 			float pf = pf_raw + rut_bias - seam * 0.06;
 			float p_gate = wet_g * flat_up * near_ground;
-			puddle = p_gate * smoothstep(0.710, 0.805, pf);
-			p_deep = smoothstep(0.765, 0.880, pf);
-			soak = p_gate * smoothstep(0.625, 0.745, pf);
-			damp = wet_g * flat_up * smoothstep(0.420, 0.610, pf);
+			puddle = p_gate * smoothstep(0.745, 0.835, pf);
+			p_deep = smoothstep(0.790, 0.895, pf);
+			soak = p_gate * smoothstep(0.675, 0.785, pf);
+			damp = wet_g * flat_up * smoothstep(0.360, 0.620, pf);
 			if (puddle > 0.02 && weather_rain > 0.01) {
 				float cam_d = length(wpos - INV_VIEW_MATRIX[3].xyz);
 				float rip_fade = (1.0 - smoothstep(14.0, 44.0, cam_d)) * clamp(weather_rain, 0.0, 1.0);
@@ -332,18 +336,18 @@ void fragment() {
 		float total_damp = max(surf_wet, damp * 0.78);
 		float wet_any = clamp(max(total_damp, soak), 0.0, 1.0);
 		float col_lum = dot(col, vec3(0.299, 0.587, 0.114));
-		vec3 wet_chroma = max(mix(vec3(col_lum), col, 1.0 + 0.10 * wet_any), vec3(0.0));
+		vec3 wet_chroma = max(mix(vec3(col_lum), col, 1.0 + 0.08 * wet_any), vec3(0.0));
 		col = mix(col, wet_chroma, wet_any);
-		// 保持雨水路面低频平滑映影（不引入锯齿黑斑，但恢复写实雨天湿润路面深色反光与微弱积水）
-		col *= mix(1.0, mix(0.92, 0.80, porous), total_damp * (1.0 - soak * 0.65));
-		col *= mix(1.0, mix(0.88, 0.72, porous), soak);
-		vec3 puddle_col = mix(col * 0.74, mix(col * 0.52, vec3(0.022, 0.028, 0.036), 0.38), p_deep);
+		// 雨天路面均匀深沉湿润（收敛水际花斑与刺眼高光白边，让沥青/人行道干净统一）
+		col *= mix(1.0, mix(0.92, 0.84, porous), total_damp * (1.0 - soak * 0.60));
+		col *= mix(1.0, mix(0.90, 0.84, porous), soak);
+		vec3 puddle_col = mix(col * 0.78, mix(col * 0.60, vec3(0.018, 0.024, 0.032), 0.32), p_deep);
 		col = mix(col, puddle_col, puddle);
 
-		// 抑制金属波纹屋顶的雨湿镜面拉低，避免弯曲屋顶反射天光产生刺眼条纹；同时让湿润沥青/水泥呈现真实的低粗糙度倒影层次
-		rough = mix(rough, min(rough, mix(0.54, 0.44, porous)), total_damp * 0.52);
-		rough = mix(rough, 0.28, soak * 0.74);
-		rough = mix(rough, mix(0.14, 0.09, p_deep), puddle);
+		// 抑制金属波纹屋顶的雨湿镜面拉低，同时让湿润沥青/水泥呈现平滑克制的雨水光泽
+		rough = mix(rough, min(rough, mix(0.56, 0.48, porous)), total_damp * 0.48);
+		rough = mix(rough, 0.34, soak * 0.62);
+		rough = mix(rough, mix(0.20, 0.14, p_deep), puddle);
 	}
 
 		// 连续三平面法线扰动（在视图空间直接合成 NORMAL，消除合批圆柱/斜坡切线阶跃摩尔伪影）
@@ -351,20 +355,23 @@ void fragment() {
 		float uv_fw = max(length(fwidth(uv_x * ns)) * w.x, max(length(fwidth(uv_y * ns)) * w.y, length(fwidth(uv_z * ns)) * w.z));
 		float nfade = clamp(1.0 - uv_fw * 2.15, 0.0, 1.0);
 		float n_amt = clamp((normal_strength + seam * 0.30 + worn * 0.16) * nfade, 0.0, 1.05) * (1.0 - puddle * 0.90);
-		vec3 nm_x = w.x > 0.01 ? (texture(normal_tex, uv_x * ns).rgb * 2.0 - 1.0) : vec3(0.0);
-		vec3 nm_y = w.y > 0.01 ? (texture(normal_tex, uv_y * ns).rgb * 2.0 - 1.0) : vec3(0.0);
-		vec3 nm_z = w.z > 0.01 ? (texture(normal_tex, uv_z * ns).rgb * 2.0 - 1.0) : vec3(0.0);
-		vec2 tx = nm_x.xy * n_amt + (w.x > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
-		vec2 ty = nm_y.xy * n_amt + (w.y > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
-		vec2 tz = nm_z.xy * n_amt + (w.z > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
-		vec3 p_x = vec3(0.0, tx.y, tx.x);
-		vec3 p_y = roof_uv > 0.5 ? vec3(-ty.y, 0.0, ty.x) : vec3(ty.x, 0.0, -ty.y);
-		vec3 p_z = vec3(tz.x, tz.y, 0.0);
-		vec3 dp_loc = p_x * w.x + p_y * w.y + p_z * w.z;
-		dp_loc -= n_loc * dot(dp_loc, n_loc);
-		mat3 v_rot = mat3(rot_x, rot_y, rot_z);
-		vec3 w_sum = wnrm + v_rot * dp_loc;
-		vec3 w_pert = length(w_sum) > 1e-4 ? normalize(w_sum) : wnrm;
+		vec3 w_pert = wnrm;
+		if (n_amt > 0.005 || seam > 0.005) {
+			vec3 nm_x = (n_amt > 0.005 && w.x > 0.035) ? (texture(normal_tex, uv_x * ns).rgb * 2.0 - 1.0) : vec3(0.0);
+			vec3 nm_y = (n_amt > 0.005 && w.y > 0.035) ? (texture(normal_tex, uv_y * ns).rgb * 2.0 - 1.0) : vec3(0.0);
+			vec3 nm_z = (n_amt > 0.005 && w.z > 0.035) ? (texture(normal_tex, uv_z * ns).rgb * 2.0 - 1.0) : vec3(0.0);
+			vec2 tx = nm_x.xy * n_amt + (w.x > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
+			vec2 ty = nm_y.xy * n_amt + (w.y > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
+			vec2 tz = nm_z.xy * n_amt + (w.z > 0.5 ? seam_n * (1.0 - puddle * 0.85) : vec2(0.0));
+			vec3 p_x = vec3(0.0, tx.y, tx.x);
+			vec3 p_y = roof_uv > 0.5 ? vec3(-ty.y, 0.0, ty.x) : vec3(ty.x, 0.0, -ty.y);
+			vec3 p_z = vec3(tz.x, tz.y, 0.0);
+			vec3 dp_loc = p_x * w.x + p_y * w.y + p_z * w.z;
+			dp_loc -= n_loc * dot(dp_loc, n_loc);
+			mat3 v_rot = mat3(rot_x, rot_y, rot_z);
+			vec3 w_sum = wnrm + v_rot * dp_loc;
+			w_pert = length(w_sum) > 1e-4 ? normalize(w_sum) : wnrm;
+		}
 		if (puddle > 0.01) {
 			vec3 w_water = normalize(vec3(rip_n.x, 1.0, rip_n.y));
 			w_pert = normalize(mix(w_pert, w_water, puddle * 0.92));
@@ -381,13 +388,13 @@ void fragment() {
 
 	float tex_ao = use_albedo_tex > 0.5 ? clamp((0.62 - tex_luma) * 0.48, 0.0, 0.22) : 0.0;
 	float base_spec = mix(0.50, 0.86, max(worn, metal_base * 0.6) * metal_wear);
-	SPECULAR = mix(base_spec, 0.64, max(puddle, soak * 0.45));
+	SPECULAR = mix(base_spec, 0.56, max(puddle * 0.85, soak * 0.30));
 	AO = clamp(1.0 - tex_ao * (1.0 - puddle * 0.65) - seam * mix(0.16, 0.44, metal_wear) - seam_ao * mix(0.06, 0.16, metal_wear) - primer * 0.18 - low * grime * 0.28 - under * 0.15, 0.40, 1.0);
 	AO_LIGHT_AFFECT = 0.42;
 	float dry_coat = (1.0 - worn * 0.7) * (1.0 - d) * (1.0 - rust * streak) * metal_wear * clamp(0.66 - rough_base, 0.0, 0.45) * 0.34;
-	float wet_coat = max(puddle * 0.46, max(soak * 0.20, surf_wet * mix(0.05, 0.11, metal_wear)));
+	float wet_coat = max(puddle * 0.28, max(soak * 0.10, surf_wet * mix(0.04, 0.09, metal_wear)));
 	CLEARCOAT = max(dry_coat, wet_coat);
-	CLEARCOAT_ROUGHNESS = mix(clamp(0.34 + min(1.5 * var_n, 0.28), 0.24, 1.0), mix(0.24, 0.12, puddle), clamp(puddle * 1.25 + soak * 0.45, 0.0, 1.0));
+	CLEARCOAT_ROUGHNESS = mix(clamp(0.34 + min(1.5 * var_n, 0.28), 0.24, 1.0), mix(0.28, 0.16, puddle), clamp(puddle * 1.15 + soak * 0.35, 0.0, 1.0));
 	if (occ_fade > 0.01) {
 		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
 		ROUGHNESS = mix(ROUGHNESS, 0.96, occ_fade * 0.65);

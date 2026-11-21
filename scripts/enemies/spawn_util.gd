@@ -177,14 +177,23 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 	light.omni_range = 16.0
 	light.position = Vector3(0, 2.6, 0)
 	lair.add_child(light)
-	# 首领巢穴战利品箱：保险柜 + 军用箱（沿竞技台切向整齐摆放）
+	# 首领巢穴战利品箱：按首领地标/巢穴主题匹配高价值容器并朝向竞技台内侧整齐摆放
 	var box_kinds := ["safe", "military"]
+	match boss_id:
+		"silo_warhead", "citadel_behemoth", "sky_carrier":
+			box_kinds = ["weapon", "safe"]
+		"terminus_warden", "core_overlord":
+			box_kinds = ["tech", "safe"]
+		"abyss_queen", "abyss_harbinger", "excavator_titan":
+			box_kinds = ["cache", "safe"]
 	for i in box_kinds.size():
 		var ba: float = TAU * (0.35 + float(i) * 0.3)
+		var out_v := Vector3(-cos(ba), 0.0, -sin(ba))
 		var raw_p := center + Vector3(cos(ba), 0.0, sin(ba)) * 5.8
 		var bp: Vector3 = raid.dry_spot(raw_p, 2.2)
 		if not raid._blocked(bp, 1.8, false):
-			raid._place_box(box_kinds[i], Vector3(bp.x, 0.0, bp.z), [], rad_to_deg(-ba))
+			var byaw: float = raid._face_outward_yaw(out_v) if raid.has_method("_face_outward_yaw") else rad_to_deg(-ba)
+			raid._place_box(box_kinds[i], Vector3(bp.x, 0.0, bp.z), [], byaw)
 
 
 static func _spawn_guards(raid, center: Vector3, guards: Array) -> void:

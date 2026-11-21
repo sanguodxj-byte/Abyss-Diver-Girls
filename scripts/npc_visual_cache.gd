@@ -10,6 +10,11 @@ static func prepare() -> void:
 	if OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile": return
 	if library == null and ResourceLoader.exists(PATH):
 		library = load(PATH)
+		if OS.has_feature("web"):
+			# 保留离线网格缓存；只把桌面烘焙材质切到网页轻量着色器。
+			for mat in materials():
+				if mat is ShaderMaterial and mat.shader.resource_path == "res://shaders/mech_paint.gdshader":
+					mat.shader = load("res://shaders/mech_paint_web.gdshader")
 
 
 static func materials() -> Array:
@@ -45,7 +50,10 @@ static func pack(root: Node3D) -> PackedScene:
 		for key in node.get_meta_list():
 			node.set_meta(key, _encode(node.get_meta(key), root))
 	var packed := PackedScene.new()
-	assert(packed.pack(root) == OK, "Cannot pack NPC module")
+	var error := packed.pack(root)
+	if error != OK:
+		push_error("Cannot pack NPC module: %d" % error)
+		return null
 	return packed
 
 

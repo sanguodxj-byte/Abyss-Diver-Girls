@@ -725,6 +725,10 @@ class PortraitPlace extends Control:
 
 	func _ready() -> void:
 		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		resized.connect(queue_redraw)
+		if not AP.animated_portraits_enabled():
+			set_process(false)
+			return
 		view = SubViewport.new()
 		view.size = Vector2i(768, 768)
 		view.transparent_bg = true

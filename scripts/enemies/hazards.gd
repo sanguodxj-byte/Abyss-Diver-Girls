@@ -6,6 +6,45 @@ extends RefCounted
 const A = preload("res://scripts/art.gd")
 const DM = preload("res://scripts/modules/device_models.gd")
 const MM = preload("res://scripts/modules/munition_models.gd")
+class BodyCache extends RefCounted:
+	static var _body_scenes := {}
+
+
+	static func _body_scene(kind: String, color: Color) -> PackedScene:
+		var key := var_to_bytes([kind, color if kind != "rocket" else Color.WHITE])
+		if _body_scenes.has(key): return _body_scenes[key]
+		var body := Node3D.new()
+		match kind:
+			"lob": MM.build_lob_shell(body, color)
+			"slug": MM.build_kinetic_slug(body, A.emit(color.lightened(0.28), 3.2))
+			"rocket": DM.build_salvo_rocket(body)
+		for node in body.find_children("*", "", true, false): node.owner = body
+		var packed := PackedScene.new()
+		var error := packed.pack(body)
+		body.free()
+		if error != OK:
+			push_error("Cannot pack hazard body: %s" % kind)
+			return null
+		_body_scenes[key] = packed
+		return packed
+
+
+	static func warm_visuals() -> void:
+		_body_scene("rocket", Color.WHITE)
+		for c: Color in [Color(0.66, 0.95, 0.3), Color(0.6, 1.0, 0.2), Color(0.78, 0.5, 1.0), Color(0.8, 0.95, 0.35),
+			Color(1.0, 0.56, 0.16), Color(0.76, 0.42, 1.0), Color(0.84, 0.32, 1.0), Color(1.0, 0.68, 0.22)]:
+			_body_scene("lob", c)
+		for c: Color in [Color(1.0, 0.48, 0.14), Color(0.26, 0.82, 0.92), Color(0.96, 0.66, 0.18), Color(0.28, 0.78, 0.96),
+			Color(1.0, 0.56, 0.18), Color(0.32, 0.86, 0.95), Color(1.0, 0.44, 0.16), Color(1.0, 0.68, 0.24),
+			Color(1.0, 0.20, 0.08), Color(1.0, 0.34, 0.09), Color(1.0, 0.54, 0.16), Color(0.28, 0.86, 1.0)]:
+			_body_scene("slug", c)
+		A.tactical_ring_mat(Color.WHITE)
+		A.tactical_lane_mat(Color.WHITE)
+		for i in 3: A.slash_arc_mesh(2.2 + i * 0.3, 0.16 - i * 0.03, 0.42)
+
+
+static func warm_visuals() -> void:
+	BodyCache.warm_visuals()
 
 ## 地面预警圈：贴地圆环从内向外亮起，到时自动消失。Boss 与炮击的落点在伤害前先亮这一圈。
 class Mark extends Node3D:
@@ -108,7 +147,7 @@ class LobShell extends Node3D:
 		body = Node3D.new()
 		add_child(body)
 		# 重工业高抛迫击炮弹（低面数整改 P0-MSL-06）：泪滴车削弹体 + 引信 + 识别/高危环 + 闭气环 + 导气孔尾管 + 后掠尾翼
-		MM.build_lob_shell(body, c)
+		body.add_child(BodyCache._body_scene("lob", c).instantiate())
 		A.emitter(self, Vector3.ZERO, {"amount": 14, "life": 0.55, "size": 0.42, "tex": A.smoke_tex(), "additive": false, "spread": 55.0, "vmin": 0.15, "vmax": 0.55, "gravity": Vector3(0, 0.6, 0),
 			"c0": Color(0.26, 0.28, 0.24, 0.58), "c1": Color(0.18, 0.19, 0.17, 0.0), "grow0": 0.65, "grow1": 1.85})
 		mark = Mark.new()
@@ -340,7 +379,7 @@ class RocketSalvo extends Node3D:
 		body = Node3D.new()
 		add_child(body)
 		# 高精火箭弹：卵形整流罩 + 级间法兰 + 后掠翼型尾翼 / 鸭翼 + 拉瓦尔喷管
-		DM.build_salvo_rocket(body)
+		body.add_child(BodyCache._body_scene("rocket", c).instantiate())
 		# 火箭弹长尾曳光焰带（沿弹体 -Y 尾部拖出高可视度推进火舌）
 		var rk_rib := PlaneMesh.new()
 		rk_rib.size = Vector2(0.34, 3.6)
@@ -497,9 +536,8 @@ void fragment() {
 		add_child(body)
 		body.rotation_degrees.x = -90.0
 		body.scale = Vector3.ONE * shell_scale
-		var m_tracer := A.emit(c.lightened(0.28), 3.2)
 		# 放大高可视度钨合金穿甲弹芯 + 炽热发光弹头风帽与曳光药柱
-		MM.build_kinetic_slug(body, m_tracer)
+		body.add_child(BodyCache._body_scene("slug", c).instantiate())
 
 		# 双交叉高亮度长曳光尾迹（沿 +Z 弹尾随飞行距离动态拉长至 tail_len，任意俯视/平视角度均清晰醒目）
 		tail_offset = 0.42 * shell_scale

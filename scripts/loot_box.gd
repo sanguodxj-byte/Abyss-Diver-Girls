@@ -91,7 +91,7 @@ func setup(k: String, loot: Array, tier := 1) -> void:
 			"container": _build_container(sz, sink)
 			"cache": _build_cache(sz, sink)
 		_sand_and_rubble(sz)
-	_batch_loot_meshes()
+	_batch_loot_meshes(get_tree() if k in ["bug", "nest"] and is_inside_tree() else null)
 
 
 func _rel_xf(n: Node3D) -> Transform3D:
@@ -104,7 +104,10 @@ func _rel_xf(n: Node3D) -> Transform3D:
 	return xf
 
 
-func _batch_loot_meshes() -> void:
+var batch_ready := false
+
+
+func _batch_loot_meshes(tree: SceneTree = null) -> void:
 	var hl_set := {}
 	for mi in _meshes:
 		if is_instance_valid(mi):
@@ -128,16 +131,21 @@ func _batch_loot_meshes() -> void:
 		elif n is Node3D and n.get_class() == "Node3D":
 			bodies.append(n)
 	var ckey := kind if (kind != "bug" and kind != "nest") else ""
-	_meshes = _merge_mesh_group(_meshes, ckey)
-	_merge_mesh_group(other_list, "")
+	_meshes = await _merge_mesh_group(_meshes, ckey, tree)
+	await _merge_mesh_group(other_list, "", tree)
 	for b in bodies:
 		if is_instance_valid(b) and b.get_child_count() == 0:
 			if b.get_parent():
 				b.get_parent().remove_child(b)
 			b.free()
+	batch_ready = true
+	if near:
+		near = false
+		set_near(true)
 
 
-func _merge_mesh_group(list: Array, cache_key: String) -> Array:
+func _merge_mesh_group(list: Array, cache_key: String, tree: SceneTree = null) -> Array:
+	var deadline := Time.get_ticks_usec() + 1000
 	if cache_key != "" and _hl_mesh_cache.has(cache_key):
 		for mi in list:
 			if is_instance_valid(mi):
@@ -192,9 +200,6 @@ func _merge_mesh_group(list: Array, cache_key: String) -> Array:
 					buckets[key] = []
 					mats[key] = mat
 				buckets[key].append([m, s, xf, tint_col, tint_mode])
-			if mi.get_parent():
-				mi.get_parent().remove_child(mi)
-			mi.free()
 		if buckets.is_empty():
 			continue
 		var am := ArrayMesh.new()
@@ -203,6 +208,9 @@ func _merge_mesh_group(list: Array, cache_key: String) -> Array:
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 			for item in buckets[key]:
 				st.append_from(RB._tinted_surface(item[0], item[1], item[3], item[4]), 0, item[2])
+				if tree != null and Time.get_ticks_usec() >= deadline:
+					await tree.process_frame
+					deadline = Time.get_ticks_usec() + 1000
 			st.commit(am)
 			if mats[key] != null:
 				am.surface_set_material(am.get_surface_count() - 1, mats[key])
@@ -215,6 +223,10 @@ func _merge_mesh_group(list: Array, cache_key: String) -> Array:
 		merged.visibility_range_end_margin = 4.0
 		add_child(merged)
 		result.append(merged)
+		# 原外观保持可见、可搜刮，完整合批后在同一帧替换，不延迟掉落物出现。
+		for mi: MeshInstance3D in grp:
+			if mi.get_parent(): mi.get_parent().remove_child(mi)
+			mi.free()
 	return result
 
 

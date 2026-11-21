@@ -19,6 +19,7 @@ const VIS_END_FP_INST := 165.0
 const CAM_DIST_REF := 44.0
 const PAINT_PATH := "res://shaders/mech_paint.gdshader"
 const PAINT_MOB_PATH := "res://shaders/mech_paint_mobile.gdshader"
+const PAINT_WEB_PATH := "res://shaders/mech_paint_web.gdshader"
 const GLASS_PATH := "res://shaders/ind_glass.gdshader"
 const FOLIAGE_PATH := "res://shaders/foliage.gdshader"
 const FOLIAGE_MOB_PATH := "res://shaders/foliage_mobile.gdshader"
@@ -52,7 +53,7 @@ static func _is_paint_shader(m: Material) -> bool:
 	if sm.shader == null:
 		return false
 	var rp: String = sm.shader.resource_path
-	return rp == PAINT_PATH or rp == PAINT_MOB_PATH
+	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == PAINT_WEB_PATH
 
 
 ## 写实涂装材质拆成「去色共享材质 + 底色」，完整保留法线贴图、反照率贴图、面板密度与锈蚀做旧参数
@@ -146,7 +147,7 @@ static func _uses_local_triplanar(m: Material) -> bool:
 	if sm.shader == null:
 		return false
 	var rp: String = sm.shader.resource_path
-	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == GLASS_PATH
+	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == PAINT_WEB_PATH or rp == GLASS_PATH
 
 
 static func _is_foliage(m: Material) -> bool:

@@ -12,26 +12,34 @@ uniform float rough_val : hint_range(0.2, 1.0) = 0.78;
 uniform float alpha_cut : hint_range(0.08, 0.65) = 0.34;
 uniform float sway_amp : hint_range(0.0, 0.25) = 0.045;
 uniform float backlight_str : hint_range(0.0, 1.0) = 0.36;
-uniform float albedo_gain : hint_range(0.4, 3.5) = 1.0;
+uniform float albedo_gain : hint_range(0.4, 5.0) = 1.0;
 uniform float up_normal_blend : hint_range(0.0, 0.9) = 0.0;
 #include "res://shaders/occ_fade.gdshaderinc"
 
 varying float v_ao;
 varying float v_var;
+varying float v_height;
+varying float v_tree_h;
 varying vec3 v_wpos;
 
 void vertex() {
 	vec3 world_origin = MODEL_MATRIX[3].xyz;
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// 枝梢/草尖随微风轻摆（UV.y = 1 为根部固定，UV.y = 0 为梢部摆动）
+	// 枝梢/草尖随微风轻摆 + 叶片高频微颤（UV.y = 1 为根部固定，UV.y = 0 为梢部摆动）
 	float flex = clamp(1.0 - UV.y, 0.0, 1.0);
+	float flex2 = flex * flex;
 	float ph = world_origin.x * 0.37 + world_origin.z * 0.29 + VERTEX.y * 1.1;
-	float gust = sin(TIME * 1.65 + ph) * 0.65 + cos(TIME * 2.9 + ph * 1.7) * 0.35;
-	VERTEX.x += gust * sway_amp * flex * flex;
-	VERTEX.z += cos(TIME * 1.35 + ph * 1.3) * sway_amp * 0.65 * flex * flex;
+	float gust = sin(TIME * 1.55 + ph) * 0.65 + cos(TIME * 2.75 + ph * 1.7) * 0.35;
+	float flutter = sin(TIME * 4.1 + wp.x * 2.1 + wp.z * 2.5) * 0.16;
+	VERTEX.x += (gust + flutter) * sway_amp * flex2;
+	VERTEX.z += (cos(TIME * 1.30 + ph * 1.3) * 0.65 - flutter * 0.7) * sway_amp * flex2;
+	VERTEX.y += sin(TIME * 2.4 + ph * 1.5) * sway_amp * 0.18 * flex2;
 
-	v_ao = clamp(COLOR.r, 0.25, 1.0);
+	v_ao = clamp(COLOR.r, 0.24, 1.0);
 	v_var = COLOR.g;
+	v_height = clamp(COLOR.b, 0.0, 1.0);
+	// 按单株实例原点哈希色差，消除旧版世界网格接缝切穿单棵树冠的问题
+	v_tree_h = fract(sin(dot(world_origin.xz, vec2(127.1, 311.7))) * 43758.5453);
 	v_wpos = wp;
 }
 
@@ -46,18 +54,24 @@ void fragment() {
 	vec4 tx = texture(albedo_tex, UV);
 	// 远景大仰角/俯拍时随导数自动降低裁切阈值，杜绝树冠远看稀疏发虚
 	float uv_fw = max(fwidth(UV.x), fwidth(UV.y));
-	float mip_boost = clamp(uv_fw * 2.8, 0.0, 0.22);
+	float mip_boost = clamp(uv_fw * 3.2, 0.0, 0.22);
 	ALPHA = tx.a;
-	ALPHA_SCISSOR_THRESHOLD = max(0.11, alpha_cut - mip_boost);
+	ALPHA_SCISSOR_THRESHOLD = max(0.10, alpha_cut - mip_boost);
 
-	// 株间与冠层高低自然色阶过渡（深橄榄绿 <-> 微暖荒原黄绿）
-	float tree_h = fract(sin(dot(floor(v_wpos.xz * 0.22), vec2(127.1, 311.7))) * 43758.5453);
-	float mix_t = clamp(tree_h * 0.65 + v_var * 0.35, 0.0, 1.0);
+	// 单株自然色差 + 冠层由内下到顶梢的柔和日照暖度渐变
+	float is_tree = 1.0 - smoothstep(0.35, 0.72, up_normal_blend);
+	float low_fol = smoothstep(0.50, 0.85, up_normal_blend);
+	float mix_t = clamp(v_tree_h * 0.60 + v_var * 0.26 + v_height * 0.16 * is_tree, 0.0, 1.0);
 	vec3 tint = mix(tint_a.rgb, tint_b.rgb, mix_t);
-	// 废土衰草与低饱和枯绿树冠分层（外层微枯尘绿、内腔沉稳冷岩暗影，不糊成死黑块）
-	float ao_t = mix(smoothstep(0.20, 0.94, v_ao), smoothstep(0.05, 0.85, v_ao), up_normal_blend);
-	vec3 shade_mul = mix(vec3(0.66, 0.70, 0.70), vec3(1.12, 1.08, 0.94), ao_t);
-	vec3 col = clamp(tx.rgb * tint * shade_mul * albedo_gain, vec3(0.0), vec3(0.94));
+
+	// 树冠体积明暗塑形：内腔与下缘保留沉稳冷翠阴影，外层与顶冠受日照暖提亮
+	float ao_src = mix(v_ao * 0.74 + v_height * 0.26, v_ao, low_fol);
+	float ao_t = mix(smoothstep(0.18, 0.95, ao_src), smoothstep(0.05, 0.85, v_ao), up_normal_blend);
+	vec3 tx_rgb = max(tx.rgb, vec3(0.042, 0.044, 0.032) * low_fol);
+	vec3 low_shade = mix(vec3(0.66, 0.74, 0.69), vec3(0.94, 0.92, 0.85), low_fol);
+	vec3 hi_shade = mix(vec3(1.22, 1.18, 0.99), vec3(1.16, 1.13, 1.00), low_fol);
+	vec3 shade_mul = mix(low_shade, hi_shade, ao_t);
+	vec3 col = clamp(tx_rgb * tint * shade_mul * albedo_gain, vec3(0.0), vec3(0.95));
 
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
@@ -68,27 +82,36 @@ void fragment() {
 	}
 
 	ALBEDO = occ_fade > 0.01 ? occ_soft_mist(col, occ_fade) : col;
-	ROUGHNESS = clamp(rough_val - (1.0 - UV.y) * 0.08, 0.35, 0.96);
-	SPECULAR = 0.22;
+	ROUGHNESS = clamp(rough_val - (1.0 - UV.y) * 0.08 - v_height * 0.04 * is_tree, 0.50, 0.95);
+	SPECULAR = mix(0.08, 0.14, is_tree);
 	METALLIC = 0.0;
-	BACKLIGHT = col * vec3(0.68, 0.72, 0.40) * backlight_str * smoothstep(0.18, 1.0, v_ao);
-	AO = clamp(mix(mix(0.58, 0.78, up_normal_blend), 1.0, v_ao), 0.56, 1.0);
-	AO_LIGHT_AFFECT = mix(0.42, 0.20, up_normal_blend);
+	BACKLIGHT = col * vec3(0.86, 0.94, 0.44) * backlight_str * smoothstep(0.12, 0.95, ao_src);
+	AO = clamp(mix(mix(0.64, 0.94, up_normal_blend), 1.0, v_ao), 0.62, 1.0);
+	AO_LIGHT_AFFECT = mix(0.28, 0.06, up_normal_blend);
 
 	if (use_normal > 0.5) {
 		vec3 nm = texture(normal_tex, UV).rgb;
 		if (!FRONT_FACING) {
 			nm.x = 1.0 - nm.x;
 		}
-		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nm, clamp(1.0 - uv_fw * 4.0, 0.0, 0.75));
+		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nm, clamp(1.0 - uv_fw * 3.2, 0.16, 0.84));
 	}
 }
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
 	float wrap = clamp(ndl * 0.58 + 0.42, 0.0, 1.0);
-	float shadow_fac = LIGHT_IS_DIRECTIONAL ? mix(0.55, 1.0, ATTENUATION) : ATTENUATION;
-	float trans = clamp(dot(-NORMAL, LIGHT) * 0.55 + 0.45, 0.0, 1.0) * 0.38;
-	float atten_trans = LIGHT_IS_DIRECTIONAL ? mix(0.38, 1.0, ATTENUATION) : ATTENUATION;
-	DIFFUSE_LIGHT += (ALBEDO * wrap * shadow_fac + BACKLIGHT * trans * atten_trans) * LIGHT_COLOR * 0.35;
+	float shadow_fac = LIGHT_IS_DIRECTIONAL ? mix(0.56, 1.0, ATTENUATION) : ATTENUATION;
+	float back_wrap = clamp(dot(-NORMAL, LIGHT) * 0.52 + 0.48, 0.0, 1.0);
+	float view_sss = pow(clamp(dot(VIEW, -LIGHT), 0.0, 1.0), 2.8);
+	float trans = back_wrap * 0.42 + view_sss * 0.46;
+	float atten_trans = LIGHT_IS_DIRECTIONAL ? mix(0.45, 1.0, ATTENUATION) : ATTENUATION;
+	DIFFUSE_LIGHT += (ALBEDO * wrap * shadow_fac + BACKLIGHT * trans * atten_trans) * LIGHT_COLOR * 0.44;
+	// 叶片角质层微妙电解质蜡感反光（F0≈0.025 + 叶片色染色 + 软上限，彻底杜绝过曝泛白雪块）
+	vec3 h_vec = normalize(LIGHT + VIEW);
+	float ndh = max(dot(NORMAL, h_vec), 0.0);
+	float spec_exp = mix(40.0, 12.0, ROUGHNESS);
+	float spec_lobe = pow(ndh, spec_exp) * (1.0 - ROUGHNESS * 0.78) * smoothstep(0.05, 0.55, ndl);
+	vec3 leaf_sheen = mix(vec3(0.95, 0.98, 0.90), ALBEDO * 1.65 + vec3(0.08), 0.55);
+	SPECULAR_LIGHT += min(LIGHT_COLOR * leaf_sheen * spec_lobe * SPECULAR_AMOUNT * ATTENUATION * 0.028, vec3(0.10));
 }

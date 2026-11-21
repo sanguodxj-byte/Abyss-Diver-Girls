@@ -76,13 +76,14 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.bevel_box(Vector3(8.0, 0.18, 0.18), 0.02), A.hazard(), c + Vector3(-2.6, 2.4, -8.4))
 	for sx in [-6.6, 1.4]:
 		A.add(raid.world, A.cyl(0.09, 2.4, 0.09, 6), A.metal(Color(0.35, 0.35, 0.34)), c + Vector3(sx, 1.2, -8.4))
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(-1.0, 0, 8.0), "military")
-	K.crate(raid, c + Vector3(2.8, 0, 8.2), "military")
-	K.crate(raid, c + Vector3(-8.6, 0, 3.0), "tool")
-	K.crate(raid, c + Vector3(7.4, 0, -1.0), "safe")
-	K.fixed(raid, c + Vector3(-3.2, 0, 6.2), ["arch_tape"], "tool")
-	K.crate(raid, c + Vector3(9.0, 0, 4.2), "supply")
+	# 容器与环境叙事（缴费亭结算终端 / 底层车库工具与军械补给 / 楼梯间保险柜）
+	K.crate(raid, c + Vector3(-1.0, 0, 8.0), "military", [], 0.0)
+	K.crate(raid, c + Vector3(2.8, 0, 8.2), "ammo", [], 0.0)
+	K.crate(raid, c + Vector3(-8.6, 0, 3.0), "tool", [], -90.0)
+	K.crate(raid, c + Vector3(7.4, 0, -1.0), "safe", [], 180.0)
+	K.crate(raid, c + Vector3(-6.8, 0, -6.1), "register", [], 180.0)
+	K.fixed(raid, c + Vector3(-3.2, 0, 6.2), ["arch_tape"], "tool", 0.0)
+	K.crate(raid, c + Vector3(9.0, 0, 4.2), "supply", [], 90.0)
 	K.lamp(raid, c + Vector3(-11.4, 0, -6.6), Color(1.0, 0.78, 0.45))
 	K.lamp(raid, c + Vector3(11.6, 0, 8.6), Color(0.75, 0.85, 1.0))
 	K.rubble(raid, c + Vector3(-6.0, 0, -3.0), 2.0, CONCRETE.darkened(0.18))

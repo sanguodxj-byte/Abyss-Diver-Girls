@@ -57,6 +57,7 @@ static var _occ_use_mat_alpha := -1
 var _cached_bar_y := -1.0
 const FLASH_DUR := 0.13
 static var _dead_eye_mat: StandardMaterial3D
+var _dead_lights: Array[MeshInstance3D] = []
 var gun: Node3D
 var gun_tip: Node3D
 var gun_glow: MeshInstance3D
@@ -113,12 +114,15 @@ func setup(k: String, r, tgt) -> void:
 	var cmi = get("core_mi")
 	if cmi is MeshInstance3D and cmi.material_override:
 		cmi.material_override = cmi.material_override.duplicate()
-	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影
+	# 地面已有影子贴片；实时阴影在虫群多时会把绘制调用翻倍，零件一律不投影；同时为桌面与移动端均设合理视距剔除，避免地图远端 150+ 虫体常驻渲染列表
 	var mob_perf := A.is_mobile_perf()
-	var mob_vis_end := 0.0
+	var big := float(data.get("scale", 1.0)) >= 2.0 or bool(data.get("boss", false))
+	var vis_end := 0.0
 	if mob_perf:
-		var big := float(data.get("scale", 1.0)) >= 2.0
-		mob_vis_end = 135.0 if big else (74.0 if GameData.quality == 0 else 92.0)
+		vis_end = 135.0 if big else (74.0 if GameData.quality == 0 else 92.0)
+	else:
+		vis_end = 260.0 if big else 165.0
+	var vis_margin := 5.0 if mob_perf else 10.0
 	for mi in parts:
 		if is_instance_valid(mi) and mi is MeshInstance3D:
 			var mi3: MeshInstance3D = mi as MeshInstance3D
@@ -134,10 +138,16 @@ func setup(k: String, r, tgt) -> void:
 						ex_m.set_shader_parameter("occ_exempt", 1.0)
 						_bug_occ_exempt_mats[mid] = ex_m
 					mi3.material_override = ex_m
-			if mob_vis_end > 0.0 and not (mi3.mesh is PlaneMesh):
-				mi3.visibility_range_end = mob_vis_end
-				mi3.visibility_range_end_margin = 5.0
+			if vis_end > 0.0 and not (mi3.mesh is PlaneMesh):
+				mi3.visibility_range_end = vis_end
+				mi3.visibility_range_end_margin = vis_margin
 	_anchor_visual()
+	# 死亡时只改已知发光件，避免临场逐节点读取材质（渲染线程同步）。
+	_dead_lights.clear()
+	for mi in parts:
+		if is_instance_valid(mi) and mi.material_override is StandardMaterial3D and mi.material_override.emission_enabled:
+			_dead_lights.append(mi)
+	_get_dead_eye_mat().get_rid()
 
 
 ## 遮挡玩家机甲时由 raid.gd 平滑驱动的大型敌人虚化透明度（strength 0..1）
@@ -1727,9 +1737,10 @@ static func _alive(n) -> bool:
 ## 改成：LOD 2 走完一步就关掉物理回调“睡”到下一步前夕（引擎计时器叫醒），醒来时把睡过的物理帧补进累计时间，
 ## 之后与原来逐帧累加完全一样地判断 LOD 与步长。被外部改成追击 / 受击 / 听到动静时立即叫醒，反应时机不变
 const SLEEP_FAR := true
-const SLEEP_TICKS := 27
+const SLEEP_TICKS := 31
 var _sleeping := false
 var _sleep_frame := 0
+var _sleep_staggered := false
 
 
 func _can_sleep() -> bool:
@@ -1743,7 +1754,13 @@ func _sleep() -> void:
 	_sleep_frame = Engine.get_physics_frames()
 	set_physics_process(false)
 	var pd := get_physics_process_delta_time()
-	var ticks := SLEEP_TICKS + randi_range(-3, 3)
+	# 首次休眠把同帧生成的 150+ 远距虫均匀错峰到 ~28 个物理帧，杜绝集体惊群尖刺；此后按 >=0.5s 节拍一次醒来即执行，避免提前空转多帧
+	var ticks: int
+	if not _sleep_staggered:
+		_sleep_staggered = true
+		ticks = SLEEP_TICKS + randi_range(0, 26)
+	else:
+		ticks = SLEEP_TICKS + randi_range(0, 4)
 	get_tree().create_timer(pd * ticks, false, true).timeout.connect(_wake)
 
 
@@ -2557,6 +2574,7 @@ func take_damage(amount: float, from := Vector3.ZERO, ap := 0.0) -> void:
 
 ## 死亡：移出战斗、残骸塌落（腿外撇、机身砸地侧翻）、冒火花与黑烟，数秒后沉入地面
 func _die() -> void:
+	var death_t := Prof.t0()
 	dying = true
 	remove_from_group("bugs")
 	set_physics_process(false)
@@ -2566,6 +2584,8 @@ func _die() -> void:
 		if c is CollisionShape3D:
 			c.queue_free()
 	_set_flash(false)
+	Prof.add("death.detach", death_t)
+	death_t = Prof.t0()
 	var body: Node3D = visual.get_node("Body")
 	var tw := create_tween().set_parallel(true)
 	var side := 1.0 if randf() < 0.5 else -1.0
@@ -2584,22 +2604,25 @@ func _die() -> void:
 	for s2 in scythes:
 		tw.tween_property(s2, "rotation:x", -0.5, 0.4)
 	if gun:
+		Prof.add("death.tweens", death_t)
+		death_t = Prof.t0()
 		tw.tween_property(gun, "rotation:x", -0.18, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 		# 发光件熄灭
 		var dead_em := _get_dead_eye_mat()
-		for m in parts:
+		for m in _dead_lights:
 			if not is_instance_valid(m):
 				continue
-			var mat = m.material_override
-			if mat is StandardMaterial3D and mat.emission_enabled:
-				m.material_override = dead_em
+			m.material_override = dead_em
 		if raid:
+			Prof.add("death.materials", death_t)
+			death_t = Prof.t0()
 			var p := global_position + Vector3(0, 0.8 * sc, 0)
 			A.burst(raid.fx, p, {"amount": 16, "life": 0.5, "size": 0.1, "tex": A.soft_dot(), "additive": true, "vmin": 4.0, "vmax": 9.0, "spread": 80.0, "dir": Vector3.UP,
 				"gravity": Vector3(0, -14, 0), "c0": Color(1, 0.85, 0.5), "c1": Color(1, 0.35, 0.1, 0)})
 			A.burst(raid.fx, p, {"amount": 10, "life": 1.6, "size": 0.7 * sc, "additive": false, "vmin": 0.5, "vmax": 1.5, "spread": 30.0, "dir": Vector3.UP,
 				"gravity": Vector3(0, 1.2, 0), "damp": 0.5, "tex": A.soft_dot(), "c0": Color(0.12, 0.12, 0.13, 0.45), "c1": Color(0.15, 0.15, 0.16, 0.0), "grow0": 0.6, "grow1": 1.8})
-		tw.finished.connect(_finalize_corpse)
+		Prof.add("death.particles", death_t)
+	tw.finished.connect(_finalize_corpse)
 
 
 static func _get_dead_eye_mat() -> StandardMaterial3D:

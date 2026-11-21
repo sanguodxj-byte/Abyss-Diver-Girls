@@ -46,10 +46,10 @@ func run() -> void:
 			bad.append("%s(取反%d/负缩放%d/缺法线%d)" % [id, pf_res["mismatch"], raw_res["neg_scale"], pf_res["no_normal"]])
 
 	var dt_ms := (Time.get_ticks_usec() - t0) / 1000.0
-	log_line("30 项建筑预制包合计: 表面组 %d | 三角面 %d | 法线取反 %d | 负缩放 %d | 缺法线 %d | 耗时 %.1f ms" % [
-		total["surfs"], total["tris"], total["mismatch"], total["neg_scale"], total["no_normal"], dt_ms
+	log_line("预制包合计 (%d 项): 表面组 %d | 三角面 %d | 法线取反 %d | 负缩放 %d | 缺法线 %d | 耗时 %.1f ms" % [
+		ids.size(), total["surfs"], total["tris"], total["mismatch"], total["neg_scale"], total["no_normal"], dt_ms
 	])
-	check(ids.size() == 30, "应包含完整 30 项建筑/地形资产，实际 %d" % ids.size())
+	check(ids.size() >= 49, "预制资产数量不足，实际 %d" % ids.size())
 	check(bad.is_empty(), "建筑预制件法线审计未通过: %s" % "; ".join(bad))
 	if not headless():
 		await _capture_world_showcases()

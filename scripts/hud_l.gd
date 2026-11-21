@@ -297,56 +297,109 @@ class AmmoColumn extends Control:
 	var bh := 8.0
 	var pitch := 9.0
 	var font: Font
+	var _was_broken := false
+	var _was_od := false
+	var _was_reloading := false
 
 	func setup(m, s: String) -> void:
 		mech = m
 		slot = s
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		font = PixelUI.pixel_font()
+		ejects.clear()
+		_was_broken = float(m.parts.get(s, 1.0)) <= 0.0
+		_was_od = m.overdrive_t > 0.0
+		_was_reloading = float(m.reload_t.get(s, 0.0)) > 0.0
 		var id: String = m.loadout.get(s, "")
 		if id == "":
+			mag = 0
+			tex = null
+			yoff.clear()
 			visible = false
+			queue_redraw()
 			return
 		var w := str(GameData.module(id).get("weapon", "mg"))
+		if not GameData.weapon_uses_ammo(w):
+			# 激光 / 近战工程臂不占弹匣，由能量条与技能槽反馈
+			mag = 0
+			tex = null
+			yoff.clear()
+			visible = false
+			queue_redraw()
+			return
 		visible = true
 		var a: Dictionary = GameData.AMMO.get(w, {})
-		tex = load("res://assets/ui/%s.png" % str(a.get("tex", "ammo_cell")))
-		mag = 20
+		tex = load("res://assets/ui/%s.png" % str(a.get("tex", "ammo_mg")))
+		mag = int(m.mag[s])
 		bh = bw * float(tex.get_height()) / float(tex.get_width())
 		yoff.clear()
-		var init_n := int(round(float(mag) * clampf(float(m.energy) / maxf(float(m.max_energy), 1.0), 0.0, 1.0)))
-		for i in init_n:
+		for i in int(m.ammo[s]):
 			yoff.append(0.0)
 		if not m.fired.is_connected(_on_fired):
 			m.fired.connect(_on_fired)
 		if not resized.is_connected(_layout):
 			resized.connect(_layout)
 		_layout()
+		queue_redraw()
+
+	func preferred_height(max_h := 224.0, min_h := 28.0) -> float:
+		if not visible or tex == null or mag <= 0:
+			return 0.0
+		var nat_pitch := bh + 1.5
+		var need := float(maxi(mag - 1, 0)) * nat_pitch + bh + 4.0
+		return clampf(ceilf(need), min_h, max_h)
+
+	func _gui_input(ev: InputEvent) -> void:
+		if mech == null or mech.input_locked:
+			return
+		if (ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
+			mech.start_reload(slot)
+			accept_event()
 
 	func _layout() -> void:
 		if mag <= 0:
 			return
-		pitch = minf(bh + 1.5, (size.y - 4.0) / float(mag))
+		var nat_pitch := bh + 1.5
+		if mag == 1:
+			pitch = nat_pitch
+		else:
+			pitch = clampf((size.y - 4.0 - bh) / float(mag - 1), 0.5, nat_pitch)
 
 	func _on_fired(s: String) -> void:
-		if s != slot or yoff.is_empty():
+		if s != slot or yoff.is_empty() or mech.overdrive_t > 0.0:
 			return
+		# 底部那颗退壳弹出，其余整列下滑一格
+		yoff.pop_front()
 		for i in yoff.size():
-			yoff[i] = minf(float(yoff[i]) + pitch * 0.45, pitch * 1.5)
-		ejects.append({"p": Vector2(size.x * 0.5, size.y - bh * 0.5), "v": Vector2(randf_range(90, 150), randf_range(-170, -110)), "r": 0.0, "rv": randf_range(8, 16), "life": 0.7})
-		queue_redraw()
+			yoff[i] += pitch
+		ejects.append({"p": Vector2(size.x * 0.5, size.y - 2.0 - bh * 0.5), "v": Vector2(randf_range(90, 150), randf_range(-170, -110)), "r": 0.0, "rv": randf_range(8, 16), "life": 0.7})
 
 	func _process(delta: float) -> void:
-		if mech == null or tex == null:
+		if not is_instance_valid(mech) or tex == null or not visible:
 			return
-		var want: int = int(round(float(mag) * clampf(float(mech.energy) / maxf(float(mech.max_energy), 1.0), 0.0, 1.0)))
-		var dirty := false
+		var cur_mag: int = int(mech.mag[slot])
+		var reloading: bool = mech.reload_t[slot] > 0.0
+		var broken: bool = mech.parts[slot] <= 0.0
+		var od: bool = mech.overdrive_t > 0.0
+		var dirty: bool = reloading or reloading != _was_reloading or broken != _was_broken or od != _was_od
+		_was_reloading = reloading
+		_was_broken = broken
+		_was_od = od
+		if cur_mag != mag:
+			mag = cur_mag
+			_layout()
+			dirty = true
+		# 换弹：按进度把子弹逐颗补回，新子弹从弹槽顶端落下
+		var want: int = int(mech.ammo[slot])
+		if mech.reload_t[slot] > 0.0:
+			want = int(round(float(mag) * (1.0 - mech.reload_frac(slot))))
 		while yoff.size() < want:
 			var i := yoff.size()
-			yoff.append(size.y - (i + 1) * pitch)
+			yoff.append(maxf(0.0, size.y - 4.0 - bh - float(i) * pitch))
 			dirty = true
-		while yoff.size() > want:
+		while yoff.size() > want and mech.reload_t[slot] <= 0.0:
 			yoff.pop_back()
 			dirty = true
 		for i in yoff.size():
@@ -354,16 +407,14 @@ class AmmoColumn extends Control:
 			if y > 0.0:
 				yoff[i] = move_toward(y, 0.0, maxf(700.0 * delta, y * 16.0 * delta))
 				dirty = true
-		if not ejects.is_empty():
-			dirty = true
-			for e in ejects:
-				e.v.y += 900.0 * delta
-				e.p += e.v * delta
-				e.r += e.rv * delta
-				e.life -= delta
-			ejects = ejects.filter(func(e): return e.life > 0.0)
-		if dirty:
-			queue_redraw()
+		dirty = dirty or not ejects.is_empty()
+		for e in ejects:
+			e.v.y += 900.0 * delta
+			e.p += e.v * delta
+			e.r += e.rv * delta
+			e.life -= delta
+		ejects = ejects.filter(func(e): return e.life > 0.0)
+		if dirty: queue_redraw()
 
 	func _draw() -> void:
 		if tex == null:
@@ -371,7 +422,7 @@ class AmmoColumn extends Control:
 		var x := (size.x - bw) * 0.5
 		var od: bool = mech.overdrive_t > 0.0
 		for i in yoff.size():
-			var y: float = size.y - (i + 1) * pitch - float(yoff[i]) + (pitch - bh) * 0.5
+			var y: float = size.y - 2.0 - bh - float(i) * pitch - float(yoff[i])
 			var mod := Color(1, 1, 1)
 			if od:
 				mod = Color(1.18, 0.92, 0.58)
@@ -382,7 +433,7 @@ class AmmoColumn extends Control:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		if mech.parts[slot] <= 0.0:
 			draw_rect(Rect2(Vector2.ZERO, size), Color(0.18, 0.04, 0.03, 0.65))
-			var pad := Vector2(6, 12)
+			var pad := Vector2(minf(6.0, size.x * 0.2), minf(12.0, size.y * 0.22))
 			draw_line(pad, size - pad, Color(0.80, 0.24, 0.18, 0.88), 2.0)
 			draw_line(Vector2(size.x - pad.x, pad.y), Vector2(pad.x, size.y - pad.y), Color(0.80, 0.24, 0.18, 0.88), 2.0)
 		elif mech.reload_t[slot] > 0.0:

@@ -92,13 +92,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for i in 3:
 		A.add(raid.world, A.cyl(0.08, 1.4, 0.08, 12), A.metal(Color(0.45, 0.45, 0.42)), c + Vector3(-7.0 + i * 2.2, 0.7, -8.4))
 		A.add(raid.world, A.bevel_box(Vector3(0.5, 0.4, 0.05), 0.01), A.paint(Color(0.6, 0.58, 0.5), 0.1, 0.8, {"wear": 0.5}), c + Vector3(-7.0 + i * 2.2, 1.35, -8.4))
-	# 容器与环境叙事
-	K.crate(raid, dome_c + Vector3(4.6, 0, -1.0), "safe")
-	K.crate(raid, dome_c + Vector3(-4.6, 0, 0.6), "tool")
-	K.fixed(raid, dome_c + Vector3(-1.8, 0, -3.8), ["arch_observation", "hdd"], "tool")
-	K.fixed(raid, dome_c + Vector3(2.6, 0, 4.2), ["water_tab", "water_tab"], "supply")
-	K.crate(raid, c + Vector3(-6.6, 0, -9.0), "supply")
-	K.crate(raid, c + Vector3(7.0, 0, -7.2), "military")
+	# 容器与环境叙事（观测室保险柜与科研技术箱 / 净水医疗箱 / 岸边埋藏采样桶 / 警卫军用箱）
+	K.crate(raid, dome_c + Vector3(4.6, 0, -1.0), "safe", [], 90.0)
+	K.crate(raid, dome_c + Vector3(-4.6, 0, 0.6), "tech", [], -90.0)
+	K.fixed(raid, dome_c + Vector3(-1.8, 0, -3.8), ["arch_observation", "hdd"], "tech", 180.0)
+	K.fixed(raid, dome_c + Vector3(2.6, 0, 4.2), ["water_tab", "water_tab"], "med", 0.0)
+	K.crate(raid, c + Vector3(-6.6, 0, -9.0), "cache", [], 180.0)
+	K.crate(raid, c + Vector3(7.0, 0, -7.2), "military", [], 180.0)
 	K.lamp(raid, dome_c + Vector3(5.4, 0, 4.2), Color(0.55, 0.85, 0.8))
 	K.lamp(raid, c + Vector3(-8.2, 0, -7.4), Color(1.0, 0.72, 0.42))
 	K.rubble(raid, c + Vector3(6.0, 0, 6.0), 1.6)

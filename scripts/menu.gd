@@ -36,7 +36,7 @@ func _ready() -> void:
 	add_child(svc)
 	var sv: SubViewport = svc.sv
 	_sv = sv
-	GameData.apply_quality(sv, false)
+	GameData.apply_quality(sv)
 	_build_scene(sv)
 	_build_ui()
 
@@ -48,7 +48,7 @@ func _build_scene(sv: SubViewport) -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	var sky := Sky.new()
-	var mob := OS.has_feature("mobile")
+	var mob := OS.has_feature("mobile") or OS.has_feature("web")
 	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
 	var mob_perf := mob or mob_ren
 	var sm := ShaderMaterial.new()
@@ -105,21 +105,25 @@ func _build_scene(sv: SubViewport) -> void:
 		root.add_child(city)
 		city.setup(sky.sky_material, L)
 	# 装配完整 87.2m 信天翁号，将既有主菜单 OBS-2 观景舱精确置于左舷 OBS-2 舱位（世界坐标保持 0,0,0 与旧镜头 100% 重合）
-	airship = AlbatrossAirship.build_integrated({
-		"obs2_exact_origin": true,
-		"obs2_fit_airship": false,
-		"include_obs2_lights": true,
-		"include_obs2_outside": true,
-		"bay03_fit_airship": true,
-		"include_bay03_lights": false,
-		"bay03_mob": mob,
-		"bay03_mob_ren": mob_ren,
-		"batch_static": true,
-	})
-	airship.position = -AlbatrossAirship.OBS2_MOUNT_POS_EXACT
-	root.add_child(airship)
-	AlbatrossAirship.set_cutaway_mode(airship, "legacy_obs2")
-	refs = airship.get_meta("obs2_refs")
+	if OS.has_feature("web"):
+		# 窗内镜头只构建观景舱，跳过不可见的整艇与机库。
+		refs = MenuShip.build(root, {"include_lights": true, "include_outside": true, "batch_static": true})
+	else:
+		airship = AlbatrossAirship.build_integrated({
+			"obs2_exact_origin": true,
+			"obs2_fit_airship": false,
+			"include_obs2_lights": true,
+			"include_obs2_outside": true,
+			"bay03_fit_airship": true,
+			"include_bay03_lights": false,
+			"bay03_mob": mob,
+			"bay03_mob_ren": mob_ren,
+			"batch_static": true,
+		})
+		airship.position = -AlbatrossAirship.OBS2_MOUNT_POS_EXACT
+		root.add_child(airship)
+		AlbatrossAirship.set_cutaway_mode(airship, "legacy_obs2")
+		refs = airship.get_meta("obs2_refs")
 	cam = Camera3D.new()
 	cam.fov = 62
 	cam.near = 0.22
@@ -840,7 +844,7 @@ func _build_settings(initial_tab := "video") -> void:
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
 		if _sv and is_instance_valid(_sv):
-			GameData.apply_quality(_sv, false)
+			GameData.apply_quality(_sv)
 		if menu_env and OS.has_feature("mobile"):
 			menu_env.glow_enabled = GameData.quality >= 2
 		GameData.save_game())
@@ -856,7 +860,7 @@ func _build_settings(initial_tab := "video") -> void:
 			GameData.set_render_scale_mode(i)
 			GameData.apply_quality(get_viewport())
 			if _sv and is_instance_valid(_sv):
-				GameData.apply_quality(_sv, false))
+				GameData.apply_quality(_sv))
 		pg.add_child(rs)
 	pg.add_child(_field_label(Loc.t("画面风格", "Render Style")))
 	var st := OptionButton.new()

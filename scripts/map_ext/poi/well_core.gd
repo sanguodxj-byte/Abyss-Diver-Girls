@@ -117,13 +117,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for i in 4:
 		A.add(raid.world, A.cyl(0.5, 0.9, 0.5, 22), A.paint(Color(0.28, 0.27, 0.26), 0.6, 0.5, {"rust": 0.7}), c + Vector3(r.randf_range(-12, 12), 0.45, r.randf_range(-12, 12)), Vector3(r.randf_range(-20, 20), r.randf() * 360, r.randf_range(-20, 20)))
 	K.pipe(raid, c + Vector3(-10.4, 0.9, -6.0), c + Vector3(-10.4, 0.9, 6.0), 0.3, Color(0.3, 0.28, 0.3))
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(12.6, 0, 0.6), "safe")
-	K.crate(raid, c + Vector3(-1.0, 0, 12.6), "safe")
-	K.crate(raid, c + Vector3(-12.4, 0, -1.2), "military")
-	K.crate(raid, c + Vector3(8.6, 0, -10.4), "military")
-	K.fixed(raid, c + Vector3(10.8, 0, -8.0), ["arch_deep_record", "bug_crystal"], "tool")
-	K.fixed(raid, c + Vector3(-9.0, 0, 9.4), ["bug_crystal", "chitin", "chitin"], "tool")
+	# 容器与环境叙事（主控台技术箱与保险柜 / 井台防卫武器架与军用箱 / 晶脉埋藏桶）
+	K.crate(raid, c + Vector3(12.6, 0, 0.6), "safe", [], 90.0)
+	K.crate(raid, c + Vector3(-1.0, 0, 12.6), "tech", [], 0.0)
+	K.crate(raid, c + Vector3(-12.4, 0, -1.2), "weapon", [], -90.0)
+	K.crate(raid, c + Vector3(8.6, 0, -10.4), "military", [], 180.0)
+	K.fixed(raid, c + Vector3(10.8, 0, -8.0), ["arch_deep_record", "bug_crystal"], "tech", 180.0)
+	K.fixed(raid, c + Vector3(-9.0, 0, 9.4), ["bug_crystal", "chitin", "chitin"], "cache", 0.0)
 	K.lamp(raid, c + Vector3(14.6, 0, 9.4), Color(1.0, 0.74, 0.42))
 	K.lamp(raid, c + Vector3(-14.6, 0, -9.4), Color(0.5, 0.85, 0.9))
 	K.guard(raid, c + Vector3(0.0, 0, 11.0), "beetle", 3.0)

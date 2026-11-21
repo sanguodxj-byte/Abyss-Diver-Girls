@@ -6,6 +6,9 @@ extends Node
 const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
 const FM = preload("res://scripts/modules/field_models.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
+const Prof = preload("res://scripts/prof.gd")
+static var _visuals := {}
 
 var raid
 var _t := 0.0
@@ -21,6 +24,7 @@ var _used_sites: Array = []
 
 func setup(r) -> void:
 	raid = r
+	_prepare_visuals()
 	_erng.seed = r._map_seed(30)
 	_next = 80.0
 	_used_sites.clear()
@@ -30,6 +34,12 @@ func setup(r) -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Prof.t0()
+	_tick(delta)
+	Prof.add("proc.map_events", started)
+
+
+func _tick(delta: float) -> void:
 	if raid == null or not is_instance_valid(raid) or raid.ended or raid.dropping:
 		return
 	_t += delta
@@ -110,26 +120,7 @@ func _pick_spot() -> Vector3:
 # ---------- 补给空投 ----------
 ## 运输机从头顶掠过时抛下的装甲补给空投舱：多幅开缝减速伞 + 八棱缓冲空投舱 + 四角液压着陆脚，落地后成为补给箱
 func _supply_drop(p: Vector3) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = Vector3(p.x, 60.0, p.z)
-	var pod := Node3D.new()
-	n.add_child(pod)
-	pod.position = Vector3(0, 1.55, 0)
-	var M_POD := A.paint(Color(0.38, 0.41, 0.34), 0.38, 0.58, {"wear": 0.6, "rust": 0.48, "dust": 0.45})
-	var pod_info := FM.build_supply_pod(pod, M_POD)
-	var chute := Node3D.new()
-	n.add_child(chute)
-	chute.position = pod.position + (pod_info.top as Vector3) + Vector3(0, 0.9, 0)
-	chute.rotation_degrees = Vector3(10, 24.0, -7)
-	FM.build_parachute(chute)
-	A.add(pod, A.bevel_box(Vector3(0.56, 0.08, 0.05), 0.01), A.emit(Color(1.0, 0.35, 0.12), 2.2), Vector3(0, 0.95, -1.0), Vector3.ZERO, Vector3.ONE, false)
-	var glow := OmniLight3D.new()
-	glow.light_color = Color(1.0, 0.4, 0.15)
-	glow.light_energy = 2.4
-	glow.omni_range = 14.0
-	glow.position = Vector3(0, 2.0, 0)
-	n.add_child(glow)
+	var n := _instance_visual("supply", Vector3(p.x, 60.0, p.z))
 	_falling.append({"node": n, "y": 60.0, "vy": 7.5, "kind": "supply", "pos": p})
 	Audio.play_sfx("transport_arrive", p)
 
@@ -137,20 +128,8 @@ func _supply_drop(p: Vector3) -> void:
 # ---------- 求救信号 ----------
 ## 一段反复播放的求救电波：三脚架军用应急战术信标台 + 太阳能翼板 + 护笼频闪红灯，旁边留一只军用箱
 func _distress(p: Vector3) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	var M_CASE := A.paint(Color(0.30, 0.34, 0.28), 0.42, 0.58, {"rust": 0.55, "wear": 0.55})
-	FM.build_distress_beacon(n, M_CASE, Color(1.0, 0.18, 0.12))
-	A.emitter(raid.world, p + Vector3(0, 3.6, 0), {"amount": 10, "life": 4.0, "size": 1.6, "tex": A.smoke_tex(), "additive": false, "spread": 20.0,
-		"vmin": 0.6, "vmax": 1.2, "gravity": Vector3(0.2, 0.8, 0.1), "c0": Color(0.35, 0.3, 0.28, 0.4), "c1": Color(0.4, 0.38, 0.36, 0.0), "grow0": 0.5, "grow1": 2.4})
-	var l := OmniLight3D.new()
-	l.light_color = Color(1.0, 0.2, 0.12)
-	l.light_energy = 2.2
-	l.omni_range = 12.0
-	l.position = Vector3(0, 3.6, 0)
-	n.add_child(l)
-	raid._add_flicker(l)
+	var n := _instance_visual("distress", p)
+	raid._add_flicker(n.get_node("SignalLight"))
 	K.crate(raid, p + Vector3(2.4, 0, 0.8), "military", ["repair_kit", "fuel_cell", "credit_s"])
 	raid.alert_noise(p, 30.0)
 	Audio.play_sfx("ui_open", p)
@@ -160,27 +139,7 @@ func _distress(p: Vector3) -> void:
 # ---------- 坠落货柜 ----------
 ## 从高空掉下来的轨道装甲货运柜：四角ISO吊装角件 + 加强外肋 + 逆喷制动环，拖着火星砸进地面
 func _cargo_crash(p: Vector3) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = Vector3(p.x, 70.0, p.z)
-	var M := A.paint(Color(0.32, 0.34, 0.3), 0.45, 0.58, {"wear": 0.72, "rust": 0.7, "dust": 0.5, "panel_scale": 1.2})
-	var M_RIB := A.paint(Color(0.24, 0.26, 0.24), 0.5, 0.58, {"rust": 0.8})
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
-	var body := Node3D.new()
-	n.add_child(body)
-	body.rotation_degrees = Vector3(18, 24, -12)
-	A.add(body, A.bevel_box(Vector3(2.4, 2.4, 6.0), 0.1), M, Vector3.ZERO)
-	for i in 7:
-		A.add(body, A.bevel_box(Vector3(2.50, 2.46, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.55 + i * 0.85))
-	for sx in [-1.18, 1.18]:
-		for sy in [-1.18, 1.18]:
-			for sz in [-2.96, 2.96]:
-				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
-	A.add(body, A.bevel_box(Vector3(2.52, 0.28, 6.04), 0.03), A.hazard(), Vector3(0, -0.95, 0))
-	for rx_c in [-0.75, 0.75]:
-		A.add(body, A.cyl(0.34, 0.45, 0.42, 12), M_DARK, Vector3(rx_c, 0.75, 3.12), Vector3(90, 0, 0))
-	A.emitter(n, Vector3(0, 1.2, 0), {"amount": 24, "life": 0.7, "size": 0.7, "vmin": 1.0, "vmax": 2.6, "gravity": Vector3(0, 2.0, 0), "radius": 0.4,
-		"c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
+	var n := _instance_visual("cargo", Vector3(p.x, 70.0, p.z))
 	_falling.append({"node": n, "y": 70.0, "vy": 24.0, "kind": "cargo", "pos": p})
 	Audio.play_sfx("drop_fall", p)
 
@@ -210,36 +169,8 @@ func _land(f: Dictionary) -> void:
 
 
 func _spawn_cargo_wreck(p: Vector3) -> void:
-	var w := Node3D.new()
-	raid.world.add_child(w)
-	w.position = p
-	var yaw: float = 16.0
-	w.rotation_degrees.y = yaw
-	A.ground_vfx(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.038, 0))
-	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})
-	var M_RIB := A.paint(Color(0.20, 0.22, 0.20), 0.52, 0.60, {"rust": 0.85, "grime": 0.8})
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
-	var body := Node3D.new()
-	w.add_child(body)
-	body.position = Vector3(0, 0.92, 0)
-	body.rotation_degrees = Vector3(11, 0, -8)
-	A.add(body, A.bevel_box(Vector3(2.35, 2.25, 5.6), 0.10), M, Vector3.ZERO)
-	for i in 6:
-		A.add(body, A.bevel_box(Vector3(2.46, 2.32, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.25 + i * 0.90))
-	for sx in [-1.14, 1.14]:
-		for sy in [-1.08, 1.08]:
-			for sz in [-2.76, 2.76]:
-				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
-	A.add(body, A.bevel_box(Vector3(2.42, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
-	for rx_c in [-0.72, 0.72]:
-		A.add(body, A.cyl(0.32, 0.44, 0.40, 12), M_DARK, Vector3(rx_c, 0.65, 2.92), Vector3(90, 0, 0))
-	for dk in 4:
-		var da := TAU * float(dk) / 4.0 + 0.4
-		A.add(w, A.rock_mesh((dk * 3 + 1) % 12), A.rock_mat(Color(0.26, 0.22, 0.18)),
-			Vector3(cos(da) * 1.9, 0.18, sin(da) * 2.8), Vector3(0, dk * 62.0, 0), Vector3(0.95, 0.36, 0.82))
-	A.emitter(w, Vector3(0.2, 1.8, -0.4), {"amount": 12, "life": 4.2, "size": 2.0, "tex": A.smoke_tex(), "additive": false,
-		"vmin": 0.6, "vmax": 1.3, "gravity": Vector3(0.4, 0.7, 0.2), "radius": 0.5,
-		"c0": Color(0.12, 0.10, 0.10, 0.55), "c1": Color(0.26, 0.24, 0.24, 0.0), "grow0": 0.5, "grow1": 2.6})
+	_instance_visual("wreck", p)
+	var yaw := 16.0
 	K.blocker(raid, p, Vector3(2.5, 2.2, 5.6), yaw)
 
 
@@ -274,3 +205,115 @@ func _on_box_opened(kind: String, pos: Vector3) -> void:
 			K.crate(raid, cp, "military")
 		Audio.play_sfx("loot_open_military", pos)
 		Events.emit_custom("poi_cache_unlocked", {"pos": [pos.x, pos.y, pos.z], "kind": kind, "map": raid.map_id})
+
+
+## 事件模型在进图时准备，80/170/260 秒触发时只实例化，不在交战帧建模。
+static func _prepare_visuals() -> void:
+	if not _visuals.is_empty(): return
+	for kind: String in ["supply", "distress", "cargo", "wreck"]:
+		var root: Node3D
+		match kind:
+			"supply": root = _build_supply_visual()
+			"distress": root = _build_distress_visual()
+			"cargo": root = _build_cargo_visual()
+			"wreck": root = _build_wreck_visual()
+		for node: Node in root.find_children("*", "", true, false): node.owner = root
+		var packed := PackedScene.new()
+		var error := packed.pack(root)
+		if error != OK:
+			root.free()
+			push_error("Cannot pack event visual %s: %d" % [kind, error])
+			return
+		_visuals[kind] = packed
+		root.free()
+
+
+func _instance_visual(kind: String, at: Vector3) -> Node3D:
+	var root: Node3D = _visuals[kind].instantiate()
+	raid.world.add_child(root)
+	root.position = at
+	return root
+
+
+static func _build_supply_visual() -> Node3D:
+	var n := Node3D.new()
+	var pod := PrefabLib.build_merged("supply_airdrop_pod")
+	n.add_child(pod)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.4, 0.15)
+	glow.light_energy = 2.4
+	glow.omni_range = 14.0
+	glow.position = Vector3(0, 2.2, 0)
+	n.add_child(glow)
+	return n
+
+
+static func _build_distress_visual() -> Node3D:
+	var n := Node3D.new()
+	var beacon := PrefabLib.build_merged("distress_beacon")
+	n.add_child(beacon)
+	A.emitter(n, Vector3(0, 3.85, 0), {"amount": 10, "life": 4.0, "size": 1.6, "tex": A.smoke_tex(), "additive": false, "spread": 20.0,
+		"vmin": 0.6, "vmax": 1.2, "gravity": Vector3(0.2, 0.8, 0.1), "c0": Color(0.35, 0.3, 0.28, 0.4), "c1": Color(0.4, 0.38, 0.36, 0.0), "grow0": 0.5, "grow1": 2.4})
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.2, 0.12)
+	l.light_energy = 2.2
+	l.omni_range = 12.0
+	l.position = Vector3(0, 3.76, 0)
+	n.add_child(l)
+	l.name = "SignalLight"
+	return n
+
+
+static func _build_cargo_visual() -> Node3D:
+	var n := Node3D.new()
+	var M := A.paint(Color(0.32, 0.34, 0.3), 0.45, 0.58, {"wear": 0.72, "rust": 0.7, "dust": 0.5, "panel_scale": 1.2})
+	var M_RIB := A.paint(Color(0.24, 0.26, 0.24), 0.5, 0.58, {"rust": 0.8})
+	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
+	var body := Node3D.new()
+	n.add_child(body)
+	body.rotation_degrees = Vector3(18, 24, -12)
+	A.add(body, A.bevel_box(Vector3(2.4, 2.4, 6.0), 0.1), M, Vector3.ZERO)
+	for i in 7:
+		A.add(body, A.bevel_box(Vector3(2.50, 2.46, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.55 + i * 0.85))
+	for sx in [-1.18, 1.18]:
+		for sy in [-1.18, 1.18]:
+			for sz in [-2.96, 2.96]:
+				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
+	A.add(body, A.bevel_box(Vector3(2.52, 0.28, 6.04), 0.03), A.hazard(), Vector3(0, -0.95, 0))
+	for rx_c in [-0.75, 0.75]:
+		A.add(body, A.cyl(0.34, 0.45, 0.42, 12), M_DARK, Vector3(rx_c, 0.75, 3.12), Vector3(90, 0, 0))
+	A.emitter(n, Vector3(0, 1.2, 0), {"amount": 24, "life": 0.7, "size": 0.7, "vmin": 1.0, "vmax": 2.6, "gravity": Vector3(0, 2.0, 0), "radius": 0.4,
+		"c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
+	return n
+
+
+static func _build_wreck_visual() -> Node3D:
+	var w := Node3D.new()
+	var yaw: float = 16.0
+	w.rotation_degrees.y = yaw
+	A.ground_vfx(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.038, 0))
+	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})
+	var M_RIB := A.paint(Color(0.20, 0.22, 0.20), 0.52, 0.60, {"rust": 0.85, "grime": 0.8})
+	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
+	var body := Node3D.new()
+	w.add_child(body)
+	body.position = Vector3(0, 0.92, 0)
+	body.rotation_degrees = Vector3(11, 0, -8)
+	A.add(body, A.bevel_box(Vector3(2.35, 2.25, 5.6), 0.10), M, Vector3.ZERO)
+	for i in 6:
+		A.add(body, A.bevel_box(Vector3(2.46, 2.32, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.25 + i * 0.90))
+	for sx in [-1.14, 1.14]:
+		for sy in [-1.08, 1.08]:
+			for sz in [-2.76, 2.76]:
+				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
+	A.add(body, A.bevel_box(Vector3(2.42, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
+	for rx_c in [-0.72, 0.72]:
+		A.add(body, A.cyl(0.32, 0.44, 0.40, 12), M_DARK, Vector3(rx_c, 0.65, 2.92), Vector3(90, 0, 0))
+	for dk in 4:
+		var da := TAU * float(dk) / 4.0 + 0.4
+		A.add(w, A.rock_mesh((dk * 3 + 1) % 12), A.rock_mat(Color(0.26, 0.22, 0.18)),
+			Vector3(cos(da) * 1.9, 0.18, sin(da) * 2.8), Vector3(0, dk * 62.0, 0), Vector3(0.95, 0.36, 0.82))
+	A.emitter(w, Vector3(0.2, 1.8, -0.4), {"amount": 12, "life": 4.2, "size": 2.0, "tex": A.smoke_tex(), "additive": false,
+		"vmin": 0.6, "vmax": 1.3, "gravity": Vector3(0.4, 0.7, 0.2), "radius": 0.5,
+		"c0": Color(0.12, 0.10, 0.10, 0.55), "c1": Color(0.26, 0.24, 0.24, 0.0), "grow0": 0.5, "grow1": 2.6})
+	return w

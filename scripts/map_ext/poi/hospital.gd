@@ -108,13 +108,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for i in 3:
 		A.ground_decal(raid.world, A.cloud_tex(), Color(0.24, 0.05, 0.04, 0.5), r.randf_range(2.0, 4.4), c + Vector3(r.randf_range(-3, 11), 0.138, r.randf_range(-2, 8)))
 	A.add(raid.world, A.bevel_box(Vector3(9.0, 0.08, 0.08), 0.01), A.metal(Color(0.4, 0.4, 0.38)), c + Vector3(8.6, 3.1, 1.6), Vector3(0, 0, 3))
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(11.4, 0, 4.6), "safe")
-	K.crate(raid, c + Vector3(1.0, 0, 6.6), "supply")
-	K.crate(raid, c + Vector3(3.9, 0, 4.2), "supply")
-	K.crate(raid, c + Vector3(-8.8, 0, 7.8), "tool")
-	K.crate(raid, c + Vector3(9.2, 0, -2.4), "tool")
-	K.fixed(raid, c + Vector3(2.2, 0, -3.4), ["arch_photo", "water_tab"], "tool")
+	# 容器与环境叙事（药房保险柜 / 帐篷与病房医疗箱 / 发电机棚技术箱 / 分诊台结算终端）
+	K.crate(raid, c + Vector3(11.4, 0, 4.6), "safe", [], 90.0)
+	K.crate(raid, c + Vector3(1.0, 0, 6.6), "med", [], 180.0)
+	K.crate(raid, c + Vector3(3.9, 0, 4.2), "med", [], 180.0)
+	K.crate(raid, c + Vector3(-8.8, 0, 7.8), "tech", [], -90.0)
+	K.crate(raid, c + Vector3(9.2, 0, -2.4), "register", [], 180.0)
+	K.fixed(raid, c + Vector3(2.2, 0, -3.4), ["arch_photo", "water_tab"], "med", 180.0)
 	K.lamp(raid, c + Vector3(-12.4, 0, -1.2), Color(1.0, 0.82, 0.55))
 	K.lamp(raid, c + Vector3(12.2, 0, 8.4), Color(0.6, 0.82, 1.0))
 	K.rubble(raid, c + Vector3(4.8, 0, -5.4), 1.8)

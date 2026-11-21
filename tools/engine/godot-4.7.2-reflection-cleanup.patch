@@ -1,0 +1,13 @@
+--- a/servers/rendering/renderer_rd/storage_rd/light_storage.cpp
++++ b/servers/rendering/renderer_rd/storage_rd/light_storage.cpp
+@@ -1565,6 +1565,10 @@
+ 	RD::get_singleton()->free_rid(p_reflection_atlas->depth_buffer);
+ 	p_reflection_atlas->depth_buffer = RID();
+ 
++	// The cubemap owns the six color views and their dependent framebuffers.
++	RD::get_singleton()->free_rid(p_reflection_atlas->color_buffer);
++	p_reflection_atlas->color_buffer = RID();
++
+ 	for (int i = 0; i < p_reflection_atlas->reflections.size(); i++) {
+ 		p_reflection_atlas->reflections.write[i].data.clear_reflection_data();
+ 		if (p_reflection_atlas->reflections[i].owner.is_null()) {

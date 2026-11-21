@@ -61,6 +61,12 @@ static func warm_shared_visuals(materials: Array = [], cores: Array = []) -> voi
 		_painted_material(exempt, "rover")
 	for id: String in cores:
 		_raider_kit_scene(id)
+	# 识别标几何和地面环材质也会在首次入场时冷生成。
+	for fac: String in ["rover", "ally"]:
+		var probe = load("res://scripts/factions/npc_mech.gd").new()
+		probe.faction = fac
+		probe._add_marker()
+		probe.free()
 
 
 func setup_npc(lo: Dictionary, fac: String, t := 1, prebuilt_visual: Node3D = null) -> void:
@@ -116,8 +122,11 @@ static func _raider_kit_scene(cid: String) -> PackedScene:
 	var kit := _build_raider_kit(cid)
 	for node in kit.find_children("*", "", true, false): node.owner = kit
 	var packed := PackedScene.new()
-	assert(packed.pack(kit) == OK)
+	var error := packed.pack(kit)
 	kit.free()
+	if error != OK:
+		push_error("Cannot pack raider kit: %d" % error)
+		return null
 	_raider_kits[cid] = packed
 	return packed
 
@@ -186,7 +195,7 @@ static func _painted_material(m: Material, fac: String) -> Material:
 					d.albedo_color = d.albedo_color.lerp(Color(0.52, 0.30, 0.22), 0.42)
 			_tint_cache[key] = d
 		return _tint_cache[key]
-	elif m is ShaderMaterial and m.shader != null and (m.shader.resource_path == "res://shaders/mech_paint.gdshader" or m.shader.resource_path == "res://shaders/mech_paint_mobile.gdshader"):
+	elif m is ShaderMaterial and m.shader != null and m.shader.resource_path in ["res://shaders/mech_paint.gdshader", "res://shaders/mech_paint_mobile.gdshader", "res://shaders/mech_paint_web.gdshader"]:
 		if not _tint_cache.has(key):
 			var sm: ShaderMaterial = m.duplicate()
 			sm.set_shader_parameter("takes_damage", 0.0)

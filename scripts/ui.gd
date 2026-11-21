@@ -462,6 +462,19 @@ class Radar extends Control:
 			var col: Color = z.color
 			draw_colored_polygon(PackedVector2Array([q + Vector2(0, -7), q + Vector2(7, 0), q + Vector2(0, 7), q + Vector2(-7, 0)]), col)
 			draw_polyline(PackedVector2Array([q + Vector2(0, -7), q + Vector2(7, 0), q + Vector2(0, 7), q + Vector2(-7, 0), q + Vector2(0, -7)]), Color(0, 0, 0, 0.6), 1.0)
+		# 玩家战前自定地图标记（同步显示在雷达上，超出范围贴边指示方向）
+		var gd_mm := get_node_or_null("/root/GameData")
+		if gd_mm != null and gd_mm.has_method("markers_for_map"):
+			for mk: Dictionary in gd_mm.call("markers_for_map", str(raid.map_id)):
+				var mk3 := Vector3(float(mk.get("lx", 0.0)), 0.0, float(mk.get("lz", 0.0)))
+				var pm := _to_screen(mk3 - mp, r)
+				if pm.length() > r - 8:
+					pm = pm.normalized() * (r - 8)
+				var qm := c + pm
+				var mcol: Color = gd_mm.call("marker_color", str(mk.get("color", "amber")))
+				draw_circle(qm, 4.5, Color(0, 0, 0, 0.85))
+				draw_circle(qm, 3.2, mcol)
+				draw_circle(qm, 1.3, Color(0.08, 0.09, 0.10))
 		# 战术标点（在大地图上右键标点后同步显示在雷达上）
 		if raid.has_meta("map_waypoint"):
 			var wp: Vector3 = raid.get_meta("map_waypoint")
@@ -934,6 +947,28 @@ class BigMap extends Control:
 				continue
 			_place_label(f, q, nm, 12, Color(0.84, 0.81, 0.73, 0.74), rect, placed, 4.0, true, true, false)
 
+		# 7.5 玩家出击前自定义标记（同步显示备注文字与测距）
+		var gd_bm := get_node_or_null("/root/GameData")
+		if gd_bm != null and gd_bm.has_method("markers_for_map"):
+			for mk: Dictionary in gd_bm.call("markers_for_map", str(raid.map_id)):
+				var mkp := Vector3(float(mk.get("lx", 0.0)), 0.0, float(mk.get("lz", 0.0)))
+				var q := _w2m(mkp, rect)
+				if not rect.grow(-2.0).has_point(q):
+					continue
+				var mcol: Color = gd_bm.call("marker_color", str(mk.get("color", "amber")))
+				var mtxt := str(mk.get("text", ""))
+				var head := q + Vector2(0, -6.5)
+				draw_colored_polygon(PackedVector2Array([q + Vector2(0, 1.5), head + Vector2(-5.2, 2.0), head + Vector2(5.2, 2.0)]), Color(0.05, 0.06, 0.07, 0.92))
+				draw_circle(head, 6.0, Color(0.05, 0.06, 0.07, 0.92))
+				draw_colored_polygon(PackedVector2Array([q, head + Vector2(-4.0, 1.5), head + Vector2(4.0, 1.5)]), mcol)
+				draw_circle(head, 4.6, mcol)
+				draw_circle(head, 1.8, Color(0.08, 0.09, 0.10))
+				placed.append(Rect2(q - Vector2(8, 12), Vector2(16, 15)))
+				if not mtxt.is_empty():
+					_place_label(f, q, mtxt, 12, mcol.lightened(0.12), rect, placed, 11.0, false, false, true)
+				hover_items.append({"pos": q, "r": 13.0, "title": ("Custom Pin · " if is_e else "自定标记 · ") + mtxt,
+					"sub": ("%s · Pre-Raid Note · Dist %dm" if is_e else "%s · 战前备注 · 距离 %dm") % [_grid_code(mkp), int(mkp.distance_to(mp))], "col": mcol})
+
 		# 8. 战术标点（右键标点 + 玩家牵引虚线）
 		if raid.has_meta("map_waypoint"):
 			var wp: Vector3 = raid.get_meta("map_waypoint")
@@ -1100,6 +1135,7 @@ class BigMap extends Control:
 			[GOLD, "❖  Key Ruin (High-Value)" if is_e else "❖  重点遗迹（高价值物资）"],
 			[CYAN, "▸  Sector Transit Gate" if is_e else "▸  相邻战区转场口"],
 			[Color(0.88, 0.85, 0.76), "▪  Landmark & Terrain" if is_e else "▪  地标建筑与地形参照"],
+			[Color("f0b95a"), "▼  Custom Pre-Raid Pin" if is_e else "▼  玩家战前自定义标记"],
 			[NEST_C, "●  Swarm Hive Core" if is_e else "●  异化虫巢母体"],
 		]
 		for lg: Array in legends:
@@ -1147,7 +1183,7 @@ class Crosshair extends Control:
 				else:
 					m = vp_sz * 0.5
 			else:
-				var joy_on: bool = (mech.raid != null and bool(mech.raid.get("_joy_aim_active"))) or (mech.raid != null and mech.raid.hud != null and mech.raid.hud.is_touch_busy())
+				var joy_on: bool = (mech.raid != null and (bool(mech.raid.get("_joy_aim_active")) or mech.raid.aim_override != null)) or (mech.raid != null and mech.raid.hud != null and mech.raid.hud.is_touch_busy())
 				if cam0 and joy_on:
 					var ap := Vector3(mech.aim_point.x, 1.8, mech.aim_point.z)
 					if not cam0.is_position_behind(ap):
@@ -1292,6 +1328,7 @@ class HiResView extends Control:
 		var k := pixel_scale()
 		var px := Vector2i(maxi(1, int(round(size.x * k))), maxi(1, int(round(size.y * k))))
 		sv.size = px
+		GameData.apply_quality(sv)
 		box.size = Vector2(px)
 		box.scale = Vector2.ONE / k
 		box.position = Vector2.ZERO
@@ -1314,16 +1351,31 @@ static func fit_centered_panel(p: Control, margin := 14.0) -> void:
 
 
 static func bind_fit_panel(p: Control, margin := 14.0) -> void:
-	var fn := func(): fit_centered_panel.call_deferred(p, margin)
-	p.resized.connect(fn)
-	p.visibility_changed.connect(fn)
-	p.tree_entered.connect(func():
-		var vp := p.get_viewport()
-		if vp != null and not vp.size_changed.is_connected(fn):
-			vp.size_changed.connect(fn)
-		fn.call())
-	if p.is_inside_tree():
-		var vp := p.get_viewport()
-		if vp != null and not vp.size_changed.is_connected(fn):
-			vp.size_changed.connect(fn)
-		fn.call()
+	var binding := _PanelFitBinding.new()
+	binding.margin = margin
+	binding.fit_panel = fit_centered_panel
+	p.add_child(binding)
+
+
+## 回调由随面板销毁的节点持有，避免根视口长期保留捕获已释放面板的 lambda。
+class _PanelFitBinding extends Node:
+	var margin := 14.0
+	var fit_panel: Callable
+	var _queued := false
+
+	func _ready() -> void:
+		var panel := get_parent() as Control
+		panel.resized.connect(_request_fit)
+		panel.visibility_changed.connect(_request_fit)
+		get_viewport().size_changed.connect(_request_fit)
+		_request_fit()
+
+	func _request_fit() -> void:
+		if _queued: return
+		_queued = true
+		_fit.call_deferred()
+
+	func _fit() -> void:
+		_queued = false
+		if is_inside_tree():
+			fit_panel.call(get_parent() as Control, margin)

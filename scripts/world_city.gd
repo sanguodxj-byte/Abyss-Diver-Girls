@@ -936,9 +936,9 @@ static func nb_inner(nb: Dictionary) -> PackedVector2Array:
 	var ccw := poly_area_signed(poly) > 0.0
 	for i in m:
 		var o = nb.labels[i]
-		var d := 2.2
+		var d := 0.8
 		if o != null and col_kind(nb.k, o) == "col":
-			d = 8.2
+			d = 5.4
 		var a := poly[i]
 		var e := (poly[(i + 1) % m] - a).normalized()
 		var n := Vector2(-e.y, e.x) if ccw else Vector2(e.y, -e.x)
@@ -1463,11 +1463,115 @@ static func _rect_layout(rect: Rect2, id: String, t: Vector2i) -> Dictionary:
 			if _bldg_ok(L, b, clears) and _bldg_grid_ok(bgrid, bcell, b):
 				_bldg_grid_add(bgrid, bcell, b)
 				bl.append(b)
+	if surf_layout:
+		_fill_urban_gaps(L, bl, bgrid, bcell, clears)
 	L.blocks = blocks
 	L.fields = fields
 	L.parks = parks
 	L.bldgs = bl
 	return L
+
+
+## 城区空洞补充：对位于中心城（D）/ 街坊（R）但因街区接缝、未修成的虚构格网街道或斜交主干道而落在街块多边形之外的空白地块，
+## 沿最近实修道路朝向紧凑贴街补建宽体城市建筑，严格通过 _bldg_ok 与 _bldg_grid_ok（保证 >= 1.35m 路缘、>= 4.3m 巷距、零侵入清空圈）。
+static func _fill_urban_gaps(L: Dictionary, bl: Array, bgrid: Dictionary, bcell: float, clears: Array) -> void:
+	var rect: Rect2 = (L.rect as Rect2).grow(24.0)
+	var rg: SegGrid = L.road_grid
+	var f := features()
+	var rg_rail: SegGrid = L.get("rail_grid", null)
+	const STEP := 8.0
+	var gx0 := floori(rect.position.x / STEP)
+	var gx1 := ceili(rect.end.x / STEP)
+	var gz0 := floori(rect.position.y / STEP)
+	var gz1 := ceili(rect.end.y / STEP)
+	# 两阶段补建：第一轮优先在主街面落位宽体大楼（civic_block / midrise_office / rowblock），第二轮再把紧凑角楼塞进剩余小缝隙，杜绝小方块抢占大街面
+	var passes_d: Array = [
+		[[24.0, 14.0], [21.5, 11.5], [18.5, 12.5], [16.0, 10.5]],
+		[[13.5, 9.5], [10.8, 8.6], [9.4, 7.8]],
+	]
+	var passes_r: Array = [
+		[[21.0, 10.5], [17.5, 9.5], [14.0, 8.8]],
+		[[10.8, 8.0], [9.0, 7.4]],
+	]
+	for pass_i in 2:
+		for gz in range(gz0, gz1 + 1):
+			for gx in range(gx0, gx1 + 1):
+				var p := Vector2((float(gx) + 0.5) * STEP, (float(gz) + 0.5) * STEP)
+				var ch := dist_at(L, p)
+				if not (ch in ["D", "R"]):
+					continue
+				# 保留约 6% 确定性呼吸口袋供街心公园 / 地面停车场落位
+				if h2(gx, gz, 731) < 0.06:
+					continue
+				if rg.edge_dist(p) < 4.4 or water_dist(p) < 5.0 or f.rail.edge_dist(p) < 4.6:
+					continue
+				if rg_rail != null and rg_rail.edge_dist(p) < 4.6:
+					continue
+				var in_clr := false
+				for cz: Vector3 in clears:
+					var cp := Vector2(cz.x, cz.y)
+					var rr := maxf(2.0, cz.z - 2.0)
+					if p.distance_squared_to(cp) < rr * rr:
+						in_clr = true
+						break
+				if in_clr:
+					continue
+				var si := rg.nearest(p, 56.0)
+				var ang := 0.0
+				var road_cp := Vector2.ZERO
+				var road_out := Vector2.ZERO
+				var road_hw := 0.0
+				var has_road := false
+				if si >= 0:
+					var sa: Vector2 = rg.a[si]
+					var sb: Vector2 = rg.b[si]
+					var sdir := (sb - sa).normalized()
+					road_cp = Geometry2D.get_closest_point_to_segment(p, sa, sb)
+					var diff := p - road_cp
+					if diff.length_squared() > 0.25:
+						road_out = diff.normalized()
+						var to_road := -road_out
+						ang = atan2(-to_road.x, to_road.y)
+						road_hw = rg.hw[si]
+						has_road = true
+					else:
+						ang = atan2(sdir.y, sdir.x)
+				else:
+					ang = float(nb_info(nb_owner(p)).ang)
+				var rng := RandomNumberGenerator.new()
+				rng.seed = int(h2(gx, gz, 733 + pass_i * 19) * 2147483647.0) + 91
+				var shapes: Array = passes_d[pass_i] if ch == "D" else passes_r[pass_i]
+				var placed_one := false
+				for sh: Array in shapes:
+					var tw: float = float(sh[0])
+					var td: float = float(sh[1])
+					var cands: Array[Vector2] = []
+					if has_road:
+						var rd_d := p.distance_to(road_cp) - road_hw
+						if rd_d >= td * 0.5 + 1.4 and rd_d <= 22.0:
+							var hug_c: Vector2 = road_cp + road_out * (road_hw + 1.85 + td * 0.5)
+							if dist_at(L, hug_c) in ["D", "R"]:
+								cands.append(hug_c)
+					cands.append(p)
+					for cand_c: Vector2 in cands:
+						for a_off: float in [0.0, PI * 0.5]:
+							var test_ang := ang + a_off
+							var cand := {"c": cand_c, "ang": test_ang, "sx": tw, "sz": td, "h": 12.0, "kind": "bld", "ch": ch}
+							if _bldg_ok(L, cand, clears) and _bldg_grid_ok(bgrid, bcell, cand):
+								if rg_rail != null and rg_rail.edge_dist(cand_c) < Vector2(tw, td).length() * 0.5 + 2.2:
+									continue
+								var sp_h: Array = FRONT_SPEC[ch].h
+								var picked := _pick_style(ch, tw, td, rng.randf_range(sp_h[0], sp_h[1]), rng)
+								cand.kind = picked[0]
+								cand.h = picked[1]
+								_bldg_grid_add(bgrid, bcell, cand)
+								bl.append(cand)
+								placed_one = true
+								break
+						if placed_one:
+							break
+					if placed_one:
+						break
 
 
 static func _bldg_grid_ok(bgrid: Dictionary, cell: float, b: Dictionary) -> bool:
@@ -3171,7 +3275,7 @@ static func _grid_streets(L: Dictionary, nb: Dictionary, roads: Array, blocks: A
 		var vv2 := v0
 		while vv2 < vmax:
 			var cellp := PackedVector2Array([s + u * uu2 + v * vv2, s + u * (uu2 + sp.x) + v * vv2, s + u * (uu2 + sp.x) + v * (vv2 + sp.y), s + u * uu2 + v * (vv2 + sp.y)])
-			cellp = inset(cellp, 4.8 if draw else 2.4)
+			cellp = inset(cellp, 3.6 if draw else 0.8)
 			if cellp.size() >= 3:
 				var bp := clip_convex(cellp, inner)
 				var sub := 0
@@ -3376,7 +3480,7 @@ static func _radial_blocks(L: Dictionary, nb: Dictionary, blocks: Array) -> void
 		var core := PackedVector2Array()
 		for si in ns:
 			core.append(_radial_pt(c, float(rc.rings[0]), si, ns))
-		core = inset(core, 5.2)
+		core = inset(core, 4.4)
 		if core.size() >= 3:
 			var cbp := clip_convex(core, inner)
 			var csub := 0
@@ -3395,7 +3499,7 @@ static func _radial_blocks(L: Dictionary, nb: Dictionary, blocks: Array) -> void
 				var p01 := _radial_pt(c, r0, si + 1, ns)
 				var p11 := _radial_pt(c, r1, si + 1, ns)
 				var p10 := _radial_pt(c, r1, si, ns)
-				var q := inset(PackedVector2Array([p00, p10, p11, p01]), 4.8)
+				var q := inset(PackedVector2Array([p00, p10, p11, p01]), 3.6)
 				if q.size() < 3:
 					continue
 				var bp := clip_convex(q, inner)
@@ -3548,30 +3652,56 @@ static func _lot_buildings(blk: Dictionary, rng: RandomNumberGenerator) -> Array
 	return out
 
 
-## 根据街区属性与地块尺度分配多样化写实工业 / 城区建筑样式（共 20 种）
+## 根据街区属性与地块尺度分配多样化写实工业 / 城区建筑样式（共 23 种，严控高宽比防非等比拉伸畸变）
 static func _pick_style(ch: String, w: float, d: float, base_h: float, rng: RandomNumberGenerator) -> Array:
 	var r := rng.randf()
 	match ch:
 		"D":
-			if w >= 12.0 and d >= 10.0 and r < 0.24:
-				return ["courtyard_blk", rng.randf_range(9.5, 16.5)]
-			if w >= 9.0 and d >= 8.2 and r < 0.50:
-				return ["stepped_tower", rng.randf_range(16.0, 28.0)]
-			if w >= 10.5 and d >= 7.0 and r < 0.78:
-				return ["arcade_shop", rng.randf_range(7.5, 13.5)]
-			if w <= 11.5 and d <= 10.0 and r > 0.90:
-				return ["substation", rng.randf_range(4.8, 6.8)]
-			return ["bld", rng.randf_range(8.5, 22.0) if r < 0.85 else rng.randf_range(21.0, 27.0)]
+			if w >= 17.5 and d >= 11.5:
+				if r < 0.38:
+					return ["civic_block", rng.randf_range(13.0, 17.5)]
+				if r < 0.74:
+					return ["midrise_office", rng.randf_range(16.0, 22.0)]
+				if r < 0.88:
+					return ["rowblock", rng.randf_range(9.6, 12.0)]
+				return ["courtyard_blk", rng.randf_range(9.0, 11.6)]
+			if w >= 14.5 and d >= 8.8:
+				if r < 0.44:
+					return ["rowblock", rng.randf_range(9.6, 12.0)]
+				if r < 0.72:
+					return ["midrise_office", rng.randf_range(15.2, 19.6)]
+				if r < 0.88:
+					return ["arcade_shop", rng.randf_range(8.4, 11.0)]
+				return ["tenement", rng.randf_range(10.0, 13.2)]
+			if w >= 11.5 and d >= 8.5:
+				if r < 0.28:
+					return ["stepped_tower", rng.randf_range(13.2, 18.0)]
+				if r < 0.60:
+					return ["tenement", rng.randf_range(9.8, 13.0)]
+				if r < 0.84:
+					return ["arcade_shop", rng.randf_range(8.2, 10.6)]
+				return ["apt", rng.randf_range(9.2, 12.2)]
+			if w <= 10.5 and d <= 9.5 and r > 0.90:
+				return ["substation", rng.randf_range(5.2, 6.8)]
+			return ["bld", rng.randf_range(7.8, 11.2)]
 		"R":
-			if w >= 11.2 and d >= 6.0 and r < 0.34:
-				return ["terrace", rng.randf_range(5.8, 8.6)]
-			if w >= 9.2 and d >= 7.5 and r < 0.56:
-				return ["tenement", rng.randf_range(9.5, 15.0)]
-			if w >= 8.2 and d >= 7.0 and r < 0.74:
-				return ["apt", rng.randf_range(7.5, 12.0)]
-			if w >= 7.4 and r < 0.90:
-				return ["duplex", rng.randf_range(4.8, 7.2)]
-			return ["house", rng.randf_range(3.6, 6.2)]
+			if w >= 15.0 and d >= 8.2:
+				return ["rowblock", rng.randf_range(9.2, 11.6)] if r < 0.68 else ["terrace", rng.randf_range(6.4, 8.4)]
+			if w >= 11.0 and d >= 6.8:
+				if r < 0.46:
+					return ["terrace", rng.randf_range(6.2, 8.2)]
+				if r < 0.78:
+					return ["tenement", rng.randf_range(9.5, 12.6)]
+				return ["apt", rng.randf_range(8.6, 11.2)]
+			if w >= 8.4 and d >= 6.8:
+				if r < 0.54:
+					return ["apt", rng.randf_range(8.4, 11.2)]
+				if r < 0.82:
+					return ["tenement", rng.randf_range(9.2, 12.0)]
+				return ["duplex", rng.randf_range(5.4, 7.2)]
+			if w >= 7.0 and r < 0.72:
+				return ["duplex", rng.randf_range(5.2, 7.0)]
+			return ["house", rng.randf_range(3.8, 5.2)]
 		"I":
 			if w * d < 95.0:
 				return ["substation", rng.randf_range(4.6, 6.6)] if r < 0.55 else ["shed", rng.randf_range(3.6, 4.8)]
@@ -3601,17 +3731,112 @@ static func _pick_style(ch: String, w: float, d: float, base_h: float, rng: Rand
 	return ["bld", base_h]
 
 
-## 临街排楼（城区 / 住宅 / 厂区 / 港区）：沿街块每条边顺着街向排布；连排建筑合并为多开间一体式 OBB（arcade_shop / terrace / courtyard_blk），
-## 任意两栋独立 OBB 之间严格保持 >= ALLEY（4.3 米）通行巷道，彻底消除屋檐穿插、转角叠楼与窄缝卡机甲问题。
+## 临街排楼（城区 / 住宅 / 厂区 / 港区）：沿街块每条边顺着街向排布；城区优先使用整块/双主楼与 24m 连排一体式街墙（civic_block / midrise_office / rowblock），
+## 任意两栋独立 OBB 之间严格保持 >= ALLEY（4.3 米）通行巷道，兼顾纽约/华盛顿级高街块占空比与 4m 机甲流畅机动。
 const ALLEY := 4.3
 const FRONT_SPEC := {
-	"D": {"w": [6.8, 18.5], "d": [7.5, 13.0], "set": [0.5, 1.3], "empty": 0.04, "inner": 0.72, "h": [7.5, 20.0], "kind": "bld"},
-	"R": {"w": [6.2, 16.5], "d": [5.8, 8.8], "set": [0.7, 1.8], "empty": 0.05, "inner": 0.55, "h": [3.6, 6.6], "kind": "house"},
+	"D": {"w": [13.5, 27.5], "d": [10.0, 17.0], "set": [0.4, 1.1], "empty": 0.02, "inner": 0.78, "h": [10.5, 21.0], "kind": "bld"},
+	"R": {"w": [12.0, 24.5], "d": [8.0, 12.2], "set": [0.6, 1.4], "empty": 0.03, "inner": 0.62, "h": [7.5, 13.0], "kind": "rowblock"},
 	"I": {"w": [9.0, 21.0], "d": [8.5, 16.0], "set": [1.4, 3.0], "empty": 0.06, "inner": 0.85, "h": [6.5, 10.5], "kind": "wh"},
 	"H": {"w": [8.5, 19.0], "d": [7.5, 14.0], "set": [1.4, 2.6], "empty": 0.06, "inner": 0.68, "h": [6.2, 8.8], "kind": "wh"},
 	"Y": {"w": [7.0, 14.5], "d": [5.0, 7.6], "set": [1.6, 3.0], "empty": 0.30, "inner": 0.30, "h": [3.2, 4.2], "kind": "shed"},
 	"M": {"w": [11.5, 20.0], "d": [6.0, 7.8], "set": [2.0, 3.5], "empty": 0.14, "inner": 0.58, "h": [3.6, 4.4], "kind": "barrack"},
 }
+
+
+## 尝试按整块主楼 / 双主楼（中留 6m 穿行街巷）优先排布中心城区（D）与高密街坊（R）街块，消除“大水泥地插细牙签”；返回是否已预留街心广场半区
+static func _try_urban_block_massing(blk: Dictionary, poly: PackedVector2Array, ch: String, rng: RandomNumberGenerator, L: Dictionary, clears: Array, placed: Array, out: Array) -> bool:
+	var area := poly_area(poly)
+	if area < 240.0:
+		return false
+	# 约 10% 的中大型中心城街块预留一半作为街心绿地公园或地面停车场，不塞死整块
+	var reserve_plaza := (ch == "D" and area >= 720.0 and rng.randf() < 0.10)
+	var ang := float(blk.ang)
+	var fit := _fit_obb(poly, ang, 0.55)
+	var edge_ang := _longest_edge(poly).angle()
+	var fit2 := _fit_obb(poly, edge_ang, 0.55)
+	if fit.is_empty() or (not fit2.is_empty() and float(fit2.sx) * float(fit2.sz) > float(fit.sx) * float(fit.sz) * 1.12):
+		fit = fit2
+		ang = edge_ang
+	if fit.is_empty():
+		return false
+	var fx: float = float(fit.sx)
+	var fz: float = float(fit.sz)
+	if minf(fx, fz) < 9.2 or maxf(fx, fz) < 13.5:
+		return false
+	# 保证局部 u 轴沿街块长边、v 轴沿短边（让宽体建筑顺街块长轴延展）
+	var rot_ang := ang
+	var long_l := fx
+	var short_l := fz
+	if fz > fx * 1.08:
+		rot_ang = ang + PI * 0.5
+		long_l = fz
+		short_l = fx
+	var u := Vector2(cos(rot_ang), sin(rot_ang))
+	var v := Vector2(-sin(rot_ang), cos(rot_ang))
+	var fc: Vector2 = fit.c
+	var sp: Dictionary = FRONT_SPEC[ch]
+	var alley_w := 5.6 if ch == "D" else 5.0
+
+	# 模式 A：超大深街块（short_l >= 25.5m），前后双排宽体联排街墙 + 中间穿行服务内巷
+	if not reserve_plaza and short_l >= 25.5 and long_l >= 18.0:
+		var band_d := clampf((short_l - alley_w) * 0.5, 9.6, 16.5 if ch == "D" else 12.0)
+		var off_v := band_d * 0.5 + alley_w * 0.5
+		var any_put := false
+		for side_v: float in [-1.0, 1.0]:
+			var row_ang := rot_ang if side_v > 0.0 else (rot_ang + PI)
+			if long_l >= 38.0:
+				var w2 := clampf((long_l - alley_w) * 0.5, 14.5, 27.5)
+				for side_u: float in [-1.0, 1.0]:
+					var c2 := fc + u * (side_u * (w2 * 0.5 + alley_w * 0.5)) + v * (side_v * off_v)
+					var cs2 := obb_corners(c2, row_ang, w2, band_d)
+					if _all_in(poly, cs2, 0.35) and _gap_ok(placed, cs2) and _site_ok(L, clears, c2, row_ang, w2, band_d):
+						var pk := _pick_style(ch, w2, band_d, rng.randf_range(sp.h[0], sp.h[1]), rng)
+						out.append({"c": c2, "ang": row_ang, "sx": w2, "sz": band_d, "h": pk[1], "kind": pk[0], "ch": ch})
+						placed.append(cs2)
+						any_put = true
+			else:
+				var w1 := clampf(long_l * 0.92, 15.0, 29.0)
+				var c1 := fc + v * (side_v * off_v)
+				var cs1 := obb_corners(c1, row_ang, w1, band_d)
+				if _all_in(poly, cs1, 0.35) and _gap_ok(placed, cs1) and _site_ok(L, clears, c1, row_ang, w1, band_d):
+					var pk1 := _pick_style(ch, w1, band_d, rng.randf_range(sp.h[0], sp.h[1]), rng)
+					out.append({"c": c1, "ang": row_ang, "sx": w1, "sz": band_d, "h": pk1[1], "kind": pk1[0], "ch": ch})
+					placed.append(cs1)
+					any_put = true
+		if any_put:
+			return false
+
+	# 模式 B：长街块（long_l >= 34m），拆成两栋宽厚主楼 + 中间穿行广场/过道（或半块留给街心公园/停车场）
+	if long_l >= 34.0:
+		var w_each := clampf((long_l - alley_w) * 0.5, 14.0, 28.5)
+		var d_each := clampf(short_l * 0.90, 9.5, 18.5 if ch == "D" else 13.0)
+		var any_b := false
+		var sides: Array = [-1.0] if reserve_plaza else [-1.0, 1.0]
+		for side_u: float in sides:
+			var b_ang := rot_ang if (rng.randf() < 0.5) else (rot_ang + PI)
+			var cb := fc + u * (side_u * (w_each * 0.5 + alley_w * 0.5))
+			var csb := obb_corners(cb, b_ang, w_each, d_each)
+			if _all_in(poly, csb, 0.35) and _gap_ok(placed, csb) and _site_ok(L, clears, cb, b_ang, w_each, d_each):
+				var pkb := _pick_style(ch, w_each, d_each, rng.randf_range(sp.h[0], sp.h[1]), rng)
+				out.append({"c": cb, "ang": b_ang, "sx": w_each, "sz": d_each, "h": pkb[1], "kind": pkb[0], "ch": ch})
+				placed.append(csb)
+				any_b = true
+		if any_b:
+			return reserve_plaza
+
+	# 模式 C：紧凑-中型华盛顿/曼哈顿整块大楼（一栋宽厚主楼撑满 85% 街块）
+	if not reserve_plaza and long_l >= 14.0 and short_l >= 9.4:
+		var w_full := clampf(long_l * 0.92, 13.5, 30.0)
+		var d_full := clampf(short_l * 0.88, 9.2, 19.5 if ch == "D" else 13.5)
+		var f_ang := rot_ang if (rng.randf() < 0.5) else (rot_ang + PI)
+		var csf := obb_corners(fc, f_ang, w_full, d_full)
+		if _all_in(poly, csf, 0.35) and _gap_ok(placed, csf) and _site_ok(L, clears, fc, f_ang, w_full, d_full):
+			var pkf := _pick_style(ch, w_full, d_full, rng.randf_range(sp.h[0], sp.h[1]), rng)
+			out.append({"c": fc, "ang": f_ang, "sx": w_full, "sz": d_full, "h": pkf[1], "kind": pkf[0], "ch": ch})
+			placed.append(csf)
+			return false
+	return false
 
 
 static func _frontage_buildings(blk: Dictionary, rng: RandomNumberGenerator, L: Dictionary, clears: Array) -> Array:
@@ -3622,35 +3847,42 @@ static func _frontage_buildings(blk: Dictionary, rng: RandomNumberGenerator, L: 
 	var ccw := poly_area_signed(poly) > 0.0
 	var placed: Array = []      ## 已放的轮廓（严格 >= ALLEY 间隔）
 	var out: Array = []
+	if ch in ["D", "R"]:
+		if _try_urban_block_massing(blk, poly, ch, rng, L, clears, placed, out):
+			return out
 	var order: Array = []
 	for i in m:
 		order.append(i)
 	order.sort_custom(func(x, y): return poly[x].distance_to(poly[(x + 1) % m]) > poly[y].distance_to(poly[(y + 1) % m]))
+	var min_w := 7.4 if ch == "D" else (6.6 if ch == "R" else 4.5)
+	var min_d := 6.6 if ch == "D" else (5.8 if ch == "R" else 4.5)
 	for i: int in order:
 		var a := poly[i]
 		var b := poly[(i + 1) % m]
 		var el := a.distance_to(b)
-		if el < float(sp.w[0]) + 1.5:
+		if el < min_w + 1.0:
 			continue
 		var e := (b - a) / el
 		var n := Vector2(-e.y, e.x) if ccw else Vector2(e.y, -e.x)    # 向内
 		var ang := atan2(n.x, -n.y)                                       # 本地 +z 朝街（-n）
-		var t := rng.randf_range(0.4, 2.2)
-		while t < el - 4.5:
-			var w := minf(rng.randf_range(sp.w[0], sp.w[1]), el - t - 0.4)
+		var t := rng.randf_range(0.3, 1.2)
+		while t < el - min_w:
+			var w := minf(rng.randf_range(sp.w[0], sp.w[1]), el - t - 0.3)
 			var d := rng.randf_range(sp.d[0], sp.d[1])
 			var st := rng.randf_range(sp.set[0], sp.set[1])
 			if rng.randf() < float(sp.empty):
-				t += maxf(ALLEY + 0.5, w * 0.65)
+				t += maxf(ALLEY + 0.5, w * 0.55)
 				continue
 			var cs := PackedVector2Array()
 			var c := Vector2.ZERO
 			var ok := false
-			for k in 6:
-				var ww: float = w * [1.0, 1.0, 0.82, 0.82, 0.64, 0.52][k]
-				var dd: float = d * [1.0, 0.80, 1.0, 0.78, 0.72, 0.60][k]
-				if ww < 4.5 or dd < 4.5:
-					break
+			for k in 8:
+				var ww: float = maxf(min_w, w * [1.0, 1.0, 0.84, 0.80, 0.68, 0.56, 0.46, 0.38][k])
+				var dd: float = maxf(min_d, d * [1.0, 0.82, 1.0, 0.78, 0.72, 0.62, 0.58, 0.52][k])
+				if t + ww > el - 0.25:
+					ww = el - t - 0.3
+				if ww < min_w or dd < min_d:
+					continue
 				c = a + e * (t + ww * 0.5) + n * (st + dd * 0.5)
 				cs = obb_corners(c, ang, ww, dd)
 				if _all_in(poly, cs, 0.35) and _gap_ok(placed, cs) and _site_ok(L, clears, c, ang, ww, dd):
@@ -3659,25 +3891,25 @@ static func _frontage_buildings(blk: Dictionary, rng: RandomNumberGenerator, L: 
 					ok = true
 					break
 			if not ok:
-				t += 2.2
+				t += 2.0
 				continue
 			var base_h := rng.randf_range(sp.h[0], sp.h[1])
 			var picked := _pick_style(ch, w, d, base_h, rng)
 			out.append({"c": c, "ang": ang, "sx": w, "sz": d, "h": picked[1], "kind": picked[0], "ch": ch})
 			placed.append(cs)
-			t += w + rng.randf_range(ALLEY + 0.25, ALLEY + (1.4 if ch in "DR" else 3.4))
+			t += w + rng.randf_range(ALLEY + 0.25, ALLEY + (1.2 if ch in "DR" else 3.4))
 	# 内院：块够深时在中间再放一栋（离四周的楼至少一条巷宽）
 	if rng.randf() < float(sp.inner):
-		var fit := _fit_obb(poly, float(blk.ang), 0.8)
+		var fit := _fit_obb(poly, float(blk.ang), 0.7)
 		if not fit.is_empty():
 			for k in 6:
-				var w := minf(rng.randf_range(sp.w[0], sp.w[1] * 1.15), float(fit.sx))
-				var d := minf(rng.randf_range(sp.d[0], sp.d[1]), float(fit.sz))
+				var w := minf(rng.randf_range(sp.w[0] * 0.85, sp.w[1]), float(fit.sx))
+				var d := minf(rng.randf_range(sp.d[0] * 0.85, sp.d[1]), float(fit.sz))
 				var ba := float(blk.ang) + (PI * 0.5 if rng.randf() < 0.3 else 0.0)
-				var c: Vector2 = fit.c + Vector2(rng.randf_range(-1, 1) * float(fit.sx), rng.randf_range(-1, 1) * float(fit.sz)) * 0.22
+				var c: Vector2 = fit.c + Vector2(rng.randf_range(-1, 1) * float(fit.sx), rng.randf_range(-1, 1) * float(fit.sz)) * 0.18
 				var cs := obb_corners(c, ba, w, d)
-				if w >= 5.2 and d >= 5.2 and _all_in(poly, cs, 0.6) and _gap_ok(placed, cs) and _site_ok(L, clears, c, ba, w, d):
-					var base_h2 := rng.randf_range(sp.h[0], sp.h[1]) * (0.82 if ch == "D" else 1.0)
+				if w >= min_w and d >= min_d and _all_in(poly, cs, 0.55) and _gap_ok(placed, cs) and _site_ok(L, clears, c, ba, w, d):
+					var base_h2 := rng.randf_range(sp.h[0], sp.h[1]) * (0.85 if ch == "D" else 1.0)
 					var picked2 := _pick_style(ch, w, d, base_h2, rng)
 					out.append({"c": c, "ang": ba, "sx": w, "sz": d, "h": picked2[1], "kind": picked2[0], "ch": ch, "inner": true})
 					placed.append(cs)
@@ -3979,9 +4211,20 @@ static func _hits(placed: Array, cs: PackedVector2Array, margin: float) -> bool:
 ## 建筑能否保留：沿周界密集采样，确保整栋建筑不压路、不压水、不压铁轨、不进遗迹 / 地标 / 撤离点的清空圈
 static func _bldg_ok(L: Dictionary, b: Dictionary, clears: Array) -> bool:
 	var f := features()
-	var r := maxf(b.sx, b.sz) * 0.5
+	var u := Vector2(cos(b.ang), sin(b.ang))
+	var v := Vector2(-sin(b.ang), cos(b.ang))
+	var hx: float = b.sx * 0.5
+	var hz: float = b.sz * 0.5
+	var bc: Vector2 = b.c
+	# 精确 OBB 到清空圆的距离判定（避免用外接圆半径误杀遗迹/地标旁 24m 宽体建筑）
 	for cz: Vector3 in clears:
-		if b.c.distance_to(Vector2(cz.x, cz.y)) < cz.z + r:
+		var cp := Vector2(cz.x, cz.y)
+		var rel: Vector2 = cp - bc
+		var lx := clampf(rel.dot(u), -hx, hx)
+		var lz := clampf(rel.dot(v), -hz, hz)
+		var closest: Vector2 = bc + u * lx + v * lz
+		var cr: float = cz.z + 0.8
+		if closest.distance_squared_to(cp) < cr * cr:
 			return false
 	var rg: SegGrid = L.road_grid
 	var rd := Vector2(b.sx, b.sz).length() * 0.5
@@ -3997,8 +4240,6 @@ static func _bldg_ok(L: Dictionary, b: Dictionary, clears: Array) -> bool:
 		for s in seg_n:
 			pts.append(p0.lerp(p1, float(s) / float(seg_n)))
 	if maxf(b.sx, b.sz) > 10.0:
-		var u := Vector2(cos(b.ang), sin(b.ang))
-		var v := Vector2(-sin(b.ang), cos(b.ang))
 		pts.append(b.c + u * (b.sx * 0.25))
 		pts.append(b.c - u * (b.sx * 0.25))
 		pts.append(b.c + v * (b.sz * 0.25))

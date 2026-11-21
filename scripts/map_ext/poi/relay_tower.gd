@@ -81,12 +81,12 @@ static func build(raid, c: Vector3, pid: String) -> void:
 			A.add(b, A.bevel_box(Vector3(0.08, 0.86, 1.04), 0.01), M_STRAP, Vector3(sx_s, 0.42, 0))
 		A.add(b, A.bevel_box(Vector3(0.16, 0.20, 0.08), 0.01), A.paint(Color(0.72, 0.18, 0.14), 0.3, 0.5), Vector3(0, 0.58, 0.52))
 		sealed.append({"pos": c + p, "node": b})
-	# 容器与环境叙事
-	K.crate(raid, term + Vector3(0.2, 0, 1.4), "tool")
-	K.fixed(raid, c + Vector3(4.6, 0, -8.2), ["arch_research_note", "hdd"], "tool")
-	K.crate(raid, sp + Vector3(0.6, 0, -0.6), "safe")
-	K.crate(raid, c + Vector3(-4.5, 0, -6.0), "supply")
-	K.crate(raid, c + Vector3(7.4, 0, 6.8), "military")
+	# 容器与环境叙事（中继终端技术箱 / 观测笔记技术箱 / 设备棚保险柜 / 守备补给与军用箱）
+	K.crate(raid, term + Vector3(0.2, 0, 1.4), "tech", [], 180.0)
+	K.fixed(raid, c + Vector3(4.6, 0, -8.2), ["arch_research_note", "hdd"], "tech", 180.0)
+	K.crate(raid, sp + Vector3(0.6, 0, -0.6), "safe", [], -90.0)
+	K.crate(raid, c + Vector3(-4.5, 0, -6.0), "supply", [], 180.0)
+	K.crate(raid, c + Vector3(7.4, 0, 6.8), "military", [], 0.0)
 	K.lamp(raid, c + Vector3(-8.2, 0, -8.4), Color(0.7, 0.9, 1.0))
 	K.lamp(raid, c + Vector3(8.4, 0, 2.0), Color(1.0, 0.7, 0.4))
 	K.rubble(raid, c + Vector3(3.0, 0, 4.0), 1.4)

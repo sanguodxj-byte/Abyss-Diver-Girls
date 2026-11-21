@@ -54,6 +54,8 @@ func _equivalent(a: Node3D, b: Node3D) -> bool:
 		var x: Node3D = aa[i]
 		var y: Node3D = bb[i]
 		if x.get_class() != y.get_class() or not x.transform.is_equal_approx(y.transform): return false
+		for key in x.get_meta_list():
+			if _ref_indices(x.get_meta(key), aa) != _ref_indices(y.get_meta(key), bb): return false
 		if x is Label3D and x.text != y.text: return false
 		if x is Light3D and (x.light_color != y.light_color or x.light_energy != y.light_energy): return false
 		if x is MeshInstance3D:
@@ -63,6 +65,17 @@ func _equivalent(a: Node3D, b: Node3D) -> bool:
 				if x.mesh.surface_get_arrays(si) != y.mesh.surface_get_arrays(si): return false
 			if not _material_equal(x.material_override, y.material_override): return false
 	return true
+
+
+func _ref_indices(value: Variant, nodes: Array) -> Variant:
+	if value is Node: return nodes.find(value)
+	if value is Array:
+		return value.map(func(item): return _ref_indices(item, nodes))
+	if value is Dictionary:
+		var out := {}
+		for key in value: out[key] = _ref_indices(value[key], nodes)
+		return out
+	return value
 
 
 func _material_equal(a: Material, b: Material) -> bool:

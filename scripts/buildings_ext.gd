@@ -10,6 +10,12 @@ const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
 static func build(raid, kind: String, p: Vector3, sz: Vector3, rot: float) -> bool:
 	match kind:
+		"civic_block":
+			_place_ext(raid, "bldg_civic_block", p, sz, rot, _rand_masonry(raid, [Color(0.68, 0.65, 0.59), Color(0.62, 0.60, 0.55), Color(0.72, 0.69, 0.63)], 0.0))
+		"midrise_office":
+			_place_ext(raid, "bldg_midrise_office", p, sz, rot, _rand_masonry(raid, [Color(0.62, 0.56, 0.48), Color(0.55, 0.36, 0.28), Color(0.66, 0.63, 0.57), Color(0.50, 0.44, 0.39)], 0.52))
+		"rowblock":
+			_place_ext(raid, "bldg_rowblock", p, sz, rot, null)
 		"arcade_shop":
 			_place_ext(raid, "bldg_arcade_shop", p, sz, rot, _rand_masonry(raid, [Color(0.54, 0.49, 0.42), Color(0.49, 0.42, 0.37), Color(0.46, 0.47, 0.43)], 0.5))
 		"stepped_tower":
@@ -51,17 +57,33 @@ static func _rand_masonry(raid, cols: Array, brick_prob: float) -> Material:
 
 
 static func _place_ext(raid, prefab_id: String, p: Vector3, sz: Vector3, rot: float, tint_mat: Material = null, with_stencil := false, stencil_text := "") -> void:
-	var sb: StaticBody3D = raid._bldg_body(sz, p + Vector3(0, sz.y * 0.5, 0))
+	var safe_sz := PrefabLib.clamp_building_height(prefab_id, sz)
+	var sb: StaticBody3D = raid._bldg_body(safe_sz, p + Vector3(0, safe_sz.y * 0.5, 0))
 	sb.rotation.y = -rot
-	PrefabLib.place_on_body(raid, sb, prefab_id, sz, true, tint_mat, -999.0, with_stencil, stencil_text)
+	PrefabLib.place_on_body(raid, sb, prefab_id, safe_sz, true, tint_mat, -999.0, with_stencil, stencil_text)
 
 
-## 远景外围城区建筑 MultiMesh 形态映射（使战区边界内外的 20 种建筑轮廓自然贯通）
+## 远景外围城区建筑 MultiMesh 形态映射（使战区边界内外的 23 种建筑轮廓自然贯通）
 static func add_backdrop(kind: String, bs: Basis, p0: Vector3, sx: float, sz: float, h: float, brng: RandomNumberGenerator,
 		hull_con0: Array, hull_con1: Array, hull_brick: Array, hull_wh: Array, hull_mil: Array,
 		trim_dark: Array, roof_dark: Array, win_dark: Array, gable_slate: Array, gable_rust: Array,
 		barrel_wh: Array, saw_shed: Array, tank_cyls: Array) -> bool:
 	match kind:
+		"civic_block":
+			hull_con0.append(Transform3D(bs.scaled_local(Vector3(sx, h * 0.90, sz)), p0 + Vector3(0.0, h * 0.45, 0.0)))
+			hull_con1.append(Transform3D(bs.scaled_local(Vector3(sx * 0.58, h * 0.14, sz * 0.48)), p0 + Vector3(0.0, h * 0.95, 0.0)))
+			win_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.92, h * 0.58, sz + 0.08)), p0 + Vector3(0.0, h * 0.50, 0.0)))
+			roof_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.92, 0.25, sz * 0.92)), p0 + Vector3(0.0, h * 0.91, 0.0)))
+		"midrise_office":
+			var target_hull := hull_brick if brng.randf() < 0.45 else hull_con0
+			target_hull.append(Transform3D(bs.scaled_local(Vector3(sx, h * 0.92, sz)), p0 + Vector3(0.0, h * 0.46, 0.0)))
+			win_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.90, h * 0.64, sz + 0.08)), p0 + Vector3(0.0, h * 0.52, 0.0)))
+			trim_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.22, 1.9, sz * 0.24)), p0 + bs * Vector3(-sx * 0.24, h * 0.96, -sz * 0.12)))
+			tank_cyls.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1.15, 2.4, 1.15)), p0 + bs * Vector3(sx * 0.24, h * 0.92 + 1.4, -sz * 0.12)))
+		"rowblock":
+			hull_brick.append(Transform3D(bs.scaled_local(Vector3(sx, h, sz)), p0 + Vector3(0.0, h * 0.5, 0.0)))
+			win_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.90, h * 0.52, sz + 0.08)), p0 + Vector3(0.0, h * 0.52, 0.0)))
+			roof_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.94, 0.22, sz * 0.92)), p0 + Vector3(0.0, h + 0.08, 0.0)))
 		"terrace", "duplex":
 			hull_brick.append(Transform3D(bs.scaled_local(Vector3(sx, h, sz)), p0 + Vector3(0.0, h * 0.5, 0.0)))
 			win_dark.append(Transform3D(bs.scaled_local(Vector3(sx * 0.82, 0.72, sz + 0.08)), p0 + Vector3(0.0, h * 0.55, 0.0)))

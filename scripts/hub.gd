@@ -647,6 +647,10 @@ func _build_top_bar() -> void:
 
 	var coop_button := Button.new()
 	coop_button.text = Loc.t("联机小队", "Co-op Squad")
+	if not Net.available():
+		coop_button.disabled = true
+		coop_button.text = Loc.t("网页版·单人", "Web · Solo")
+		coop_button.tooltip_text = Loc.t("联机请使用桌面或安卓客户端", "Use the desktop or Android client for co-op")
 	coop_button.custom_minimum_size = Vector2(82, 28)
 	coop_button.pressed.connect(func(): get_parent().show_lobby())
 	th.add_child(coop_button)
@@ -928,7 +932,7 @@ func _open_hub_settings(initial_tab := "video") -> void:
 		GameData.quality = i
 		GameData.apply_quality(get_viewport())
 		if hangar_vp and is_instance_valid(hangar_vp):
-			GameData.apply_quality(hangar_vp, false)
+			GameData.apply_quality(hangar_vp)
 		GameData.save_game())
 	pg_v.add_child(q_opt)
 
@@ -943,7 +947,7 @@ func _open_hub_settings(initial_tab := "video") -> void:
 			GameData.set_render_scale_mode(i)
 			GameData.apply_quality(get_viewport())
 			if hangar_vp and is_instance_valid(hangar_vp):
-				GameData.apply_quality(hangar_vp, false))
+				GameData.apply_quality(hangar_vp))
 		pg_v.add_child(rs_opt)
 
 	pg_v.add_child(UI.label(Loc.t("画面风格", "Render Style"), 12, K.CREAM_DIM))
@@ -1661,6 +1665,7 @@ func _build_deploy_view(parent: Control) -> void:
 		Audio.play_ui("ui_tab")
 		_update_map_detail())
 	world_map.map_locked.connect(func(_id: String): Audio.play_ui("ui_denied"))
+	world_map.markers_changed.connect(_update_map_detail)
 	_refresh_world_map()
 
 	var bp := _tpanel(p1, Loc.t("任务简报", "Mission Briefing"), "Briefing", RIGHT, [-K.M - RW, top, -K.M, -K.GAP])
@@ -1812,6 +1817,8 @@ func _deploy_show(n: int) -> void:
 	deploy_step = n
 	if n == 1:
 		_refresh_world_map()
+	elif world_map != null and world_map.has_method("close_marker_editor"):
+		world_map.close_marker_editor()
 	var enter_delay := 0.0
 	if changed:
 		for i in deploy_pages.size():
@@ -1850,6 +1857,8 @@ const MAP_BOSS_IDS := {
 
 
 func _update_map_detail() -> void:
+	if map_title_lbl == null:
+		return
 	var md: Dictionary = GameData.map_data(GameData.map_id)
 	map_title_lbl.text = md.get("name", "")
 	map_tag_lbl.text = md.get("tag", "")
@@ -1873,6 +1882,13 @@ func _update_map_detail() -> void:
 			b_names.append(ename)
 	if not b_names.is_empty():
 		q += Loc.t("\n首领威胁：", "\nBoss Threats: ") + " · ".join(b_names)
+	var cur_marks: Array = GameData.markers_for_map(GameData.map_id)
+	if not cur_marks.is_empty():
+		var m_names: Array = []
+		for mk: Dictionary in cur_marks.slice(0, 3):
+			m_names.append(str(mk.get("text", "")))
+		var suffix := (" …" if cur_marks.size() > 3 else "")
+		q += Loc.t("\n自定义标记：%d 处（%s%s）", "\nCustom Pins: %d (%s%s)") % [cur_marks.size(), " · ".join(m_names), suffix]
 	map_quest_lbl.text = q
 	var links: Dictionary = WorldLink.LINKS.get(GameData.map_id, {})
 	var ls: Array = []
@@ -2808,7 +2824,7 @@ func _build_hangar() -> void:
 	var sv: SubViewport = svc.sv
 	sv.own_world_3d = true
 	hangar_vp = sv
-	GameData.apply_quality(sv, false)
+	GameData.apply_quality(sv)
 	preview_root = Node3D.new()
 	sv.add_child(preview_root)
 
@@ -2827,7 +2843,7 @@ func _build_hangar() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 1.12
-	var mob := OS.has_feature("mobile")
+	var mob := OS.has_feature("mobile") or OS.has_feature("web")
 	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
 	env.glow_enabled = true
 	env.glow_normalized = true
@@ -2855,20 +2871,25 @@ func _build_hangar() -> void:
 	preview_root.add_child(we)
 
 	# 装配完整 87.2m 信天翁号，将既有 BAY 03 重型机甲整备舱精确置于核心机库舱位（转盘与 MechPad_Anchor(0,1.56,0) 重合，世界坐标保持 0,0,0）
-	airship = AlbatrossAirship.build_integrated({
-		"obs2_fit_airship": true,
-		"include_obs2_lights": false,
-		"include_obs2_outside": false,
-		"bay03_fit_airship": false,
-		"include_bay03_lights": true,
-		"bay03_mob": mob,
-		"bay03_mob_ren": mob_ren,
-		"batch_static": true,
-	})
-	airship.position = -AlbatrossAirship.BAY03_MOUNT_POS
-	preview_root.add_child(airship)
-	AlbatrossAirship.set_cutaway_mode(airship, "legacy_bay03")
-	var bay_refs: Dictionary = airship.get_meta("bay03_refs")
+	var bay_refs: Dictionary
+	if OS.has_feature("web"):
+		# 机库镜头只显示 BAY 03，完整母舰的其余舱室不参与构建。
+		bay_refs = preload("res://scripts/airship/bay03_hangar.gd").build(preview_root, {"mob": true, "mob_ren": false, "include_lights": true, "batch_static": true})
+	else:
+		airship = AlbatrossAirship.build_integrated({
+			"obs2_fit_airship": true,
+			"include_obs2_lights": false,
+			"include_obs2_outside": false,
+			"bay03_fit_airship": false,
+			"include_bay03_lights": true,
+			"bay03_mob": mob,
+			"bay03_mob_ren": mob_ren,
+			"batch_static": true,
+		})
+		airship.position = -AlbatrossAirship.BAY03_MOUNT_POS
+		preview_root.add_child(airship)
+		AlbatrossAirship.set_cutaway_mode(airship, "legacy_bay03")
+		bay_refs = airship.get_meta("bay03_refs")
 	turntable = bay_refs["turntable"]
 	preview_root.set_meta("_keep_tt", turntable)
 
@@ -2877,7 +2898,7 @@ func _build_hangar() -> void:
 	key.light_energy = 9.2
 	key.spot_range = 20.0
 	key.spot_angle = 32.0
-	key.shadow_enabled = true
+	key.shadow_enabled = not OS.has_feature("web") or GameData.quality >= 1
 	key.shadow_bias = 0.02
 	key.shadow_normal_bias = 1.0
 	key.shadow_blur = 0.35 if (mob or mob_ren) else 1.15
@@ -2886,14 +2907,16 @@ func _build_hangar() -> void:
 	key.look_at_from_position(key.position, Vector3(0, 1.5, 0))
 
 	# UPDATE_ONCE 反射探针仅启动时烘焙一次，每帧零额外开销，低画质也保留机甲金属高光质感
-	var rp := ReflectionProbe.new()
-	rp.update_mode = ReflectionProbe.UPDATE_ONCE
-	rp.box_projection = true
-	rp.size = Vector3(28, 12, 22)
-	rp.position = Vector3(0, 4.0, -1.0)
-	rp.intensity = 0.72
-	rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
-	preview_root.add_child(rp)
+	# WebGL 反射探针六面烘焙会触发深度/模板 blit 格式错误；网页保留天空环境反射。
+	if not OS.has_feature("web"):
+		var rp := ReflectionProbe.new()
+		rp.update_mode = ReflectionProbe.UPDATE_ONCE
+		rp.box_projection = true
+		rp.size = Vector3(28, 12, 22)
+		rp.position = Vector3(0, 4.0, -1.0)
+		rp.intensity = 0.72
+		rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		preview_root.add_child(rp)
 
 	var h_lights := [
 		[Vector3(-5.0, 3.5, -2.0), Color(0.32, 0.75, 1.0), 3.0, 9.5],

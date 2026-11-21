@@ -122,8 +122,12 @@ static func emotion_text(label_zh: String) -> String:
 ## 立绘动画；没有对应片段时返回空串，由调用方退回静态立绘。
 ## 奈绪的片段以 nao_f 为前缀，其余角色与 id 同名；根据情绪标签或表情匹配对应的 talk_<情绪> 谈话片段，
 ## 当 talking 为 false（说话完毕或非当前发言席位）时自动退回待机片段。
+static func animated_portraits_enabled() -> bool:
+	return not OS.has_feature("web")
+
+
 static func portrait_clip(char_id: String, expr := "", talking := true, tag := "") -> String:
-	if char_id == "":
+	if char_id == "" or not animated_portraits_enabled():
 		return ""
 	var pre := "nao_f" if char_id == "nao" else char_id
 	var em: Dictionary = EMOTION_MAP.get(tag, EMOTION_MAP.get(expr, {}))
@@ -164,7 +168,7 @@ static func portrait_clip(char_id: String, expr := "", talking := true, tag := "
 
 ## 无线电小窗专用短片：192×192 全关键帧，避免小尺寸播放时的压缩噪点；没有时返回空串
 static func radio_clip(char_id: String, expr := "", tag := "") -> String:
-	if char_id == "":
+	if char_id == "" or not animated_portraits_enabled():
 		return ""
 	var e := expr.trim_prefix("talk_")
 	var em: Dictionary = EMOTION_MAP.get(tag, EMOTION_MAP.get(e, {}))

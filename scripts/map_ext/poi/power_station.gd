@@ -87,13 +87,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	for p in [Vector3(-1.2, 0, 2.4), Vector3(3.2, 0, 6.0)]:
 		A.add(raid.world, A.cyl(0.9, 0.7, 0.9, 28), A.paint(Color(0.3, 0.25, 0.18), 0.3, 0.8, {"rust": 0.7, "wear": 0.5}), c + p + Vector3(0, 0.35, 0))
 	A.add(raid.world, A.bevel_box(Vector3(3.0, 0.12, 1.0), 0.02), A.metal(Color(0.26, 0.26, 0.25)), c + Vector3(0.6, 0.06, -2.0), Vector3(0, 18, 0))
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(-14.2, 0, -1.6), "tool")
-	K.crate(raid, c + Vector3(-8.4, 0, 2.2), "tool")
-	K.crate(raid, c + Vector3(-13.2, 0, 6.8), "military")
-	K.crate(raid, c + Vector3(3.2, 0, 7.4), "safe")
-	K.fixed(raid, c + Vector3(2.4, 0, 4.6), ["arch_blueprint", "circuit"], "tool")
-	K.crate(raid, c + Vector3(7.5, 0, -12.0), "military")
+	# 容器与环境叙事（变压器场检修工具箱 / 开关场技术箱 / 控制室保险柜与蓝图技术箱 / 守备弹药与军用箱）
+	K.crate(raid, c + Vector3(-14.2, 0, -1.6), "tool", [], -90.0)
+	K.crate(raid, c + Vector3(-8.4, 0, 2.2), "tech", [], 0.0)
+	K.crate(raid, c + Vector3(-13.2, 0, 6.8), "military", [], 0.0)
+	K.crate(raid, c + Vector3(3.2, 0, 7.4), "safe", [], 0.0)
+	K.fixed(raid, c + Vector3(2.4, 0, 4.6), ["arch_blueprint", "circuit"], "tech", 0.0)
+	K.crate(raid, c + Vector3(7.5, 0, -12.0), "ammo", [], 180.0)
 	K.lamp(raid, c + Vector3(-14.0, 0, -9.4), Color(1.0, 0.76, 0.42))
 	K.lamp(raid, c + Vector3(14.0, 0, 0.0), Color(0.72, 0.86, 1.0))
 	K.rubble(raid, c + Vector3(1.2, 0, -10.4), 2.0)

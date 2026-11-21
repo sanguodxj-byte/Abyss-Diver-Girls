@@ -18,10 +18,16 @@ func run() -> void:
 		return
 	if not check(m.raid.hud.skill_slots.size() == 2 and m.raid.hud.skill_slots.has("space") and m.raid.hud.skill_slots.has("f") and not m.raid.hud.skill_slots.has("e") and not m.raid.hud.skill_slots.has("r"), "HUD 技能栏应仅保留 SPACE 与 F 两个槽位"):
 		return
-	# 验证移除换弹后 reload_all 不再进入换弹，双臂均直接消耗能量射击
+	# 验证 R 重装填（reload_all）
+	m.ammo["arm_l"] = 1
+	m.ammo["arm_r"] = 2
 	m.reload_all()
-	if not check(m.reload_t["arm_l"] == 0.0 and m.reload_t["arm_r"] == 0.0, "移除弹药设定后不应触发换弹"):
+	if not check(m.reload_t["arm_l"] > 0.0 and m.reload_t["arm_r"] > 0.0, "R 重装填（reload_all）未能同时启动双臂装填"):
 		return
+	m.reload_t["arm_l"] = 0.0
+	m.reload_t["arm_r"] = 0.0
+	m.ammo["arm_l"] = m.mag["arm_l"]
+	m.ammo["arm_r"] = m.mag["arm_r"]
 
 	# 验证 TT-8 重装双足与 HX-6 六足底盘换装及 SPACE 位移技能
 	m.shield_time = 999.0
@@ -53,12 +59,13 @@ func run() -> void:
 	var heavy_st := GameData.compute_stats({"core": "core_fortress", "legs": "legs_titan", "arm_l": "arm_rail", "arm_r": "arm_cannon", "back": "back_vls", "gen": "gen_crystal"})
 	if not check(int(heavy_st.armor_class) == 6 and int(light_st.armor_class) == 2 and float(light_st.ergo) > float(heavy_st.ergo), "防弹等级或人机工效计算异常"):
 		return
-	# 验证部位受损 < 50% 时的渐进机械故障（手臂散布扩大、底盘液压减速）
+	# 验证部位受损 < 50% 时的渐进机械故障（手臂散布扩大/装填变慢、底盘液压减速）
 	var base_sp: float = m.eff_spread("arm_l", 5.0)
+	var base_rl: float = m._reload_dur("arm_l")
 	var base_spd: float = m.speed_mult()
 	m.parts["arm_l"] = 0.2
 	m.parts["legs"] = 0.2
-	if not check(m.eff_spread("arm_l", 5.0) > base_sp and m.speed_mult() < base_spd, "部位受损低于50%时未触发散布扩大/底盘减速机械故障"):
+	if not check(m.eff_spread("arm_l", 5.0) > base_sp and m._reload_dur("arm_l") > base_rl and m.speed_mult() < base_spd, "部位受损低于50%时未触发散布扩大/装填延迟/底盘减速机械故障"):
 		return
 	# 验证穿甲深度 ap 对重甲敌人的穿透加成
 	var bug = m.raid.spawn_bug("aegis", m.global_position + Vector3(8, 0, 0))

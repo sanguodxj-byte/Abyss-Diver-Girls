@@ -21,6 +21,8 @@ var _depth_mat: ShaderMaterial = null
 var _chunk_surf_cache: Dictionary = {}  ## mesh_rid_id -> Array[Array] 缓存 surface_get_arrays，消除重复回读
 var _slot_pos: Array = [Vector4(-1, -1, -1, -1), Vector4(-1, -1, -1, -1)]
 var _slot_ext: Array = [Vector4(-1, -1, -1, -1), Vector4(-1, -1, -1, -1)]
+var _ghost_busy := false
+var _ghost_slice_start := 0
 
 
 func _set_slot_uniforms(slot: int, pv: Vector4, ev: Vector4) -> void:
@@ -329,10 +331,11 @@ func update(raid: Node3D, delta: float, cam_p: Vector3, mp: Vector3, probes: Arr
 		_active[idx] = cur
 		var b: Dictionary = _buildings[idx]
 		if cur > 0.005 and not bool(b["ghost_built"]):
-			if built_this_frame:
+			if built_this_frame or _ghost_busy:
 				continue
 			built_this_frame = true
-			_ensure_ghost(raid, b)
+			_ensure_ghost(raid, b, raid.get_tree())
+			if not bool(b["ghost_built"]): continue
 		_set_bldg_visual(b, cur)
 	for idx: int in to_erase:
 		_active.erase(idx)
@@ -343,7 +346,7 @@ func update(raid: Node3D, delta: float, cam_p: Vector3, mp: Vector3, probes: Arr
 		if slot < active_keys.size():
 			var idx: int = int(active_keys[slot])
 			var fade: float = float(_active[idx])
-			if fade > 0.005:
+			if fade > 0.005 and bool(_buildings[idx]["ghost_built"]):
 				var b: Dictionary = _buildings[idx]
 				var c: Vector3 = b["center"]
 				var h: Vector3 = b["half"]
@@ -452,8 +455,9 @@ static func _mat_color_and_mode(m: Material, is_mm: bool, mm_col: Color, mm_has_
 
 
 ## 按需懒提取单栋遮挡建筑的几何代理（MultiMesh 直接零拷贝复用 Mesh，合批 Chunk 按三角形质心裁入轻量 ArrayMesh）
-func _ensure_ghost(raid: Node3D, b: Dictionary) -> void:
-	b["ghost_built"] = true
+func _ensure_ghost(raid: Node3D, b: Dictionary, tree: SceneTree = null) -> void:
+	_ghost_busy = true
+	_ghost_slice_start = Time.get_ticks_usec()
 	var root := Node3D.new()
 	root.name = "OccGhost_%d" % int(b["idx"])
 	root.visible = false
@@ -463,6 +467,7 @@ func _ensure_ghost(raid: Node3D, b: Dictionary) -> void:
 	var mat_cache := {}
 	var rb = raid._rb() if raid.has_method("_rb") else null
 	if rb == null:
+		_ghost_busy = false
 		return
 	var chunks: Dictionary = rb.get("_chunks") if rb.get("_chunks") is Dictionary else {}
 	var ch_sz: float = float(rb.CHUNK)
@@ -482,9 +487,18 @@ func _ensure_ghost(raid: Node3D, b: Dictionary) -> void:
 				continue
 			for ch_item in ch_node.get_children():
 				if ch_item is MultiMeshInstance3D:
-					_extract_from_multimesh(ch_item as MultiMeshInstance3D, b, root, mat_cache)
+					await _extract_from_multimesh(ch_item as MultiMeshInstance3D, b, root, mat_cache, tree)
 				elif ch_item is MeshInstance3D:
-					_extract_from_chunk_mesh(ch_item as MeshInstance3D, b, root, mat_cache)
+					await _extract_from_chunk_mesh(ch_item as MeshInstance3D, b, root, mat_cache, tree)
+				if not is_instance_valid(root):
+					_ghost_busy = false
+					return
+				if tree != null and Time.get_ticks_usec() - _ghost_slice_start >= 1200:
+					await tree.process_frame
+					if not is_instance_valid(root):
+						_ghost_busy = false
+						return
+					_ghost_slice_start = Time.get_ticks_usec()
 
 	# 同步收录该建筑内未合批的独立自发光招牌/红十字（如城南医院红十字）
 	_ensure_emissive_cache(raid)
@@ -501,9 +515,11 @@ func _ensure_ghost(raid: Node3D, b: Dictionary) -> void:
 			gmi.material_override = _get_ghost_mat(b, mat_cache, cm[0] as Color, int(cm[1]))
 			gmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(gmi)
+	b["ghost_built"] = true
+	_ghost_busy = false
 
 
-func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node3D, mat_cache: Dictionary) -> void:
+func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node3D, mat_cache: Dictionary, tree: SceneTree = null) -> void:
 	var mm := mmi.multimesh
 	if mm == null or mm.mesh == null or mm.instance_count <= 0:
 		return
@@ -518,6 +534,10 @@ func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node
 	var use_cd := mm.use_custom_data
 	var use_col := mm.use_colors
 	for i in mm.instance_count:
+		if tree != null and i % 32 == 0 and Time.get_ticks_usec() - _ghost_slice_start >= 1200:
+			await tree.process_frame
+			if not is_instance_valid(root): return
+			_ghost_slice_start = Time.get_ticks_usec()
 		var ixf := gxf * mm.get_instance_transform(i)
 		var ac := (ixf * ma).get_center()
 		if ac.y <= 0.22 or not _point_in_obb(ac, b):
@@ -539,7 +559,7 @@ func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node
 		root.add_child(gmi)
 
 
-func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, mat_cache: Dictionary) -> void:
+func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, mat_cache: Dictionary, tree: SceneTree = null) -> void:
 	if mi.mesh == null:
 		return
 	var mat := mi.material_override
@@ -585,6 +605,10 @@ func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, m
 		var use_idx := idx.size() > 0
 		var tri_cnt := (idx.size() / 3) if use_idx else (verts.size() / 3)
 		for t in tri_cnt:
+			if tree != null and t % 128 == 0 and Time.get_ticks_usec() - _ghost_slice_start >= 1200:
+				await tree.process_frame
+				if not is_instance_valid(root): return
+				_ghost_slice_start = Time.get_ticks_usec()
 			var t3 := t * 3
 			var i0 := idx[t3] if use_idx else t3
 			var i1 := idx[t3 + 1] if use_idx else t3 + 1

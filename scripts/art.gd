@@ -11,7 +11,7 @@ static var _tube_cache := {}
 
 
 static func is_mobile_perf() -> bool:
-	return OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
+	return OS.has_feature("mobile") or OS.has_feature("web") or RenderingServer.get_current_rendering_method() == "mobile"
 
 
 # ======================================================================
@@ -307,46 +307,80 @@ static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg :=
 				st.add_vertex(inf[0])
 
 
-## 写实树木主干与多级分叉木质大枝网格（原点在地面 y=0，总高约 1.0，底部板根+微弯主干+5~7根斜伸侧枝）
+## 写实树木主干与多级分叉木质大枝网格（原点在地面 y=0，总高约 1.0：板根抓地 + S形微弯树干 + 三级自然分叉枝桠）
 static func tree_trunk_mesh(variant := 0, gnarled := false) -> ArrayMesh:
 	var v_id := posmod(variant, 8)
-	var key := "tr_trunk_%d_%d" % [v_id, 1 if gnarled else 0]
+	var key := "tr_trunk_v2_%d_%d" % [v_id, 1 if gnarled else 0]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 3571 + (901 if gnarled else 211)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var lean_x := rng.randf_range(-0.07, 0.07) * (1.8 if gnarled else 1.0)
-	var lean_z := rng.randf_range(-0.07, 0.07) * (1.8 if gnarled else 1.0)
-	var r_base := 0.135 if gnarled else 0.115
+	var lean_x := rng.randf_range(-0.075, 0.075) * (1.85 if gnarled else 1.0)
+	var lean_z := rng.randf_range(-0.075, 0.075) * (1.85 if gnarled else 1.0)
+	var sw_x := rng.randf_range(-0.04, 0.04)
+	var sw_z := rng.randf_range(-0.04, 0.04)
+	var r_base := 0.145 if gnarled else 0.122
 	var main_pts := [
-		Vector3(0.0, -0.02, 0.0),
-		Vector3(lean_x * 0.15, 0.14, lean_z * 0.15),
-		Vector3(lean_x * 0.55, 0.42, lean_z * 0.45),
-		Vector3(lean_x * 0.85, 0.70, lean_z * 0.90),
-		Vector3(lean_x * 1.05, 0.95, lean_z * 1.05),
+		Vector3(0.0, -0.04, 0.0),
+		Vector3(lean_x * 0.10 + sw_x * 0.25, 0.10, lean_z * 0.10 + sw_z * 0.25),
+		Vector3(lean_x * 0.28 + sw_x * 0.70, 0.28, lean_z * 0.25 + sw_z * 0.65),
+		Vector3(lean_x * 0.54 + sw_x * 0.35, 0.48, lean_z * 0.52 - sw_z * 0.20),
+		Vector3(lean_x * 0.78 - sw_x * 0.25, 0.68, lean_z * 0.80 - sw_z * 0.35),
+		Vector3(lean_x * 0.96, 0.84, lean_z * 0.98),
+		Vector3(lean_x * 1.08, 0.97, lean_z * 1.10),
 	]
-	var main_r := [r_base * 1.42, r_base, r_base * 0.74, r_base * 0.46, r_base * 0.16]
-	_branch_tube(st, main_pts, main_r, 16)
+	var main_r := [r_base * 1.56, r_base * 1.12, r_base * 0.88, r_base * 0.68, r_base * 0.48, r_base * 0.28, r_base * 0.11]
+	_branch_tube(st, main_pts, main_r, 14)
 
-	var n_limbs := 7 if gnarled else 5
+	# 4~5 条外展板根抓地（消除圆柱直接插进地面的低模感）
+	var n_roots := 5 if gnarled else 4
+	for ri in n_roots:
+		var raz := float(ri) * TAU / float(n_roots) + rng.randf_range(-0.35, 0.35)
+		var rdir := Vector3(cos(raz), 0.0, sin(raz))
+		var rlen := rng.randf_range(0.20, 0.32) * (1.18 if gnarled else 1.0)
+		var rp0 := rdir * (r_base * 0.45) + Vector3(0.0, rng.randf_range(0.14, 0.21), 0.0)
+		var rp1 := rdir * (rlen * 0.58) + Vector3(0.0, 0.05, 0.0)
+		var rp2 := rdir * rlen + Vector3(0.0, -0.05, 0.0)
+		var rr0 := r_base * rng.randf_range(0.46, 0.58)
+		_branch_tube(st, [rp0, rp1, rp2], [rr0, rr0 * 0.58, rr0 * 0.18], 8)
+
+	# 二级主分枝 + 三级自然叉枝（枯树与活树都具备真实木质骨架）
+	var n_limbs := 7 if gnarled else 6
 	for b in n_limbs:
-		var t_h := lerpf(0.36, 0.82, float(b) / float(maxi(1, n_limbs - 1))) + rng.randf_range(-0.03, 0.03)
+		var t_lo := 0.34 if gnarled else 0.52
+		var t_hi := 0.84 if gnarled else 0.88
+		var t_h := lerpf(t_lo, t_hi, float(b) / float(maxi(1, n_limbs - 1))) + rng.randf_range(-0.03, 0.03)
 		var az := float(b) * 2.39996 + rng.randf_range(-0.35, 0.35)
 		var dir := Vector3(cos(az), 0.0, sin(az))
 		var p0 := Vector3(lean_x * t_h, t_h, lean_z * t_h)
-		var reach := rng.randf_range(0.28, 0.46) * (1.28 if gnarled else (1.15 - t_h * 0.45))
-		var rise := rng.randf_range(0.14, 0.28) if gnarled else rng.randf_range(0.04, 0.16)
-		var p1 := p0 + dir * (reach * 0.52) + Vector3(0.0, rise * 0.55, 0.0)
-		var p2 := p0 + dir * reach + Vector3(rng.randf_range(-0.04, 0.04), rise, rng.randf_range(-0.04, 0.04))
-		var rb := r_base * lerpf(0.54, 0.30, (t_h - 0.32) / 0.55)
-		_branch_tube(st, [p0, p1, p2], [rb, rb * 0.62, rb * 0.18], 12)
-		if gnarled and b < 4:
-			var sub_az := az + rng.randf_range(0.55, 0.95) * (1.0 if b % 2 == 0 else -1.0)
+		var reach := rng.randf_range(0.32, 0.52) * (1.32 if gnarled else (1.06 - t_h * 0.35))
+		var rise := rng.randf_range(0.16, 0.32) if gnarled else rng.randf_range(0.14, 0.26)
+		var perp := Vector3(-dir.z, 0.0, dir.x)
+		var bend := rng.randf_range(-0.08, 0.08)
+		var p1 := p0 + dir * (reach * 0.45) + perp * bend + Vector3(0.0, rise * 0.48, 0.0)
+		var p2 := p0 + dir * (reach * 0.82) + perp * (bend * 0.4) + Vector3(0.0, rise * 0.86, 0.0)
+		var p3 := p0 + dir * reach + Vector3(rng.randf_range(-0.05, 0.05), rise, rng.randf_range(-0.05, 0.05))
+		var rb := r_base * lerpf(0.56, 0.28, clampf((t_h - 0.32) / 0.55, 0.0, 1.0))
+		_branch_tube(st, [p0, p1, p2, p3], [rb, rb * 0.68, rb * 0.38, rb * 0.12], 10)
+		var n_sub := 2 if gnarled else 1
+		for sb_i in n_sub:
+			var anchor := p1 if sb_i == 0 else p2
+			var sgn := 1.0 if ((b + sb_i) % 2 == 0) else -1.0
+			var sub_az := az + sgn * rng.randf_range(0.45, 0.92)
 			var sdir := Vector3(cos(sub_az), 0.0, sin(sub_az))
-			var sp2 := p1 + sdir * (reach * 0.55) + Vector3(0.0, rise * 0.65, 0.0)
-			_branch_tube(st, [p1, (p1 + sp2) * 0.5 + Vector3(0, 0.03, 0), sp2], [rb * 0.52, rb * 0.32, rb * 0.10], 10)
+			var s_len := reach * rng.randf_range(0.38, 0.62)
+			var s_rise := rise * rng.randf_range(0.42, 0.78)
+			var smid := anchor + sdir * (s_len * 0.52) + Vector3(0.0, s_rise * 0.58, 0.0)
+			var send := anchor + sdir * s_len + Vector3(rng.randf_range(-0.03, 0.03), s_rise, rng.randf_range(-0.03, 0.03))
+			var srb := rb * (0.48 if sb_i == 0 else 0.34)
+			_branch_tube(st, [anchor, smid, send], [srb, srb * 0.54, srb * 0.14], 7)
+			if gnarled:
+				var tw_az := sub_az - sgn * rng.randf_range(0.42, 0.85)
+				var tw_dir := Vector3(cos(tw_az), 0.0, sin(tw_az))
+				var tw_end := smid + tw_dir * (s_len * 0.52) + Vector3(0.0, s_rise * 0.55, 0.0)
+				_branch_tube(st, [smid, (smid + tw_end) * 0.5 + Vector3(0, 0.02, 0), tw_end], [srb * 0.44, srb * 0.24, srb * 0.08], 6)
 
 	st.generate_tangents()
 	var m := st.commit()
@@ -354,72 +388,96 @@ static func tree_trunk_mesh(variant := 0, gnarled := false) -> ArrayMesh:
 	return m
 
 
-## 内部辅助：向植物冠层写入一片微拱曲立体枝叶扇（两段折弯 + 纵向交叉副翼，杜绝纸片感；顶点色 R=内芯AO，G=色差）
+## 内部辅助：向植物冠层写入一片三维拱曲杯状枝叶簇（2×2 双向拱曲曲面 + 球冠法线转移 + 可选立体副翼，彻底告别平纸片感）
+## 顶点色编码：R = 内芯向外观 AO，G = 枝簇微色差，B = 树冠高度受光梯度（0=底裙，1=顶冠）
 static func _foliage_bough(st: SurfaceTool, origin: Vector3, dir_xz: Vector3, length: float, width: float,
-		droop: float, tip_lift: float, crown_center: Vector3, var_g: float, add_cross := true) -> void:
-	var side := Vector3(-dir_xz.z, 0.0, dir_xz.x).normalized()
+		droop: float, tip_lift: float, crown_center: Vector3, var_g: float, add_cross := true,
+		roll_rad := 0.0, flip_u := false) -> void:
+	var raw_side := Vector3(-dir_xz.z, 0.0, dir_xz.x).normalized()
+	var up_ax := Vector3.UP
+	var side := (raw_side * cos(roll_rad) + up_ax * sin(roll_rad)).normalized()
+	var cup_up := (up_ax * cos(roll_rad) - raw_side * sin(roll_rad)).normalized()
 	var p_root := origin
-	var p_mid := origin + dir_xz * (length * 0.52) + Vector3(0.0, -droop, 0.0)
+	var p_mid := origin + dir_xz * (length * 0.50) + Vector3(0.0, -droop * 0.72, 0.0)
 	var p_tip := origin + dir_xz * length + Vector3(0.0, -droop + tip_lift, 0.0)
-	var hw_root := width * 0.36
-	var hw_mid := width * 0.54
+	var hw_root := width * 0.34
+	var hw_mid := width * 0.56
 	var hw_tip := width * 0.44
+	var u0 := 0.96 if flip_u else 0.04
+	var u1 := 0.04 if flip_u else 0.96
+	var um := 0.50
+
+	var emit_v := func(vp: Vector3, uv: Vector2, ao_local: float) -> void:
+		var rel := vp - crown_center
+		# SpeedTree 球冠法线转移：76% 包络树冠球法线 + 24% 局部微向上仰角，令整树呈现饱满立体明暗而非交叉纸片
+		var n_sphere := Vector3(rel.x, maxf(rel.y, -0.15) * 1.15 + 0.24, rel.z).normalized()
+		var nrm := (n_sphere * 0.78 + cup_up * 0.22).normalized()
+		var h_grad := clampf((vp.y + 0.08) / 1.08, 0.0, 1.0)
+		var radial_ao := clampf(rel.length() * 0.85, 0.0, 1.0)
+		var ao := clampf(ao_local * 0.62 + radial_ao * 0.24 + h_grad * 0.14, 0.24, 1.0)
+		st.set_color(Color(ao, var_g, h_grad, 1.0))
+		st.set_normal(nrm)
+		st.set_uv(uv)
+		st.add_vertex(vp)
 
 	var emit_q := func(a: Vector3, b: Vector3, c: Vector3, d: Vector3, uvs: Array, aos: Array) -> void:
 		var pts := [a, b, c, d]
-		var idx := [0, 1, 2, 0, 2, 3]
-		for k in idx:
-			var vp: Vector3 = pts[k]
-			var nrm := (vp - crown_center).normalized()
-			nrm = (nrm + Vector3(0.0, 0.55, 0.0)).normalized()
-			st.set_color(Color(float(aos[k]), var_g, 1.0, 1.0))
-			st.set_normal(nrm)
-			st.set_uv(uvs[k])
-			st.add_vertex(vp)
+		for k in [0, 1, 2, 0, 2, 3]:
+			emit_v.call(pts[k], uvs[k], float(aos[k]))
 
-	# 主水平微拱松针/枝叶扇（两段曲率：基部->中段略垂 + 左右微拱，中段->梢部微翘）
-	var arch := Vector3(0.0, width * 0.11, 0.0)
-	emit_q.call(
-		p_root - side * hw_root, p_root + side * hw_root,
-		p_mid + side * hw_mid - arch, p_mid - side * hw_mid - arch,
-		[Vector2(0.14, 0.98), Vector2(0.86, 0.98), Vector2(0.98, 0.48), Vector2(0.02, 0.48)],
-		[0.36, 0.36, 0.78, 0.78]
-	)
-	emit_q.call(
-		p_mid - side * hw_mid - arch, p_mid + side * hw_mid - arch,
-		p_tip + side * hw_tip, p_tip - side * hw_tip,
-		[Vector2(0.02, 0.48), Vector2(0.98, 0.48), Vector2(0.92, 0.03), Vector2(0.08, 0.03)],
-		[0.78, 0.78, 1.0, 1.0]
-	)
-	# 斜置立体副翼：令平视/侧视时每层树枝都呈现饱满蓬松厚度，绝不露单薄横线
+	# 3 列 × 3 行双曲拱顶枝叶壳（中脊微隆、两翼微垂，从斜俯视和平视均无硬折角纸片感）
+	var ridge := cup_up * (width * 0.15)
+	var edge_drop := cup_up * (-width * 0.08)
+	var rL := p_root - side * hw_root + edge_drop * 0.4
+	var rC := p_root + ridge * 0.45
+	var rR := p_root + side * hw_root + edge_drop * 0.4
+	var mL := p_mid - side * hw_mid + edge_drop
+	var mC := p_mid + ridge
+	var mR := p_mid + side * hw_mid + edge_drop
+	var tL := p_tip - side * hw_tip + edge_drop * 0.5
+	var tC := p_tip + ridge * 0.55
+	var tR := p_tip + side * hw_tip + edge_drop * 0.5
+
+	var ur0 := lerpf(u0, u1, 0.12)
+	var ur1 := lerpf(u0, u1, 0.88)
+	emit_q.call(rL, rC, mC, mL, [Vector2(ur0, 0.97), Vector2(um, 0.97), Vector2(um, 0.48), Vector2(u0, 0.48)], [0.34, 0.42, 0.82, 0.74])
+	emit_q.call(rC, rR, mR, mC, [Vector2(um, 0.97), Vector2(ur1, 0.97), Vector2(u1, 0.48), Vector2(um, 0.48)], [0.42, 0.34, 0.74, 0.82])
+	emit_q.call(mL, mC, tC, tL, [Vector2(u0, 0.48), Vector2(um, 0.48), Vector2(um, 0.03), Vector2(ur0, 0.03)], [0.74, 0.82, 1.00, 0.92])
+	emit_q.call(mC, mR, tR, tC, [Vector2(um, 0.48), Vector2(u1, 0.48), Vector2(ur1, 0.03), Vector2(um, 0.03)], [0.82, 0.74, 0.92, 1.00])
+
+	# 斜置立体副翼：让侧面与 54° 俯视均呈现蓬松厚实针叶/叶团体积
 	if add_cross:
-		var tilt := (side * 0.58 + Vector3(0.0, 0.81, 0.0)).normalized() * (width * 0.34)
+		var tilt := (side * 0.52 + cup_up * 0.85).normalized() * (width * 0.34)
 		emit_q.call(
-			p_root - tilt * 0.55, p_root + tilt * 0.55,
-			p_tip + tilt * 0.85, p_tip - tilt * 0.85,
-			[Vector2(0.16, 0.96), Vector2(0.84, 0.96), Vector2(0.90, 0.05), Vector2(0.10, 0.05)],
-			[0.38, 0.46, 0.98, 0.92]
+			p_root - tilt * 0.52, p_root + tilt * 0.52,
+			p_tip + tilt * 0.82, p_tip - tilt * 0.82,
+			[Vector2(ur0, 0.95), Vector2(ur1, 0.95), Vector2(ur1, 0.05), Vector2(ur0, 0.05)],
+			[0.36, 0.46, 0.98, 0.88]
 		)
 
 
-## 多层轮生写实针叶松柏树冠网格（y=0..1，底半径约 1.0，6 层错位下垂松枝轮 + 顶梢簇）
+## 高密多层轮生写实针叶松柏树冠网格（y=0..1，9 层非对称错位下垂松枝轮 + 立体顶梢，60+ 拱曲松枝无低模感）
 static func pine_crown_mesh(variant := 0) -> ArrayMesh:
 	var v_id := posmod(variant, 6)
-	var key := "pine_cr_%d" % v_id
+	var key := "pine_cr_v2_%d" % v_id
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 4933 + 617
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(0.0, 0.42, 0.0)
+	var center := Vector3(0.0, 0.40, 0.0)
+	# 9 层密集错落枝轮：[高度 y0, 枝长, 枝数, 下垂量, 梢端微翘]
 	var tiers := [
-		[0.08, 1.04, 7, 0.16, 0.05],
-		[0.24, 0.90, 7, 0.13, 0.05],
-		[0.40, 0.76, 6, 0.10, 0.06],
-		[0.56, 0.61, 6, 0.07, 0.06],
-		[0.71, 0.46, 5, 0.04, 0.07],
-		[0.84, 0.31, 5, 0.01, 0.08],
+		[0.05, 1.08, 9, 0.17, 0.05],
+		[0.15, 0.99, 9, 0.15, 0.05],
+		[0.26, 0.89, 8, 0.13, 0.05],
+		[0.37, 0.79, 8, 0.11, 0.06],
+		[0.48, 0.68, 7, 0.09, 0.06],
+		[0.59, 0.56, 7, 0.06, 0.06],
+		[0.70, 0.45, 6, 0.04, 0.07],
+		[0.80, 0.34, 5, 0.02, 0.07],
+		[0.89, 0.23, 4, 0.00, 0.08],
 	]
 	for ti in tiers.size():
 		var t: Array = tiers[ti]
@@ -428,58 +486,68 @@ static func pine_crown_mesh(variant := 0) -> ArrayMesh:
 		var cnt: int = int(t[2])
 		var drp: float = float(t[3])
 		var lft: float = float(t[4])
-		var az_off := float(ti) * 0.92 + rng.randf() * TAU
+		var az_off := float(ti) * 1.18 + rng.randf() * TAU
 		for i in cnt:
-			var az := az_off + TAU * float(i) / float(cnt) + rng.randf_range(-0.18, 0.18)
+			var az := az_off + TAU * float(i) / float(cnt) + rng.randf_range(-0.22, 0.22)
 			var dir := Vector3(cos(az), 0.0, sin(az))
-			var blen := r_len * rng.randf_range(0.88, 1.12)
-			var bw := blen * rng.randf_range(0.78, 0.94)
-			var root_p := dir * 0.05 + Vector3(0.0, y0 + rng.randf_range(-0.025, 0.025), 0.0)
-			_foliage_bough(st, root_p, dir, blen, bw, drp, lft, center, rng.randf(), ti < 4)
-	# 顶部直立塔尖针叶束
-	for k in 3:
-		var az_t := float(k) * TAU / 3.0 + rng.randf_range(-0.2, 0.2)
-		var s_t := Vector3(cos(az_t), 0.0, sin(az_t)) * 0.19
-		var pts_t := [Vector3(0, 0.78, 0) - s_t, Vector3(0, 0.78, 0) + s_t, Vector3(0, 1.03, 0) + s_t * 0.45, Vector3(0, 1.03, 0) - s_t * 0.45]
-		var uvs_t := [Vector2(0.08, 0.96), Vector2(0.92, 0.96), Vector2(0.82, 0.04), Vector2(0.18, 0.04)]
-		var aos_t := [0.58, 0.58, 1.0, 1.0]
-		for vi in [0, 1, 2, 0, 2, 3]:
-			st.set_color(Color(aos_t[vi], 0.75, 1.0, 1.0))
-			st.set_normal((pts_t[vi] - center + Vector3(0, 0.7, 0)).normalized())
-			st.set_uv(uvs_t[vi])
-			st.add_vertex(pts_t[vi])
+			var blen := r_len * rng.randf_range(0.84, 1.16)
+			var bw := blen * rng.randf_range(0.76, 0.94)
+			var root_p := dir * 0.04 + Vector3(0.0, y0 + rng.randf_range(-0.028, 0.028), 0.0)
+			var roll := rng.randf_range(-0.26, 0.26)
+			_foliage_bough(st, root_p, dir, blen, bw, drp, lft, center, rng.randf(), ti < 5 and (i % 2 == 0), roll, (i + ti) % 2 == 1)
+	# 顶部紧密立体针叶塔尖（5 片错位斜立）
+	for k in 5:
+		var az_t := float(k) * TAU / 5.0 + rng.randf_range(-0.22, 0.22)
+		var dir_t := Vector3(cos(az_t), 0.0, sin(az_t))
+		_foliage_bough(st, Vector3(0.0, 0.84, 0.0), dir_t, 0.20, 0.24, -0.14, 0.10, center, rng.randf(), false, rng.randf_range(-0.25, 0.25), k % 2 == 0)
 	st.generate_tangents()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
 
 
-## 写实阔叶乔木不规则团簇树冠网格（y=0..1，半径约 1.0，由 6 个高低错落的叶团分枝构成自然树冠轮廓）
+## 写实阔叶乔木多层不规则团簇树冠网格（y=0..1，11 个错落子冠叶团 + 80 片双曲拱顶枝叶壳，俯视与平视均饱满绵密）
 static func broad_crown_mesh(variant := 0) -> ArrayMesh:
 	var v_id := posmod(variant, 6)
-	var key := "broad_cr_%d" % v_id
+	var key := "broad_cr_v2_%d" % v_id
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 6151 + 829
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(0.0, 0.48, 0.0)
-	# 主冠外围不规则叶团锚点 + 顶部中心主冠团
-	var lobes := [Vector3(0.0, 0.62, 0.0)]
+	var center := Vector3(0.0, 0.46, 0.0)
+	# 11 个不规则子冠叶团锚点：[位置, 缩放, 叶片组数]
+	var lobes: Array = [
+		[Vector3(rng.randf_range(-0.06, 0.06), 0.68, rng.randf_range(-0.06, 0.06)), 0.62, 8],
+		[Vector3(rng.randf_range(-0.22, 0.22), 0.58, rng.randf_range(-0.22, 0.22)), 0.54, 7],
+	]
+	# 中层 5 个丰满外凸主冠瓣
 	for li in 5:
-		var az := float(li) * TAU / 5.0 + rng.randf_range(-0.32, 0.32)
-		var rad := rng.randf_range(0.28, 0.44)
-		lobes.append(Vector3(cos(az) * rad, rng.randf_range(0.24, 0.54), sin(az) * rad))
+		var az := float(li) * TAU / 5.0 + rng.randf_range(-0.28, 0.28)
+		var rad := rng.randf_range(0.32, 0.48)
+		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.36, 0.56), sin(az) * rad), rng.randf_range(0.50, 0.62), 7])
+	# 下层 4 个外悬裙边副叶团（打破棒棒糖球体感）
+	for li in 4:
+		var az := float(li) * TAU / 4.0 + 0.42 + rng.randf_range(-0.30, 0.30)
+		var rad := rng.randf_range(0.42, 0.56)
+		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.18, 0.34), sin(az) * rad), rng.randf_range(0.44, 0.54), 6])
+
 	for li in lobes.size():
-		var lc: Vector3 = lobes[li]
-		var n_fans := 6 if li == 0 else 5
-		var f_scale := 0.64 if li == 0 else rng.randf_range(0.54, 0.68)
+		var lb: Array = lobes[li]
+		var lc: Vector3 = lb[0]
+		var f_scale: float = float(lb[1])
+		var n_fans: int = int(lb[2])
+		var az0 := rng.randf() * TAU
 		for fi in n_fans:
-			var faz := float(fi) * TAU / float(n_fans) + rng.randf_range(-0.28, 0.28)
+			var faz := az0 + float(fi) * TAU / float(n_fans) + rng.randf_range(-0.25, 0.25)
 			var dir := Vector3(cos(faz), 0.0, sin(faz))
-			var lift := rng.randf_range(0.08, 0.28) if li == 0 else rng.randf_range(-0.02, 0.22)
-			_foliage_bough(st, lc - dir * 0.08, dir, f_scale, f_scale * 1.02, 0.03, lift, center, rng.randf(), fi % 2 == 0)
+			var lift := rng.randf_range(0.08, 0.24) if li < 2 else rng.randf_range(-0.06, 0.20)
+			var droop := rng.randf_range(0.02, 0.08)
+			var roll := rng.randf_range(-0.42, 0.42)
+			var b_len := f_scale * rng.randf_range(0.85, 1.14)
+			var b_wid := b_len * rng.randf_range(0.92, 1.12)
+			_foliage_bough(st, lc - dir * 0.08, dir, b_len, b_wid, droop, lift, center, rng.randf(), fi % 3 == 0, roll, (fi + li) % 2 == 1)
 	st.generate_tangents()
 	var m := st.commit()
 	_mesh_cache[key] = m
@@ -489,20 +557,24 @@ static func broad_crown_mesh(variant := 0) -> ArrayMesh:
 ## 废土灌木丛 / 绿篱团簇网格（y=0..1，半径约 1.0，多枝放射状阔叶灌丛，替代原先绿色石头块）
 static func shrub_mesh(variant := 0) -> ArrayMesh:
 	var v_id := posmod(variant, 4)
-	var key := "shrub_m_%d" % v_id
+	var key := "shrub_m_v2_%d" % v_id
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 2713 + 409
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(0.0, 0.25, 0.0)
-	for i in 9:
-		var az := float(i) * TAU / 9.0 + rng.randf_range(-0.22, 0.22)
+	var center := Vector3(0.0, 0.28, 0.0)
+	for i in 12:
+		var az := float(i) * TAU / 12.0 + rng.randf_range(-0.22, 0.22)
 		var dir := Vector3(cos(az), 0.0, sin(az))
-		var bl := rng.randf_range(0.75, 1.02)
-		var lift := rng.randf_range(0.28, 0.68)
-		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.04, 0.16), 0.0), dir, bl, bl * 0.95, 0.0, lift, center, rng.randf(), i % 3 == 0)
+		var bl := rng.randf_range(0.72, 1.04)
+		var lift := rng.randf_range(0.22, 0.64)
+		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.04, 0.18), 0.0), dir, bl, bl * 0.96, 0.04, lift, center, rng.randf(), i % 3 == 0, rng.randf_range(-0.34, 0.34), i % 2 == 1)
+	for j in 4:
+		var az2 := float(j) * TAU / 4.0 + rng.randf_range(-0.3, 0.3)
+		var dir2 := Vector3(cos(az2), 0.0, sin(az2))
+		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.28, 0.40), 0.0), dir2, rng.randf_range(0.55, 0.75), rng.randf_range(0.62, 0.80), 0.0, rng.randf_range(0.28, 0.48), center, rng.randf(), false, rng.randf_range(-0.3, 0.3), j % 2 == 0)
 	st.generate_tangents()
 	var m := st.commit()
 	_mesh_cache[key] = m
@@ -709,7 +781,16 @@ static func soft_dot() -> Texture2D:
 	return t
 
 
-## 体积感卷云烟团（256px 域扭曲 FBM + 内置明暗自阴影，彻底告别圆形棉球）
+static func _smax(a: float, b: float, k: float) -> float:
+	var h := clampf(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+	return mix_f(a, b, h) + k * h * (1.0 - h)
+
+
+## 体积感多瓣积云烟团（256px，线性 RGBA 数据供 smoke_cloud.gdshader 使用）：
+##   R = 多瓣球冠积云高度场（供世界太阳光照法线梯度）
+##   G = 域扭曲 FBM 侵蚀噪声（消散时边缘化作游丝卷云）
+##   B = 次级细卷云细节（内部褶皱 AO 与亮边）
+##   A = 干净柔和外廓遮罩（边界前归零）
 static func smoke_tex() -> Texture2D:
 	if _tex_cache.has("smoke"):
 		return _tex_cache["smoke"]
@@ -718,33 +799,46 @@ static func smoke_tex() -> Texture2D:
 	var nz := FastNoiseLite.new()
 	nz.seed = 19
 	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	nz.frequency = 0.024
+	nz.frequency = 0.017
 	nz.fractal_octaves = 4
-	nz.fractal_gain = 0.52
+	nz.fractal_gain = 0.50
 	var nw := FastNoiseLite.new()
 	nw.seed = 53
 	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	nw.frequency = 0.016
+	nw.frequency = 0.011
 	nw.fractal_octaves = 3
+	# 7 颗错落球冠云瓣：[cx, cy, radius, height_weight]
+	var lobes := [
+		[0.00, 0.02, 0.52, 1.00],
+		[-0.28, -0.18, 0.42, 0.88],
+		[0.30, -0.16, 0.40, 0.86],
+		[-0.32, 0.20, 0.39, 0.84],
+		[0.26, 0.24, 0.41, 0.85],
+		[0.02, -0.34, 0.36, 0.80],
+		[-0.04, 0.35, 0.35, 0.78],
+	]
 	var half := float(sz - 1) * 0.5
 	for y in sz:
 		for x in sz:
 			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
-			var wx := nw.get_noise_2d(float(x), float(y)) * 18.0
-			var wy := nw.get_noise_2d(float(x) + 113.0, float(y) + 71.0) * 18.0
+			var wx := nw.get_noise_2d(float(x), float(y)) * 22.0
+			var wy := nw.get_noise_2d(float(x) + 113.0, float(y) + 71.0) * 22.0
 			var n0 := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
-			var n1 := nz.get_noise_2d(float(x) * 2.1 - wy * 0.6, float(y) * 2.1 + wx * 0.6) * 0.5 + 0.5
-			var d := p.length()
-			# 外廓被噪声侵蚀出凹凸云瓣，绝非几何正圆
-			var edge_w := d + (0.5 - n0) * 0.34 + (0.5 - n1) * 0.14
-			var mask := smoothstep(0.96, 0.30, edge_w)
-			var core := smoothstep(0.84, 0.18, edge_w)
-			var wisp := clampf(mask * (0.48 + 0.68 * n0 + 0.20 * n1), 0.0, 1.0)
-			var a := clampf(mix_f(wisp, core * 0.94, 0.45), 0.0, 1.0)
-			# 轻微斜上方受光 + 下缘冷暗自阴影，增强立体烟团体积感
-			var upper_lit := clampf(0.5 - p.y * 0.42 - p.x * 0.18 + (n0 - 0.5) * 0.36, 0.0, 1.0)
-			var shade := clampf(0.68 + upper_lit * 0.32 + n1 * 0.06, 0.64, 1.02)
-			img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 0.97, a))
+			var n1 := nz.get_noise_2d(float(x) * 2.0 - wy * 0.55, float(y) * 2.0 + wx * 0.55) * 0.5 + 0.5
+			# 域扭曲采样坐标使云瓣边缘自然翻卷
+			var pw := p + Vector2(n0 - 0.5, n1 - 0.5) * 0.16
+			var h_billow := 0.0
+			for lb in lobes:
+				var d := Vector2(pw.x - float(lb[0]), pw.y - float(lb[1])).length() / float(lb[2])
+				var dome := sqrt(maxf(0.0, 1.0 - d * d)) * float(lb[3])
+				h_billow = _smax(h_billow, dome, 0.14)
+			var r_rad := p.length()
+			var radial_cut := 1.0 - smoothstep(0.44, 0.94, r_rad)
+			var core := clampf(h_billow * (0.76 + 0.30 * n0) * radial_cut, 0.0, 1.0)
+			var erode_n := clampf(n0 * 0.66 + n1 * 0.34, 0.0, 1.0)
+			var detail := clampf(mix_f(n1, core, 0.32), 0.0, 1.0)
+			var mask := clampf(pow(smoothstep(0.02, 0.84, h_billow + (n0 - 0.5) * 0.24), 1.32) * radial_cut, 0.0, 1.0)
+			img.set_pixel(x, y, Color(core, erode_n, detail, mask))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
 	_tex_cache["smoke"] = t
@@ -755,7 +849,7 @@ static func mix_f(a: float, b: float, t: float) -> float:
 	return a + (b - a) * t
 
 
-## 风切颗粒扬尘贴图（256px 破碎絮状沙尘，适合脚步、冲刺尾流、落点尘环与着弹扬土）
+## 贴地滚涌扬尘贴图（256px 宽阔翻卷尘团，线性 RGBA 供 smoke_cloud.gdshader 使用）
 static func dust_tex() -> Texture2D:
 	if _tex_cache.has("dust_vfx"):
 		return _tex_cache["dust_vfx"]
@@ -764,29 +858,43 @@ static func dust_tex() -> Texture2D:
 	var nz := FastNoiseLite.new()
 	nz.seed = 83
 	nz.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	nz.frequency = 0.028
+	nz.frequency = 0.019
 	nz.fractal_octaves = 4
-	nz.fractal_gain = 0.56
+	nz.fractal_gain = 0.52
 	var nw := FastNoiseLite.new()
 	nw.seed = 127
 	nw.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	nw.frequency = 0.015
+	nw.frequency = 0.012
 	nw.fractal_octaves = 3
+	var lobes := [
+		[0.02, 0.04, 0.56, 1.00],
+		[-0.32, -0.10, 0.44, 0.88],
+		[0.34, -0.12, 0.43, 0.86],
+		[-0.28, 0.24, 0.40, 0.82],
+		[0.30, 0.22, 0.42, 0.84],
+		[0.00, -0.32, 0.37, 0.78],
+	]
 	var half := float(sz - 1) * 0.5
 	for y in sz:
 		for x in sz:
 			var p := Vector2(float(x) - half, float(y) - half) / (float(sz) * 0.5)
-			var q := Vector2(p.x * 0.92, p.y * 1.12)
-			var wx := nw.get_noise_2d(float(x) * 0.8, float(y) * 1.2) * 22.0
-			var wy := nw.get_noise_2d(float(x) * 0.8 + 61.0, float(y) * 1.2 + 97.0) * 16.0
+			var wx := nw.get_noise_2d(float(x) * 0.85, float(y) * 1.15) * 24.0
+			var wy := nw.get_noise_2d(float(x) * 0.85 + 61.0, float(y) * 1.15 + 97.0) * 18.0
 			var n0 := nz.get_noise_2d(float(x) + wx, float(y) + wy) * 0.5 + 0.5
-			var n1 := nz.get_noise_2d(float(x) * 2.4 + wy, float(y) * 2.4 - wx) * 0.5 + 0.5
-			var d := q.length() + (0.5 - n0) * 0.40 + (0.5 - n1) * 0.16
-			var radial := smoothstep(0.95, 0.22, d)
-			var grain := smoothstep(0.24, 0.82, n0 * 0.65 + n1 * 0.35)
-			var a := clampf(radial * (0.34 + grain * 0.66) * 0.88, 0.0, 1.0)
-			var shade := clampf(0.80 + n0 * 0.16 + (0.5 - q.y) * 0.08, 0.74, 1.0)
-			img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 0.96, a))
+			var n1 := nz.get_noise_2d(float(x) * 2.1 + wy * 0.6, float(y) * 2.1 - wx * 0.6) * 0.5 + 0.5
+			var pw := p + Vector2(n0 - 0.5, n1 - 0.5) * 0.20
+			var h_billow := 0.0
+			for lb in lobes:
+				var d := Vector2(pw.x - float(lb[0]), pw.y - float(lb[1])).length() / float(lb[2])
+				var dome := sqrt(maxf(0.0, 1.0 - d * d)) * float(lb[3])
+				h_billow = _smax(h_billow, dome, 0.16)
+			var r_rad := p.length()
+			var radial_cut := 1.0 - smoothstep(0.40, 0.94, r_rad)
+			var core := clampf(h_billow * (0.74 + 0.32 * n0) * radial_cut, 0.0, 1.0)
+			var erode_n := clampf(n0 * 0.60 + n1 * 0.40, 0.0, 1.0)
+			var detail := clampf(mix_f(n1, core, 0.28), 0.0, 1.0)
+			var mask := clampf(pow(smoothstep(0.02, 0.86, h_billow + (n0 - 0.5) * 0.28), 1.38) * radial_cut, 0.0, 1.0)
+			img.set_pixel(x, y, Color(core, erode_n, detail, mask))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
 	_tex_cache["dust_vfx"] = t
@@ -1051,7 +1159,7 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	if _mat_cache.has(key):
 		return _mat_cache[key]
 	if _paint_shader == null:
-		_paint_shader = load("res://shaders/mech_paint_mobile.gdshader" if is_mobile_perf() else "res://shaders/mech_paint.gdshader")
+		_paint_shader = load("res://shaders/mech_paint_web.gdshader" if OS.has_feature("web") else ("res://shaders/mech_paint_mobile.gdshader" if is_mobile_perf() else "res://shaders/mech_paint.gdshader"))
 	var m := ShaderMaterial.new()
 	m.shader = _paint_shader
 	m.set_shader_parameter("base_color", c)
@@ -1200,15 +1308,15 @@ static func tar_roof(c := Color(0.24, 0.25, 0.26), dust_amt := 0.26) -> ShaderMa
 	})
 
 
-## 粗骨料工业沥青路面：深炭黑湿润沥青 + 磨耗骨料肌理
-static func asphalt(c := Color(0.20, 0.205, 0.215)) -> ShaderMaterial:
-	return paint(c, 0.0, 0.80, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.28, "albedo_tex_strength": 0.62,
-		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.48,
-		"wear": 0.28, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
-		"rust": 0.22, "rust_color": Color(0.14, 0.13, 0.12), "grime": 0.56,
-		"dust": 0.16, "dust_color": Color(0.30, 0.28, 0.25),
-		"panel_scale": 0.0, "detail_scale": 0.92,
+## 粗骨料工业沥青路面：深炭黑湿润沥青 + 磨耗骨料肌理与轻度路面扬尘（消除纯黑塑料带感）
+static func asphalt(c := Color(0.22, 0.225, 0.235)) -> ShaderMaterial:
+	return paint(c, 0.0, 0.84, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.26, "albedo_tex_strength": 0.68,
+		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.52,
+		"wear": 0.34, "metal_wear": 0.0, "bare_metal": c.lightened(0.16), "scratches": 0.0,
+		"rust": 0.20, "rust_color": Color(0.16, 0.15, 0.14), "grime": 0.46,
+		"dust": 0.24, "dust_color": Color(0.35, 0.33, 0.29),
+		"panel_scale": 0.0, "detail_scale": 0.90,
 	})
 
 
@@ -1264,55 +1372,61 @@ static func foliage_mat(kind := "pine") -> ShaderMaterial:
 			m.set_shader_parameter("albedo_tex", world_tex("pine_frond_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("pine_frond_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.84, 0.88, 0.76))
-			m.set_shader_parameter("tint_b", Color(0.98, 0.94, 0.78))
-			m.set_shader_parameter("albedo_gain", 1.18)
-			m.set_shader_parameter("rough_val", 0.82)
-			m.set_shader_parameter("alpha_cut", 0.34)
-			m.set_shader_parameter("sway_amp", 0.04)
-			m.set_shader_parameter("backlight_str", 0.36)
+			m.set_shader_parameter("tint_a", Color(0.82, 0.92, 0.78))
+			m.set_shader_parameter("tint_b", Color(1.04, 0.98, 0.80))
+			m.set_shader_parameter("albedo_gain", 1.85)
+			m.set_shader_parameter("up_normal_blend", 0.14)
+			m.set_shader_parameter("rough_val", 0.72)
+			m.set_shader_parameter("alpha_cut", 0.24)
+			m.set_shader_parameter("sway_amp", 0.038)
+			m.set_shader_parameter("backlight_str", 0.56)
 		"broad":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.84, 0.88, 0.74))
-			m.set_shader_parameter("tint_b", Color(1.02, 0.92, 0.70))
-			m.set_shader_parameter("albedo_gain", 1.14)
-			m.set_shader_parameter("rough_val", 0.82)
-			m.set_shader_parameter("alpha_cut", 0.34)
-			m.set_shader_parameter("sway_amp", 0.05)
-			m.set_shader_parameter("backlight_str", 0.34)
+			m.set_shader_parameter("tint_a", Color(0.84, 0.92, 0.74))
+			m.set_shader_parameter("tint_b", Color(1.06, 0.96, 0.72))
+			m.set_shader_parameter("albedo_gain", 1.62)
+			m.set_shader_parameter("up_normal_blend", 0.16)
+			m.set_shader_parameter("rough_val", 0.68)
+			m.set_shader_parameter("alpha_cut", 0.28)
+			m.set_shader_parameter("sway_amp", 0.048)
+			m.set_shader_parameter("backlight_str", 0.54)
 		"autumn":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(1.02, 0.76, 0.50))
-			m.set_shader_parameter("tint_b", Color(1.16, 0.86, 0.56))
-			m.set_shader_parameter("albedo_gain", 1.14)
-			m.set_shader_parameter("rough_val", 0.84)
-			m.set_shader_parameter("alpha_cut", 0.36)
-			m.set_shader_parameter("sway_amp", 0.045)
+			m.set_shader_parameter("tint_a", Color(1.12, 0.78, 0.44))
+			m.set_shader_parameter("tint_b", Color(1.26, 0.92, 0.52))
+			m.set_shader_parameter("albedo_gain", 1.60)
+			m.set_shader_parameter("up_normal_blend", 0.16)
+			m.set_shader_parameter("rough_val", 0.70)
+			m.set_shader_parameter("alpha_cut", 0.29)
+			m.set_shader_parameter("sway_amp", 0.044)
+			m.set_shader_parameter("backlight_str", 0.52)
 		"shrub":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.82, 0.86, 0.70))
-			m.set_shader_parameter("tint_b", Color(0.96, 0.88, 0.68))
-			m.set_shader_parameter("albedo_gain", 1.20)
-			m.set_shader_parameter("rough_val", 0.84)
-			m.set_shader_parameter("alpha_cut", 0.32)
+			m.set_shader_parameter("tint_a", Color(0.84, 0.90, 0.84))
+			m.set_shader_parameter("tint_b", Color(0.96, 0.94, 0.82))
+			m.set_shader_parameter("albedo_gain", 2.15)
+			m.set_shader_parameter("up_normal_blend", 0.62)
+			m.set_shader_parameter("rough_val", 0.86)
+			m.set_shader_parameter("alpha_cut", 0.28)
 			m.set_shader_parameter("sway_amp", 0.025)
+			m.set_shader_parameter("backlight_str", 0.44)
 		"grass":
 			m.set_shader_parameter("albedo_tex", world_tex("grass_tuft_a.png"))
 			m.set_shader_parameter("use_normal", 0.0)
-			m.set_shader_parameter("tint_a", Color(0.78, 0.80, 0.58))
-			m.set_shader_parameter("tint_b", Color(0.92, 0.82, 0.56))
-			m.set_shader_parameter("albedo_gain", 2.30)
+			m.set_shader_parameter("tint_a", Color(0.80, 0.88, 0.84))
+			m.set_shader_parameter("tint_b", Color(0.92, 0.94, 0.82))
+			m.set_shader_parameter("albedo_gain", 2.55)
 			m.set_shader_parameter("up_normal_blend", 0.82)
 			m.set_shader_parameter("rough_val", 0.90)
-			m.set_shader_parameter("alpha_cut", 0.28)
+			m.set_shader_parameter("alpha_cut", 0.24)
 			m.set_shader_parameter("sway_amp", 0.055)
-			m.set_shader_parameter("backlight_str", 0.42)
+			m.set_shader_parameter("backlight_str", 0.40)
 	_mat_cache[key] = m
 	return m
 
@@ -1515,7 +1629,7 @@ void fragment(){
 	float macro_var = texture(n_low, p_rot * 0.0085 + vec2(0.19, 0.71)).r;
 	vec3 s_col = mix(vec3(0.72), texture(soil_a, p * 0.19).rgb * 1.16, 0.64);
 	vec3 g_col = mix(vec3(0.72), texture(grav_a, p * 0.21).rgb * 1.18, 0.66);
-	vec3 c_col = mix(vec3(0.74), texture(conc_a, p * 0.14).rgb * 1.15, 0.58);
+	vec3 c_col = mix(vec3(0.74), texture(conc_a, p * 0.32).rgb * 1.12, 0.64);
 
 	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
 	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12);
@@ -1534,12 +1648,12 @@ void fragment(){
 	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
 	vec4 zt = texture(zone_tex, z_uv) * zfade;
 
-	float row_id = floor(p.y / 2.4);
-	vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
-	vec2 tf = abs(fract(slab_uv) - 0.5);
-	float seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * smoothstep(0.48, 0.80, zt.r);
-	vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + macro_var * 0.4) * (1.0 - seam * 0.36);
-	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.08);
+	// 正常城市尺度风化硬质铺装：沉稳中暗灰细骨料混凝土基底（与浅灰人行道、深炭沥青路拉开清晰三层明度，彻底去除发白积雪感与脏黑云斑）
+	float macro_soot = smoothstep(0.42, 0.86, low * 0.65 + macro_var * 0.35);
+	vec3 pave = vec3(0.172, 0.170, 0.165) * c_col * 1.08 * mix(0.93, 1.06, low * 0.55 + macro_var * 0.45);
+	pave = mix(pave, pave * vec3(0.90, 0.89, 0.88), macro_soot * 0.15);
+	pave = mix(pave, dirt_a * 0.65 * c_col, smoothstep(0.62, 0.90, macro_var * 0.60 + low * 0.40) * 0.07);
+	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.06);
 	col = mix(col, pave, pm);
 
 	vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.6 + macro_var * 0.4)) * mix(vec3(1.0), s_col * 1.24, 0.42);
@@ -1570,28 +1684,28 @@ void fragment(){
 		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
 		col = mix(col * out_mul, col, s_in);
 	}
-	// 写实雨后泥地湿润反光与克制积水
+	// 写实雨后地表均匀湿润与克制低洼积水（城区铺装均匀加深，无花斑与泛白霜斑）
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
 	float p_allow = (1.0 - gmm * 0.82) * (1.0 - smm * 0.75);
-	float basin = 0.50 + (0.5 - low) * 0.74 + (macro_var - 0.5) * 0.56 + (mid - 0.5) * 0.28;
-	float puddle = w_amt * p_allow * smoothstep(0.700, 0.795, basin);
-	float soak = w_amt * p_allow * smoothstep(0.600, 0.730, basin);
-	col *= mix(1.0, 0.86, w_amt * 0.28);
-	col *= mix(1.0, 0.78, soak * 0.62);
-	col = mix(col, col * 0.56 + vec3(0.018, 0.022, 0.028), puddle * 0.72);
+	float basin = 0.50 + (0.5 - low) * 0.64 + (macro_var - 0.5) * 0.48 + (mid - 0.5) * mix(0.22, 0.05, pm);
+	float puddle = w_amt * p_allow * smoothstep(0.745, 0.835, basin);
+	float soak = w_amt * p_allow * smoothstep(0.660, 0.780, basin);
+	col *= mix(1.0, 0.88, w_amt * mix(0.32, 0.75, pm));
+	col *= mix(1.0, mix(0.80, 0.90, pm), soak * 0.58);
+	col = mix(col, col * 0.62 + vec3(0.014, 0.018, 0.024), puddle * 0.68);
 	ALBEDO = col;
 
-	vec3 n_det = mix(texture(soil_n, p * 0.19).rgb, texture(conc_n, p * 0.14).rgb, pm);
+	vec3 n_det = mix(texture(soil_n, p * 0.19).rgb, texture(conc_n, p * 0.32).rgb, pm);
 	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * 0.48 + (n_macro * 2.0 - 1.0) * 0.42 + vec3(0.0, 0.0, 0.76));
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.48, 0.14, pm) + (n_macro * 2.0 - 1.0) * mix(0.42, 0.03, pm) + vec3(0.0, 0.0, mix(0.76, 0.96, pm)));
 	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.85));
-	ROUGHNESS = mix(mix(0.90, 0.80, pm), 0.13, puddle * 0.90);
-	ROUGHNESS = mix(ROUGHNESS, 0.40, soak * 0.60 * (1.0 - puddle));
-	SPECULAR = mix(0.28, 0.56, puddle * 0.85);
-	AO = clamp(1.0 - pm * seam * 0.34 - road_v * 0.16 - bldg_contact * 0.66, 0.22, 1.0);
+	ROUGHNESS = mix(mix(0.90, mix(0.86, 0.80, macro_soot), pm), 0.18, puddle * 0.88);
+	ROUGHNESS = mix(ROUGHNESS, 0.46, soak * 0.52 * (1.0 - puddle));
+	SPECULAR = mix(0.28, 0.48, puddle * 0.78);
+	AO = clamp(1.0 - road_v * 0.16 - bldg_contact * 0.66, 0.22, 1.0);
 	AO_LIGHT_AFFECT = 0.68;
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = 0.52 * (1.0 - puddle * 0.82);
+	NORMAL_MAP_DEPTH = mix(0.52, 0.16, pm) * (1.0 - puddle * 0.82);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1603,8 +1717,8 @@ void fragment(){
 	m.set_shader_parameter("soil_n", world_tex("ground_soil_n.png"))
 	m.set_shader_parameter("grav_a", world_tex("ground_gravel_a.png"))
 	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
-	m.set_shader_parameter("conc_a", world_tex("concrete_a.png"))
-	m.set_shader_parameter("conc_n", world_tex("concrete_n.png"))
+	m.set_shader_parameter("conc_a", world_tex("asphalt_a.png"))
+	m.set_shader_parameter("conc_n", world_tex("asphalt_n.png"))
 	m.set_shader_parameter("wet_amt", 0.0)
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
@@ -1701,17 +1815,8 @@ void fragment(){
 	float m_blend = smoothstep(0.28, 0.72, med2);
 	vec2 uv_ga = p * 0.22;
 	vec2 uv_gb = rot2(p * 0.15 + vec2(3.7, 5.1));
-	vec2 uv_ca = p * 0.14;
-	vec2 uv_cb = rot2(p * 0.10 + vec2(9.1, 2.3));
-
-	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12);
-	float crack_mud = 0.0;
-	if (mudm > 0.005) {
-		float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
-		crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm;
-	}
-	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.38 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.55);
-	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.72);
+	vec2 uv_ca = p * 0.34;
+	vec2 uv_cb = rot2(p * 0.24 + vec2(9.1, 2.3));
 
 	// 分区地表：R 风化混凝土场坪 / G 废土荒草 / B 翻耕泥土 / A 工业压实油渣道砟
 	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
@@ -1719,10 +1824,19 @@ void fragment(){
 	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
 	vec4 zt = texture(zone_tex, z_uv) * zfade;
 
-	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.08 + (hi - 0.5) * 0.05);
+	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.06 + (hi - 0.5) * 0.04);
 	float gmm = smoothstep(0.24, 0.76, zt.g + (low - 0.5) * 0.15 + (mid - 0.5) * 0.18 + (hi - 0.5) * 0.08) * (1.0 - pm * 0.84);
 	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14 + (hi - 0.5) * 0.08);
 	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10 + (hi - 0.5) * 0.06) * (1.0 - pm * 0.55);
+
+	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12) * (1.0 - pm);
+	float crack_mud = 0.0;
+	if (mudm > 0.02 && fw > 0.14) {
+		float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
+		crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm * smoothstep(0.14, 0.45, fw);
+	}
+	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.38 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.55);
+	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.72);
 
 	float road_v = 0.0;
 	float bldg_contact = 0.0;
@@ -1743,7 +1857,7 @@ void fragment(){
 
 	vec3 s_col = need_soil ? mix(vec3(0.72), sample_dual(soil_a, uv_a, uv_b, 0.20, 0.14, m_blend, dpx, dpy, drx, dry) * 1.16, 0.64) : vec3(0.72);
 	vec3 g_col = need_grav ? mix(vec3(0.72), sample_dual(grav_a, uv_ga, uv_gb, 0.22, 0.15, m_blend, dpx, dpy, drx, dry) * 1.18, 0.66) : vec3(0.72);
-	vec3 c_col = need_conc ? mix(vec3(0.74), sample_dual(conc_a, uv_ca, uv_cb, 0.14, 0.10, m_blend, dpx, dpy, drx, dry) * 1.15, 0.58) : vec3(0.74);
+	vec3 c_col = need_conc ? mix(vec3(0.74), sample_dual(conc_a, uv_ca, uv_cb, 0.34, 0.24, m_blend, dpx, dpy, drx, dry) * 1.12, 0.64) : vec3(0.74);
 
 	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
 	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
@@ -1757,20 +1871,14 @@ void fragment(){
 	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
 	col *= mix(0.87, 1.12, low * 0.55 + med2 * 0.45);
 
-	float seam = 0.0;
-	float tar_seal = 0.0;
+	float pave_soot = 0.0;
 	if (need_conc) {
-		float row_id = floor(p.y / 2.4);
-		vec2 slab_uv = vec2((p.x + mod(row_id, 2.0) * 1.8) / 3.6, p.y / 2.4);
-		vec2 tf = abs(fract(slab_uv) - 0.5);
-		float seam_mask = smoothstep(0.46, 0.80, zt.r) * (1.0 - smoothstep(0.66, 0.88, mid));
-		seam = smoothstep(0.476, 0.495, max(tf.x, tf.y)) * seam_mask;
-		tar_seal = smoothstep(0.486, 0.498, max(tf.x, tf.y)) * seam_mask;
-		float slab_var = fract(sin(dot(floor(slab_uv), vec2(41.3, 289.1))) * 43758.5453);
-		vec3 pave = vec3(0.29, 0.285, 0.27) * c_col * 1.22 * mix(0.90, 1.08, low * 0.6 + med2 * 0.4) * (0.91 + slab_var * 0.16);
-		pave *= 1.0 - seam * 0.34;
-		pave = mix(pave, vec3(0.10, 0.105, 0.11), tar_seal * 0.58);
-		pave = mix(pave, vec3(0.22, 0.215, 0.20) * c_col * 1.20, smoothstep(0.60, 0.86, mid) * 0.28);
+		// 正常城市尺度风化硬质铺装：沉稳中暗灰细骨料混凝土基底（与浅石人行道、深炭沥青路拉开三层层次，保留细砂微质感且无雪堆/云斑感）
+		pave_soot = smoothstep(0.42, 0.86, low * 0.65 + med2 * 0.35);
+		float patch_tone = mix(0.93, 1.06, low * 0.55 + med2 * 0.45) * mix(0.96, 1.04, hi2_aa);
+		vec3 pave = vec3(0.172, 0.170, 0.165) * c_col * 1.08 * patch_tone;
+		pave = mix(pave, pave * vec3(0.90, 0.89, 0.88), pave_soot * 0.15);
+		pave = mix(pave, dirt_a * 0.65 * c_col, smoothstep(0.62, 0.90, med2 * 0.60 + low * 0.40) * 0.07);
 		col = mix(col, pave, pm);
 	}
 
@@ -1806,35 +1914,38 @@ void fragment(){
 		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
 		col = mix(col * out_mul, col, s_in);
 	}
-	// 写实雨后湿润地面反光与低洼浅积水（保持平滑低频边界，无脏黑锯齿斑）
+	// 写实雨后均匀湿润与克制低洼浅积水（城区铺装均匀微暗、无花斑云团与泛白冰霜积水）
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
 	float p_allow = (1.0 - gmm * 0.84) * (1.0 - smm * 0.78) * (1.0 - crack_mud * 0.65);
-	float basin = 0.50 + (0.5 - low) * 0.76 + (med2 - 0.5) * 0.58 + (mid - 0.5) * 0.28;
-	float puddle = w_amt * p_allow * smoothstep(0.700, 0.795, basin);
-	float p_deep = smoothstep(0.755, 0.880, basin);
-	float soak_rim = w_amt * p_allow * smoothstep(0.600, 0.730, basin);
-	float damp_halo = w_amt * smoothstep(0.400, 0.590, basin);
+	float basin = 0.50 + (0.5 - low) * 0.64 + (med2 - 0.5) * 0.48 + (mid - 0.5) * mix(0.24, 0.05, pm);
+	float puddle = w_amt * p_allow * smoothstep(0.745, 0.835, basin);
+	float p_deep = smoothstep(0.790, 0.895, basin);
+	float soak_rim = w_amt * p_allow * smoothstep(0.665, 0.785, basin);
+	float damp_halo = w_amt * smoothstep(0.380, 0.600, basin);
 	float col_lum = dot(col, vec3(0.299, 0.587, 0.114));
-	col = mix(col, max(mix(vec3(col_lum), col, 1.08), vec3(0.0)), clamp(max(damp_halo * 0.60, soak_rim), 0.0, 1.0));
-	col *= mix(1.0, 0.85, max(damp_halo * 0.60, w_amt * 0.22) * (1.0 - soak_rim * 0.65));
-	col *= mix(1.0, 0.74, soak_rim);
-	col = mix(col, mix(col * 0.72, mix(col * 0.50, vec3(0.020, 0.024, 0.030), 0.40), p_deep), puddle);
+	col = mix(col, max(mix(vec3(col_lum), col, 1.06), vec3(0.0)), clamp(max(damp_halo * 0.52, soak_rim), 0.0, 1.0));
+	col *= mix(1.0, 0.88, max(w_amt * pm * 0.72, max(damp_halo * 0.48, w_amt * 0.22)) * (1.0 - soak_rim * 0.55));
+	col *= mix(1.0, mix(0.78, 0.89, pm), soak_rim);
+	col = mix(col, mix(col * 0.78, mix(col * 0.60, vec3(0.018, 0.022, 0.028), 0.32), p_deep), puddle);
 	ALBEDO = col;
 
-	// 中频实感地表法线（按权重按需采样，避免无关法线层白做 16x 各向异性采样）
+	// 中频实感地表法线（荒野保留立体微地形，城区铺装保持建筑级平整细砂微糙，杜绝雪堆/砂纸块感）
 	float grav_n_w = clamp(am + grav_patch * 0.45 + road_v * 0.55, 0.0, 1.0);
+	float n_mb = fw < 0.28 ? (m_blend < 0.5 ? 0.0 : 1.0) : m_blend;
 	vec3 n_det = vec3(0.5, 0.5, 1.0);
 	if (pm < 0.995) {
-		vec3 ns = (grav_n_w < 0.995) ? sample_dual(soil_n, uv_a, uv_b, 0.20, 0.14, m_blend, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
-		vec3 ng = (grav_n_w > 0.005) ? sample_dual(grav_n, uv_ga, uv_gb, 0.22, 0.15, m_blend, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
+		vec3 ns = (grav_n_w < 0.995) ? sample_dual(soil_n, uv_a, uv_b, 0.20, 0.14, n_mb, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
+		vec3 ng = (grav_n_w > 0.005) ? sample_dual(grav_n, uv_ga, uv_gb, 0.22, 0.15, n_mb, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
 		n_det = mix(ns, ng, grav_n_w);
 	}
 	if (pm > 0.005) {
-		vec3 nc = sample_dual(conc_n, uv_ca, uv_cb, 0.14, 0.10, m_blend, dpx, dpy, drx, dry);
+		vec3 nc = sample_dual(conc_n, uv_ca, uv_cb, 0.34, 0.24, n_mb, dpx, dpy, drx, dry);
 		n_det = mix(n_det, nc, pm);
 	}
 	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.32, 0.66, fw) + (n_macro * 2.0 - 1.0) * 0.40 + vec3(0.0, 0.0, 0.72));
+	float det_w = mix(mix(0.32, 0.66, fw), mix(0.16, 0.28, fw), pm);
+	float macro_w = mix(0.40, 0.03, pm);
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * det_w + (n_macro * 2.0 - 1.0) * macro_w + vec3(0.0, 0.0, mix(0.72, 0.94, pm)));
 	vec2 rip_sl = vec2(0.0);
 	if (puddle > 0.02 && weather_rain > 0.01) {
 		float cam_d = length(wp - INV_VIEW_MATRIX[3].xyz);
@@ -1847,20 +1958,19 @@ void fragment(){
 	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.78);
 	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.22);
 	float r_base = mix(0.92, 0.80, mudm * (1.0 - zone_cov));
-	r_base = mix(r_base, 0.80, pm * (1.0 - seam));
-	r_base = mix(r_base, 0.34, pm * tar_seal);
+	r_base = mix(r_base, mix(0.86, 0.80, pave_soot), pm);
 	r_base = mix(r_base, 0.90, am);
-	r_base = mix(r_base, 0.50, max(wet_film, max(damp_halo * 0.68, w_amt * 0.26)));
-	r_base = mix(r_base, 0.26, soak_rim * 0.78);
+	r_base = mix(r_base, 0.56, max(wet_film, max(damp_halo * 0.55, w_amt * 0.26)));
+	r_base = mix(r_base, 0.36, soak_rim * 0.65);
 	r_base = sqrt(clamp(r_base * r_base + r_var, 0.04, 1.0));
-	ROUGHNESS = mix(r_base, mix(0.12, 0.085, p_deep), puddle * 0.94);
-	SPECULAR = mix(0.28, 0.66, pm * 0.14 + wet_film * 0.16 + soak_rim * 0.36 + puddle * 0.88);
-	AO = clamp(1.0 - crack_mud * 0.48 - pm * seam * 0.36 - am * rut * 0.18 - road_v * 0.16 - bldg_contact * 0.68, 0.18, 1.0);
+	ROUGHNESS = mix(r_base, mix(0.19, 0.13, p_deep), puddle * 0.90);
+	SPECULAR = mix(0.28, 0.50, pm * 0.08 + wet_film * 0.14 + soak_rim * 0.20 + puddle * 0.72);
+	AO = clamp(1.0 - crack_mud * 0.48 - am * rut * 0.18 - road_v * 0.16 - bldg_contact * 0.68, 0.18, 1.0);
 	AO_LIGHT_AFFECT = 0.68;
-	CLEARCOAT = max(puddle * 0.54, soak_rim * 0.24);
-	CLEARCOAT_ROUGHNESS = mix(0.18, 0.085, puddle);
+	CLEARCOAT = max(puddle * 0.28, soak_rim * 0.10);
+	CLEARCOAT_ROUGHNESS = mix(0.24, 0.14, puddle);
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = (mix(0.42, 0.66, fw) + crack_mud * 0.95 + pm * seam * 0.80 + am * 0.18) * (1.0 - puddle * 0.84);
+	NORMAL_MAP_DEPTH = (mix(mix(0.42, 0.66, fw), mix(0.18, 0.30, fw), pm) + crack_mud * 0.95 + am * 0.18) * (1.0 - puddle * 0.84);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1872,8 +1982,8 @@ void fragment(){
 	m.set_shader_parameter("soil_n", world_tex("ground_soil_n.png"))
 	m.set_shader_parameter("grav_a", world_tex("ground_gravel_a.png"))
 	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
-	m.set_shader_parameter("conc_a", world_tex("concrete_a.png"))
-	m.set_shader_parameter("conc_n", world_tex("concrete_n.png"))
+	m.set_shader_parameter("conc_a", world_tex("asphalt_a.png"))
+	m.set_shader_parameter("conc_n", world_tex("asphalt_n.png"))
 	m.set_shader_parameter("wet_amt", 0.0)
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
@@ -1977,11 +2087,79 @@ static func decal_mat(tex: Texture2D, c: Color, additive := false) -> StandardMa
 	return m
 
 
-static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) -> StandardMaterial3D:
-	var pd: float = prox_fade if prox_fade >= 0.0 else (0.18 if additive else 0.26)
+const SmokeCloudShader = preload("res://shaders/smoke_cloud.gdshader")
+const DropDustVolShader = preload("res://shaders/drop_dust_volumetric.gdshader")
+
+
+## 体积光线步进尘浪包围盒网格（单次绘制 12 三角，零贴片感、零多边形尖刺）
+static func _dust_vol_box(half_ext: Vector3) -> BoxMesh:
+	var key := "dvol|%.1f|%.1f|%.1f" % [half_ext.x, half_ext.y, half_ext.z]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var bm := BoxMesh.new()
+	bm.size = half_ext * 2.0
+	_mesh_cache[key] = bm
+	return bm
+
+
+## 生成一道真正 3D 体积光线步进翻涌尘浪（Beer-Lambert 太阳自阴影 + 场景深度精确包裹地面与机甲）
+static func spawn_dust_wave(parent: Node3D, pos: Vector3, opts := {}) -> MeshInstance3D:
+	var r1: float = float(opts.get("r1", 6.8))
+	var w_t: float = float(opts.get("width", 1.75))
+	var max_h: float = float(opts.get("height", 1.95))
+	var hx: float = maxf(r1 + w_t * 2.2, 6.5)
+	var hy: float = maxf(max_h * 1.18, 1.8)
+	var half_ext := Vector3(hx, hy, hx)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _dust_vol_box(half_ext)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := ShaderMaterial.new()
+	mat.shader = DropDustVolShader
+	mat.render_priority = int(opts.get("priority", 4))
+	var dt: Color = opts.get("color", Color(0.42, 0.41, 0.37))
+	var lit_c: Color = opts.get("lit_color", Color(minf(dt.r * 1.10, 0.88), minf(dt.g * 1.07, 0.85), minf(dt.b * 1.01, 0.82)))
+	var sh_c: Color = opts.get("shadow_color", Color(dt.r * 0.34, dt.g * 0.33, dt.b * 0.32))
+	mat.set_shader_parameter("box_half", half_ext)
+	mat.set_shader_parameter("dust_lit", lit_c)
+	mat.set_shader_parameter("dust_shadow", sh_c)
+	mat.set_shader_parameter("hot_color", opts.get("hot_color", Color(1.0, 0.54, 0.18)))
+	mat.set_shader_parameter("progress", 0.0)
+	mat.set_shader_parameter("radius_start", float(opts.get("r0", 0.85)))
+	mat.set_shader_parameter("radius_end", r1)
+	mat.set_shader_parameter("max_height", max_h)
+	mat.set_shader_parameter("tube_width", w_t)
+	mat.set_shader_parameter("density_scale", float(opts.get("density", 1.65)))
+	mat.set_shader_parameter("hot_strength", float(opts.get("hot", 0.72)))
+	mat.set_shader_parameter("seed_off", float(opts.get("seed", randf_range(-20.0, 20.0))))
+	mi.material_override = mat
+	parent.add_child(mi)
+	mi.global_position = Vector3(pos.x, pos.y + hy, pos.z)
+	var dur: float = maxf(float(opts.get("dur", 1.65)), 0.1)
+	var tw := mi.create_tween()
+	tw.tween_property(mat, "shader_parameter/progress", 1.0, dur)
+	tw.tween_callback(mi.queue_free)
+	return mi
+
+
+static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) -> Material:
+	var is_cloud: bool = (not additive) and _is_cloud_tex(tex)
+	var is_dust: bool = is_cloud and (tex == _tex_cache.get("dust_vfx"))
+	var pd: float = prox_fade if prox_fade >= 0.0 else (0.18 if additive else (1.15 if is_dust else (0.85 if is_cloud else 0.26)))
 	var key := "pm%s%s%.2f" % [tex.get_instance_id(), additive, pd]
 	if _mat_cache.has(key):
 		return _mat_cache[key]
+	if is_cloud:
+		var sm := ShaderMaterial.new()
+		sm.shader = SmokeCloudShader
+		sm.set_shader_parameter("cloud_tex", tex)
+		sm.set_shader_parameter("soft_depth", 0.0 if is_mobile_perf() else maxf(pd, 0.85))
+		sm.set_shader_parameter("sun_strength", 0.78 if is_dust else 0.74)
+		sm.set_shader_parameter("sun_tint", Color(1.00, 0.95, 0.88) if is_dust else Color(0.98, 0.95, 0.90))
+		sm.set_shader_parameter("shadow_tint", Color(0.45, 0.43, 0.42) if is_dust else Color(0.40, 0.43, 0.48))
+		sm.set_shader_parameter("erosion_softness", 0.60 if is_dust else 0.52)
+		sm.set_shader_parameter("density_boost", 0.92 if is_dust else 0.88)
+		_mat_cache[key] = sm
+		return sm
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -2000,7 +2178,8 @@ static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) ->
 
 
 static func _is_cloud_tex(tex: Texture2D) -> bool:
-	return tex == smoke_tex() or tex == dust_tex() or tex == cloud_tex()
+	# 分类只检查已存在的资源；普通火星不应为了比较而生成三张 256² 噪声贴图。
+	return tex != null and (tex == _tex_cache.get("smoke") or tex == _tex_cache.get("dust_vfx") or tex == _tex_cache.get("cloud"))
 
 
 ## 受击热冲击叠加层：双面 Fresnel 轮廓受击脉冲 + 钨钢余烬着色，量化 5 档避免每帧新建材质
@@ -2632,6 +2811,7 @@ static func acid_pool_mat(c: Color, seed := 0.0, depth_pull := 0.44, priority :=
 const BURST_POOL_MAX := 24
 static var _burst_pool := {}
 static var _burst_res := {}
+static var _burst_owners := {}
 
 
 static func _burst_res_get(key: String, make: Callable) -> Resource:
@@ -2647,7 +2827,8 @@ static func _burst_done(p: CPUParticles3D) -> void:
 		return
 	var key: String = p.get_meta("_bk", "")
 	var pool: Array = _burst_pool.get(key, [])
-	if key == "" or pool.size() >= BURST_POOL_MAX or not p.is_inside_tree():
+	var parent := p.get_parent()
+	if key == "" or pool.size() >= BURST_POOL_MAX or not p.is_inside_tree() or parent == null or not _burst_owners.has(parent.get_instance_id()):
 		p.queue_free()
 		return
 	p.visible = false
@@ -2667,26 +2848,71 @@ static func _burst_key(parent: Node, opts: Dictionary) -> String:
 	return "|".join(parts)
 
 
-static func _prune_burst_pool() -> void:
-	var dead_keys: Array = []
-	for k in _burst_pool:
-		var arr: Array = _burst_pool[k]
-		var i := arr.size() - 1
-		while i >= 0:
-			var n = arr[i]
-			if not is_instance_valid(n) or not n.is_inside_tree():
-				arr.remove_at(i)
-			i -= 1
-		if arr.is_empty():
-			dead_keys.append(k)
-	for k in dead_keys:
-		_burst_pool.erase(k)
+static func _release_burst_owner(pid: int) -> void:
+	for key in _burst_owners.get(pid, {}):
+		_burst_pool.erase(key)
+	_burst_owners.erase(pid)
+
+
+static func _track_burst_owner(parent: Node, key: String) -> void:
+	var pid := parent.get_instance_id()
+	if not _burst_owners.has(pid):
+		_burst_owners[pid] = {}
+		parent.tree_exiting.connect(_release_burst_owner.bind(pid), CONNECT_ONE_SHOT)
+	_burst_owners[pid][key] = true
+
+
+static var _ring_pts_cache := {}
+
+
+static func _apply_ring_emission(p: CPUParticles3D, opts: Dictionary) -> void:
+	var r: float = float(opts.get("ring_r", 1.2))
+	var n: int = maxi(p.amount, 32)
+	var h: float = float(opts.get("ring_h", 0.14))
+	var rkey := "%d|%.2f|%.2f" % [n, r, h]
+	var pts: PackedVector3Array
+	if _ring_pts_cache.has(rkey):
+		pts = _ring_pts_cache[rkey]
+	else:
+		pts = PackedVector3Array()
+		pts.resize(n)
+		for i in n:
+			var ang: float = TAU * (float(i) + 0.5) / float(n) + sin(float(i) * 1.91) * (TAU / float(n)) * 0.28
+			var rad: float = r * (0.86 + 0.24 * absf(sin(float(i) * 3.17)))
+			var yy: float = h * absf(cos(float(i) * 2.41))
+			pts[i] = Vector3(cos(ang) * rad, yy, sin(ang) * rad)
+		_ring_pts_cache[rkey] = pts
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	p.emission_points = pts
+	var push: float = float(opts.get("ring_push", 0.0))
+	if push > 0.0:
+		p.radial_accel_min = push * 0.84
+		p.radial_accel_max = push * 1.16
+		var pulse: float = clampf(float(opts.get("ring_pulse", 0.24)), 0.08, 0.85)
+		p.radial_accel_curve = _burst_res_get("rcurve|%.2f" % pulse, func():
+			var c := Curve.new()
+			c.add_point(Vector2(0.0, 1.0))
+			c.add_point(Vector2(pulse * 0.60, 0.85))
+			c.add_point(Vector2(pulse, 0.0))
+			c.add_point(Vector2(1.0, 0.0))
+			return c)
+
+
+static func _apply_emission_shape(p: CPUParticles3D, opts: Dictionary) -> void:
+	if opts.has("ring_r"):
+		_apply_ring_emission(p, opts)
+	elif opts.has("box"):
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		p.emission_box_extents = opts.box
+	else:
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		p.emission_sphere_radius = opts.get("radius", 0.1)
 
 
 static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3D:
-	if _burst_pool.size() > 96:
-		_prune_burst_pool()
 	var key := _burst_key(parent, opts)
+	# 池随所属场景退出而清理；不在每次开火时扫描所有场景的粒子。
+	_track_burst_owner(parent, key)
 	var flat_val: float = float(opts.get("flat", 0.0))
 	var pool: Array = _burst_pool.get(key, [])
 	while not pool.is_empty():
@@ -2763,8 +2989,7 @@ static func burst(parent: Node, pos: Vector3, opts: Dictionary) -> CPUParticles3
 		if has_cm:
 			g.add_point(cmp, cm_val)
 		return g)
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = opts.get("radius", 0.1)
+	_apply_emission_shape(p, opts)
 	parent.add_child(p)
 	p.global_position = pos
 	p.emitting = true
@@ -2825,10 +3050,14 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 	if opts.has("cmid"):
 		g.add_point(clampf(float(opts.get("cmid_pos", 0.3)), 0.05, 0.95), opts.cmid)
 	p.color_ramp = g
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE if not opts.has("box") else CPUParticles3D.EMISSION_SHAPE_BOX
-	p.emission_sphere_radius = opts.get("radius", 0.2)
-	if opts.has("box"):
+	if opts.has("ring_r"):
+		_apply_ring_emission(p, opts)
+	elif opts.has("box"):
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		p.emission_box_extents = opts.box
+	else:
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		p.emission_sphere_radius = opts.get("radius", 0.2)
 	parent.add_child(p)
 	p.position = pos
 	return p
@@ -2921,14 +3150,36 @@ static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars
 		var p1: Vector3 = pts[i]
 		var p2: Vector3 = pts[i + 1]
 		var p3: Vector3 = pts[min(i + 2, pts.size() - 1)]
+		var l1 := p1.distance_to(p2)
+		if l1 < 1e-6:
+			continue
+		var dt1 := sqrt(l1)
+		var l0 := p0.distance_to(p1)
+		var m1: Vector3
+		if l0 > 1e-6:
+			var dt0 := sqrt(l0)
+			m1 = dt1 * ((p1 - p0) / dt0 - (p2 - p0) / (dt0 + dt1) + (p2 - p1) / dt1)
+		else:
+			m1 = p2 - p1
+		var l2 := p2.distance_to(p3)
+		var m2: Vector3
+		if l2 > 1e-6:
+			var dt2 := sqrt(l2)
+			m2 = dt1 * ((p2 - p1) / dt1 - (p3 - p1) / (dt1 + dt2) + (p3 - p2) / dt2)
+		else:
+			m2 = p2 - p1
 		var sub_i := sub
 		if rib > 0.0:
-			sub_i = maxi(sub, mini(128, int(ceil(p1.distance_to(p2) / (r * 0.25)))))
+			sub_i = maxi(sub, mini(128, int(ceil(l1 / (r * 0.25)))))
 		for k in sub_i:
 			var t := float(k) / sub_i
 			var t2 := t * t
 			var t3 := t2 * t
-			path.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
+			var h00 := 2.0 * t3 - 3.0 * t2 + 1.0
+			var h10 := t3 - 2.0 * t2 + t
+			var h01 := -2.0 * t3 + 3.0 * t2
+			var h11 := t3 - t2
+			path.append(h00 * p1 + h10 * m1 + h01 * p2 + h11 * m2)
 			ctrl.append(k == 0 and i > 0)
 	path.append(pts[pts.size() - 1])
 	ctrl.append(false)
@@ -3004,7 +3255,7 @@ static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars
 			var j2 := (j + 1) % seg
 			var va: Vector3 = rings[ri][j][0]
 			var vb: Vector3 = rings[ri][j2][0]
-			var tri := [ctr, vb, va] if sg > 0.0 else [ctr, va, vb]
+			var tri := [ctr, va, vb] if sg > 0.0 else [ctr, vb, va]
 			for v in tri:
 				st.set_normal(nrm)
 				st.set_uv(Vector2(0.5, 0.5))

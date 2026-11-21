@@ -91,13 +91,13 @@ static func build(raid, c: Vector3, pid: String) -> void:
 	A.add(raid.world, A.cyl(0.42, 0.82, 0.46, 16), A.paint(Color(0.62, 0.30, 0.10), 0.25, 0.68, {"rust": 0.65, "wear": 0.55}), drum_p + Vector3(0, 0.46, 0))
 	for dy_b in [0.34, 0.64]:
 		A.add(raid.world, A.cyl(0.45, 0.11, 0.46, 16), A.paint(Color(0.82, 0.80, 0.72), 0.1, 0.75, {"wear": 0.6}), drum_p + Vector3(0, dy_b, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 容器与环境叙事
-	K.crate(raid, c + Vector3(-6.2, 0, -4.4), "safe")
-	K.crate(raid, c + Vector3(-4.2, 0, -1.2), "military")
-	K.crate(raid, c + Vector3(3.4, 0, -0.6), "military")
-	K.crate(raid, c + Vector3(6.6, 0, -5.6), "tool")
-	K.fixed(raid, c + Vector3(5.8, 0, -3.9), ["arch_manifest", "credit_s"], "tool")
-	K.crate(raid, c + Vector3(11.8, 0, 4.6), "supply")
+	# 容器与环境叙事（西哨亭保险柜 / 雨棚下弹药箱与军械箱 / 东哨亭结算终端 / 沙袋后医疗补给）
+	K.crate(raid, c + Vector3(-6.2, 0, -4.4), "safe", [], 180.0)
+	K.crate(raid, c + Vector3(-4.2, 0, -1.2), "ammo", [], 180.0)
+	K.crate(raid, c + Vector3(3.4, 0, -0.6), "military", [], 180.0)
+	K.crate(raid, c + Vector3(6.6, 0, -5.6), "register", [], 180.0)
+	K.fixed(raid, c + Vector3(5.8, 0, -3.9), ["arch_manifest", "credit_s"], "register", 180.0)
+	K.crate(raid, c + Vector3(11.8, 0, 4.6), "supply", [], 90.0)
 	K.rubble(raid, c + Vector3(-2.0, 0, -8.6), 1.4)
 	K.guard(raid, c + Vector3(0.0, 0, 1.6), "beetle", 3.0)
 	K.guard(raid, c + Vector3(-8.0, 0, -1.0), "ling", 2.4)

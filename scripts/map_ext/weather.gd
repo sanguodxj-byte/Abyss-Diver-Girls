@@ -8,45 +8,45 @@ const A = preload("res://scripts/art.gd")
 ## 每个预设写全所有会被改动的量，避免共享材质沿用其他战区的颜色（末世写实废土调性：低饱和压实日光 × 冷钢灰阴翳 × 空气尘雾纵深）
 const PRESETS := {
 	"clear": {
-		"sky_top": Color(0.32, 0.36, 0.42), "sky_horizon": Color(0.64, 0.59, 0.50), "sky_ground": Color(0.34, 0.32, 0.28), "sky_bottom": Color(0.08, 0.08, 0.10), "cloud_tint": Color(0.88, 0.85, 0.78, 0.58),
-		"ambient": 0.42, "sun_color": Color(0.96, 0.89, 0.77), "sun_energy": 2.30, "sun_rot": Vector3(-30, 52, 0),
-		"fill_color": Color(0.46, 0.52, 0.62), "fill_energy": 0.25,
-		"fog_color": Color(0.49, 0.47, 0.43), "fog_density": 0.0014, "fog_vol": 0.0, "exposure": 1.01, "saturation": 0.85,
+		"sky_top": Color(0.32, 0.37, 0.44), "sky_horizon": Color(0.64, 0.59, 0.50), "sky_ground": Color(0.34, 0.32, 0.28), "sky_bottom": Color(0.08, 0.08, 0.10), "cloud_tint": Color(0.88, 0.85, 0.78, 0.58),
+		"ambient": 0.38, "sun_color": Color(0.98, 0.90, 0.77), "sun_energy": 2.48, "sun_rot": Vector3(-30, 52, 0),
+		"fill_color": Color(0.46, 0.54, 0.66), "fill_energy": 0.24,
+		"fog_color": Color(0.49, 0.48, 0.45), "fog_density": 0.0011, "fog_vol": 0.0, "exposure": 1.02, "saturation": 0.88,
 		"dirt_a": Color(0.37, 0.32, 0.25), "dirt_b": Color(0.25, 0.22, 0.17), "mud": Color(0.19, 0.17, 0.14), "grass": Color(0.21, 0.25, 0.14), "grass2": Color(0.31, 0.30, 0.17),
 	},
 	"rain": {
-		"sky_top": Color(0.24, 0.28, 0.34), "sky_horizon": Color(0.48, 0.51, 0.55), "sky_ground": Color(0.29, 0.31, 0.33), "sky_bottom": Color(0.08, 0.09, 0.11), "cloud_tint": Color(0.70, 0.73, 0.77, 0.74),
-		"ambient": 0.42, "sun_color": Color(0.93, 0.88, 0.80), "sun_energy": 2.22, "sun_rot": Vector3(-28, 56, 0),
-		"fill_color": Color(0.46, 0.52, 0.60), "fill_energy": 0.27,
-		"fog_color": Color(0.45, 0.49, 0.53), "fog_density": 0.0019, "fog_vol": 0.0, "exposure": 1.01, "saturation": 0.83,
+		"sky_top": Color(0.24, 0.29, 0.36), "sky_horizon": Color(0.48, 0.51, 0.56), "sky_ground": Color(0.29, 0.31, 0.33), "sky_bottom": Color(0.08, 0.09, 0.11), "cloud_tint": Color(0.70, 0.73, 0.77, 0.74),
+		"ambient": 0.39, "sun_color": Color(0.94, 0.90, 0.82), "sun_energy": 2.38, "sun_rot": Vector3(-28, 56, 0),
+		"fill_color": Color(0.44, 0.52, 0.62), "fill_energy": 0.26,
+		"fog_color": Color(0.45, 0.49, 0.54), "fog_density": 0.0015, "fog_vol": 0.0, "exposure": 1.02, "saturation": 0.86,
 		"dirt_a": Color(0.33, 0.30, 0.26), "dirt_b": Color(0.23, 0.21, 0.19), "mud": Color(0.18, 0.17, 0.16), "grass": Color(0.21, 0.25, 0.15), "grass2": Color(0.30, 0.30, 0.18),
 	},
 	"dusk_gloom": {
 		"sky_top": Color(0.24, 0.23, 0.32), "sky_horizon": Color(0.74, 0.50, 0.32), "sky_ground": Color(0.32, 0.26, 0.24), "sky_bottom": Color(0.08, 0.07, 0.11), "cloud_tint": Color(0.86, 0.64, 0.46, 0.66),
-		"ambient": 0.41, "sun_color": Color(0.98, 0.70, 0.44), "sun_energy": 2.26, "sun_rot": Vector3(-25, 64, 0),
-		"fill_color": Color(0.42, 0.47, 0.60), "fill_energy": 0.26,
-		"fog_color": Color(0.46, 0.39, 0.35), "fog_density": 0.0019, "fog_vol": 0.0, "exposure": 1.01, "saturation": 0.83,
+		"ambient": 0.38, "sun_color": Color(1.00, 0.72, 0.45), "sun_energy": 2.46, "sun_rot": Vector3(-25, 64, 0),
+		"fill_color": Color(0.40, 0.47, 0.62), "fill_energy": 0.25,
+		"fog_color": Color(0.46, 0.39, 0.35), "fog_density": 0.0015, "fog_vol": 0.0, "exposure": 1.02, "saturation": 0.86,
 		"dirt_a": Color(0.35, 0.30, 0.24), "dirt_b": Color(0.24, 0.20, 0.17), "mud": Color(0.19, 0.17, 0.15), "grass": Color(0.22, 0.24, 0.15), "grass2": Color(0.31, 0.28, 0.18),
 	},
 	"sandstorm": {
 		"sky_top": Color(0.40, 0.36, 0.29), "sky_horizon": Color(0.68, 0.56, 0.40), "sky_ground": Color(0.42, 0.36, 0.27), "sky_bottom": Color(0.11, 0.09, 0.09), "cloud_tint": Color(0.84, 0.70, 0.50, 0.68),
-		"ambient": 0.42, "sun_color": Color(0.96, 0.79, 0.54), "sun_energy": 2.25, "sun_rot": Vector3(-30, 60, 0),
-		"fill_color": Color(0.48, 0.50, 0.56), "fill_energy": 0.20,
-		"fog_color": Color(0.60, 0.51, 0.37), "fog_density": 0.0022, "fog_vol": 0.0, "exposure": 0.98, "saturation": 0.80,
+		"ambient": 0.39, "sun_color": Color(0.98, 0.81, 0.55), "sun_energy": 2.42, "sun_rot": Vector3(-30, 60, 0),
+		"fill_color": Color(0.48, 0.50, 0.58), "fill_energy": 0.20,
+		"fog_color": Color(0.60, 0.51, 0.37), "fog_density": 0.0019, "fog_vol": 0.0, "exposure": 0.99, "saturation": 0.84,
 		"dirt_a": Color(0.45, 0.38, 0.27), "dirt_b": Color(0.33, 0.27, 0.19), "mud": Color(0.26, 0.22, 0.17), "grass": Color(0.26, 0.26, 0.15), "grass2": Color(0.36, 0.32, 0.19),
 	},
 	"lake_mist": {
 		"sky_top": Color(0.22, 0.24, 0.34), "sky_horizon": Color(0.56, 0.42, 0.40), "sky_ground": Color(0.29, 0.25, 0.28), "sky_bottom": Color(0.07, 0.07, 0.11), "cloud_tint": Color(0.76, 0.64, 0.62, 0.68),
-		"ambient": 0.38, "sun_color": Color(0.94, 0.74, 0.60), "sun_energy": 2.10, "sun_rot": Vector3(-27, -55, 0),
-		"fill_color": Color(0.40, 0.48, 0.60), "fill_energy": 0.21,
-		"fog_color": Color(0.48, 0.43, 0.46), "fog_density": 0.0022, "fog_vol": 0.0, "exposure": 0.98, "saturation": 0.82,
+		"ambient": 0.36, "sun_color": Color(0.96, 0.76, 0.61), "sun_energy": 2.28, "sun_rot": Vector3(-27, -55, 0),
+		"fill_color": Color(0.40, 0.48, 0.62), "fill_energy": 0.21,
+		"fog_color": Color(0.48, 0.43, 0.46), "fog_density": 0.0018, "fog_vol": 0.0, "exposure": 0.99, "saturation": 0.85,
 		"dirt_a": Color(0.32, 0.28, 0.24), "dirt_b": Color(0.22, 0.19, 0.18), "mud": Color(0.17, 0.15, 0.15), "grass": Color(0.19, 0.23, 0.15), "grass2": Color(0.26, 0.27, 0.17),
 	},
 	"canyon_noon": {
-		"sky_top": Color(0.28, 0.35, 0.44), "sky_horizon": Color(0.68, 0.60, 0.48), "sky_ground": Color(0.38, 0.33, 0.27), "sky_bottom": Color(0.09, 0.09, 0.11), "cloud_tint": Color(0.88, 0.84, 0.76, 0.54),
-		"ambient": 0.38, "sun_color": Color(0.98, 0.88, 0.72), "sun_energy": 2.40, "sun_rot": Vector3(-33, -52, 0),
-		"fill_color": Color(0.44, 0.52, 0.64), "fill_energy": 0.20,
-		"fog_color": Color(0.55, 0.50, 0.42), "fog_density": 0.0014, "fog_vol": 0.0, "exposure": 0.97, "saturation": 0.84,
+		"sky_top": Color(0.28, 0.36, 0.46), "sky_horizon": Color(0.68, 0.60, 0.48), "sky_ground": Color(0.38, 0.33, 0.27), "sky_bottom": Color(0.09, 0.09, 0.11), "cloud_tint": Color(0.88, 0.84, 0.76, 0.54),
+		"ambient": 0.36, "sun_color": Color(1.00, 0.89, 0.72), "sun_energy": 2.58, "sun_rot": Vector3(-33, -52, 0),
+		"fill_color": Color(0.44, 0.53, 0.66), "fill_energy": 0.20,
+		"fog_color": Color(0.55, 0.50, 0.42), "fog_density": 0.0011, "fog_vol": 0.0, "exposure": 0.99, "saturation": 0.88,
 		"dirt_a": Color(0.43, 0.35, 0.26), "dirt_b": Color(0.30, 0.24, 0.19), "mud": Color(0.23, 0.19, 0.16), "grass": Color(0.24, 0.25, 0.15), "grass2": Color(0.34, 0.30, 0.18),
 	},
 	"spore_abyss": {
@@ -188,6 +188,48 @@ func _apply() -> void:
 		gm.set_shader_parameter("grass", _base.grass)
 		gm.set_shader_parameter("grass2", _base.grass2)
 		gm.set_shader_parameter("wet_amt", wet_v)
+	# 纯干燥/无水面地貌关闭全屏 SSR 光线步进（节省整屏 GPU 反射开销，湿润/河港战区保留 SSR）
+	if env and preset in ["sandstorm", "canyon_noon", "spore_abyss"]:
+		env.ssr_enabled = false
+	# 植被随战区生态色调微调，消除裂谷/荒原沙地上的冷黑点反差（贴图本身偏黄绿，需补蓝通道抑制过饱和）
+	var sh_m: ShaderMaterial = A.foliage_mat("shrub")
+	if sh_m:
+		match preset:
+			"canyon_noon", "sandstorm":
+				sh_m.set_shader_parameter("tint_a", Color(0.88, 0.88, 0.84))
+				sh_m.set_shader_parameter("tint_b", Color(0.98, 0.94, 0.82))
+				sh_m.set_shader_parameter("albedo_gain", 2.25)
+			"dusk_gloom":
+				sh_m.set_shader_parameter("tint_a", Color(0.84, 0.86, 0.82))
+				sh_m.set_shader_parameter("tint_b", Color(0.94, 0.90, 0.80))
+				sh_m.set_shader_parameter("albedo_gain", 2.15)
+			"spore_abyss":
+				sh_m.set_shader_parameter("tint_a", Color(0.76, 0.74, 0.96))
+				sh_m.set_shader_parameter("tint_b", Color(0.88, 0.84, 1.04))
+				sh_m.set_shader_parameter("albedo_gain", 2.10)
+			_:
+				sh_m.set_shader_parameter("tint_a", Color(0.84, 0.90, 0.84))
+				sh_m.set_shader_parameter("tint_b", Color(0.96, 0.94, 0.82))
+				sh_m.set_shader_parameter("albedo_gain", 2.15)
+	var gr_m: ShaderMaterial = A.foliage_mat("grass")
+	if gr_m:
+		match preset:
+			"canyon_noon", "sandstorm":
+				gr_m.set_shader_parameter("tint_a", Color(0.86, 0.88, 0.88))
+				gr_m.set_shader_parameter("tint_b", Color(0.96, 0.92, 0.86))
+				gr_m.set_shader_parameter("albedo_gain", 2.60)
+			"dusk_gloom":
+				gr_m.set_shader_parameter("tint_a", Color(0.84, 0.86, 0.84))
+				gr_m.set_shader_parameter("tint_b", Color(0.94, 0.90, 0.82))
+				gr_m.set_shader_parameter("albedo_gain", 2.50)
+			"spore_abyss":
+				gr_m.set_shader_parameter("tint_a", Color(0.80, 0.78, 1.00))
+				gr_m.set_shader_parameter("tint_b", Color(0.92, 0.88, 1.08))
+				gr_m.set_shader_parameter("albedo_gain", 2.50)
+			_:
+				gr_m.set_shader_parameter("tint_a", Color(0.80, 0.88, 0.84))
+				gr_m.set_shader_parameter("tint_b", Color(0.92, 0.94, 0.82))
+				gr_m.set_shader_parameter("albedo_gain", 2.55)
 
 
 func _build_particles() -> void:

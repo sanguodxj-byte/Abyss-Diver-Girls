@@ -3,6 +3,7 @@ extends Node3D
 
 const A = preload("res://scripts/art.gd")
 const FM = preload("res://scripts/modules/field_models.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
 var title := Loc.t("撤离点", "Extraction Point")
 var radius := 4.5
@@ -54,16 +55,19 @@ func setup(t: String, c: Color, req: float, transport := false) -> void:
 	var M_ST := A.metal(Color(0.24, 0.25, 0.26))
 	var M_DARK := A.metal(Color(0.13, 0.14, 0.15))
 	if not transport:
-		# 重工野战战术应答信标塔：倒角钢筋混凝土锚固基座 + 野战通信配电箱 + 斜撑钢构桅杆 + 防护笼光学信标头
-		var bx := radius + 1.15
-		var M_CON := A.concrete(Color(0.48, 0.46, 0.43), false)
-		var M_CAB := A.paint(Color(0.32, 0.35, 0.27), 0.35, 0.58, {"wear": 0.48, "rust": 0.45})
-		var tw := FM.build_extract_tower(self, Vector3(bx, 0, 0), c, M_CON, M_CAB)
-		_strobes.append(tw.lamp_mat)
+		# 战损版撤离区主信标通讯塔（env_extract_beacon_tower）：置于撤离圈外缘，保持圈内停机坪畅通
+		var bx := radius + 2.2
+		var tower := PrefabLib.build_merged("env_extract_beacon_tower", Vector3(4.2, 5.6, 4.2))
+		tower.position = Vector3(bx, -0.04, 0.0)
+		add_child(tower)
+		var lamp_m := A.emit(c, 2.2)
+		lamp_m.albedo_color = c.darkened(0.25)
+		A.add(self, A.sphere(0.18, -1.0, 20), lamp_m, Vector3(bx + 0.14, 4.55, 0.08), Vector3.ZERO, Vector3.ONE, false)
+		_strobes.append(lamp_m)
 		for ba in [38.0, 142.0, 218.0, 322.0]:
 			var br := deg_to_rad(ba)
 			_add_strobe_bollard(Vector3(cos(br) * (radius + 0.16), 0.0, sin(br) * (radius + 0.16)), br, c, M_DARK, M_ST)
-		_add_signal_smoke(Vector3(bx - 1.35, 0.0, -0.95), c, M_ST, M_DARK)
+		_add_signal_smoke(Vector3(radius - 0.15, 0.0, -0.95), c, M_ST, M_DARK)
 	else:
 		# 运输艇临时机降区：四角投掷式战术地面频闪信标桩 + 中央金属 H 字机降标线板 + 发烟罐
 		var M_HAZ := A.hazard()
