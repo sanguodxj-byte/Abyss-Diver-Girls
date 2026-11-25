@@ -29,7 +29,7 @@ func _apply_static_bust(p, side: String, cid: String, talking: bool, alpha: floa
 	var n = p._slots[side]["node"]
 	p._slots[side]["char"] = cid
 	p._slots[side]["talking"] = false
-	n.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	n.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	n.set_emotion("calm", talking, n.accent)
 	n.set_clip("")
 	n.set_tex(AP.portrait(cid))

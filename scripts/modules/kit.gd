@@ -14,6 +14,7 @@ extends RefCounted
 ##   · 朝向：-Z 为机体正前方
 
 const A = preload("res://scripts/art.gd")
+const HS = preload("res://scripts/hs.gd")
 
 const DARK := Color(0.15, 0.155, 0.17)
 const FRAME := Color(0.10, 0.105, 0.115)
@@ -45,6 +46,8 @@ const REAL := {
 	"gen_diesel": Color(0.38, 0.35, 0.29), "gen_hfc": Color(0.34, 0.38, 0.40), "gen_turbine": Color(0.35, 0.36, 0.33),
 	"arm_hmg": Color(0.36, 0.38, 0.39), "arm_gatling": Color(0.33, 0.35, 0.37), "arm_ac30": Color(0.36, 0.38, 0.35),
 	"arm_slug": Color(0.35, 0.33, 0.29), "arm_cannon": Color(0.42, 0.39, 0.31), "arm_rail": Color(0.33, 0.35, 0.38),
+	"core_m1a2_sepv3": Color(0.49, 0.44, 0.34), "arm_sniper": Color(0.36, 0.39, 0.35),
+	"arm_gau8": Color(0.37, 0.40, 0.44), "arm_rh120": Color(0.44, 0.41, 0.33), "arm_tow2b": Color(0.46, 0.42, 0.33),
 }
 
 
@@ -56,12 +59,22 @@ static func real(id: String, c: Color) -> Color:
 
 
 # ---------------------------------------------------------------- 材质
-static func armor(c: Color, wear := 0.44) -> ShaderMaterial:
-	return A.paint(c, 0.16, 0.54, {"wear": wear, "panel_scale": 0.0, "takes_damage": 1.0})
+static func armor(c: Color, wear := 0.54) -> ShaderMaterial:
+	return A.paint(c, 0.04, 0.62, {
+		"albedo_tex": A.world_tex("armor_rha_a.png"), "normal_tex": A.world_tex("armor_rha_n.png"),
+		"rough_tex": A.world_tex("armor_rha_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.68, "albedo_tex_strength": 0.66, "normal_strength": 0.78, "rough_tex_strength": 0.76,
+		"wear": wear, "scratches": 0.44, "panel_scale": 0.0, "takes_damage": 1.0,
+	})
 
 
-static func armor_sub(c: Color, wear := 0.48) -> ShaderMaterial:
-	return A.paint(c.darkened(0.20), 0.18, 0.52, {"wear": wear, "panel_scale": 0.0, "takes_damage": 1.0})
+static func armor_sub(c: Color, wear := 0.58) -> ShaderMaterial:
+	return A.paint(c.darkened(0.20), 0.05, 0.58, {
+		"albedo_tex": A.world_tex("armor_rha_a.png"), "normal_tex": A.world_tex("armor_rha_n.png"),
+		"rough_tex": A.world_tex("armor_rha_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.72, "albedo_tex_strength": 0.64, "normal_strength": 0.80, "rough_tex_strength": 0.78,
+		"wear": wear, "scratches": 0.46, "panel_scale": 0.0, "takes_damage": 1.0,
+	})
 
 
 static func frame() -> ShaderMaterial:
@@ -77,39 +90,52 @@ static func gunmetal() -> ShaderMaterial:
 
 
 static func brass() -> ShaderMaterial:
-	return A.paint(BRASS, 0.78, 0.38, {"wear": 0.35, "panel_scale": 0.0, "bare_metal": Color(0.76, 0.64, 0.38)})
+	return A.paint(BRASS, 0.80, 0.34, {
+		"albedo_tex": A.world_tex("gunmetal_a.png"), "normal_tex": A.world_tex("gunmetal_n.png"),
+		"rough_tex": A.world_tex("gunmetal_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.85, "albedo_tex_strength": 0.42, "normal_strength": 0.48, "rough_tex_strength": 0.68,
+		"wear": 0.35, "panel_scale": 0.0, "bare_metal": Color(0.82, 0.70, 0.42),
+	})
 
 
 static func copper() -> ShaderMaterial:
-	return A.paint(COPPER, 0.82, 0.36, {"wear": 0.30, "panel_scale": 0.0, "bare_metal": Color(0.78, 0.50, 0.34)})
+	return A.paint(COPPER, 0.84, 0.32, {
+		"albedo_tex": A.world_tex("gunmetal_a.png"), "normal_tex": A.world_tex("gunmetal_n.png"),
+		"rough_tex": A.world_tex("gunmetal_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.85, "albedo_tex_strength": 0.40, "normal_strength": 0.48, "rough_tex_strength": 0.66,
+		"wear": 0.30, "panel_scale": 0.0, "bare_metal": Color(0.82, 0.54, 0.36),
+	})
 
 
 static func bore_mat() -> ShaderMaterial:
-	return A.paint(Color(0.015, 0.015, 0.018), 0.05, 0.96, {"wear": 0.0, "panel_scale": 0.0, "dust": 0.0, "scratches": 0.0})
+	return A.paint(Color(0.015, 0.015, 0.018), 0.05, 0.96, {"use_albedo_tex": 0.0, "wear": 0.0, "panel_scale": 0.0, "dust": 0.0, "scratches": 0.0})
 
 
 static func accent() -> ShaderMaterial:
-	return A.paint(ACCENT, 0.14, 0.52, {"wear": 0.68, "panel_scale": 0.0})
+	return A.paint(ACCENT, 0.16, 0.50, {
+		"albedo_tex": A.world_tex("armor_rha_a.png"), "normal_tex": A.world_tex("armor_rha_n.png"),
+		"rough_tex": A.world_tex("armor_rha_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.70, "albedo_tex_strength": 0.52, "normal_strength": 0.56, "rough_tex_strength": 0.65,
+		"wear": 0.68, "panel_scale": 0.0,
+	})
 
 
 static var _canopy_cache := {}
+static var _canopy_shader: Shader
 
-## 与装甲材质一样共享只读资源；稳定的材质标识也让重复装配命中网格合批缓存。
-static func canopy(c := VISOR, energy := 0.18) -> StandardMaterial3D:
+## 与装甲材质一样共享只读资源；建筑窗走室内纵深+菲涅尔天光反射+灰尘雨痕，机甲光学镜走镀膜虹彩高光。
+static func canopy(c := VISOR, energy := 0.18) -> ShaderMaterial:
 	var key := var_to_bytes([c, energy])
-	var cached: StandardMaterial3D = _canopy_cache.get(key)
+	var cached: ShaderMaterial = _canopy_cache.get(key)
 	if cached != null:
 		return cached
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.025, 0.04, 0.045)
-	m.metallic = 0.85
-	m.roughness = 0.06
-	m.emission_enabled = true
-	m.emission = c
-	m.emission_energy_multiplier = energy
-	m.clearcoat_enabled = true
-	m.clearcoat = 1.0
-	m.clearcoat_roughness = 0.04
+	if _canopy_shader == null:
+		_canopy_shader = load("res://shaders/canopy_glass.gdshader")
+	var m := ShaderMaterial.new()
+	m.shader = _canopy_shader
+	m.set_shader_parameter("tint_color", c)
+	m.set_shader_parameter("emit_energy", energy)
+	m.set_shader_parameter("noise_tex", A.noise_tex("grime_raw"))
 	_canopy_cache[key] = m
 	return m
 
@@ -126,6 +152,23 @@ static func cy(p: Node3D, r: float, h: float, m: Material, pos: Vector3, rot := 
 ## 多边形切角装甲板（outline 在 XY 平面，沿局部 Z 挤出 thick）
 static func plate(p: Node3D, outline: Array, thick: float, m: Material, pos: Vector3, rot := Vector3.ZERO, bevel := 0.025) -> MeshInstance3D:
 	return A.add(p, A.prism(PackedVector2Array(outline), thick, bevel), m, pos, rot)
+
+
+## 截面放样壳体（兼容 Dictionary {z, scale, offset} 与 Array [z, scale, offset] 截面格式，复用 HS.loft 索引化与缓存）
+static func loft(p: Node3D, base: Array, secs: Array, m: Material, pos: Vector3, rot := Vector3.ZERO, cap0 := true, cap1 := true) -> MeshInstance3D:
+	var conv: Array = []
+	conv.resize(secs.size())
+	for i in secs.size():
+		var sd: Variant = secs[i]
+		if sd is Dictionary:
+			var d: Dictionary = sd as Dictionary
+			var z_v: float = float(d.get("z", 0.0))
+			var sc_v: Vector2 = d.get("scale", Vector2.ONE) as Vector2
+			var of_v: Vector2 = d.get("offset", Vector2.ZERO) as Vector2
+			conv[i] = [z_v, sc_v, of_v]
+		else:
+			conv[i] = sd
+	return A.add(p, HS.loft(base, conv, cap0, cap1), m, pos, rot)
 
 
 ## 切角矩形轮廓：w×h，四角切去 c = [左上, 右上, 右下, 左下]
@@ -378,12 +421,12 @@ static func _receiver(v: Node3D, iface: String) -> void:
 	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.475, 0.10, dark(), Vector3(0, 0, 0.06), Vector3(90, 0, 0), -1.0, 28)
-			cy(v, 0.435, 0.07, M_R, Vector3(0, 0, 0.045), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.405, 0.46, 28), M_Y, Vector3(0, 0, 0.012), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
-			for i in 16:
-				var a := TAU * i / 16.0
-				A.add(v, A.cyl(0.018, 0.04, 0.022, 6), A.chrome(), Vector3(cos(a) * 0.43, sin(a) * 0.43, 0.005), Vector3(90, 0, 0), Vector3.ONE, false)
+			cy(v, 0.358, 0.08, dark(), Vector3(0, 0, 0.045), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.315, 0.06, M_R, Vector3(0, 0, 0.032), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.295, 0.340, 28), M_Y, Vector3(0, 0, 0.010), Vector3(90, 0, 0), Vector3(1, 0.35, 1), false)
+			for i in 12:
+				var a := TAU * i / 12.0
+				A.add(v, A.cyl(0.014, 0.032, 0.018, 6), A.chrome(), Vector3(cos(a) * 0.318, sin(a) * 0.318, 0.004), Vector3(90, 0, 0), Vector3.ONE, false)
 		"HP-A1":
 			bb(v, Vector3(0.48, 0.48, 0.065), M_R, Vector3(0, 0, 0.042), Vector3.ZERO, 0.02)
 			cy(v, 0.21, 0.07, dark(), Vector3(0, 0, 0.04), Vector3(90, 0, 0), -1.0, 20)
@@ -410,22 +453,22 @@ static func _plug(v: Node3D, iface: String) -> void:
 	var M_Y := A.paint(IFACE_COLOR, 0.14, 0.52, {"wear": 0.72, "panel_scale": 0.0})
 	match iface:
 		"HP-C1":
-			cy(v, 0.39, 0.12, M_P, Vector3(0, 0, 0.075), Vector3(90, 0, 0), -1.0, 28)
-			cy(v, 0.33, 0.06, A.chrome(), Vector3(0, 0, -0.005), Vector3(90, 0, 0), -1.0, 28)
-			A.add(v, A.torus(0.35, 0.405, 28), M_Y, Vector3(0, 0, 0.095), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
+			cy(v, 0.29, 0.09, M_P, Vector3(0, 0, -0.025), Vector3(90, 0, 0), -1.0, 28)
+			cy(v, 0.23, 0.055, A.chrome(), Vector3(0, 0, -0.048), Vector3(90, 0, 0), -1.0, 28)
+			A.add(v, A.torus(0.26, 0.305, 28), M_Y, Vector3(0, 0, -0.008), Vector3(90, 0, 0), Vector3(1, 0.4, 1), false)
 		"HP-A1":
-			bb(v, Vector3(0.38, 0.38, 0.055), M_P, Vector3(0, 0, 0.032), Vector3.ZERO, 0.02)
-			cy(v, 0.13, 0.07, A.chrome(), Vector3(0, 0, -0.015), Vector3(90, 0, 0), -1.0, 18)
-			bb(v, Vector3(0.39, 0.042, 0.058), M_Y, Vector3(0, 0.175, 0.032), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.38, 0.38, 0.048), M_P, Vector3(0, 0, -0.018), Vector3.ZERO, 0.02)
+			cy(v, 0.13, 0.065, A.chrome(), Vector3(0, 0, -0.038), Vector3(90, 0, 0), -1.0, 18)
+			bb(v, Vector3(0.39, 0.042, 0.052), M_Y, Vector3(0, 0.175, -0.018), Vector3.ZERO, 0.01)
 		"HP-B1":
 			for sx in [-0.3, 0.3]:
-				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, 0.18, 0.06), Vector3.ZERO, 0.02)
-				bb(v, Vector3(0.18, 0.21, 0.13), M_P, Vector3(sx, -0.18, 0.06), Vector3.ZERO, 0.02)
-				bb(v, Vector3(0.20, 0.045, 0.135), M_Y, Vector3(sx, 0.0, 0.06), Vector3.ZERO, 0.01)
+				bb(v, Vector3(0.18, 0.21, 0.09), M_P, Vector3(sx, 0.18, -0.020), Vector3.ZERO, 0.02)
+				bb(v, Vector3(0.18, 0.21, 0.09), M_P, Vector3(sx, -0.18, -0.020), Vector3.ZERO, 0.02)
+				bb(v, Vector3(0.20, 0.045, 0.095), M_Y, Vector3(sx, 0.0, -0.020), Vector3.ZERO, 0.01)
 		"HP-G1":
-			bb(v, Vector3(0.72, 0.58, 0.06), M_P, Vector3(0, 0, 0.035), Vector3.ZERO, 0.02)
-			bb(v, Vector3(0.48, 0.10, 0.05), dark(), Vector3(0, -0.18, -0.01), Vector3.ZERO, 0.01)
-			bb(v, Vector3(0.74, 0.042, 0.065), M_Y, Vector3(0, 0.25, 0.035), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.72, 0.58, 0.052), M_P, Vector3(0, 0, -0.022), Vector3.ZERO, 0.02)
+			bb(v, Vector3(0.48, 0.10, 0.045), dark(), Vector3(0, -0.18, -0.042), Vector3.ZERO, 0.01)
+			bb(v, Vector3(0.74, 0.042, 0.056), M_Y, Vector3(0, 0.25, -0.022), Vector3.ZERO, 0.01)
 
 
 # ================================================================ 接头转接件（v0.4.9 新模块用）

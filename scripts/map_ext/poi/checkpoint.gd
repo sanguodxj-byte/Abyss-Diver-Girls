@@ -1,120 +1,34 @@
 extends RefCounted
-## 七号检查站：一条横穿院子的柏油路，两端各一座哨亭，中间横着断掉的升降杆与检查雨棚，
-## 路口堆着防爆沙袋和混凝土隔离墩，东侧高脚哨塔上挂着探照灯。
+## 七号重装公路检查站（残破重制）：通过 PrefabLib 接入波次 4 残破检查站模型，保留原版通行车道、
+## 实体碰撞、全部 6 只补给箱（含档案《转运清单》）、灯光与守卫配置。
 
-const A = preload("res://scripts/art.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
+const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
-const ASPHALT := Color(0.22, 0.22, 0.21)
-const BOOTH := Color(0.5, 0.5, 0.46)
+
+static func _block(raid, pos: Vector3, sz: Vector3, rot := 0.0, cyl := false) -> void:
+	K.blocker(raid, pos, sz, rot, cyl)
+	raid.blocks.append(raid._rect_for(pos, sz))
 
 
 static func build(raid, c: Vector3, pid: String) -> void:
-	var r = raid.rng
-	K.slab(raid, c, Vector2(28, 14), Color(0.32, 0.31, 0.29))
-	A.add(raid.world, A.bevel_box(Vector3(28.0, 0.14, 10.0), 0.04), A.concrete(ASPHALT, false), c + Vector3(0, 0.07, 0.0), Vector3.ZERO, Vector3.ONE, false)
-	# 中线与斑马线
-	for i in 9:
-		A.add(raid.world, A.bevel_box(Vector3(1.4, 0.02, 0.16), 0.005), A.paint(Color(0.62, 0.6, 0.5), 0.0, 0.9, {"wear": 0.8, "dust": 0.6}), c + Vector3(-12.0 + i * 3.0, 0.15, 0.0), Vector3.ZERO, Vector3.ONE, false)
-	for i in 6:
-		A.add(raid.world, A.bevel_box(Vector3(0.6, 0.02, 3.4), 0.005), A.paint(Color(0.6, 0.58, 0.5), 0.0, 0.9, {"wear": 0.8}), c + Vector3(-3.0 + i * 1.2, 0.15, 3.2), Vector3.ZERO, Vector3.ONE, false)
-	# 两座哨亭：三面墙 + 压型防雨挑檐 + 分格观察窗 + 柜台 + 防爆护笼顶灯
-	var M_DARK := A.metal(Color(0.18, 0.19, 0.20))
-	for sx in [-1.0, 1.0]:
-		var bp := c + Vector3(sx * 6.4, 0, -4.8)
-		K.wall(raid, bp + Vector3(0, 0, -1.5), Vector3(3.4, 2.9, 0.4), 0.0, BOOTH)
-		K.wall(raid, bp + Vector3(-1.6, 0, 0), Vector3(0.4, 2.9, 2.6), 0.0, BOOTH)
-		K.wall(raid, bp + Vector3(1.6, 0, 0), Vector3(0.4, 2.9, 2.6), 0.0, BOOTH)
-		A.add(raid.world, A.bevel_box(Vector3(3.95, 0.24, 3.45), 0.04), A.concrete(BOOTH.darkened(0.16), false), bp + Vector3(0, 3.0, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(raid.world, A.bevel_box(Vector3(4.05, 0.10, 3.55), 0.02), M_DARK, bp + Vector3(0, 3.14, 0), Vector3.ZERO, Vector3.ONE, false)
-		A.add(raid.world, A.bevel_box(Vector3(2.6, 1.0, 0.08), 0.01), A.glass(Color(0.26, 0.38, 0.42)), bp + Vector3(0, 1.9, 1.62), Vector3.ZERO, Vector3.ONE, false)
-		for mx in [-0.85, 0.0, 0.85]:
-			A.add(raid.world, A.bevel_box(Vector3(0.06, 1.04, 0.11), 0.01), M_DARK, bp + Vector3(mx, 1.9, 1.62), Vector3.ZERO, Vector3.ONE, false)
-		A.add(raid.world, A.bevel_box(Vector3(2.75, 0.10, 0.22), 0.02), M_DARK, bp + Vector3(0, 1.38, 1.66), Vector3.ZERO, Vector3.ONE, false)
-		K.desk(raid, bp + Vector3(0.2, 0, 0.4), 0.0, 2.0, Color(0.34, 0.31, 0.24))
-		A.add(raid.world, A.cyl(0.035, 0.65, 0.035, 8), M_DARK, bp + Vector3(-0.9, 2.55, -0.8))
-		A.add(raid.world, A.cyl(0.22, 0.10, 0.14, 14), M_DARK, bp + Vector3(-0.9, 2.22, -0.8))
-		A.add(raid.world, A.cyl(0.12, 0.16, 0.12, 12), A.emit(Color(0.95, 0.72, 0.4), 1.4), bp + Vector3(-0.9, 2.10, -0.8), Vector3.ZERO, Vector3.ONE, false)
-		A.add(raid.world, A.torus(0.14, 0.165, 14), M_DARK, bp + Vector3(-0.9, 2.08, -0.8), Vector3.ZERO, Vector3.ONE, false)
-	# 升降杆：液压道闸机箱 + 配重块 + 东侧横杆 + 西侧撞断横杆
-	A.add(raid.world, A.bevel_box(Vector3(0.62, 0.14, 0.62), 0.03), A.concrete(Color(0.42, 0.41, 0.38), false), c + Vector3(0.0, 0.07, 1.2))
-	A.add(raid.world, A.bevel_box(Vector3(0.42, 1.32, 0.38), 0.03), A.paint(Color(0.55, 0.45, 0.2), 0.38, 0.58, {"rust": 0.5}), c + Vector3(0.0, 0.72, 1.2))
-	A.add(raid.world, A.cyl(0.14, 0.44, 0.14, 14), M_DARK, c + Vector3(0.0, 1.12, 1.2), Vector3(90, 0, 0))
-	A.add(raid.world, A.bevel_box(Vector3(5.4, 0.15, 0.12), 0.02), A.hazard(), c + Vector3(2.4, 1.12, 1.2))
-	A.add(raid.world, A.bevel_box(Vector3(0.58, 0.32, 0.24), 0.03), M_DARK, c + Vector3(-0.48, 1.12, 1.2))
-	A.add(raid.world, A.bevel_box(Vector3(4.6, 0.15, 0.12), 0.02), A.hazard(), c + Vector3(-4.6, 0.16, 2.6), Vector3(0, -24, 4))
-	# 检查雨棚
-	K.canopy(raid, c + Vector3(0, 0, -1.8), Vector2(10.0, 5.0), 4.0, 0.0, Color(0.4, 0.4, 0.37))
-	A.add(raid.world, A.bevel_box(Vector3(10.4, 0.3, 5.4), 0.05), A.paint(Color(0.34, 0.34, 0.31), 0.5, 0.6, {"wear": 0.5, "rust": 0.6, "panel_scale": 1.4}), c + Vector3(0, 4.16, -1.8), Vector3.ZERO, Vector3.ONE, false)
-	for sz in [-1.0, 1.0]:
-		A.add(raid.world, A.bevel_box(Vector3(10.46, 0.34, 0.36), 0.02), A.hazard(), c + Vector3(0, 4.18, -1.8 + sz * 2.52), Vector3.ZERO, Vector3.ONE, false)
-	# 沙袋工事与阶梯式泽西防撞隔离墩（带钢吊耳，零 MeshInstance3D 子节点）
-	for p in [Vector3(-9.2, 0, 4.2), Vector3(8.8, 0, 3.6)]:
-		_sandbags(raid, c + p, r.randf_range(-18, 18))
-	var M_JB := A.concrete(Color(0.55, 0.54, 0.5), false)
-	for i in 5:
-		var p := c + Vector3(-8.0 + i * 4.2, 0, 6.6)
-		var jb := Node3D.new()
-		raid.world.add_child(jb)
-		jb.position = p
-		jb.rotation_degrees = Vector3(0, r.randf_range(-6, 6), 0)
-		A.add(jb, A.bevel_box(Vector3(3.0, 0.34, 0.84), 0.06, 0.88), M_JB, Vector3(0, 0.17, 0))
-		A.add(jb, A.bevel_box(Vector3(3.0, 0.70, 0.46), 0.06, 0.76), M_JB, Vector3(0, 0.66, 0))
-		A.add(jb, A.bevel_box(Vector3(2.4, 0.16, 0.42), 0.01), A.hazard(), Vector3(0, 0.76, 0), Vector3.ZERO, Vector3.ONE, false)
-		for lx_j in [-0.95, 0.95]:
-			A.add(jb, A.torus(0.06, 0.09, 10), M_DARK, Vector3(lx_j, 1.03, 0), Vector3(90, 0, 0), Vector3.ONE, false)
-		raid.blocks.append(raid._rect_for(p, Vector3(3.2, 1, 1.0)))
-	# 高脚哨塔 + 探照灯
-	var wc: int = raid.world.get_child_count()
-	raid._watchtower(c + Vector3(10.4, 0, -7.6))
-	if raid.world.get_child_count() > wc:
-		var tw = raid.world.get_child(wc)
-		if tw is StaticBody3D:
-			tw.set_meta("poi_built", true)
-	var sl := OmniLight3D.new()
-	sl.light_color = Color(1.0, 0.92, 0.75)
-	sl.light_energy = 4.0
-	sl.omni_range = 26.0
-	sl.position = c + Vector3(9.6, 6.6, -6.6)
-	raid.world.add_child(sl)
-	raid._add_flicker(sl)
-	A.add(raid.world, A.bevel_box(Vector3(0.5, 0.4, 0.8), 0.06), A.paint(Color(0.25, 0.26, 0.25), 0.5, 0.5), c + Vector3(9.6, 6.4, -6.6))
-	A.add(raid.world, A.bevel_box(Vector3(0.42, 0.3, 0.06), 0.01), A.emit(Color(1.0, 0.95, 0.8), 3.0), c + Vector3(9.6, 6.4, -6.18), Vector3.ZERO, Vector3.ONE, false)
-	# 灯杆、告示牌
-	K.lamp(raid, c + Vector3(-13.4, 0, -8.2), Color(1.0, 0.78, 0.45))
-	K.lamp(raid, c + Vector3(13.4, 0, 7.0), Color(0.7, 0.85, 1.0))
-	K.sign(raid, c + Vector3(-11.4, 2.0, -2.0), 90.0, "CHECKPOINT 07", 3.4, 1.0)
-	# 废弃车辆与防撞路障桶
-	K.car(raid, c + Vector3(-1.6, 0, 8.2), 14.0)
-	var drum_p := c + Vector3(4.6, 0, 7.4)
-	A.add(raid.world, A.cyl(0.54, 0.10, 0.56, 16), A.rubber(), drum_p + Vector3(0, 0.05, 0))
-	A.add(raid.world, A.cyl(0.42, 0.82, 0.46, 16), A.paint(Color(0.62, 0.30, 0.10), 0.25, 0.68, {"rust": 0.65, "wear": 0.55}), drum_p + Vector3(0, 0.46, 0))
-	for dy_b in [0.34, 0.64]:
-		A.add(raid.world, A.cyl(0.45, 0.11, 0.46, 16), A.paint(Color(0.82, 0.80, 0.72), 0.1, 0.75, {"wear": 0.6}), drum_p + Vector3(0, dy_b, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 容器与环境叙事（西哨亭保险柜 / 雨棚下弹药箱与军械箱 / 东哨亭结算终端 / 沙袋后医疗补给）
-	K.crate(raid, c + Vector3(-6.2, 0, -4.4), "safe", [], 180.0)
-	K.crate(raid, c + Vector3(-4.2, 0, -1.2), "ammo", [], 180.0)
-	K.crate(raid, c + Vector3(3.4, 0, -0.6), "military", [], 180.0)
-	K.crate(raid, c + Vector3(6.6, 0, -5.6), "register", [], 180.0)
-	K.fixed(raid, c + Vector3(5.8, 0, -3.9), ["arch_manifest", "credit_s"], "register", 180.0)
-	K.crate(raid, c + Vector3(11.8, 0, 4.6), "supply", [], 90.0)
-	K.rubble(raid, c + Vector3(-2.0, 0, -8.6), 1.4)
-	K.guard(raid, c + Vector3(0.0, 0, 1.6), "beetle", 3.0)
-	K.guard(raid, c + Vector3(-8.0, 0, -1.0), "ling", 2.4)
-	K.guard(raid, c + Vector3(9.0, 0, 0.6), "ling", 2.4)
+	PrefabLib.place_at_ground(raid, raid.world, "poi_checkpoint_remake", c, 0.0)
+	# 紧贴南北装甲哨亭与东侧瞭望塔，中央检查车道（z: -2.2..+2.2）保持畅通
+	_block(raid, c + Vector3(0.0, 0.0, -4.0), Vector3(4.4, 3.8, 3.6))
+	_block(raid, c + Vector3(0.0, 0.0, 4.0), Vector3(4.4, 3.8, 3.6))
+	_block(raid, c + Vector3(7.3, 0.0, -3.0), Vector3(4.4, 8.6, 4.4))
+	# 容器与档案（全部远离碰撞盒且处于 15m 归属半径内）
+	K.crate(raid, c + Vector3(-4.2, 0.0, -4.2), "safe", [], 180.0)
+	K.crate(raid, c + Vector3(-5.6, 0.0, 1.2), "ammo", [], 180.0)
+	K.crate(raid, c + Vector3(4.2, 0.0, 1.4), "military", [], 180.0)
+	K.crate(raid, c + Vector3(-4.2, 0.0, 4.2), "register", [], 0.0)
+	K.fixed(raid, c + Vector3(4.2, 0.0, 4.2), ["arch_manifest", "credit_s"], "register", 0.0)
+	K.crate(raid, c + Vector3(11.0, 0.0, 3.2), "supply", [], 90.0)
+	# 灯光与守卫
+	K.lamp(raid, c + Vector3(-11.4, 0.0, -6.2), Color(1.0, 0.78, 0.45))
+	K.lamp(raid, c + Vector3(11.4, 0.0, 6.2), Color(0.7, 0.85, 1.0))
+	K.guard(raid, c + Vector3(0.0, 0.0, 0.4), "beetle", 2.2)
+	K.guard(raid, c + Vector3(-8.0, 0.0, -1.0), "ling", 2.4)
+	K.guard(raid, c + Vector3(9.0, 0.0, 2.0), "ling", 2.4)
 	K.label(raid, c, str(GameData.POIS.get(pid, {}).get("name", "")), 7.5)
-	K.tag_boxes(raid, c, pid)
-
-
-## 沙袋工事：三层错缝的袋堆，挡住机甲，袋墙高度低于肩部
-static func _sandbags(raid, p: Vector3, rot: float) -> void:
-	var M := A.paint(Color(0.48, 0.44, 0.32), 0.0, 1.0, {"panel_scale": 0.0, "dust": 0.65, "wear": 0.3})
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
-	for row in 3:
-		for k in 5:
-			A.add(n, A.bevel_box(Vector3(0.82, 0.36, 0.54), 0.14), M, Vector3(-1.64 + k * 0.82 + (0.41 if row % 2 else 0.0), 0.18 + row * 0.34, raid.rng.randf_range(-0.06, 0.06)), Vector3(0, raid.rng.randf_range(-7, 7), 0))
-	raid.blocks.append(raid._rect_for(p, Vector3(4.2, 1, 1.4)))
-	K.blocker(raid, p, Vector3(4.2, 1.05, 1.4), rot)
+	K.tag_boxes(raid, c, pid, 16.5)

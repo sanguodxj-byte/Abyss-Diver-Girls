@@ -15,6 +15,9 @@ var t := 0.0
 var flash_t := 0.0
 var _hit_meshes: Array = []
 var _hit_flash_q := 0
+var _check_acc := 0.25
+var _pulse_acc := 0.0
+var _near := false
 
 
 func setup(r) -> void:
@@ -118,14 +121,28 @@ func _physics_process(delta: float) -> void:
 
 func _physics_tick(delta: float) -> void:
 	t += delta
-	pulse.scale = Vector3.ONE * (1.0 + sin(t * 3.0) * 0.15)
 	if flash_t > 0.0:
 		flash_t = maxf(0.0, flash_t - delta)
 		_update_flash()
-	children_alive = children_alive.filter(func(b): return is_instance_valid(b) and not b.dying)
+	if _near:
+		_pulse_acc += delta
+		if _pulse_acc >= 0.05:
+			_pulse_acc = 0.0
+			pulse.scale = Vector3.ONE * (1.0 + sin(t * 3.0) * 0.15)
+	_check_acc += delta
+	if _check_acc < 0.25:
+		return
+	var step_dt := _check_acc
+	_check_acc = 0.0
+	for i in range(children_alive.size() - 1, -1, -1):
+		var b = children_alive[i]
+		if not is_instance_valid(b) or b.dying:
+			children_alive.remove_at(i)
 	if raid == null or raid.mech == null or raid.mech.dead:
+		_near = false
 		return
 	var d := global_position.distance_to(raid.mech.global_position)
+	_near = d <= 52.0
 	var lk := "nest_%d" % get_instance_id()
 	if d > 42.0:
 		if Audio.has_loop(lk):
@@ -133,7 +150,7 @@ func _physics_tick(delta: float) -> void:
 		return
 	if not Audio.has_loop(lk):
 		Audio.loop_start(lk, "nest_loop", self)
-	spawn_t -= delta
+	spawn_t -= step_dt
 	if spawn_t <= 0.0 and children_alive.size() < 5:
 		spawn_t = randf_range(5.0, 8.0)
 		var k := "ling" if randf() < 0.75 else "spitter"

@@ -25,9 +25,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.bb(legs, Vector3(0.96, 0.48, 1.64), M_FRAME, Vector3(0, 0.66, 0.02), Vector3.ZERO, 0.045)
 	K.plate(legs, K.crect(1.72, 0.30, [0.32, 0.14, 0.06, 0.10]), 1.02, M_LEG, Vector3(0, 0.94, 0.02), Vector3(0, 90, 0), 0.035)
 	K.plate(legs, K.crect(1.02, 1.10, [0.22, 0.22, 0.20, 0.20]), 0.22, M_LEG2, Vector3(0, 1.16, 0.0), Vector3(90, 0, 0), 0.035)
-	K.cy(legs, 0.50, 0.24, M_LEG, Vector3(0, 1.32, 0.0), Vector3.ZERO, 0.58, 24)
-	K.cy(legs, 0.51, 0.10, M_DARK, Vector3(0, 1.44, 0.0), Vector3.ZERO, 0.53, 26)
-	K.bolt_ring(legs, 0.46, 12, 0.015, Vector3(0, 1.26, 0.0), Vector3.ZERO)
+	K.cy(legs, 0.35, 0.20, M_LEG, Vector3(0, 1.34, 0.0), Vector3.ZERO, 0.43, 24)
+	K.cy(legs, 0.36, 0.08, M_DARK, Vector3(0, 1.445, 0.0), Vector3.ZERO, 0.38, 26)
+	K.bolt_ring(legs, 0.45, 12, 0.014, Vector3(0, 1.275, 0.0), Vector3.ZERO)
 
 	# 锐角侦察首上防弹板（向上后倾 +46°）+ 首下防雷倾板（-38°）+ 驾驶员广角潜望镜 + 防撞护栏与战术雾灯
 	var prow := K.node(legs, Vector3(0, 0.80, -0.84), Vector3(46, 0, 0))

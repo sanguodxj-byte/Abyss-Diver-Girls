@@ -87,7 +87,7 @@ func _resolve_bar_y(node: Node3D) -> float:
 	if node.has_method("_head_bar_y"):
 		return float(node.call("_head_bar_y"))
 	if node.is_in_group("rovers"):
-		return 4.65
+		return 6.35
 	if node.is_in_group("nests"):
 		return 3.85
 	return 2.6
@@ -198,13 +198,17 @@ func _process(delta: float) -> void:
 
 		var world_p: Vector3 = e["last_pos"] + Vector3(0.0, float(e["vis_y"]) + float(e["bar_y"]), 0.0)
 		var dist := cam.global_position.distance_to(world_p)
-		if dist > 68.0 or cam.is_position_behind(world_p):
+		var horiz_eb: bool = raid != null and raid.has_method("is_free_look_view") and bool(raid.is_free_look_view())
+		var max_bar_d := 165.0 if horiz_eb else 68.0
+		if dist > max_bar_d or cam.is_position_behind(world_p):
 			continue
 		var sp := cam.unproject_position(world_p)
 		if sp.x < -90.0 or sp.x > vp_sz.x + 90.0 or sp.y < -60.0 or sp.y > vp_sz.y + 60.0:
 			continue
 		e["screen_pos"] = sp
 		e["dist"] = dist
+		e["fade_start"] = 135.0 if horiz_eb else 48.0
+		e["fade_span"] = 30.0 if horiz_eb else 20.0
 		_draw_list.append(e)
 
 	for id in to_remove:
@@ -229,7 +233,7 @@ func _draw() -> void:
 	for e: Dictionary in _draw_list:
 		var sp: Vector2 = e["screen_pos"]
 		var dist := float(e["dist"])
-		var dist_fade := clampf(1.0 - (dist - 48.0) / 20.0, 0.0, 1.0)
+		var dist_fade := clampf(1.0 - (dist - float(e.get("fade_start", 48.0))) / maxf(1.0, float(e.get("fade_span", 20.0))), 0.0, 1.0)
 		var ttl := float(e["ttl"])
 		var ttl_fade := clampf(ttl / (KILL_DURATION * 0.72 if bool(e["dead"]) else FADE_DURATION), 0.0, 1.0)
 		var pop := float(e["pop_t"])

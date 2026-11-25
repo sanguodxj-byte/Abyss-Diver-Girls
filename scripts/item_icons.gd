@@ -8,30 +8,25 @@ const BAKED_DIR := "res://assets/icons/items"
 
 ## 没有专属烘焙图标的新模块，按定位映射到相近的现有 3D 图标
 const MODULE_ICON_ALIAS := {
-	# 躯干：主战/破障 → 要塞，步战/工程/深潜 → 重装，突击 → 突击，武直/雷达/电战 → 指挥，侦察 → 侦察
+	# 躯干：主战/破障 → 要塞，步战/工程 → 重装，突击 → 突击，雷达/电战 → 指挥，侦察 → 侦察
 	"core_m1a2_sepv3": "core_fortress",
 	"core_t90m_proryv": "core_fortress",
 	"core_merkava_mk4m": "core_fortress",
 	"core_abv_shredder": "core_fortress",
 	"core_puma_spz": "core_heavy",
 	"core_bmpt_terminator": "core_heavy",
-	"core_trieste_bathy": "core_heavy",
 	"core_pionier_dach": "core_heavy",
 	"core_bradley_busk": "core_assault",
-	"core_ka52_alligator": "core_command",
-	"core_mi24_hind": "core_command",
 	"core_pantsir_s1": "core_command",
 	"core_patriot_mpq65": "core_command",
 	"core_krasukha_ew": "core_command",
 	"core_fennek_recon": "core_scout",
-	# 动力炉：燃机/换热 → 涡轮，重柴/斯特林 → 柴油，APU/燃料电池 → 氢燃料，堆/脉冲 → 晶体
+	# 动力炉：燃机/换热 → 涡轮，重柴 → 柴油，微型涡轮/燃料电池 → 氢燃料，堆/脉冲 → 晶体
 	"gen_agt1500_turbine": "gen_turbine",
 	"gen_hydrothermal_hx": "gen_turbine",
 	"gen_mtu_mb873_v12": "gen_diesel",
-	"gen_stirling_aip": "gen_diesel",
 	"gen_twin_apu_gtcp": "gen_hfc",
 	"gen_pem_fuelcell": "gen_hfc",
-	"gen_naval_pwr_s9g": "gen_reactor",
 	"gen_lfr_lead_bismuth": "gen_crystal",
 	"gen_homopolar_pulse": "gen_crystal",
 	"gen_mhd_plasma_gen": "gen_crystal",

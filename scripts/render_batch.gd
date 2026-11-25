@@ -10,21 +10,32 @@ extends Node3D
 
 const CHUNK := 48.0
 const STREAM_R := 70.0
-const STREAM_R_FP := 165.0
-const STREAM_FWD_FP := 76.0
+const STREAM_R_FP := 168.0
+const STREAM_FWD_FP := 60.0
+const STREAM_SCOPE_FWD_BOOST := 48.0
 const HYST := 8.0
-const VIS_END := 140.0
-const VIS_END_FP_MESH := 280.0
-const VIS_END_FP_INST := 165.0
+const VIS_END := 135.0
+const VIS_END_SMALL := 96.0
+const VIS_END_MICRO := 56.0
+const VIS_END_FP_MESH := 0.0
+const VIS_END_FP_INST := 0.0
+const VIS_END_FP_SMALL := 105.0
+const VIS_END_FP_MICRO := 65.0
 const CAM_DIST_REF := 44.0
 const PAINT_PATH := "res://shaders/mech_paint.gdshader"
+const PAINT_OCC_PATH := "res://shaders/mech_paint_occ.gdshader"
 const PAINT_MOB_PATH := "res://shaders/mech_paint_mobile.gdshader"
+const PAINT_MOB_OCC_PATH := "res://shaders/mech_paint_mobile_occ.gdshader"
 const PAINT_WEB_PATH := "res://shaders/mech_paint_web.gdshader"
 const GLASS_PATH := "res://shaders/ind_glass.gdshader"
+const GLASS_OCC_PATH := "res://shaders/ind_glass_occ.gdshader"
 const FOLIAGE_PATH := "res://shaders/foliage.gdshader"
 const FOLIAGE_MOB_PATH := "res://shaders/foliage_mobile.gdshader"
 const BUILDS_PER_FRAME := 2
 const MM_MIN := 8
+const MERGE_INST_MAX_VERTS := 400
+const MERGE_INST_MAX_TOTAL_VERTS := 1600
+const MESH_TO_INST_MIN_VERTS := 4000
 
 static var _tint_mats := {}   ## 去色共享材质：参数（除底色外）+ tint_mode → 材质
 static var _tinted := {}      ## 网格 RID|表面|底色 → 带底色顶点色的单表面网格（合并用，按局次缓存）
@@ -33,8 +44,33 @@ static var _raw_surfs := {}   ## 网格 RID|表面 → 原始顶点/法线/顶�
 var _chunks := {}
 var _pending := false
 var _fp_vis := false
+var _hlod_on := false
 var _all_shown := false
+var _raid: Node = null
+var _vista: RefCounted = null
 var stats := {"mesh_parts": 0, "inst": 0, "built": 0}
+
+
+func set_raid(r: Node) -> void:
+	_raid = r
+
+
+func set_vista(v: RefCounted) -> void:
+	_vista = v
+	if _vista != null and _vista.has_method("set_outer_visible"):
+		_vista.set_outer_visible(_hlod_on and not _all_shown)
+
+
+func set_chunk_hlod(c: Vector2i, mi: MeshInstance3D) -> void:
+	var ch := _chunk(c)
+	ch["hlod"] = mi
+	_sync_chunk_hlod(ch)
+
+
+func _sync_chunk_hlod(ch: Dictionary) -> void:
+	var hl = ch.get("hlod")
+	if hl != null and is_instance_valid(hl):
+		(hl as MeshInstance3D).visible = _hlod_on and (not _all_shown) and (not bool(ch.on))
 
 
 static func chunk_of(p: Vector3) -> Vector2i:
@@ -53,7 +89,7 @@ static func _is_paint_shader(m: Material) -> bool:
 	if sm.shader == null:
 		return false
 	var rp: String = sm.shader.resource_path
-	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == PAINT_WEB_PATH
+	return rp == PAINT_PATH or rp == PAINT_OCC_PATH or rp == PAINT_MOB_PATH or rp == PAINT_MOB_OCC_PATH or rp == PAINT_WEB_PATH
 
 
 ## 写实涂装材质拆成「去色共享材质 + 底色」，完整保留法线贴图、反照率贴图、面板密度与锈蚀做旧参数
@@ -72,26 +108,32 @@ static func split_tint(m: Material, mode: int) -> Array:
 	var use_tex := 1.0 if _sp_f(sm, "use_albedo_tex", 0.0) > 0.5 else 0.0
 	var atex = sm.get_shader_parameter("albedo_tex") if use_tex > 0.5 else null
 	var ntex = sm.get_shader_parameter("normal_tex")
-	var ascale := snappedf(_sp_f(sm, "albedo_tex_scale", 0.24), 0.04) if use_tex > 0.5 else 0.0
-	var astr := snappedf(_sp_f(sm, "albedo_tex_strength", 0.78), 0.06) if use_tex > 0.5 else 0.0
-	var nstr := snappedf(_sp_f(sm, "normal_strength", 0.55), 0.08)
-	var mb := snappedf(_sp_f(sm, "metal_base", 0.15), 0.08)
-	var rb := snappedf(clampf(_sp_f(sm, "rough_base", 0.60), 0.12, 0.98), 0.06)
-	var ps := snappedf(_sp_f(sm, "panel_scale", 0.0), 0.20)
-	var wr := snappedf(_sp_f(sm, "wear", 0.45), 0.12)
-	var sc := snappedf(_sp_f(sm, "scratches", 0.25), 0.15)
-	var ru := snappedf(_sp_f(sm, "rust", 0.25), 0.12)
-	var gr := snappedf(_sp_f(sm, "grime", 0.50), 0.15)
-	var du := snappedf(_sp_f(sm, "dust", 0.25), 0.15)
-	var ds := snappedf(_sp_f(sm, "detail_scale", 1.0), 0.15)
+	var use_rtex := 1.0 if _sp_f(sm, "use_rough_tex", 0.0) > 0.5 else 0.0
+	var rtex = sm.get_shader_parameter("rough_tex") if use_rtex > 0.5 else null
+	var rstr := snappedf(_sp_f(sm, "rough_tex_strength", 0.65), 0.16) if use_rtex > 0.5 else 0.0
+	var ascale := snappedf(_sp_f(sm, "albedo_tex_scale", 0.24), 0.06) if use_tex > 0.5 else 0.0
+	var astr := snappedf(_sp_f(sm, "albedo_tex_strength", 0.78), 0.12) if use_tex > 0.5 else 0.0
+	var nstr := snappedf(_sp_f(sm, "normal_strength", 0.55), 0.14)
+	var mb := snappedf(_sp_f(sm, "metal_base", 0.15), 0.12)
+	var rb := snappedf(clampf(_sp_f(sm, "rough_base", 0.60), 0.12, 0.98), 0.10)
+	var ps := snappedf(_sp_f(sm, "panel_scale", 0.0), 0.25)
+	var wr := snappedf(_sp_f(sm, "wear", 0.45), 0.20)
+	var sc := snappedf(_sp_f(sm, "scratches", 0.25), 0.25)
+	var ru := snappedf(_sp_f(sm, "rust", 0.25), 0.18)
+	var gr := snappedf(_sp_f(sm, "grime", 0.50), 0.22)
+	var du := snappedf(_sp_f(sm, "dust", 0.25), 0.22)
+	var ds := snappedf(_sp_f(sm, "detail_scale", 1.0), 0.20)
 	var ruv := 1.0 if _sp_f(sm, "roof_uv", 0.0) > 0.5 else 0.0
 	var stp := 1.0 if _sp_f(sm, "stripes", 0.0) > 0.5 else 0.0
 	var tdmg := 1.0 if _sp_f(sm, "takes_damage", 0.0) > 0.5 else 0.0
 	var mw := 1.0 if _sp_f(sm, "metal_wear", 1.0) > 0.5 else 0.0
-	var key := "%d|%.0f|%d|%d|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.0f|%.0f|%.0f|%.0f" % [
+	var key := "%d|%.0f|%d|%d|%.0f|%d|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.0f|%.0f|%.0f|%.0f" % [
 		mode, use_tex,
 		atex.get_instance_id() if atex else 0,
 		ntex.get_instance_id() if ntex else 0,
+		use_rtex,
+		rtex.get_instance_id() if rtex else 0,
+		rstr,
 		ascale, astr, nstr, mb, rb, ps, wr, sc, ru, gr, du, ds, ruv, stp, tdmg, mw
 	]
 	var out: ShaderMaterial = _tint_mats.get(key)
@@ -113,6 +155,8 @@ static func split_tint(m: Material, mode: int) -> Array:
 		if use_tex > 0.5:
 			out.set_shader_parameter("albedo_tex_scale", ascale)
 			out.set_shader_parameter("albedo_tex_strength", astr)
+		if use_rtex > 0.5:
+			out.set_shader_parameter("rough_tex_strength", rstr)
 		_tint_mats[key] = out
 	sm.set_meta(mk, out)
 	return [out, col]
@@ -147,7 +191,7 @@ static func _uses_local_triplanar(m: Material) -> bool:
 	if sm.shader == null:
 		return false
 	var rp: String = sm.shader.resource_path
-	return rp == PAINT_PATH or rp == PAINT_MOB_PATH or rp == PAINT_WEB_PATH or rp == GLASS_PATH
+	return rp == PAINT_PATH or rp == PAINT_OCC_PATH or rp == PAINT_MOB_PATH or rp == PAINT_MOB_OCC_PATH or rp == PAINT_WEB_PATH or rp == GLASS_PATH or rp == GLASS_OCC_PATH
 
 
 static func _is_foliage(m: Material) -> bool:
@@ -163,7 +207,7 @@ static func _is_foliage(m: Material) -> bool:
 func _chunk(c: Vector2i) -> Dictionary:
 	var ch = _chunks.get(c)
 	if ch == null:
-		ch = {"merge": {}, "inst": {}, "node": null, "on": false}
+		ch = {"merge": {}, "inst": {}, "node": null, "hlod": null, "on": false}
 		_chunks[c] = ch
 	return ch
 
@@ -181,7 +225,22 @@ static func mergeable(mesh: Mesh) -> bool:
 	return true
 
 
+static func _mesh_vert_count(mesh: Mesh, si := 0) -> int:
+	if mesh == null or si >= mesh.get_surface_count():
+		return 0
+	if mesh is ArrayMesh:
+		return (mesh as ArrayMesh).surface_get_array_len(si)
+	return (_get_raw_surf(mesh, si)[0] as PackedVector3Array).size()
+
+
 func add_mesh(mesh: Mesh, mat: Material, xf: Transform3D, shadow: int) -> void:
+	# 大面数静态独立网格直接走零拷贝 MultiMesh 实例槽，避免被 _merge_local_triplanar 展开复制占满显存
+	if mesh != null and mesh.get_surface_count() == 1 \
+			and (shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON or shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF) \
+			and _mesh_vert_count(mesh, 0) > MESH_TO_INST_MIN_VERTS:
+		var m_eff: Material = mat if mat != null else mesh.surface_get_material(0)
+		add_inst(mesh, m_eff, [xf], shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		return
 	var p: Vector3 = (xf * mesh.get_aabb()).get_center() if mesh else xf.origin
 	_add_part(_chunk(chunk_of(p)), mesh, mat, xf, shadow)
 
@@ -203,24 +262,32 @@ func add_inst(mesh: Mesh, mat: Material, xforms: Array, shadow := true) -> void:
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
 	var use_sh := shadow
 	var step_n := 1
+	var sh_cut := 0.0
 	if mob:
 		if _is_foliage(mat):
 			if not shadow:
 				step_n = 2
 			# 保留乔木树冠投影，防止低画质下林木与地面脱离发飘
-		elif GameData.quality == 0 and mesh != null:
-			var ms := mesh.get_aabb().size
-			if maxf(ms.x, maxf(ms.y, ms.z)) < 0.55:
-				use_sh = false
+		elif GameData.quality == 0 and use_sh and mesh != null:
+			sh_cut = 0.65
+	elif use_sh and not _is_foliage(mat) and mesh != null:
+		# 桌面端：按实例缩放后尺寸判定，小于 0.75m 的微小散落碎石/杂物在级联阴影中仅成亚像素噪点，关闭投影大幅削减阴影面数
+		sh_cut = 0.75
+	var ma_sz: Vector3 = mesh.get_aabb().size if mesh != null else Vector3.ZERO
 	var st := split_tint(mat, 1)
 	var tinted: bool = st[0] != mat
 	for idx in range(0, xforms.size(), step_n):
 		var t: Transform3D = xforms[idx]
+		var inst_sh := use_sh
+		if inst_sh and sh_cut > 0.0:
+			var sc_max := maxf(t.basis.x.length() * ma_sz.x, maxf(t.basis.y.length() * ma_sz.y, t.basis.z.length() * ma_sz.z))
+			if sc_max < sh_cut:
+				inst_sh = false
 		var ch := _chunk(chunk_of(t.origin))
-		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if use_sh else 0]
+		var key := "%d|%d|%d" % [mesh.get_rid().get_id(), st[0].get_rid().get_id() if st[0] else 0, 1 if inst_sh else 0]
 		var g = ch.inst.get(key)
 		if g == null:
-			g = {"mesh": mesh, "src": [], "mat": st[0], "shadow": use_sh, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
+			g = {"mesh": mesh, "src": [], "mat": st[0], "shadow": inst_sh, "tinted": tinted, "std": st[0] is StandardMaterial3D, "xf": [], "col": []}
 			ch.inst[key] = g
 		g.src.append(mat)
 		g.xf.append(t)
@@ -277,8 +344,8 @@ static func _merge_local_triplanar(parts: Array, tint: int) -> ArrayMesh:
 	var out_n := PackedVector3Array()
 	var out_uv := PackedVector2Array()
 	var out_uv2 := PackedVector2Array()
-	var out_c0 := PackedFloat32Array()
-	var out_c1 := PackedFloat32Array()
+	var out_c0 := PackedByteArray()
+	var out_c1 := PackedByteArray()
 	var out_col := PackedColorArray()
 	var out_idx := PackedInt32Array()
 	out_v.resize(total_v)
@@ -310,7 +377,11 @@ static func _merge_local_triplanar(parts: Array, tint: int) -> ArrayMesh:
 		var flip := xf.basis.determinant() < 0.0
 		var flip_s := -1.0 if flip else 1.0
 		var q := Basis((bx / sx).normalized(), (by / sy).normalized(), ((bz / sz) * flip_s).normalized()).orthonormalized().get_rotation_quaternion()
-		var c0_w := 2.0 if flip else 1.0
+		var c0_wb := 129 if flip else 127   # SNORM8: -127 (-1.0) 表示镜像翻转，+127 (+1.0) 表示正向
+		var qxb := clampi(roundi(q.x * 127.0), -127, 127) & 0xFF
+		var qyb := clampi(roundi(q.y * 127.0), -127, 127) & 0xFF
+		var qzb := clampi(roundi(q.z * 127.0), -127, 127) & 0xFF
+		var qwb := clampi(roundi(q.w * 127.0), -127, 127) & 0xFF
 		var box_ext := maxf(sx, sz) * 0.5
 		var nv := sv.size()
 		for i in nv:
@@ -324,14 +395,14 @@ static func _merge_local_triplanar(parts: Array, tint: int) -> ArrayMesh:
 			out_uv[vi] = Vector2(lpos.x, lpos.y)
 			out_uv2[vi] = Vector2(lpos.z, box_ext)
 			var c4 := vi * 4
-			out_c0[c4] = lnrm.x
-			out_c0[c4 + 1] = lnrm.y
-			out_c0[c4 + 2] = lnrm.z
-			out_c0[c4 + 3] = c0_w
-			out_c1[c4] = q.x
-			out_c1[c4 + 1] = q.y
-			out_c1[c4 + 2] = q.z
-			out_c1[c4 + 3] = q.w
+			out_c0[c4] = clampi(roundi(lnrm.x * 127.0), -127, 127) & 0xFF
+			out_c0[c4 + 1] = clampi(roundi(lnrm.y * 127.0), -127, 127) & 0xFF
+			out_c0[c4 + 2] = clampi(roundi(lnrm.z * 127.0), -127, 127) & 0xFF
+			out_c0[c4 + 3] = c0_wb
+			out_c1[c4] = qxb
+			out_c1[c4 + 1] = qyb
+			out_c1[c4 + 2] = qzb
+			out_c1[c4 + 3] = qwb
 			if tint == 1:
 				out_col[vi] = Color(sc[i].r, col.r, col.g, col.b)
 			elif tint == 2:
@@ -363,7 +434,7 @@ static func _merge_local_triplanar(parts: Array, tint: int) -> ArrayMesh:
 	arr[Mesh.ARRAY_COLOR] = out_col
 	arr[Mesh.ARRAY_INDEX] = out_idx
 	var am := ArrayMesh.new()
-	var fmt := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+	var fmt := (Mesh.ARRAY_CUSTOM_RGBA8_SNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA8_SNORM << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, fmt)
 	return am
 
@@ -438,18 +509,36 @@ static func _vis_end_mesh(fp: bool) -> float:
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
 	if mob:
 		if fp:
-			return 185.0 if GameData.quality == 0 else 220.0
+			return 0.0
 		return 125.0 if GameData.quality == 0 else 135.0
 	return VIS_END_FP_MESH if fp else VIS_END
 
 
-static func _vis_end_inst(fp: bool) -> float:
+static func _vis_end_inst(fp: bool, vis_tier := 0) -> float:
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
 	if mob:
 		if fp:
-			return 110.0 if GameData.quality == 0 else 135.0
+			if vis_tier >= 2:
+				return 52.0 if GameData.quality == 0 else 60.0
+			if vis_tier == 1:
+				return 82.0 if GameData.quality == 0 else 96.0
+			return 0.0
+		if vis_tier >= 2:
+			return 46.0 if GameData.quality == 0 else 54.0
+		if vis_tier == 1:
+			return 78.0 if GameData.quality == 0 else 92.0
 		return 96.0 if GameData.quality == 0 else 112.0
-	return VIS_END_FP_INST if fp else VIS_END
+	if fp:
+		if vis_tier >= 2:
+			return VIS_END_FP_MICRO
+		if vis_tier == 1:
+			return VIS_END_FP_SMALL
+		return VIS_END_FP_INST
+	if vis_tier >= 2:
+		return VIS_END_MICRO
+	if vis_tier == 1:
+		return VIS_END_SMALL
+	return VIS_END
 
 
 func _build_chunk(c: Vector2i) -> void:
@@ -458,14 +547,17 @@ func _build_chunk(c: Vector2i) -> void:
 	root.name = "Chunk_%d_%d" % [c.x, c.y]
 	add_child(root)
 	ch.node = root
-	# 实例很少的组直接并进同材质的合并网格（植物材质保留在 MultiMesh 以维持统一摆风尺度与独立世界原点）
+	# 仅将小面数简单几何（单件 ≤400 顶、总展开 ≤1600 顶）并进分块合并网格；
+	# 高精预制件/载具/树干/地标部件保留在零拷贝 MultiMesh，避免在 186 个分块中重复展开产生 600MB+ 显存与数秒构建开销
 	for key in ch.inst.keys():
 		var g: Dictionary = ch.inst[key]
 		if g.xf.size() <= MM_MIN and not _is_foliage(g.mat) and not (g.mesh != null and g.mesh.has_meta("prefab_inst")) and mergeable(g.mesh) and g.mesh.get_surface_count() == 1:
-			var sh := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			for i in g.xf.size():
-				_add_part(ch, g.mesh, g.src[i], g.xf[i], sh)
-			ch.inst.erase(key)
+			var vc := _mesh_vert_count(g.mesh, 0)
+			if vc > 0 and vc <= MERGE_INST_MAX_VERTS and vc * g.xf.size() <= MERGE_INST_MAX_TOTAL_VERTS:
+				var sh := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				for i in g.xf.size():
+					_add_part(ch, g.mesh, g.src[i], g.xf[i], sh)
+				ch.inst.erase(key)
 	for key in ch.merge:
 		var g: Dictionary = ch.merge[key]
 		var am: ArrayMesh = null
@@ -483,7 +575,9 @@ func _build_chunk(c: Vector2i) -> void:
 		mi.mesh = am
 		mi.material_override = g.mat
 		mi.cast_shadow = g.shadow
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		mi.visibility_range_end = 0.0 if _all_shown else _vis_end_mesh(_fp_vis)
+		mi.visibility_range_end_margin = 8.0
 		root.add_child(mi)
 	for key in ch.inst:
 		var g: Dictionary = ch.inst[key]
@@ -494,20 +588,44 @@ func _build_chunk(c: Vector2i) -> void:
 		mm.mesh = g.mesh
 		mm.instance_count = g.xf.size()
 		var ma: AABB = g.mesh.get_aabb()
+		var ma_sz := ma.size
 		var ab := AABB()
+		var max_inst_dim := 0.0
+		var max_inst_len := 0.0
 		for i in g.xf.size():
-			mm.set_instance_transform(i, g.xf[i])
+			var xf_i: Transform3D = g.xf[i]
+			mm.set_instance_transform(i, xf_i)
 			if g.tinted and g.std:
 				mm.set_instance_color(i, g.col[i])
 			elif g.tinted:
 				mm.set_instance_custom_data(i, g.col[i])
-			var a: AABB = g.xf[i] * ma
+			var a: AABB = xf_i * ma
 			ab = a if i == 0 else ab.merge(a)
+			var sx_i := xf_i.basis.x.length() * ma_sz.x
+			var sy_i := xf_i.basis.y.length() * ma_sz.y
+			var sz_i := xf_i.basis.z.length() * ma_sz.z
+			var d_max := maxf(sx_i, maxf(sy_i, sz_i))
+			if d_max > max_inst_dim:
+				max_inst_dim = d_max
+			var d_len := sqrt(sx_i * sx_i + sy_i * sy_i + sz_i * sz_i)
+			if d_len > max_inst_len:
+				max_inst_len = d_len
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = g.mat
 		mmi.custom_aabb = ab
-		mmi.visibility_range_end = 0.0 if _all_shown else _vis_end_inst(_fp_vis)
+		mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		var is_prefab: bool = (g.mesh != null and g.mesh.has_meta("prefab_inst"))
+		var vis_tier := 0
+		if not is_prefab:
+			if max_inst_dim < 0.70 or (not g.shadow and _is_foliage(g.mat) and max_inst_dim < 1.55):
+				vis_tier = 2
+			elif max_inst_len < 4.5:
+				vis_tier = 1
+		if vis_tier > 0:
+			mmi.set_meta("_vis_tier", vis_tier)
+		mmi.visibility_range_end = 0.0 if _all_shown else _vis_end_inst(_fp_vis, vis_tier)
+		mmi.visibility_range_end_margin = 8.0
 		if not g.shadow:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mmi)
@@ -524,6 +642,7 @@ func build_all(f: Vector3, r: float) -> void:
 		var vis := _rect_dist(c, f) <= r
 		ch.node.visible = vis
 		ch.on = vis
+		_sync_chunk_hlod(ch)
 	_tinted.clear()
 	_raw_surfs.clear()
 
@@ -552,9 +671,11 @@ func update_focus(f: Vector3, r: float, limit := BUILDS_PER_FRAME) -> void:
 			if not ch.on:
 				ch.node.visible = true
 				ch.on = true
+				_sync_chunk_hlod(ch)
 		elif ch.on and d > r + HYST:
 			ch.node.visible = false
 			ch.on = false
+			_sync_chunk_hlod(ch)
 	if built > 0:
 		_tinted.clear()
 		_raw_surfs.clear()
@@ -562,28 +683,41 @@ func update_focus(f: Vector3, r: float, limit := BUILDS_PER_FRAME) -> void:
 
 func show_all() -> void:
 	_all_shown = true
+	_hlod_on = false
 	update_focus(Vector3.ZERO, 1e9, -1)
 	for c: Vector2i in _chunks:
-		var n: Node3D = _chunks[c].node
+		var ch_d: Dictionary = _chunks[c]
+		_sync_chunk_hlod(ch_d)
+		var n: Node3D = ch_d.node
 		if n:
 			for ch in n.get_children():
 				if ch is GeometryInstance3D:
 					ch.visibility_range_end = 0.0
+	if _vista != null and _vista.has_method("set_outer_visible"):
+		_vista.set_outer_visible(false)
 
 
 func _apply_vis_mode(fp: bool) -> void:
-	if _fp_vis == fp:
+	var want_hlod := fp and not _all_shown
+	if _fp_vis == fp and _hlod_on == want_hlod:
 		return
 	_fp_vis = fp
+	_hlod_on = want_hlod
+	if _vista != null and _vista.has_method("set_outer_visible"):
+		_vista.set_outer_visible(_hlod_on)
 	if _all_shown:
+		for c: Vector2i in _chunks:
+			_sync_chunk_hlod(_chunks[c])
 		return
 	for c: Vector2i in _chunks:
-		var n: Node3D = _chunks[c].node
+		var ch_d: Dictionary = _chunks[c]
+		_sync_chunk_hlod(ch_d)
+		var n: Node3D = ch_d.node
 		if n == null:
 			continue
 		for ch in n.get_children():
 			if ch is MultiMeshInstance3D:
-				ch.visibility_range_end = _vis_end_inst(fp)
+				ch.visibility_range_end = _vis_end_inst(fp, int(ch.get_meta("_vis_tier", 0)))
 			elif ch is GeometryInstance3D:
 				ch.visibility_range_end = _vis_end_mesh(fp)
 
@@ -601,13 +735,19 @@ func _process(_d: float) -> void:
 	var f := p
 	var r := STREAM_R
 	var mob := OS.has_feature("mobile") or RenderingServer.get_current_rendering_method() == "mobile"
-	var horiz_view := fwd.y >= -0.25 and cam.projection != Camera3D.PROJECTION_ORTHOGONAL
+	var horiz_view := false
+	if cam.projection != Camera3D.PROJECTION_ORTHOGONAL:
+		if _raid != null and is_instance_valid(_raid) and ((_raid.has_method("is_free_look_view") and bool(_raid.is_free_look_view())) or (_raid.has_method("is_first_person") and bool(_raid.is_first_person()))):
+			horiz_view = true
+		else:
+			horiz_view = fwd.y >= -0.25
 	_apply_vis_mode(horiz_view)
 	if horiz_view:
 		var f_xz := Vector3(fwd.x, 0.0, fwd.z)
 		f_xz = f_xz.normalized() if f_xz.length_squared() > 0.001 else Vector3.FORWARD
-		var mob_s := (0.78 if GameData.quality == 0 else 0.88) if mob else 1.0
-		f = p + f_xz * (STREAM_FWD_FP * mob_s)
+		var mob_s := (0.68 if GameData.quality == 0 else 0.78) if mob else 1.0
+		var scope_boost := STREAM_SCOPE_FWD_BOOST if cam.fov < 45.0 else 0.0
+		f = p + f_xz * ((STREAM_FWD_FP + scope_boost) * mob_s)
 		r = STREAM_R_FP * mob_s
 	else:
 		if fwd.y < -0.05:

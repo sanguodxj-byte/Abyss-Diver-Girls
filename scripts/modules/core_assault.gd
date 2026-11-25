@@ -14,9 +14,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_ACC := K.accent()
 	var M_A := K.armor(c, 0.5)
 	var M_A2 := K.armor(c.darkened(0.22), 0.5)
-	# 回转座圈（压在 HP-C1 插头上，向下包覆接口消除腰部间隙）+ 齿圈 + 下腹装甲托盘
-	K.cy(root, 0.46, 0.30, M_DARK, Vector3(0, 0.12, 0), Vector3.ZERO, 0.48, 28)
-	A.add(root, A.torus(0.42, 0.49, 36), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.18, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
+	# 回转座圈（压在 HP-C1 插头上，紧致包覆接口）+ 齿圈 + 下腹装甲托盘
+	K.cy(root, 0.365, 0.22, M_DARK, Vector3(0, 0.105, 0), Vector3.ZERO, 0.36, 28)
+	A.add(root, A.torus(0.335, 0.375, 36), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.10, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
 	K.bb(root, Vector3(1.12, 0.24, 1.04), M_FRAME, Vector3(0, 0.18, 0.04), Vector3.ZERO, 0.04)
 	# 车体内胆
 	K.bb(root, Vector3(1.3, 0.86, 1.2), M_FRAME, Vector3(0, 0.66, 0.08), Vector3.ZERO, 0.05)

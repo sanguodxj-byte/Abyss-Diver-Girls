@@ -6,11 +6,13 @@
 用法：python tools/gen_world_textures.py
 """
 import os
+import sys
 import numpy as np
 from PIL import Image
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "assets", "textures", "world")
 os.makedirs(OUT, exist_ok=True)
+FOLIAGE_ONLY = "--foliage-only" in sys.argv
 
 
 def fnoise(h, w, beta=2.0, lo=0.0, seed=1, ax=1.0, ay=1.0):
@@ -152,6 +154,324 @@ def voronoi_periodic(h, w, cells_y, cells_x, jitter=0.82, seed=10):
 H, W = 512, 512
 v = np.linspace(0.0, 1.0, H, endpoint=False)[:, None] * np.ones((1, W))
 u = np.ones((H, 1)) * np.linspace(0.0, 1.0, W, endpoint=False)[None, :]
+
+
+# ==============================================================================
+# 10. 写实纵裂龟甲老树皮 (bark_a / bark_n — 消除斑马条纹，改用各向异性 Voronoi 纵裂鳞片)
+# ==============================================================================
+def _gen_bark_and_foliage():
+    # 10. Bark (512x512 seamless) — 浮点双线性域扭曲，彻底消除锯齿阶梯边
+    bk_lo = fnoise(H, W, 2.3, seed=1001, ax=0.55, ay=3.2)
+    bk_mid = fnoise(H, W, 1.55, seed=1002, ax=0.40, ay=3.8)
+    bk_hi = fnoise(H, W, 0.95, seed=1003, ax=0.65, ay=2.6)
+    bk_fine = fnoise(H, W, 0.80, seed=1006)
+    # 纵向拉长 Voronoi 树皮鳞甲（2 尺度叠加 + 浮点双线性扭曲）
+    _, v_edge1, v_id1 = voronoi_periodic(H, W, 8, 22, jitter=0.90, seed=1011)
+    _, v_edge2, v_id2 = voronoi_periodic(H, W, 18, 44, jitter=0.92, seed=1012)
+    shift_x = (bk_lo - 0.5) * 16.0 + (bk_mid - 0.5) * 5.5
+    ys_idx = np.arange(H)[:, None]
+    fx = (np.arange(W, dtype=np.float32)[None, :] + shift_x) % W
+    x0 = np.floor(fx).astype(np.int32)
+    x1 = (x0 + 1) % W
+    tx = fx - x0
+    e1 = v_edge1[ys_idx, x0] * (1.0 - tx) + v_edge1[ys_idx, x1] * tx
+    id1 = v_id1[ys_idx, x0] * (1.0 - tx) + v_id1[ys_idx, x1] * tx
+    e2 = v_edge2[ys_idx, x0] * (1.0 - tx) + v_edge2[ys_idx, x1] * tx
+    id2 = v_id2[ys_idx, x0] * (1.0 - tx) + v_id2[ys_idx, x1] * tx
+
+    deep_crack = 1.0 - ss(0.025, 0.22, e1 + (bk_mid - 0.5) * 0.12)
+    sub_crack = 1.0 - ss(0.02, 0.15, e2)
+    fissure = np.clip(deep_crack * 0.88 + sub_crack * 0.30, 0.0, 1.0)
+    plate_var = (id1 - 0.5) * 0.13 + (id2 - 0.5) * 0.07
+    lichen = ss(0.77, 0.93, fnoise(H, W, 2.1, seed=1005)) * (1.0 - fissure * 0.88) * 0.55
+
+    bark_val = np.clip(
+        0.58
+        + plate_var
+        + (bk_lo - 0.5) * 0.13
+        + (bk_mid - 0.5) * 0.09
+        + (bk_hi - 0.5) * 0.09
+        + (bk_fine - 0.5) * 0.05
+        - fissure * 0.33,
+        0.18,
+        0.78,
+    )
+    bark_rgb = np.dstack([
+        bark_val * 1.02 - lichen * 0.06,
+        bark_val * 0.95 + lichen * 0.05,
+        bark_val * 0.86 - lichen * 0.05,
+    ])
+    bark_h = np.clip((1.0 - fissure * 0.82) * (0.52 + plate_var * 0.8 + bk_hi * 0.26) + bk_fine * 0.12, 0.0, 1.0)
+    save_rgb("bark_a.png", bark_rgb)
+    save_rgb("bark_n.png", normal_from_height(bark_h, 6.4))
+
+    # ==============================================================================
+    # 11. 1024x1024 高密写实针叶冷杉/油松枝簇裁切贴图 (pine_frond_a RGBA / pine_frond_n RGB)
+    # 自然纺锤锥形分叉冷杉枝束 + 非预乘直通 Alpha 合成（彻底杜绝发黑毛边）
+    # ==============================================================================
+    FH, FW = 1024, 1024
+    yy, xx = np.mgrid[0:FH, 0:FW].astype(np.float32)
+    pu = xx / (FW - 1.0)
+    pv = 1.0 - yy / (FH - 1.0)  # pv=0 枝根, pv=1 枝梢
+    micro_n = fnoise(FH, FW, 1.4, seed=1199)
+    macro_n = fnoise(FH, FW, 2.3, seed=1198)
+
+    pine_alpha = np.zeros((FH, FW), dtype=np.float32)
+    pine_rgb = np.zeros((FH, FW, 3), dtype=np.float32)
+    pine_h = np.zeros((FH, FW), dtype=np.float32)
+    rng_p = np.random.default_rng(1123)
+
+    # 自然收尖的非对称冷杉枝束骨架（中下部丰满、顶部自然收尖，枝组间有真实呼吸空隙）
+    twigs = []
+    # (x0, y0, x1, y1, tw_r, is_main, depth_layer)
+    twigs.append((0.50, 0.02, 0.503, 0.94, 0.0078, True, 1))
+    # 主干两侧非对称节位
+    branch_specs = [
+        (0.11, -1.0, 0.25, 0.44), (0.14,  1.0, 0.27, 0.42),
+        (0.23, -1.0, 0.35, 0.46), (0.26,  1.0, 0.34, 0.48),
+        (0.36, -1.0, 0.33, 0.50), (0.39,  1.0, 0.31, 0.52),
+        (0.49, -1.0, 0.27, 0.56), (0.52,  1.0, 0.26, 0.54),
+        (0.62, -1.0, 0.20, 0.62), (0.65,  1.0, 0.19, 0.64),
+        (0.74, -1.0, 0.14, 0.72), (0.77,  1.0, 0.13, 0.70),
+        (0.84, -1.0, 0.08, 0.80), (0.86,  1.0, 0.075, 0.82),
+    ]
+    for idx, (y0, side, reach, rise) in enumerate(branch_specs):
+        r_j = reach * rng_p.uniform(0.92, 1.08)
+        x0 = 0.50 + side * 0.004
+        x1 = np.clip(0.50 + side * r_j, 0.07, 0.93)
+        y1 = np.clip(y0 + r_j * rise + 0.02, 0.08, 0.95)
+        # 背层暗影辅枝（略窄，只做立体厚度，不扩大外缘成方框）
+        twigs.append((x0, y0 + 0.008, x0 + (x1 - x0) * 0.86, min(0.94, y1 + 0.015), 0.0044, False, 0))
+        # 前层主侧枝
+        twigs.append((x0, y0, x1, y1, 0.0048, False, 1))
+        if idx < 10:
+            for frac, s_ang in ((0.40, 0.34), (0.68, -0.18)):
+                mx = x0 + (x1 - x0) * frac
+                my = y0 + (y1 - y0) * frac
+                s_r = r_j * rng_p.uniform(0.30, 0.42)
+                sx1 = np.clip(mx + side * s_r, 0.07, 0.93)
+                sy1 = np.clip(my + s_r * (rise + s_ang), 0.08, 0.95)
+                twigs.append((mx, my, sx1, sy1, 0.0034, False, 0 if s_ang < 0 else 1))
+
+    twigs.sort(key=lambda t: t[6])
+    for x0, y0, x1, y1, tw_r, is_main, layer in twigs:
+        dx, dy = x1 - x0, y1 - y0
+        seg_len = float(np.hypot(dx, dy)) + 1e-6
+        ux, uy = dx / seg_len, dy / seg_len
+        nx_t, ny_t = -uy, ux
+
+        rx = pu - x0
+        ry = pv - y0
+        t_proj = rx * ux + ry * uy
+        s_perp = rx * nx_t + ry * ny_t
+        abs_s = np.abs(s_perp)
+
+        needle_len = (0.056 if is_main else (0.068 if layer == 0 else 0.062)) * (1.0 - 0.20 * y0)
+        t_root = t_proj - abs_s * 0.90
+        in_band = (t_root >= -0.012) & (t_root <= seg_len + 0.016) & (abs_s <= needle_len * 1.12)
+        if not np.any(in_band):
+            continue
+
+        sub_t = t_root[in_band]
+        sub_s = s_perp[in_band]
+        sub_as = abs_s[in_band]
+        sub_mn = micro_n[in_band]
+        sub_ma = macro_n[in_band]
+
+        # 高频清脆针束，内芯饱满密实（逆光天空下呈现蓬松冷杉枝廓而非空心鱼骨）
+        n_coord = sub_t * 275.0 + np.sign(sub_s) * 2.1 + np.sin(sub_t * 59.0) * 0.7 + sub_mn * 2.1
+        c1 = 0.5 + 0.5 * np.sin(n_coord)
+        c2 = 0.5 + 0.5 * np.sin(n_coord * 1.71 + 1.3)
+        c3 = 0.5 + 0.5 * np.sin(n_coord * 0.53 + 2.7)
+        tip_reach = needle_len * (0.58 + 0.26 * c1 + 0.20 * c2) * (0.88 + 0.12 * np.sin(sub_t * 31.0))
+        tip_fade = ss(0.0, 0.014, sub_t + 0.008) * (1.0 - ss(seg_len - 0.012, seg_len + 0.014, sub_t))
+        rr = sub_as / (tip_reach + 1e-5)
+
+        n_mask = (1.0 - ss(0.78, 1.03, rr)) * tip_fade
+        outer_sep = ss(0.46, 0.95, rr)
+        strand = np.maximum(c1, c2 * 0.88)
+        n_mask *= (1.0 - outer_sep * (1.0 - ss(0.24, 0.60, strand)))
+        n_mask = ss(0.16, 0.58, n_mask)
+
+        # 物理准确 PBR sRGB 寒带针叶色板（sRGB 0.28..0.52 -> 线性 0.06..0.23，逆光与背阴绝不压成黑炭剪影）
+        dry_p = ss(0.74, 0.93, sub_ma * 0.55 + c3 * 0.45)
+        shade_l = 0.80 if layer == 0 else 1.00
+        c_base = np.array([0.24, 0.30, 0.22], dtype=np.float32) * shade_l
+        c_mid = np.array([0.33, 0.41, 0.28], dtype=np.float32) * shade_l
+        c_tip = np.array([0.43, 0.49, 0.33], dtype=np.float32) * shade_l
+        c_dry = np.array([0.50, 0.42, 0.28], dtype=np.float32) * shade_l
+
+        rt = np.clip(rr, 0.0, 1.0)[:, None]
+        col_n = c_base * (1.0 - rt) + c_mid * rt
+        col_n = col_n * (1.0 - rt * 0.42) + c_tip * (rt * 0.42)
+        col_n = col_n * (1.0 - dry_p[:, None] * 0.36) + c_dry * (dry_p[:, None] * 0.36)
+        col_n *= (0.87 + 0.26 * sub_mn[:, None])
+        h_n = (0.22 if layer == 0 else 0.44) + (1.0 - rt[:, 0]) * 0.28 + strand * 0.24
+
+        t_cl = np.clip(t_proj[in_band], 0.0, seg_len)
+        d_tw = np.hypot(pu[in_band] - (x0 + ux * t_cl), pv[in_band] - (y0 + uy * t_cl))
+        tw_w = tw_r * (1.0 - 0.45 * (t_cl / seg_len))
+        tw_mask = 1.0 - ss(tw_w * 0.55, tw_w * 1.10, d_tw)
+        tw_col = np.array([0.22, 0.17, 0.13], dtype=np.float32) * shade_l
+
+        comb_a = np.maximum(n_mask, tw_mask)
+        comb_c = col_n * (1.0 - tw_mask[:, None] * 0.85) + tw_col * (tw_mask[:, None] * 0.85)
+        comb_h = np.maximum(h_n * n_mask, tw_mask * (0.58 if layer == 0 else 0.82))
+
+        old_a = pine_alpha[in_band]
+        cur_c = pine_rgb[in_band]
+        # Porter-Duff Straight-Alpha 正确叠加（永不向黑色背景预乘，杜绝黑边）
+        cur_c = cur_c * (1.0 - np.clip(comb_a * 0.18, 0.0, 0.18)[:, None])
+        out_a = comb_a + old_a * (1.0 - comb_a)
+        w_eff = np.where(out_a > 1e-5, comb_a / np.maximum(out_a, 1e-5), 0.0)[:, None]
+        pine_rgb[in_band] = np.where((comb_a > 0.01)[:, None], cur_c * (1.0 - w_eff) + comb_c * w_eff, cur_c)
+        pine_alpha[in_band] = np.clip(out_a, 0.0, 1.0)
+        pine_h[in_band] = np.where(comb_a > 0.25, np.maximum(pine_h[in_band], comb_h), pine_h[in_band])
+
+    save_rgba("pine_frond_a.png", pine_rgb, pine_alpha)
+    save_rgb("pine_frond_n.png", normal_from_height_clamped(pine_h, 4.8))
+
+    # ==============================================================================
+    # 12. 1024x1024 高密写实阔叶乔木细叶枝簇裁切贴图 (broadleaf_a RGBA / broadleaf_n RGB)
+    # 460+ 片真实比例细小叶片紧贴分叉细枝簇生（零浮空离群叶 + 饱满内芯 + 非预乘直通 Alpha）
+    # ==============================================================================
+    bl_alpha = np.zeros((FH, FW), dtype=np.float32)
+    bl_rgb = np.zeros((FH, FW, 3), dtype=np.float32)
+    bl_h = np.zeros((FH, FW), dtype=np.float32)
+    rng_b = np.random.default_rng(1217)
+    leaf_tex = fnoise(FH, FW, 1.35, seed=1251)
+    leaf_var_n = fnoise(FH, FW, 2.2, seed=1252)
+
+    # 紧凑自然的多级分叉细枝骨架（形成丰满的树冠叶团，而非稀疏骨架）
+    bl_twigs = [
+        (0.50, 0.04, 0.495, 0.88, 0.0072),
+        (0.50, 0.16, 0.21, 0.46, 0.0052),
+        (0.50, 0.19, 0.79, 0.48, 0.0052),
+        (0.497, 0.34, 0.17, 0.68, 0.0046),
+        (0.497, 0.37, 0.83, 0.70, 0.0046),
+        (0.495, 0.54, 0.26, 0.86, 0.0040),
+        (0.495, 0.56, 0.74, 0.87, 0.0040),
+        # 二级侧枝填充内芯与中缘
+        (0.35, 0.31, 0.16, 0.33, 0.0034),
+        (0.65, 0.33, 0.84, 0.35, 0.0034),
+        (0.33, 0.51, 0.16, 0.56, 0.0032),
+        (0.67, 0.53, 0.84, 0.58, 0.0032),
+        (0.39, 0.69, 0.25, 0.78, 0.0028),
+        (0.61, 0.71, 0.75, 0.80, 0.0028),
+        (0.42, 0.44, 0.33, 0.62, 0.0030),
+        (0.58, 0.46, 0.67, 0.64, 0.0030),
+        (0.46, 0.66, 0.38, 0.85, 0.0028),
+        (0.54, 0.68, 0.62, 0.86, 0.0028),
+    ]
+
+    # 生成 ~470 片真实小叶，叶柄紧贴所在细枝（偏移 <= 0.022，彻底杜绝浮空孤立叶）
+    leaves = []
+    for ti, (x0, y0, x1, y1, _) in enumerate(bl_twigs):
+        n_on_twig = 36 if ti < 7 else 22
+        base_ang = float(np.arctan2(y1 - y0, x1 - x0))
+        for k in range(n_on_twig):
+            ft = (k + 0.5 + rng_b.uniform(-0.22, 0.22)) / float(n_on_twig)
+            ft = float(np.clip(ft, 0.06, 1.00))
+            bx = x0 + (x1 - x0) * ft + rng_b.uniform(-0.022, 0.022)
+            by = y0 + (y1 - y0) * ft + rng_b.uniform(-0.020, 0.020)
+            if bx < 0.08 or bx > 0.92 or by < 0.08 or by > 0.92:
+                continue
+            side_s = -1.0 if (k % 2 == 0) else 1.0
+            ang = base_ang + side_s * rng_b.uniform(0.25, 1.25) + rng_b.uniform(-0.20, 0.20)
+            # 内芯叶略宽实、外缘叶清秀细密
+            r_cent = float(np.hypot((bx - 0.50) * 1.15, (by - 0.52) * 1.10))
+            sz_k = 1.12 if r_cent < 0.24 else 0.96
+            lw = rng_b.uniform(0.024, 0.041) * sz_k
+            ll = lw * rng_b.uniform(1.50, 1.95)
+            layer = 0 if (k % 3 == 0) else (1 if (k % 3 == 1) else 2)
+            leaves.append((layer, bx, by, ang, lw, ll, rng_b.uniform(0.0, 1.0), rng_b.uniform(-0.18, 0.18)))
+
+    def _stamp_leaves(subset):
+        for layer, lx, ly, ang, lw, ll, tone, bend in subset:
+            ca, sa = np.cos(ang), np.sin(ang)
+            du = pu - lx
+            dv = pv - ly
+            lu = (du * ca + dv * sa) / ll
+            lv = (-du * sa + dv * ca) / lw
+            lv = lv - bend * (lu * lu)
+
+            box = (lu >= -0.04) & (lu <= 1.06) & (np.abs(lv) <= 1.28)
+            if not np.any(box):
+                continue
+            slu = lu[box]
+            slv = lv[box]
+            aslv = np.abs(slv)
+            s_tex = leaf_tex[box]
+            s_var = leaf_var_n[box]
+
+            cl_u = np.clip(slu, 0.0, 1.0)
+            profile = (np.sin(cl_u * np.pi) ** 0.78) * (1.0 - 0.30 * cl_u)
+            serrate = 0.052 * np.sin(slu * 38.0) * ss(0.14, 0.88, slu)
+            half_w = np.maximum(0.018, profile + serrate)
+            edge_d = aslv / half_w
+            l_mask = (1.0 - ss(0.86, 1.02, edge_d)) * ss(-0.02, 0.05, slu) * (1.0 - ss(0.95, 1.02, slu))
+
+            midrib = (1.0 - ss(0.025, 0.095, aslv)) * (1.0 - ss(0.75, 0.96, cl_u))
+            side_v = (1.0 - ss(0.04, 0.17, np.abs(np.mod((slu - aslv * 0.45) * 8.0, 1.0) - 0.5))) * (1.0 - edge_d * 0.55)
+            vein = np.clip(midrib * 0.65 + side_v * 0.30, 0.0, 1.0)
+
+            # 物理准确 PBR sRGB 去饱和阔叶色板（sRGB 0.30..0.56 -> 线性 0.07..0.27，低饱和写实而非发黑或荧光绿）
+            c_deep = np.array([0.28, 0.35, 0.23], dtype=np.float32)
+            c_olive = np.array([0.36, 0.44, 0.27], dtype=np.float32)
+            c_sage = np.array([0.45, 0.50, 0.32], dtype=np.float32)
+            c_dry = np.array([0.55, 0.46, 0.29], dtype=np.float32)
+            if tone < 0.42:
+                base_c = lerp(c_deep, c_olive, tone / 0.42)
+            elif tone < 0.82:
+                base_c = lerp(c_olive, c_sage, (tone - 0.42) / 0.40)
+            else:
+                base_c = lerp(c_sage, c_dry, (tone - 0.82) / 0.18)
+
+            depth_mul = 0.74 if layer == 0 else (0.92 if layer == 1 else 1.06)
+            grad = (0.82 + 0.24 * cl_u - 0.10 * np.clip(edge_d, 0.0, 1.0) + (s_tex - 0.5) * 0.16 + (s_var - 0.5) * 0.10)[:, None]
+            l_col = base_c[None, :] * depth_mul * grad + np.array([0.030, 0.036, 0.015], dtype=np.float32)[None, :] * vein[:, None] * depth_mul
+
+            prev_a = bl_alpha[box]
+            cur_c = bl_rgb[box]
+            sh_rim = (1.0 - ss(0.92, 1.28, edge_d)) * (1.0 - l_mask) * (prev_a > 0.18)
+            cur_c = cur_c * (1.0 - sh_rim[:, None] * 0.28)
+
+            # Porter-Duff Straight-Alpha 正确叠加（永不向黑色背景预乘）
+            out_a = l_mask + prev_a * (1.0 - l_mask)
+            w_eff = np.where(out_a > 1e-5, l_mask / np.maximum(out_a, 1e-5), 0.0)[:, None]
+            vis = l_mask > 0.02
+            bl_rgb[box] = np.where(vis[:, None], cur_c * (1.0 - w_eff) + l_col * w_eff, cur_c)
+            bl_alpha[box] = np.clip(out_a, 0.0, 1.0)
+            lh_base = 0.20 if layer == 0 else (0.45 if layer == 1 else 0.72)
+            lh = (lh_base + 0.24 * (1.0 - np.clip(edge_d, 0.0, 1.0)) - 0.10 * aslv + vein * 0.10) * l_mask
+            bl_h[box] = np.where(l_mask > 0.35, lh, bl_h[box])
+
+    _stamp_leaves([l for l in leaves if l[0] == 0])
+    # 木质细枝穿插在背叶与中/表叶之间（直通 Alpha）
+    for x0, y0, x1, y1, tr in bl_twigs:
+        dx, dy = x1 - x0, y1 - y0
+        sl = float(np.hypot(dx, dy)) + 1e-6
+        t_p = np.clip(((pu - x0) * dx + (pv - y0) * dy) / (sl * sl), 0.0, 1.0)
+        dist = np.hypot(pu - (x0 + dx * t_p), pv - (y0 + dy * t_p))
+        tm = 1.0 - ss(tr * (1.0 - 0.42 * t_p) * 0.55, tr * (1.0 - 0.42 * t_p) * 1.15, dist)
+        out_a = tm + bl_alpha * (1.0 - tm)
+        w_eff = np.where(out_a > 1e-5, tm / np.maximum(out_a, 1e-5), 0.0)[..., None]
+        tw_c = np.array([0.22, 0.18, 0.14], dtype=np.float32) * (0.85 + 0.30 * leaf_tex[..., None])
+        bl_rgb = np.where((tm > 0.02)[..., None], bl_rgb * (1.0 - w_eff) + tw_c * w_eff, bl_rgb)
+        bl_alpha = np.clip(out_a, 0.0, 1.0)
+        bl_h = np.where(tm > 0.25, np.maximum(bl_h, 0.42), bl_h)
+    _stamp_leaves([l for l in leaves if l[0] == 1])
+    _stamp_leaves([l for l in leaves if l[0] == 2])
+
+    save_rgba("broadleaf_a.png", bl_rgb, bl_alpha)
+    save_rgb("broadleaf_n.png", normal_from_height_clamped(bl_h, 5.0))
+
+
+_gen_bark_and_foliage()
+if FOLIAGE_ONLY:
+    print("Regenerated bark & foliage textures only in:", os.path.abspath(OUT))
+    sys.exit(0)
+
 
 
 # ==============================================================================
@@ -545,258 +865,6 @@ grav_h = blur(
 save_rgb("ground_gravel_a.png", grav_rgb)
 save_rgb("ground_gravel_n.png", normal_from_height(grav_h, 3.4))
 
-
-# ==============================================================================
-# 10. 纵裂老树皮 (bark_a / bark_n)
-# ==============================================================================
-bk_lo = fnoise(H, W, 2.2, seed=1001, ax=0.45, ay=3.5)
-bk_mid = fnoise(H, W, 1.5, seed=1002, ax=0.35, ay=4.2)
-bk_hi = fnoise(H, W, 0.9, seed=1003)
-
-# 纵向交织裂沟
-fiss_phase = u * 13.0 * np.pi * 2.0 + (bk_lo - 0.5) * 5.2 + np.sin(v * 4.0 * np.pi) * 0.9
-ridge = 0.5 + 0.5 * np.cos(fiss_phase)
-fissure = 1.0 - ss(0.18, 0.56, ridge + (bk_mid - 0.5) * 0.28)
-plate_sc = ss(0.35, 0.75, fnoise(H, W, 1.6, seed=1004, ax=1.2, ay=0.8))
-lichen = ss(0.78, 0.93, fnoise(H, W, 2.0, seed=1005)) * (1.0 - fissure)
-
-bark_val = (
-    0.78
-    + ridge * 0.16
-    + (bk_mid - 0.5) * 0.12
-    + (bk_hi - 0.5) * 0.09
-    + (plate_sc - 0.5) * 0.07
-    - fissure * 0.44
-)
-bark_rgb = np.dstack([
-    bark_val * 1.04 - lichen * 0.06,
-    bark_val * 0.97 + lichen * 0.08,
-    bark_val * 0.88 - lichen * 0.04,
-])
-bark_h = (1.0 - fissure) * (0.55 + ridge * 0.25 + plate_sc * 0.12) + bk_hi * 0.12
-save_rgb("bark_a.png", bark_rgb)
-save_rgb("bark_n.png", normal_from_height(bark_h, 5.4))
-
-
-# ==============================================================================
-# 11. 针叶松柏枝簇裁切贴图 (pine_frond_a RGBA / pine_frond_n RGB)
-# UV 约定：底部中央 (u=0.5, v=1.0) 为枝条基部生根点，向上 (v->0.04) 辐射分叉松针扇
-# ==============================================================================
-yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-pu = xx / (W - 1.0)
-pv = 1.0 - yy / (H - 1.0)  # pv=0 在底边(枝根)，pv=1 在顶边(枝梢)
-
-pine_alpha = np.zeros((H, W), dtype=np.float32)
-pine_rgb = np.zeros((H, W, 3), dtype=np.float32)
-pine_h = np.zeros((H, W), dtype=np.float32)
-
-rng_p = np.random.default_rng(1101)
-
-# 先收集所有小枝线段：(x0, y0, x1, y1, radius_twig, is_main)
-twigs = []
-# 中央主枝略带自然弧度
-twigs.append((0.50, 0.02, 0.505, 0.90, 0.011, True))
-# 左右 8 对羽状分叉侧枝 + 二级分叉，饱满覆盖扇形区域
-pair_ys = [0.10, 0.20, 0.31, 0.42, 0.53, 0.64, 0.74, 0.83]
-for idx, y0 in enumerate(pair_ys):
-    reach = 0.42 * (1.0 - 0.52 * ((y0 - 0.08) / 0.82) ** 1.25)
-    for side in (-1.0, 1.0):
-        jx = rng_p.uniform(-0.012, 0.012)
-        jy = rng_p.uniform(-0.015, 0.015)
-        x0 = 0.50 + side * 0.004
-        x1 = 0.50 + side * (reach + jx)
-        y1 = min(0.95, y0 + reach * 0.52 + 0.06 + jy)
-        twigs.append((x0, y0, x1, y1, 0.0065, False))
-        # 二级分叉小枝让冠层内部更饱满无空洞
-        if idx < 6:
-            mx = x0 + (x1 - x0) * 0.48
-            my = y0 + (y1 - y0) * 0.48
-            sx1 = mx + side * reach * 0.42
-            sy1 = min(0.94, my + reach * 0.44 + 0.04)
-            twigs.append((mx, my, sx1, sy1, 0.005, False))
-            sx2 = mx + side * reach * 0.36
-            sy2 = max(0.06, my - reach * 0.06)
-            twigs.append((mx, my, sx2, sy2, 0.005, False))
-
-# 向量化绘制每个小枝周围密集辐射的松针束 + 木质小枝芯
-for x0, y0, x1, y1, tw_r, is_main in twigs:
-    dx, dy = x1 - x0, y1 - y0
-    seg_len = float(np.hypot(dx, dy)) + 1e-6
-    ux, uy = dx / seg_len, dy / seg_len
-    nx_t, ny_t = -uy, ux
-
-    # 点到线段投影坐标 t (沿枝 0..seg_len), s (垂直枝距离)
-    rx = pu - x0
-    ry = pv - y0
-    t_proj = rx * ux + ry * uy
-    s_perp = rx * nx_t + ry * ny_t
-
-    # 松针斜向枝梢伸展，因此等效针叶轴坐标向后偏移 |s| * cot(针角)
-    needle_len = (0.072 if is_main else 0.082) * (1.0 - 0.18 * (y0))
-    abs_s = np.abs(s_perp)
-    t_root = t_proj - abs_s * 0.82
-
-    in_band = (t_root >= -0.01) & (t_root <= seg_len + 0.015) & (abs_s <= needle_len * 1.15)
-    if not np.any(in_band):
-        continue
-
-    # 高频针簇条纹：多频率叠加形成层叠松针束且保留高覆盖率（防止远景 Mipmap 变稀疏）
-    sub_pu = pu[in_band]
-    sub_pv = pv[in_band]
-    sub_t = t_root[in_band]
-    sub_s = s_perp[in_band]
-    sub_as = abs_s[in_band]
-
-    needle_coord = sub_t * 145.0 + np.sign(sub_s) * 1.7 + np.sin(sub_t * 37.0) * 0.6
-    comb1 = 0.5 + 0.5 * np.sin(needle_coord)
-    comb2 = 0.5 + 0.5 * np.sin(needle_coord * 1.73 + 1.1)
-    comb3 = 0.5 + 0.5 * np.sin(needle_coord * 0.61 + 2.4)
-    # 单个针尖长度随 comb 起伏，内圈密集融合、外圈呈清晰针刺状
-    tip_reach = needle_len * (0.48 + 0.34 * comb1 + 0.22 * comb2) * (0.85 + 0.15 * np.sin(sub_t * 23.0))
-    tip_fade = ss(0.0, 0.02, sub_t + 0.01) * (1.0 - ss(seg_len - 0.01, seg_len + 0.02, sub_t))
-    reach_ratio = sub_as / (tip_reach + 1e-5)
-
-    n_mask = np.clip((1.05 - reach_ratio) * 3.4, 0.0, 1.0) * tip_fade
-    # 外缘分针间隙
-    outer_sep = ss(0.45, 0.95, reach_ratio)
-    strand = np.maximum(comb1, comb2 * 0.85)
-    n_mask *= (1.0 - outer_sep * (1.0 - ss(0.22, 0.68, strand)))
-
-    # 针叶色彩：基部深墨绿 AO -> 中段写实冷杉暗橄榄绿 -> 针尖微暖阳光橄榄色 + 少量废土枯黄针
-    dry_patch = ss(0.76, 0.94, comb3 * 0.6 + 0.4 * np.sin(sub_pu * 19.0 + sub_pv * 13.0))
-    c_base = np.array([0.16, 0.22, 0.13], dtype=np.float32)
-    c_mid = np.array([0.27, 0.36, 0.20], dtype=np.float32)
-    c_tip = np.array([0.39, 0.46, 0.25], dtype=np.float32)
-    c_dry = np.array([0.46, 0.37, 0.21], dtype=np.float32)
-
-    rt = np.clip(reach_ratio, 0.0, 1.0)[:, None]
-    col_n = c_base * (1.0 - rt) + c_mid * rt
-    col_n = col_n * (1.0 - rt * 0.45) + c_tip * (rt * 0.45)
-    col_n = col_n * (1.0 - dry_patch[:, None] * 0.35) + c_dry * (dry_patch[:, None] * 0.35)
-    # 针背隆起高度
-    h_n = 0.25 + (1.0 - rt[:, 0]) * 0.35 + strand * 0.28
-
-    # 木质枝芯覆盖在最中心
-    t_clamped = np.clip(t_proj[in_band], 0.0, seg_len)
-    d_twig = np.hypot(pu[in_band] - (x0 + ux * t_clamped), pv[in_band] - (y0 + uy * t_clamped))
-    tw_w = tw_r * (1.0 - 0.45 * (t_clamped / seg_len))
-    tw_mask = 1.0 - ss(tw_w * 0.65, tw_w * 1.15, d_twig)
-    tw_col = np.array([0.24, 0.18, 0.13], dtype=np.float32)
-
-    comb_a = np.maximum(n_mask, tw_mask)
-    comb_c = col_n * (1.0 - tw_mask[:, None] * 0.85) + tw_col * (tw_mask[:, None] * 0.85)
-    comb_h = np.maximum(h_n * n_mask, tw_mask * 0.78)
-
-    old_a = pine_alpha[in_band]
-    over = comb_a > old_a * 0.82
-    blend = np.clip(comb_a, 0.0, 1.0)
-    cur_c = pine_rgb[in_band]
-    pine_rgb[in_band] = np.where(over[:, None], cur_c * (1.0 - blend[:, None]) + comb_c * blend[:, None], cur_c)
-    pine_alpha[in_band] = np.maximum(old_a, comb_a)
-    pine_h[in_band] = np.maximum(pine_h[in_band], comb_h)
-
-save_rgba("pine_frond_a.png", pine_rgb, pine_alpha)
-save_rgb("pine_frond_n.png", normal_from_height_clamped(pine_h, 4.0))
-
-
-# ==============================================================================
-# 12. 废土阔叶白桦/杨树枝叶簇裁切贴图 (broadleaf_a RGBA / broadleaf_n RGB)
-# ==============================================================================
-bl_alpha = np.zeros((H, W), dtype=np.float32)
-bl_rgb = np.zeros((H, W, 3), dtype=np.float32)
-bl_h = np.zeros((H, W), dtype=np.float32)
-
-rng_b = np.random.default_rng(1201)
-# 先画木质分叉细枝骨架
-bl_twigs = [
-    (0.50, 0.02, 0.49, 0.82, 0.009),
-    (0.50, 0.16, 0.22, 0.56, 0.006),
-    (0.50, 0.20, 0.79, 0.58, 0.006),
-    (0.49, 0.42, 0.24, 0.80, 0.0055),
-    (0.49, 0.46, 0.76, 0.82, 0.0055),
-    (0.34, 0.38, 0.14, 0.42, 0.0045),
-    (0.66, 0.40, 0.86, 0.44, 0.0045),
-]
-for x0, y0, x1, y1, tr in bl_twigs:
-    dx, dy = x1 - x0, y1 - y0
-    sl = float(np.hypot(dx, dy)) + 1e-6
-    t_p = np.clip(((pu - x0) * dx + (pv - y0) * dy) / (sl * sl), 0.0, 1.0)
-    dist = np.hypot(pu - (x0 + dx * t_p), pv - (y0 + dy * t_p))
-    tm = 1.0 - ss(tr * (1.0 - 0.4 * t_p) * 0.6, tr * (1.0 - 0.4 * t_p) * 1.2, dist)
-    bl_alpha = np.maximum(bl_alpha, tm)
-    bl_rgb = np.where((tm > 0.05)[..., None], np.array([0.27, 0.22, 0.17]), bl_rgb)
-    bl_h = np.maximum(bl_h, tm * 0.65)
-
-# 沿各分枝散布 58 片大小错落、带锯齿边缘与叶脉的叶片，保证饱满度与自然轮廓
-leaf_anchors = []
-for x0, y0, x1, y1, _ in bl_twigs:
-    steps = 9
-    for k in range(1, steps + 1):
-        f_t = k / float(steps)
-        bx_l = x0 + (x1 - x0) * f_t + rng_b.uniform(-0.045, 0.045)
-        by_l = y0 + (y1 - y0) * f_t + rng_b.uniform(-0.035, 0.035)
-        ang = np.arctan2(y1 - y0, x1 - x0) + rng_b.choice([-1.0, 1.0]) * rng_b.uniform(0.35, 1.05)
-        lw = rng_b.uniform(0.058, 0.092)
-        ll = lw * rng_b.uniform(1.45, 1.85)
-        leaf_anchors.append((bx_l, by_l, ang, lw, ll, rng_b.uniform(0.0, 1.0)))
-
-for lx, ly, ang, lw, ll, tone in leaf_anchors:
-    ca, sa = np.cos(ang), np.sin(ang)
-    # 叶片局部坐标：lu 沿叶主脉 (0 叶柄 .. 1 叶尖)，lv 横跨叶片 (-1 .. 1)
-    du = pu - lx
-    dv = pv - ly
-    lu = (du * ca + dv * sa) / ll
-    lv = (-du * sa + dv * ca) / lw
-
-    box = (lu >= -0.05) & (lu <= 1.08) & (np.abs(lv) <= 1.25)
-    if not np.any(box):
-        continue
-
-    slu = lu[box]
-    slv = lv[box]
-    aslv = np.abs(slv)
-
-    # 卵圆渐尖叶形 + 细微边缘锯齿
-    profile = np.sin(np.clip(slu, 0.0, 1.0) * np.pi) ** 0.72 * (1.0 - 0.28 * np.clip(slu, 0.0, 1.0))
-    serrate = 0.045 * np.sin(slu * 42.0) * ss(0.15, 0.85, slu)
-    half_w = np.maximum(0.02, profile + serrate)
-    edge_d = aslv / half_w
-    l_mask = 1.0 - ss(0.88, 1.04, edge_d)
-    l_mask *= ss(-0.02, 0.04, slu) * (1.0 - ss(0.96, 1.03, slu))
-
-    # 主叶脉与羽状侧脉凹凸
-    midrib = 1.0 - ss(0.02, 0.09, aslv) * ss(0.0, 0.85, slu)
-    side_vein = (1.0 - ss(0.04, 0.16, np.abs(np.mod((slu - aslv * 0.42) * 9.0, 1.0) - 0.5))) * (1.0 - edge_d * 0.5)
-    vein_amt = np.clip(midrib * 0.7 + side_vein * 0.35, 0.0, 1.0)
-
-    # 写实废土林木叶色：橄榄绿 / 灰苔绿 / 微秋黄褐渐变
-    c_green = np.array([0.28, 0.37, 0.19], dtype=np.float32)
-    c_olive = np.array([0.36, 0.42, 0.22], dtype=np.float32)
-    c_ochre = np.array([0.46, 0.41, 0.22], dtype=np.float32)
-    if tone < 0.55:
-        base_c = lerp(c_green, c_olive, tone / 0.55)
-    else:
-        base_c = lerp(c_olive, c_ochre, (tone - 0.55) / 0.45)
-
-    # 叶片中部受光微亮、基部微暗、叶脉偏浅黄绿
-    grad = (0.82 + 0.26 * np.clip(slu, 0.0, 1.0) - 0.10 * edge_d)[:, None]
-    l_col = base_c[None, :] * grad + np.array([0.05, 0.06, 0.02])[None, :] * vein_amt[:, None]
-
-    # 叠压下层叶片时在边缘投下自然微阴影 AO
-    prev_a = bl_alpha[box]
-    cur_c = bl_rgb[box]
-    shadow_rim = (1.0 - ss(0.95, 1.22, edge_d)) * (1.0 - l_mask) * (prev_a > 0.2)
-    cur_c = cur_c * (1.0 - shadow_rim[:, None] * 0.26)
-
-    vis = l_mask > 0.05
-    bl_rgb[box] = np.where(vis[:, None], cur_c * (1.0 - l_mask[:, None]) + l_col * l_mask[:, None], cur_c)
-    bl_alpha[box] = np.maximum(prev_a, l_mask)
-    # V 字微折叶片法线高度
-    lh = (0.35 + 0.35 * (1.0 - np.clip(edge_d, 0.0, 1.0)) - 0.15 * aslv + vein_amt * 0.14) * l_mask
-    bl_h[box] = np.where(l_mask > 0.4, lh, bl_h[box])
-
-save_rgba("broadleaf_a.png", bl_rgb, bl_alpha)
-save_rgb("broadleaf_n.png", normal_from_height_clamped(bl_h, 3.8))
 
 
 # ==============================================================================

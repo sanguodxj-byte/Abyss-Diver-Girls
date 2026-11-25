@@ -20,9 +20,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_CORE2 := K.armor_sub(c, 0.52)
 
 	# 重型腰部齿圈轴承 + 铸钢胸舱骨架
-	K.cy(torso, 0.50, 0.24, M_DARK, Vector3(0, 0.07, 0.0), Vector3.ZERO, 0.54, 30)
-	A.add(torso, A.torus(0.46, 0.54, 32), M_GUN, Vector3(0, 0.13, 0.0), Vector3.ZERO, Vector3(1, 0.48, 1), false)
-	K.bb(torso, Vector3(1.62, 1.02, 1.42), M_FRAME, Vector3(0, 0.26, 0.06), Vector3.ZERO, 0.06)
+	K.cy(torso, 0.39, 0.18, M_DARK, Vector3(0, 0.085, 0.0), Vector3.ZERO, 0.36, 30)
+	A.add(torso, A.torus(0.355, 0.405, 32), M_GUN, Vector3(0, 0.10, 0.0), Vector3.ZERO, Vector3(1, 0.48, 1), false)
+	K.bb(torso, Vector3(1.62, 0.80, 1.42), M_FRAME, Vector3(0, 0.37, 0.06), Vector3.ZERO, 0.055)
 	K.plate(torso, K.crect(2.02, 0.88, [0.24, 0.24, 0.12, 0.12]), 1.50, M_CORE2, Vector3(0, 0.36, 0.12), Vector3.ZERO, 0.055)
 	K.plate(torso, K.trap(1.92, 1.32, 0.42, 0.08), 1.26, M_CORE, Vector3(0, 0.96, 0.18), Vector3.ZERO, 0.048)
 

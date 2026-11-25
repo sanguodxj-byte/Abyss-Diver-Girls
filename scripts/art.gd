@@ -50,11 +50,13 @@ static func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector
 
 ## 倒角方块。bevel = 倒角宽度；taper = 顶面相对底面的缩放（<1 为梯形）。
 static func bevel_box(size: Vector3, bevel := 0.06, taper := 1.0) -> ArrayMesh:
-	var key := "bb%s|%.3f|%.3f" % [size, bevel, taper]
+	var min_dim := minf(size.x, minf(size.y, size.z))
+	var eff_bevel := 0.0 if (bevel <= 0.005 and min_dim < 0.09) else bevel
+	var key := "bb%s|%.3f|%.3f" % [size, eff_bevel, taper]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var h := size * 0.5
-	var b: float = min(bevel, min(h.x, min(h.y, h.z)) * 0.9)
+	var b: float = minf(eff_bevel, minf(h.x, minf(h.y, h.z)) * 0.9)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_smooth_group(-1)
@@ -69,42 +71,56 @@ static func bevel_box(size: Vector3, bevel := 0.06, taper := 1.0) -> ArrayMesh:
 	var S := [-1.0, 1.0]
 	# 6 个面（顶点色白），棱与角（宽斜面衰减边缘掉漆权重，避免宽斜面整块出现斑点）
 	_vc = Color(1, 1, 1)
-	for s in S:
-		_quad(st, P.call(s, -1, -1, 0, 1, 1), P.call(s, 1, -1, 0, 1, 1), P.call(s, 1, 1, 0, 1, 1), P.call(s, -1, 1, 0, 1, 1), C)
-		_quad(st, P.call(-1, s, -1, 1, 0, 1), P.call(1, s, -1, 1, 0, 1), P.call(1, s, 1, 1, 0, 1), P.call(-1, s, 1, 1, 0, 1), C)
-		_quad(st, P.call(-1, -1, s, 1, 1, 0), P.call(1, -1, s, 1, 1, 0), P.call(1, 1, s, 1, 1, 0), P.call(-1, 1, s, 1, 1, 0), C)
-	# 12 条棱
-	var edge_r := 1.0 - clampf(0.068 / maxf(b, 0.01), 0.12, 1.0)
-	_vc = Color(edge_r, 1, 1)
-	for s1 in S:
-		for s2 in S:
-			# 平行 Z 轴的棱（X、Y 两面之间）
-			_quad(st, P.call(s1, s2, -1, 0, 1, 1), P.call(s1, s2, 1, 0, 1, 1), P.call(s1, s2, 1, 1, 0, 1), P.call(s1, s2, -1, 1, 0, 1), C)
-			# 平行 X 轴的棱（Y、Z 之间）
-			_quad(st, P.call(-1, s1, s2, 1, 0, 1), P.call(1, s1, s2, 1, 0, 1), P.call(1, s1, s2, 1, 1, 0), P.call(-1, s1, s2, 1, 1, 0), C)
-			# 平行 Y 轴的棱（X、Z 之间）
-			_quad(st, P.call(s1, -1, s2, 0, 1, 1), P.call(s1, 1, s2, 0, 1, 1), P.call(s1, 1, s2, 1, 1, 0), P.call(s1, -1, s2, 1, 1, 0), C)
-	# 8 个角
-	for sx in S:
-		for sy in S:
-			for sz in S:
-				_tri(st, P.call(sx, sy, sz, 0, 1, 1), P.call(sx, sy, sz, 1, 0, 1), P.call(sx, sy, sz, 1, 1, 0), C)
+	if b <= 0.001:
+		for s in S:
+			_quad(st, P.call(s, -1, -1, 0, 0, 0), P.call(s, 1, -1, 0, 0, 0), P.call(s, 1, 1, 0, 0, 0), P.call(s, -1, 1, 0, 0, 0), C)
+			_quad(st, P.call(-1, s, -1, 0, 0, 0), P.call(1, s, -1, 0, 0, 0), P.call(1, s, 1, 0, 0, 0), P.call(-1, s, 1, 0, 0, 0), C)
+			_quad(st, P.call(-1, -1, s, 0, 0, 0), P.call(1, -1, s, 0, 0, 0), P.call(1, 1, s, 0, 0, 0), P.call(-1, 1, s, 0, 0, 0), C)
+	else:
+		for s in S:
+			_quad(st, P.call(s, -1, -1, 0, 1, 1), P.call(s, 1, -1, 0, 1, 1), P.call(s, 1, 1, 0, 1, 1), P.call(s, -1, 1, 0, 1, 1), C)
+			_quad(st, P.call(-1, s, -1, 1, 0, 1), P.call(1, s, -1, 1, 0, 1), P.call(1, s, 1, 1, 0, 1), P.call(-1, s, 1, 1, 0, 1), C)
+			_quad(st, P.call(-1, -1, s, 1, 1, 0), P.call(1, -1, s, 1, 1, 0), P.call(1, 1, s, 1, 1, 0), P.call(-1, 1, s, 1, 1, 0), C)
+		# 12 条棱
+		var edge_r := 1.0 - clampf(0.068 / maxf(b, 0.01), 0.12, 1.0)
+		_vc = Color(edge_r, 1, 1)
+		for s1 in S:
+			for s2 in S:
+				# 平行 Z 轴的棱（X、Y 两面之间）
+				_quad(st, P.call(s1, s2, -1, 0, 1, 1), P.call(s1, s2, 1, 0, 1, 1), P.call(s1, s2, 1, 1, 0, 1), P.call(s1, s2, -1, 1, 0, 1), C)
+				# 平行 X 轴的棱（Y、Z 之间）
+				_quad(st, P.call(-1, s1, s2, 1, 0, 1), P.call(1, s1, s2, 1, 0, 1), P.call(1, s1, s2, 1, 1, 0), P.call(-1, s1, s2, 1, 1, 0), C)
+				# 平行 Y 轴的棱（X、Z 之间）
+				_quad(st, P.call(s1, -1, s2, 0, 1, 1), P.call(s1, 1, s2, 0, 1, 1), P.call(s1, 1, s2, 1, 1, 0), P.call(s1, -1, s2, 1, 1, 0), C)
+		# 8 个角
+		for sx in S:
+			for sy in S:
+				for sz in S:
+					_tri(st, P.call(sx, sy, sz, 0, 1, 1), P.call(sx, sy, sz, 1, 0, 1), P.call(sx, sy, sz, 1, 1, 0), C)
 	_vc = Color(1, 1, 1)
 	st.generate_normals()
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
 
 
-## 曲面分段下限（低面数红线 §二）：桌面 16/24/36/48，移动 12/18/28/36。
+## 曲面分段下限与上限（兼顾圆润剪影与高帧率）：
+## 细杆 r<0.04 桌面 8..12、细管 12..16、中柱 16..24、罐体 24..32、巨构 >=2m 32..36（移动 6..8 / 8..12 / 12..16 / 18..24 / 24..28）。
 static func curve_seg_floor(r: float) -> int:
 	if is_mobile_perf():
-		return 12 if r < 0.08 else (18 if r < 0.4 else (28 if r < 2.0 else 36))
-	return 16 if r < 0.08 else (24 if r < 0.4 else (36 if r < 2.0 else 48))
+		return 6 if r < 0.04 else (8 if r < 0.12 else (12 if r < 0.40 else (18 if r < 2.0 else 24)))
+	return 8 if r < 0.04 else (12 if r < 0.12 else (16 if r < 0.40 else (24 if r < 2.0 else 32)))
 
 
-## 圆柱 / 圆锥。seg 低于下限时一律抬升到下限（不再有 seg<8 放行漏洞），高于下限照用（上限 64）。
+static func curve_seg_cap(r: float) -> int:
+	if is_mobile_perf():
+		return 8 if r < 0.04 else (12 if r < 0.12 else (16 if r < 0.40 else (24 if r < 2.0 else 28)))
+	return 12 if r < 0.04 else (16 if r < 0.12 else (24 if r < 0.40 else (32 if r < 2.0 else 36)))
+
+
+## 圆柱 / 圆锥。seg 低于下限时抬升到下限，高于半径档位上限时温和封顶（保住巨构圆润剪影同时杜绝微细钢筋/48段爆面）。
 ## allow_poly：仅限白名单中“有意为之的多棱体”（六角螺母、晶柱、四棱锥屋顶等）显式开启，原样保留 seg。
 ## 半径 ≤ 0.035m 的 6 边件视为六角螺母/铆钉头（白名单 §1.2），自动保留。
 static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28, allow_poly := false) -> CylinderMesh:
@@ -114,7 +130,8 @@ static func cyl(r: float, hgt: float, r2 := -1.0, seg := 28, allow_poly := false
 	var hex_nut := seg == 6 and rmax <= 0.035
 	if not (allow_poly or hex_nut):
 		var lo := curve_seg_floor(rmax)
-		s_seg = lo if seg == 28 else clampi(seg, lo, 64)
+		var hi := curve_seg_cap(rmax)
+		s_seg = lo if seg == 28 else clampi(seg, lo, hi)
 	var key := "cy%.3f|%.3f|%.3f|%d" % [r, hgt, r2, s_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -147,10 +164,10 @@ static func sphere(r: float, hgt := -1.0, seg := 28, allow_poly := false) -> Sph
 
 
 ## 自然多面岩体网格（中心在原点，基础半径约 0.92，底面平稳、硬朗切面节理与沉积岩层台，按 variant 缓存）
-static func rock_mesh(variant := 0, detail := 24) -> ArrayMesh:
+static func rock_mesh(variant := 0, detail := 16) -> ArrayMesh:
 	var v_id := posmod(variant, 12)
-	var nu := maxi(20 if is_mobile_perf() else 24, detail)
-	var nv := maxi(12, detail / 2 + 2)
+	var nu := clampi(detail, 8, 18 if is_mobile_perf() else 24)
+	var nv := maxi(5, nu / 2 + 1)
 	var key := "rk%d|%d" % [v_id, nu]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -230,20 +247,27 @@ static func rock_mesh(variant := 0, detail := 24) -> ArrayMesh:
 	_vc = Color(1, 1, 1)
 	st.generate_normals()
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
 
 
+## 轻量低模砾石/崩积碎岩/焦炭块网格（~72 三角、全索引，用于 5–60cm 小碎石与远坡崩积岩，削减 85%+ 顶点开销）
+static func rock_mesh_low(variant := 0) -> ArrayMesh:
+	return rock_mesh(variant, 9)
+
+
 ## 悬崖 / 大岩体（放大到 10m 以上时用）：高细分变体
 static func cliff_rock_mesh(variant := 0) -> ArrayMesh:
-	return rock_mesh(variant, 28)
+	return rock_mesh(variant, 22)
 
 
 ## 内部辅助：向 SurfaceTool 追加一段圆锥/弯曲树干或树枝管段（保证正面朝外）
-## 控制点经 Catmull-Rom 每段 3 细分，截面带树皮纵向棱脊起伏。
-static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg := 12) -> void:
-	seg = maxi(seg, 8)
+## 控制点经 Catmull-Rom 细分（默认 2 段，枝梢可降为 1 段），截面带树皮纵向棱脊起伏。
+static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg := 10, subdiv := 2) -> void:
+	seg = maxi(seg, 5)
+	subdiv = maxi(subdiv, 1)
 	if pts_in.size() < 2:
 		return
 	var pts: Array = []
@@ -254,8 +278,8 @@ static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg :=
 		var p1: Vector3 = pts_in[i]
 		var p2: Vector3 = pts_in[i + 1]
 		var p3: Vector3 = pts_in[mini(i + 2, nin - 1)]
-		for k in 3:
-			var t := float(k) / 3.0
+		for k in subdiv:
+			var t := float(k) / float(subdiv)
 			var t2 := t * t
 			var t3 := t2 * t
 			pts.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
@@ -308,81 +332,176 @@ static func _branch_tube(st: SurfaceTool, pts_in: Array, radii_in: Array, seg :=
 
 
 ## 写实树木主干与多级分叉木质大枝网格（原点在地面 y=0，总高约 1.0：板根抓地 + S形微弯树干 + 三级自然分叉枝桠）
+## 等比写实乔木主干与分叉大枝网格（严格面向等比缩放 Vector3.ONE * h_trunk，y=0..0.96；
+## 彻底修复旧版非均匀 X/Z 压扁 4.7 倍导致主分枝被压成细棍、树皮纹理纵向拉伸的缺陷）
 static func tree_trunk_mesh(variant := 0, gnarled := false) -> ArrayMesh:
 	var v_id := posmod(variant, 8)
-	var key := "tr_trunk_v2_%d_%d" % [v_id, 1 if gnarled else 0]
+	var key := "tr_trunk_v3_%d_%d" % [v_id, 1 if gnarled else 0]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 3571 + (901 if gnarled else 211)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var lean_x := rng.randf_range(-0.075, 0.075) * (1.85 if gnarled else 1.0)
-	var lean_z := rng.randf_range(-0.075, 0.075) * (1.85 if gnarled else 1.0)
-	var sw_x := rng.randf_range(-0.04, 0.04)
-	var sw_z := rng.randf_range(-0.04, 0.04)
-	var r_base := 0.145 if gnarled else 0.122
+	var lean_x := rng.randf_range(-0.055, 0.055) * (1.65 if gnarled else 1.0)
+	var lean_z := rng.randf_range(-0.055, 0.055) * (1.65 if gnarled else 1.0)
+	var sw_x := rng.randf_range(-0.028, 0.028)
+	var sw_z := rng.randf_range(-0.028, 0.028)
+	var r_base := 0.052 if gnarled else 0.044
+	var top_h := 0.88 if gnarled else 0.92
 	var main_pts := [
 		Vector3(0.0, -0.04, 0.0),
-		Vector3(lean_x * 0.10 + sw_x * 0.25, 0.10, lean_z * 0.10 + sw_z * 0.25),
-		Vector3(lean_x * 0.28 + sw_x * 0.70, 0.28, lean_z * 0.25 + sw_z * 0.65),
-		Vector3(lean_x * 0.54 + sw_x * 0.35, 0.48, lean_z * 0.52 - sw_z * 0.20),
-		Vector3(lean_x * 0.78 - sw_x * 0.25, 0.68, lean_z * 0.80 - sw_z * 0.35),
-		Vector3(lean_x * 0.96, 0.84, lean_z * 0.98),
-		Vector3(lean_x * 1.08, 0.97, lean_z * 1.10),
+		Vector3(lean_x * 0.14 + sw_x * 0.35, top_h * 0.16, lean_z * 0.14 + sw_z * 0.35),
+		Vector3(lean_x * 0.36 + sw_x * 0.65, top_h * 0.38, lean_z * 0.34 + sw_z * 0.58),
+		Vector3(lean_x * 0.64 + sw_x * 0.18, top_h * 0.62, lean_z * 0.62 - sw_z * 0.22),
+		Vector3(lean_x * 0.88 - sw_x * 0.16, top_h * 0.82, lean_z * 0.88 - sw_z * 0.24),
+		Vector3(lean_x * 1.02, top_h, lean_z * 1.02),
 	]
-	var main_r := [r_base * 1.56, r_base * 1.12, r_base * 0.88, r_base * 0.68, r_base * 0.48, r_base * 0.28, r_base * 0.11]
-	_branch_tube(st, main_pts, main_r, 14)
+	var main_r := [r_base * 1.66, r_base * 1.08, r_base * 0.84, r_base * 0.58, r_base * 0.32, r_base * 0.12]
+	_branch_tube(st, main_pts, main_r, 10, 2)
 
-	# 4~5 条外展板根抓地（消除圆柱直接插进地面的低模感）
-	var n_roots := 5 if gnarled else 4
+	# 5 条自然外展板根抓地（消除树干直插地面塑料感）
+	var n_roots := 5
 	for ri in n_roots:
-		var raz := float(ri) * TAU / float(n_roots) + rng.randf_range(-0.35, 0.35)
+		var raz := float(ri) * TAU / float(n_roots) + rng.randf_range(-0.34, 0.34)
 		var rdir := Vector3(cos(raz), 0.0, sin(raz))
-		var rlen := rng.randf_range(0.20, 0.32) * (1.18 if gnarled else 1.0)
-		var rp0 := rdir * (r_base * 0.45) + Vector3(0.0, rng.randf_range(0.14, 0.21), 0.0)
-		var rp1 := rdir * (rlen * 0.58) + Vector3(0.0, 0.05, 0.0)
-		var rp2 := rdir * rlen + Vector3(0.0, -0.05, 0.0)
+		var rlen := rng.randf_range(0.11, 0.17) * (1.15 if gnarled else 1.0)
+		var rp0 := rdir * (r_base * 0.42) + Vector3(0.0, rng.randf_range(0.10, 0.16), 0.0)
+		var rp1 := rdir * (rlen * 0.56) + Vector3(0.0, 0.036, 0.0)
+		var rp2 := rdir * rlen + Vector3(0.0, -0.045, 0.0)
 		var rr0 := r_base * rng.randf_range(0.46, 0.58)
-		_branch_tube(st, [rp0, rp1, rp2], [rr0, rr0 * 0.58, rr0 * 0.18], 8)
+		_branch_tube(st, [rp0, rp1, rp2], [rr0, rr0 * 0.58, rr0 * 0.18], 6, 2)
 
-	# 二级主分枝 + 三级自然叉枝（枯树与活树都具备真实木质骨架）
-	var n_limbs := 7 if gnarled else 6
+	# 精确沿曲干中心线取锚点
+	var sample_trunk := func(u: float) -> Vector3:
+		var uu := clampf(u, 0.0, 1.0)
+		var f := uu * float(main_pts.size() - 1)
+		var i0 := clampi(int(floor(f)), 0, main_pts.size() - 2)
+		return (main_pts[i0] as Vector3).lerp(main_pts[i0 + 1] as Vector3, f - float(i0))
+
+	# 6 根自然 Y 型舒展主大枝 + 二级分叉支撑树冠底部（越肩仰视可见真实骨架托举冠层）
+	var n_limbs := 6
 	for b in n_limbs:
-		var t_lo := 0.34 if gnarled else 0.52
-		var t_hi := 0.84 if gnarled else 0.88
-		var t_h := lerpf(t_lo, t_hi, float(b) / float(maxi(1, n_limbs - 1))) + rng.randf_range(-0.03, 0.03)
-		var az := float(b) * 2.39996 + rng.randf_range(-0.35, 0.35)
+		var t_lo := 0.36 if gnarled else 0.44
+		var t_hi := 0.86
+		var t_h := lerpf(t_lo, t_hi, float(b) / float(maxi(1, n_limbs - 1))) + rng.randf_range(-0.025, 0.025)
+		var az := float(b) * 2.39996 + rng.randf_range(-0.32, 0.32)
 		var dir := Vector3(cos(az), 0.0, sin(az))
-		var p0 := Vector3(lean_x * t_h, t_h, lean_z * t_h)
-		var reach := rng.randf_range(0.32, 0.52) * (1.32 if gnarled else (1.06 - t_h * 0.35))
-		var rise := rng.randf_range(0.16, 0.32) if gnarled else rng.randf_range(0.14, 0.26)
+		var p0: Vector3 = sample_trunk.call(t_h)
+		var reach := rng.randf_range(0.24, 0.38) * (1.18 if gnarled else (1.10 - t_h * 0.34))
+		var rise := rng.randf_range(0.15, 0.28)
 		var perp := Vector3(-dir.z, 0.0, dir.x)
-		var bend := rng.randf_range(-0.08, 0.08)
-		var p1 := p0 + dir * (reach * 0.45) + perp * bend + Vector3(0.0, rise * 0.48, 0.0)
-		var p2 := p0 + dir * (reach * 0.82) + perp * (bend * 0.4) + Vector3(0.0, rise * 0.86, 0.0)
-		var p3 := p0 + dir * reach + Vector3(rng.randf_range(-0.05, 0.05), rise, rng.randf_range(-0.05, 0.05))
-		var rb := r_base * lerpf(0.56, 0.28, clampf((t_h - 0.32) / 0.55, 0.0, 1.0))
-		_branch_tube(st, [p0, p1, p2, p3], [rb, rb * 0.68, rb * 0.38, rb * 0.12], 10)
-		var n_sub := 2 if gnarled else 1
+		var bend := rng.randf_range(-0.05, 0.05)
+		var p1 := p0 + dir * (reach * 0.46) + perp * bend + Vector3(0.0, rise * 0.48, 0.0)
+		var p2 := p0 + dir * reach + Vector3(rng.randf_range(-0.03, 0.03), rise, rng.randf_range(-0.03, 0.03))
+		var rb := r_base * lerpf(0.60, 0.28, clampf((t_h - 0.36) / 0.52, 0.0, 1.0))
+		_branch_tube(st, [p0, p1, p2], [rb, rb * 0.58, rb * 0.14], 7, 2)
+		var n_sub := 2
 		for sb_i in n_sub:
-			var anchor := p1 if sb_i == 0 else p2
+			var anchor := p1 if sb_i == 0 else p1.lerp(p2, 0.56)
 			var sgn := 1.0 if ((b + sb_i) % 2 == 0) else -1.0
-			var sub_az := az + sgn * rng.randf_range(0.45, 0.92)
+			var sub_az := az + sgn * rng.randf_range(0.42, 0.90)
 			var sdir := Vector3(cos(sub_az), 0.0, sin(sub_az))
-			var s_len := reach * rng.randf_range(0.38, 0.62)
-			var s_rise := rise * rng.randf_range(0.42, 0.78)
-			var smid := anchor + sdir * (s_len * 0.52) + Vector3(0.0, s_rise * 0.58, 0.0)
-			var send := anchor + sdir * s_len + Vector3(rng.randf_range(-0.03, 0.03), s_rise, rng.randf_range(-0.03, 0.03))
-			var srb := rb * (0.48 if sb_i == 0 else 0.34)
-			_branch_tube(st, [anchor, smid, send], [srb, srb * 0.54, srb * 0.14], 7)
+			var s_len := reach * rng.randf_range(0.40, 0.62)
+			var s_rise := rise * rng.randf_range(0.44, 0.78)
+			var smid := anchor + sdir * (s_len * 0.52) + Vector3(0.0, s_rise * 0.56, 0.0)
+			var send := anchor + sdir * s_len + Vector3(rng.randf_range(-0.02, 0.02), s_rise, rng.randf_range(-0.02, 0.02))
+			var srb := rb * (0.48 if sb_i == 0 else 0.32)
+			_branch_tube(st, [anchor, smid, send], [srb, srb * 0.52, srb * 0.14], 5, 1)
 			if gnarled:
 				var tw_az := sub_az - sgn * rng.randf_range(0.42, 0.85)
 				var tw_dir := Vector3(cos(tw_az), 0.0, sin(tw_az))
 				var tw_end := smid + tw_dir * (s_len * 0.52) + Vector3(0.0, s_rise * 0.55, 0.0)
-				_branch_tube(st, [smid, (smid + tw_end) * 0.5 + Vector3(0, 0.02, 0), tw_end], [srb * 0.44, srb * 0.24, srb * 0.08], 6)
+				_branch_tube(st, [smid, (smid + tw_end) * 0.5 + Vector3(0, 0.02, 0), tw_end], [srb * 0.44, srb * 0.24, srb * 0.08], 5, 1)
 
 	st.generate_tangents()
+	st.index()
+	var m := st.commit()
+	_mesh_cache[key] = m
+	return m
+
+
+## 等比写实枯树网格（严格面向等比缩放 Vector3.ONE * h，总高约 1.0：彻底避免非均匀 X/Z 压扁导致的纵切刀片畸变与树皮条纹拉伸）
+## 包含 5 条圆柱板根抓地 + S 形扭曲苍老主干 + 6 根三级渐细分叉弯曲枯枝与折断枯梢
+static func dead_tree_mesh(variant := 0) -> ArrayMesh:
+	var v_id := posmod(variant, 8)
+	var key := "dead_tree_uni_v1_%d" % v_id
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = v_id * 4813 + 733
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lean_x := rng.randf_range(-0.085, 0.085)
+	var lean_z := rng.randf_range(-0.085, 0.085)
+	var sw_x := rng.randf_range(-0.038, 0.038)
+	var sw_z := rng.randf_range(-0.038, 0.038)
+	var r_base := rng.randf_range(0.044, 0.054)
+	var top_h := rng.randf_range(0.76, 0.90)
+	var trunk_pts := [
+		Vector3(0.0, -0.04, 0.0),
+		Vector3(lean_x * 0.12 + sw_x * 0.30, top_h * 0.14, lean_z * 0.12 + sw_z * 0.30),
+		Vector3(lean_x * 0.32 + sw_x * 0.72, top_h * 0.34, lean_z * 0.30 + sw_z * 0.65),
+		Vector3(lean_x * 0.58 + sw_x * 0.25, top_h * 0.56, lean_z * 0.55 - sw_z * 0.25),
+		Vector3(lean_x * 0.82 - sw_x * 0.28, top_h * 0.78, lean_z * 0.82 - sw_z * 0.30),
+		Vector3(lean_x * 1.02, top_h, lean_z * 1.00),
+	]
+	var trunk_r := [r_base * 1.55, r_base * 1.06, r_base * 0.82, r_base * 0.62, r_base * 0.38, r_base * 0.14]
+	_branch_tube(st, trunk_pts, trunk_r, 10, 2)
+
+	# 5 条圆润外展板根抓地
+	for ri in 5:
+		var raz := float(ri) * TAU / 5.0 + rng.randf_range(-0.34, 0.34)
+		var rdir := Vector3(cos(raz), 0.0, sin(raz))
+		var rlen := rng.randf_range(0.11, 0.17)
+		var rp0 := rdir * (r_base * 0.45) + Vector3(0.0, rng.randf_range(0.09, 0.15), 0.0)
+		var rp1 := rdir * (rlen * 0.58) + Vector3(0.0, 0.032, 0.0)
+		var rp2 := rdir * rlen + Vector3(0.0, -0.042, 0.0)
+		var rr0 := r_base * rng.randf_range(0.42, 0.54)
+		_branch_tube(st, [rp0, rp1, rp2], [rr0, rr0 * 0.56, rr0 * 0.16], 6, 2)
+
+	# 主干沿线插值工具（确保所有一级大枝精准从真实曲干中心生长出来）
+	var sample_trunk := func(u: float) -> Vector3:
+		var uu := clampf(u, 0.0, 1.0)
+		var f := uu * float(trunk_pts.size() - 1)
+		var i0 := clampi(int(floor(f)), 0, trunk_pts.size() - 2)
+		return (trunk_pts[i0] as Vector3).lerp(trunk_pts[i0 + 1] as Vector3, f - float(i0))
+
+	# 6 根苍老扭曲主分枝 + 二级/三级自然枯梢
+	var n_limbs := 6
+	for b in n_limbs:
+		var u_h := lerpf(0.38, 0.94, float(b) / float(n_limbs - 1)) + rng.randf_range(-0.03, 0.03)
+		var az := float(b) * 2.39996 + rng.randf_range(-0.42, 0.42)
+		var dir := Vector3(cos(az), 0.0, sin(az))
+		var perp := Vector3(-dir.z, 0.0, dir.x)
+		var p0: Vector3 = sample_trunk.call(u_h)
+		var reach := rng.randf_range(0.22, 0.36) * lerpf(1.12, 0.68, (u_h - 0.35) / 0.65)
+		var rise := rng.randf_range(0.14, 0.28)
+		var bend := rng.randf_range(-0.06, 0.06)
+		var p1 := p0 + dir * (reach * 0.44) + perp * bend + Vector3(0.0, rise * 0.42, 0.0)
+		var p2 := p0 + dir * (reach * 0.80) + perp * (bend * 0.35) + Vector3(0.0, rise * 0.84, 0.0)
+		var p3 := p0 + dir * reach + Vector3(rng.randf_range(-0.025, 0.025), rise + rng.randf_range(-0.03, 0.05), rng.randf_range(-0.025, 0.025))
+		var rb := r_base * lerpf(0.54, 0.24, clampf((u_h - 0.35) / 0.60, 0.0, 1.0))
+		_branch_tube(st, [p0, p1, p2, p3], [rb, rb * 0.66, rb * 0.36, rb * 0.11], 6, 2)
+		for sb_i in 2:
+			var anchor := p1 if sb_i == 0 else p2
+			var sgn := 1.0 if ((b + sb_i) % 2 == 0) else -1.0
+			var sub_az := az + sgn * rng.randf_range(0.45, 0.98)
+			var sdir := Vector3(cos(sub_az), 0.0, sin(sub_az))
+			var s_len := reach * rng.randf_range(0.38, 0.62)
+			var s_rise := rise * rng.randf_range(0.46, 0.85)
+			var smid := anchor + sdir * (s_len * 0.54) + Vector3(0.0, s_rise * 0.55, 0.0)
+			var send := anchor + sdir * s_len + Vector3(rng.randf_range(-0.02, 0.02), s_rise, rng.randf_range(-0.02, 0.02))
+			var srb := rb * (0.48 if sb_i == 0 else 0.32)
+			_branch_tube(st, [anchor, smid, send], [srb, srb * 0.54, srb * 0.14], 5, 1)
+			if sb_i == 0:
+				var tw_az := sub_az - sgn * rng.randf_range(0.42, 0.86)
+				var tw_dir := Vector3(cos(tw_az), 0.0, sin(tw_az))
+				var tw_end := smid + tw_dir * (s_len * 0.55) + Vector3(0.0, s_rise * 0.62, 0.0)
+				_branch_tube(st, [smid, (smid + tw_end) * 0.5 + Vector3(0.0, 0.015, 0.0), tw_end], [srb * 0.42, srb * 0.24, srb * 0.08], 5, 1)
+
+	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
@@ -409,12 +528,12 @@ static func _foliage_bough(st: SurfaceTool, origin: Vector3, dir_xz: Vector3, le
 
 	var emit_v := func(vp: Vector3, uv: Vector2, ao_local: float) -> void:
 		var rel := vp - crown_center
-		# SpeedTree 球冠法线转移：76% 包络树冠球法线 + 24% 局部微向上仰角，令整树呈现饱满立体明暗而非交叉纸片
-		var n_sphere := Vector3(rel.x, maxf(rel.y, -0.15) * 1.15 + 0.24, rel.z).normalized()
-		var nrm := (n_sphere * 0.78 + cup_up * 0.22).normalized()
+		# SpeedTree 球冠法线转移：82% 包络树冠球法线 + 18% 局部微向上仰角，呈现柔和饱满 3D 体积光影
+		var n_sphere := Vector3(rel.x, maxf(rel.y, -0.18) * 1.18 + 0.22, rel.z).normalized()
+		var nrm := (n_sphere * 0.82 + cup_up * 0.18).normalized()
 		var h_grad := clampf((vp.y + 0.08) / 1.08, 0.0, 1.0)
-		var radial_ao := clampf(rel.length() * 0.85, 0.0, 1.0)
-		var ao := clampf(ao_local * 0.62 + radial_ao * 0.24 + h_grad * 0.14, 0.24, 1.0)
+		var radial_ao := clampf(rel.length() * 0.92, 0.0, 1.0)
+		var ao := clampf(ao_local * 0.56 + radial_ao * 0.28 + h_grad * 0.16, 0.16, 1.0)
 		st.set_color(Color(ao, var_g, h_grad, 1.0))
 		st.set_normal(nrm)
 		st.set_uv(uv)
@@ -456,28 +575,28 @@ static func _foliage_bough(st: SurfaceTool, origin: Vector3, dir_xz: Vector3, le
 		)
 
 
-## 高密多层轮生写实针叶松柏树冠网格（y=0..1，9 层非对称错位下垂松枝轮 + 立体顶梢，60+ 拱曲松枝无低模感）
+## 高密多层轮生写实针叶松柏树冠网格（y=0..1，9 层非对称错位下垂松枝轮 + 自然收尖冷杉梢顶，杜绝尖刺兔耳穿帮）
 static func pine_crown_mesh(variant := 0) -> ArrayMesh:
 	var v_id := posmod(variant, 6)
-	var key := "pine_cr_v2_%d" % v_id
+	var key := "pine_cr_v4_%d" % v_id
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 4933 + 617
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(0.0, 0.40, 0.0)
-	# 9 层密集错落枝轮：[高度 y0, 枝长, 枝数, 下垂量, 梢端微翘]
+	var center := Vector3(0.0, 0.42, 0.0)
+	# 9 层非对称起伏冷杉枝轮：[高度 y0, 枝长, 枝数, 下垂量, 梢端微翘]
 	var tiers := [
-		[0.05, 1.08, 9, 0.17, 0.05],
-		[0.15, 0.99, 9, 0.15, 0.05],
-		[0.26, 0.89, 8, 0.13, 0.05],
-		[0.37, 0.79, 8, 0.11, 0.06],
-		[0.48, 0.68, 7, 0.09, 0.06],
-		[0.59, 0.56, 7, 0.06, 0.06],
-		[0.70, 0.45, 6, 0.04, 0.07],
-		[0.80, 0.34, 5, 0.02, 0.07],
-		[0.89, 0.23, 4, 0.00, 0.08],
+		[0.04, 1.14, 7, 0.20, 0.05],
+		[0.15, 1.04, 7, 0.17, 0.05],
+		[0.26, 0.92, 7, 0.14, 0.05],
+		[0.37, 0.80, 6, 0.11, 0.05],
+		[0.48, 0.67, 6, 0.08, 0.05],
+		[0.59, 0.54, 6, 0.06, 0.05],
+		[0.70, 0.41, 5, 0.04, 0.05],
+		[0.80, 0.28, 5, 0.02, 0.04],
+		[0.89, 0.17, 4, 0.01, 0.04],
 	]
 	for ti in tiers.size():
 		var t: Array = tiers[ti]
@@ -486,52 +605,51 @@ static func pine_crown_mesh(variant := 0) -> ArrayMesh:
 		var cnt: int = int(t[2])
 		var drp: float = float(t[3])
 		var lft: float = float(t[4])
-		var az_off := float(ti) * 1.18 + rng.randf() * TAU
+		var az_off := float(ti) * 1.24 + rng.randf() * TAU
 		for i in cnt:
-			var az := az_off + TAU * float(i) / float(cnt) + rng.randf_range(-0.22, 0.22)
+			var az := az_off + TAU * float(i) / float(cnt) + rng.randf_range(-0.24, 0.24)
 			var dir := Vector3(cos(az), 0.0, sin(az))
 			var blen := r_len * rng.randf_range(0.84, 1.16)
-			var bw := blen * rng.randf_range(0.76, 0.94)
-			var root_p := dir * 0.04 + Vector3(0.0, y0 + rng.randf_range(-0.028, 0.028), 0.0)
+			var bw := blen * rng.randf_range(0.88, 1.06)
+			var root_p := dir * 0.03 + Vector3(0.0, y0 + rng.randf_range(-0.026, 0.026), 0.0)
 			var roll := rng.randf_range(-0.26, 0.26)
-			_foliage_bough(st, root_p, dir, blen, bw, drp, lft, center, rng.randf(), ti < 5 and (i % 2 == 0), roll, (i + ti) % 2 == 1)
-	# 顶部紧密立体针叶塔尖（5 片错位斜立）
+			_foliage_bough(st, root_p, dir, blen, bw, drp, lft, center, rng.randf(), ti < 5 and (i % 3 == 0), roll, (i + ti) % 2 == 1)
+	# 顶部紧致自然收尖冷杉梢簇（5 片紧贴主轴小斜枝，平滑收束至顶梢）
 	for k in 5:
 		var az_t := float(k) * TAU / 5.0 + rng.randf_range(-0.22, 0.22)
 		var dir_t := Vector3(cos(az_t), 0.0, sin(az_t))
-		_foliage_bough(st, Vector3(0.0, 0.84, 0.0), dir_t, 0.20, 0.24, -0.14, 0.10, center, rng.randf(), false, rng.randf_range(-0.25, 0.25), k % 2 == 0)
+		_foliage_bough(st, Vector3(0.0, 0.91 + float(k % 2) * 0.025, 0.0), dir_t, 0.13, 0.13, -0.04, 0.05, center, rng.randf(), false, rng.randf_range(-0.22, 0.22), k % 2 == 0)
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
 
 
-## 写实阔叶乔木多层不规则团簇树冠网格（y=0..1，11 个错落子冠叶团 + 80 片双曲拱顶枝叶壳，俯视与平视均饱满绵密）
+## 写实阔叶乔木多层不规则团簇树冠网格（y=0..1，11 个错落体积子冠叶团 + 紧致自然细叶簇，平视/仰视均丰满柔和）
 static func broad_crown_mesh(variant := 0) -> ArrayMesh:
 	var v_id := posmod(variant, 6)
-	var key := "broad_cr_v2_%d" % v_id
+	var key := "broad_cr_v3_%d" % v_id
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = v_id * 6151 + 829
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(0.0, 0.46, 0.0)
-	# 11 个不规则子冠叶团锚点：[位置, 缩放, 叶片组数]
+	var center := Vector3(0.0, 0.48, 0.0)
+	# 11 个不规则子冠叶团锚点（2 顶冠 + 5 中层主瓣 + 4 下垂裙边瓣）：紧致小簇叠加，彻底告别硬刺海胆/扁纸片
 	var lobes: Array = [
-		[Vector3(rng.randf_range(-0.06, 0.06), 0.68, rng.randf_range(-0.06, 0.06)), 0.62, 8],
-		[Vector3(rng.randf_range(-0.22, 0.22), 0.58, rng.randf_range(-0.22, 0.22)), 0.54, 7],
+		[Vector3(rng.randf_range(-0.08, 0.08), 0.72, rng.randf_range(-0.08, 0.08)), 0.56, 6],
+		[Vector3(rng.randf_range(-0.22, 0.22), 0.62, rng.randf_range(-0.22, 0.22)), 0.52, 5],
 	]
-	# 中层 5 个丰满外凸主冠瓣
 	for li in 5:
-		var az := float(li) * TAU / 5.0 + rng.randf_range(-0.28, 0.28)
-		var rad := rng.randf_range(0.32, 0.48)
-		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.36, 0.56), sin(az) * rad), rng.randf_range(0.50, 0.62), 7])
-	# 下层 4 个外悬裙边副叶团（打破棒棒糖球体感）
+		var az := float(li) * TAU / 5.0 + rng.randf_range(-0.26, 0.26)
+		var rad := rng.randf_range(0.28, 0.44)
+		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.38, 0.58), sin(az) * rad), rng.randf_range(0.48, 0.58), 6])
 	for li in 4:
-		var az := float(li) * TAU / 4.0 + 0.42 + rng.randf_range(-0.30, 0.30)
-		var rad := rng.randf_range(0.42, 0.56)
-		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.18, 0.34), sin(az) * rad), rng.randf_range(0.44, 0.54), 6])
+		var az := float(li) * TAU / 4.0 + 0.38 + rng.randf_range(-0.28, 0.28)
+		var rad := rng.randf_range(0.34, 0.50)
+		lobes.append([Vector3(cos(az) * rad, rng.randf_range(0.16, 0.34), sin(az) * rad), rng.randf_range(0.44, 0.54), 5])
 
 	for li in lobes.size():
 		var lb: Array = lobes[li]
@@ -540,15 +658,16 @@ static func broad_crown_mesh(variant := 0) -> ArrayMesh:
 		var n_fans: int = int(lb[2])
 		var az0 := rng.randf() * TAU
 		for fi in n_fans:
-			var faz := az0 + float(fi) * TAU / float(n_fans) + rng.randf_range(-0.25, 0.25)
+			var faz := az0 + float(fi) * TAU / float(n_fans) + rng.randf_range(-0.26, 0.26)
 			var dir := Vector3(cos(faz), 0.0, sin(faz))
-			var lift := rng.randf_range(0.08, 0.24) if li < 2 else rng.randf_range(-0.06, 0.20)
-			var droop := rng.randf_range(0.02, 0.08)
-			var roll := rng.randf_range(-0.42, 0.42)
-			var b_len := f_scale * rng.randf_range(0.85, 1.14)
-			var b_wid := b_len * rng.randf_range(0.92, 1.12)
-			_foliage_bough(st, lc - dir * 0.08, dir, b_len, b_wid, droop, lift, center, rng.randf(), fi % 3 == 0, roll, (fi + li) % 2 == 1)
+			var lift := rng.randf_range(0.06, 0.20) if li < 2 else rng.randf_range(-0.08, 0.16)
+			var droop := rng.randf_range(0.03, 0.10)
+			var roll := rng.randf_range(-0.52, 0.52)
+			var b_len := f_scale * rng.randf_range(0.84, 1.12)
+			var b_wid := b_len * rng.randf_range(0.98, 1.18)
+			_foliage_bough(st, lc - dir * 0.06, dir, b_len, b_wid, droop, lift, center, rng.randf(), (fi % 3 == 0), roll, (fi + li) % 2 == 1)
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
@@ -565,17 +684,18 @@ static func shrub_mesh(variant := 0) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var center := Vector3(0.0, 0.28, 0.0)
-	for i in 12:
-		var az := float(i) * TAU / 12.0 + rng.randf_range(-0.22, 0.22)
+	for i in 9:
+		var az := float(i) * TAU / 9.0 + rng.randf_range(-0.22, 0.22)
 		var dir := Vector3(cos(az), 0.0, sin(az))
-		var bl := rng.randf_range(0.72, 1.04)
+		var bl := rng.randf_range(0.76, 1.08)
 		var lift := rng.randf_range(0.22, 0.64)
-		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.04, 0.18), 0.0), dir, bl, bl * 0.96, 0.04, lift, center, rng.randf(), i % 3 == 0, rng.randf_range(-0.34, 0.34), i % 2 == 1)
-	for j in 4:
-		var az2 := float(j) * TAU / 4.0 + rng.randf_range(-0.3, 0.3)
+		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.04, 0.18), 0.0), dir, bl, bl * 1.04, 0.04, lift, center, rng.randf(), i % 4 == 0, rng.randf_range(-0.34, 0.34), i % 2 == 1)
+	for j in 3:
+		var az2 := float(j) * TAU / 3.0 + rng.randf_range(-0.3, 0.3)
 		var dir2 := Vector3(cos(az2), 0.0, sin(az2))
-		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.28, 0.40), 0.0), dir2, rng.randf_range(0.55, 0.75), rng.randf_range(0.62, 0.80), 0.0, rng.randf_range(0.28, 0.48), center, rng.randf(), false, rng.randf_range(-0.3, 0.3), j % 2 == 0)
+		_foliage_bough(st, Vector3(0.0, rng.randf_range(0.28, 0.40), 0.0), dir2, rng.randf_range(0.58, 0.78), rng.randf_range(0.68, 0.86), 0.0, rng.randf_range(0.28, 0.48), center, rng.randf(), false, rng.randf_range(-0.3, 0.3), j % 2 == 0)
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
@@ -614,6 +734,7 @@ static func grass_clump_mesh() -> ArrayMesh:
 				st.set_uv(uvs[vi])
 				st.add_vertex(pts[vi])
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[KEY] = m
 	return m
@@ -636,13 +757,25 @@ static func capsule(r: float, hgt: float) -> CapsuleMesh:
 	return c
 
 
-## 圆环 / 法兰：环向 rings 小环 ≥24、大环（外径 ≥1m）≥36；管截面 ≥16/18（移动 18/28 与 12/14）。
+## 圆环 / 法兰：细小环箍（外径 < 0.4m）桌面 16×6（移动 12×5），中环 20×8，大环封顶 32×10，避免 48×14 爆面。
 static func torus(inner: float, outer: float, seg := 36) -> TorusMesh:
 	var mob := is_mobile_perf()
-	var lo := (18 if outer < 1.0 else 28) if mob else (24 if outer < 1.0 else 36)
-	var s_seg := clampi(seg, lo, 72) if seg != 36 else maxi(lo, 36 if outer >= 0.35 else lo)
-	var thick := outer - inner
-	var tube_seg := (12 if thick < 0.15 else 14) if mob else (16 if thick < 0.15 else 18)
+	var lo: int
+	var hi: int
+	var tube_seg: int
+	if outer < 0.4:
+		lo = 10 if mob else 12
+		hi = 12 if mob else 16
+		tube_seg = 5 if mob else 6
+	elif outer < 1.0:
+		lo = 14 if mob else 16
+		hi = 16 if mob else 20
+		tube_seg = 6 if mob else 8
+	else:
+		lo = 18 if mob else 24
+		hi = 24 if mob else 32
+		tube_seg = 8 if mob else 10
+	var s_seg := clampi(seg, lo, hi) if seg != 36 else hi
 	var key := "to%.3f|%.3f|%d|%d" % [inner, outer, s_seg, tube_seg]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
@@ -1103,14 +1236,14 @@ static func player_ring_tex() -> Texture2D:
 			var dy := (float(y) - c) / (float(sz) * 0.5)
 			var r := Vector2(dx, dy).length()
 			var ang := atan2(dy, dx)
-			# Four open diagonal compass brackets + subtle cardinal ticks, feathered edge
-			var diag_mask := smoothstep(0.30, 0.58, abs(sin(ang * 2.0)))
-			var card_tick := pow(abs(cos(ang * 2.0)), 18.0) * 0.45
-			var main_band := exp(-pow((r - 0.805) / 0.022, 2.0)) * maxf(diag_mask, card_tick)
-			var inner_hair := exp(-pow((r - 0.675) / 0.013, 2.0)) * diag_mask * 0.24
-			var outer_glow := exp(-pow((r - 0.805) / 0.055, 2.0)) * diag_mask * 0.18
+			# Four sleek open diagonal compass brackets + fine cardinal ticks (克制战术刻度，消除桌游发光底盘感)
+			var diag_mask := smoothstep(0.42, 0.68, abs(sin(ang * 2.0)))
+			var card_tick := pow(abs(cos(ang * 2.0)), 26.0) * 0.40
+			var main_band := exp(-pow((r - 0.825) / 0.014, 2.0)) * maxf(diag_mask, card_tick)
+			var inner_hair := exp(-pow((r - 0.715) / 0.009, 2.0)) * diag_mask * 0.16
+			var outer_glow := exp(-pow((r - 0.825) / 0.036, 2.0)) * diag_mask * 0.10
 			var edge := 1.0 - smoothstep(0.90, 0.985, r)
-			var a := clampf((main_band * 0.72 + inner_hair + outer_glow) * edge, 0.0, 1.0)
+			var a := clampf((main_band * 0.56 + inner_hair + outer_glow) * edge, 0.0, 1.0)
 			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	img.generate_mipmaps()
 	var t := ImageTexture.create_from_image(img)
@@ -1138,7 +1271,8 @@ static func world_tex(file: String) -> Texture2D:
 	var path := WORLD_TEX_DIR + file
 	if ResourceLoader.exists(path):
 		t = load(path)
-		if t != null:
+		# 已导入的 CompressedTexture2D 在 .import 中已预烘焙 Mipmap 与 VRAM 压缩，严禁 get_image() 回读解压！
+		if t != null and not (t is CompressedTexture2D):
 			var chk := t.get_image()
 			if chk != null and not chk.has_mipmaps():
 				chk.generate_mipmaps()
@@ -1152,8 +1286,101 @@ static func world_tex(file: String) -> Texture2D:
 	return t
 
 
-## 写实涂装（自定义着色器）：默认绑定轧制重工钢板底纹与法线凹凸，彻底消除大面积纯色塑料块。
+static var _occ_shader_map: Dictionary = {}
+static var _opaque_shader_map: Dictionary = {}
+static var _occ_mat_cache: Dictionary = {}
+
+static func _ensure_occ_shader_maps() -> void:
+	if not _occ_shader_map.is_empty():
+		return
+	var pairs := [
+		["res://shaders/mech_paint.gdshader", "res://shaders/mech_paint_occ.gdshader"],
+		["res://shaders/mech_paint_mobile.gdshader", "res://shaders/mech_paint_mobile_occ.gdshader"],
+		["res://shaders/mech_trim.gdshader", "res://shaders/mech_trim_occ.gdshader"],
+		["res://shaders/enemy_pbr.gdshader", "res://shaders/enemy_pbr_occ.gdshader"],
+		["res://shaders/ind_glass.gdshader", "res://shaders/ind_glass_occ.gdshader"],
+		["res://shaders/canopy_glass.gdshader", "res://shaders/canopy_glass_occ.gdshader"],
+	]
+	for pr: Array in pairs:
+		var s_op: Shader = load(str(pr[0]))
+		var s_oc: Shader = load(str(pr[1]))
+		if s_op != null and s_oc != null:
+			_occ_shader_map[str(pr[0])] = s_oc
+			_opaque_shader_map[str(pr[1])] = s_op
+
+
+static func occ_shader_for(sh: Shader) -> Shader:
+	if sh == null:
+		return null
+	_ensure_occ_shader_maps()
+	var mapped = _occ_shader_map.get(sh.resource_path)
+	return mapped if mapped != null else sh
+
+
+static func opaque_shader_for(sh: Shader) -> Shader:
+	if sh == null:
+		return null
+	_ensure_occ_shader_maps()
+	var mapped = _opaque_shader_map.get(sh.resource_path)
+	return mapped if mapped != null else sh
+
+
+## 将纯不透明涂装/窗格材质按需映射为带遮挡裁切的共享副本（缓存按原材质实例 ID 复用，零帧内分配）
+static func occ_material(m: Material) -> Material:
+	if not (m is ShaderMaterial):
+		return m
+	var sm := m as ShaderMaterial
+	if sm.shader == null:
+		return m
+	_ensure_occ_shader_maps()
+	var target_sh: Shader = _occ_shader_map.get(sm.shader.resource_path)
+	if target_sh == null:
+		return m
+	var id := sm.get_instance_id()
+	var cached: ShaderMaterial = _occ_mat_cache.get(id)
+	if cached != null:
+		return cached
+	var dup := sm.duplicate() as ShaderMaterial
+	dup.shader = target_sh
+	_occ_mat_cache[id] = dup
+	return dup
+
+
+## 写实涂装（自定义着色器）：根据物理参数 (color, metal, rough, opts) 自动路由到匹配的 1K 实拍 PBR 贴图族
+## （混凝土 / 陶砖 / 木板 / 抹灰 / 粗麻帆布 / 沥青 / 军工轧制装甲 / 锻造枪钢 / 结构钢板 / 锈蚀残骸钢），
+## 彻底消灭 180+ 个程序化建筑/载具/机甲脚本的大面积纯色塑料感与错贴金属白斑。
 static var _paint_shader: Shader
+static func _auto_pbr_profile(c: Color, metal_val: float, rough: float, opts: Dictionary) -> Dictionary:
+	var lum := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+	var rb := c.r - c.b
+	var rg := c.r - c.g
+	var gb := c.g - c.b
+	# 1. 非金属建筑/地表/家具/沙袋（自动关掉金属磨损与金属划痕，启用建筑正交世界投影消除克隆印章）
+	if metal_val <= 0.12 and rough >= 0.72:
+		if lum < 0.245 and absf(rb) < 0.035 and rough >= 0.88:
+			return {"p": "asphalt", "sc": 0.18, "as": 0.62, "ns": 0.68, "rs": 0.72, "mw": 0.0, "scr": 0.0}
+		if rg >= 0.036 and rb >= 0.052 and rough >= 0.85 and lum >= 0.24 and lum <= 0.56:
+			return {"p": "brick", "sc": 0.22, "as": 0.80, "ns": 0.72, "rs": 0.74, "mw": 0.0, "scr": 0.0}
+		if rg >= 0.022 and gb >= 0.022 and rb >= 0.055 and rough <= 0.855 and lum >= 0.22 and lum <= 0.52:
+			return {"p": "wood_plank", "sc": 0.36, "as": 0.78, "ns": 0.72, "rs": 0.70, "mw": 0.0, "scr": 0.0}
+		if gb >= 0.042 and rb >= 0.068 and rough >= 0.90 and lum <= 0.44:
+			return {"p": "fabric_canvas", "sc": 1.25, "as": 0.78, "ns": 0.78, "rs": 0.72, "mw": 0.0, "scr": 0.0}
+		if lum >= 0.48 and rough <= 0.88:
+			return {"p": "plaster", "sc": 0.24, "as": 0.74, "ns": 0.62, "rs": 0.72, "mw": 0.0, "scr": 0.0}
+		return {"p": "concrete", "sc": 0.19, "as": 0.76, "ns": 0.64, "rs": 0.74, "mw": 0.0, "scr": 0.0}
+	# 2. 重锈载具/残骸与氧化金属
+	var opt_rust := float(opts.get("rust", 0.25))
+	if opt_rust >= 0.55 or (metal_val >= 0.30 and rb >= 0.045 and rough >= 0.56):
+		return {"p": "rusted_metal", "sc": 0.36, "as": 0.74, "ns": 0.74, "rs": 0.78, "mw": 1.0, "scr": -1.0}
+	# 3. 喷漆军工装甲/机体/工程漆面（零板缝无白斑实拍均质冷轧钢）
+	if metal_val <= 0.44:
+		return {"p": "armor_rha", "sc": 0.58, "as": 0.60, "ns": 0.62, "rs": 0.70, "mw": 1.0, "scr": -1.0}
+	# 4. 深色锻造/机加工枪钢 vs 结构钢板
+	if rough <= 0.52 and lum < 0.42:
+		return {"p": "gunmetal", "sc": 0.74, "as": 0.56, "ns": 0.68, "rs": 0.78, "mw": 1.0, "scr": -1.0}
+	return {"p": "steel_plate", "sc": 0.32, "as": 0.58, "ns": 0.62, "rs": 0.72, "mw": 1.0, "scr": -1.0}
+
+
 static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> ShaderMaterial:
 	var key := "paint%s|%.2f|%.2f|%s" % [c.to_html(), metal_val, rough, str(opts)]
 	if _mat_cache.has(key):
@@ -1167,12 +1394,36 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 	m.set_shader_parameter("rough_base", rough)
 	m.set_shader_parameter("noise_lo", noise_tex("grime_raw"))
 	m.set_shader_parameter("noise_hi", noise_tex("hi_raw"))
-	m.set_shader_parameter("albedo_tex", world_tex("steel_plate_a.png"))
-	m.set_shader_parameter("use_albedo_tex", 1.0)
-	m.set_shader_parameter("albedo_tex_scale", 0.24)
-	m.set_shader_parameter("albedo_tex_strength", 0.52)
-	m.set_shader_parameter("normal_tex", world_tex("steel_plate_n.png"))
-	m.set_shader_parameter("normal_strength", 0.52)
+	var auto_route: bool = (not opts.has("albedo_tex")) and (float(opts.get("use_albedo_tex", 1.0)) > 0.5)
+	if auto_route:
+		var prof := _auto_pbr_profile(c, metal_val, rough, opts)
+		var pref: String = str(prof["p"])
+		m.set_shader_parameter("albedo_tex", world_tex(pref + "_a.png"))
+		m.set_shader_parameter("use_albedo_tex", 1.0)
+		m.set_shader_parameter("albedo_tex_scale", float(prof["sc"]))
+		m.set_shader_parameter("albedo_tex_strength", float(prof["as"]))
+		m.set_shader_parameter("normal_tex", world_tex(pref + "_n.png"))
+		m.set_shader_parameter("normal_strength", float(prof["ns"]))
+		if not opts.has("rough_tex"):
+			m.set_shader_parameter("rough_tex", world_tex(pref + "_r.png"))
+			m.set_shader_parameter("use_rough_tex", 1.0)
+			m.set_shader_parameter("rough_tex_strength", float(prof["rs"]))
+		if not opts.has("metal_wear"):
+			m.set_shader_parameter("metal_wear", float(prof["mw"]))
+		if float(prof["scr"]) >= 0.0 and not opts.has("scratches"):
+			m.set_shader_parameter("scratches", float(prof["scr"]))
+		if float(prof["mw"]) < 0.5 and not opts.has("rust"):
+			m.set_shader_parameter("rust", 0.16)
+			m.set_shader_parameter("rust_color", Color(0.20, 0.17, 0.14))
+	else:
+		m.set_shader_parameter("albedo_tex", world_tex("armor_rha_a.png"))
+		m.set_shader_parameter("use_albedo_tex", 1.0)
+		m.set_shader_parameter("albedo_tex_scale", 0.56)
+		m.set_shader_parameter("albedo_tex_strength", 0.56)
+		m.set_shader_parameter("normal_tex", world_tex("armor_rha_n.png"))
+		m.set_shader_parameter("normal_strength", 0.55)
+		m.set_shader_parameter("use_rough_tex", 0.0)
+		m.set_shader_parameter("rough_tex_strength", 0.0)
 	if not opts.has("panel_scale"):
 		m.set_shader_parameter("panel_scale", 0.0)
 	for k in opts:
@@ -1182,25 +1433,78 @@ static func paint(c: Color, metal_val := 0.15, rough := 0.62, opts := {}) -> Sha
 
 
 static func metal(c := Color(0.28, 0.30, 0.33)) -> ShaderMaterial:
-	var mc := Color(maxf(c.r, 0.27), maxf(c.g, 0.28), maxf(c.b, 0.30)).lerp(c.lightened(0.18), 0.45)
-	return paint(mc, 0.65, 0.36, {
-		"wear": 0.36, "panel_scale": 0.0, "dust": 0.10, "rust": 0.06,
-		"scratches": 0.30, "bare_metal": mc.lightened(0.48),
-		"albedo_tex_strength": 0.42, "normal_strength": 0.45,
+	var mc := Color(maxf(c.r, 0.23), maxf(c.g, 0.24), maxf(c.b, 0.265)).lerp(c.lightened(0.16), 0.40)
+	return paint(mc, 0.78, 0.34, {
+		"albedo_tex": world_tex("gunmetal_a.png"), "normal_tex": world_tex("gunmetal_n.png"),
+		"rough_tex": world_tex("gunmetal_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 1.02, "albedo_tex_strength": 0.62, "normal_strength": 0.76, "rough_tex_strength": 0.82,
+		"wear": 0.46, "panel_scale": 0.0, "dust": 0.09, "rust": 0.05,
+		"scratches": 0.38, "bare_metal": mc.lightened(0.56),
+	})
+
+
+static func treadplate(c := Color(0.20, 0.21, 0.23), metal_val := 0.72, rough := 0.48, scale := 0.70) -> ShaderMaterial:
+	return paint(c, metal_val, rough, {
+		"albedo_tex": world_tex("treadplate_a.png"), "normal_tex": world_tex("treadplate_n.png"),
+		"rough_tex": world_tex("treadplate_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": scale, "albedo_tex_strength": 0.82, "normal_strength": 0.92, "rough_tex_strength": 0.84,
+		"wear": 0.52, "rust": 0.22, "dust": 0.18, "grime": 0.58, "scratches": 0.26, "panel_scale": 0.0,
+	})
+
+
+static func rusted_steel(c := Color(0.36, 0.34, 0.30), scale := 0.38) -> ShaderMaterial:
+	return paint(c, 0.40, 0.72, {
+		"albedo_tex": world_tex("rusted_metal_a.png"), "normal_tex": world_tex("rusted_metal_n.png"),
+		"rough_tex": world_tex("rusted_metal_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": scale, "albedo_tex_strength": 0.80, "normal_strength": 0.78, "rough_tex_strength": 0.82,
+		"wear": 0.65, "rust": 0.68, "grime": 0.80, "dust": 0.26, "panel_scale": 0.0,
+	})
+
+
+static func wood_mat(c := Color(0.46, 0.37, 0.29), scale := 0.36) -> ShaderMaterial:
+	return paint(c, 0.0, 0.82, {
+		"albedo_tex": world_tex("wood_plank_a.png"), "normal_tex": world_tex("wood_plank_n.png"),
+		"rough_tex": world_tex("wood_plank_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": scale, "albedo_tex_strength": 0.82, "normal_strength": 0.74, "rough_tex_strength": 0.72,
+		"wear": 0.34, "metal_wear": 0.0, "scratches": 0.0, "rust": 0.16, "rust_color": Color(0.18, 0.14, 0.10),
+		"grime": 0.52, "dust": 0.18, "panel_scale": 0.0,
+	})
+
+
+static func plaster_mat(c := Color(0.68, 0.65, 0.60), scale := 0.24) -> ShaderMaterial:
+	return paint(c, 0.0, 0.85, {
+		"albedo_tex": world_tex("plaster_a.png"), "normal_tex": world_tex("plaster_n.png"),
+		"rough_tex": world_tex("plaster_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": scale, "albedo_tex_strength": 0.78, "normal_strength": 0.66, "rough_tex_strength": 0.74,
+		"wear": 0.30, "metal_wear": 0.0, "scratches": 0.0, "rust": 0.18, "rust_color": Color(0.24, 0.21, 0.18),
+		"grime": 0.48, "dust": 0.16, "panel_scale": 0.0,
+	})
+
+
+static func fabric_mat(c := Color(0.48, 0.45, 0.37), scale := 1.25) -> ShaderMaterial:
+	return paint(c, 0.0, 0.92, {
+		"albedo_tex": world_tex("fabric_canvas_a.png"), "normal_tex": world_tex("fabric_canvas_n.png"),
+		"rough_tex": world_tex("fabric_canvas_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": scale, "albedo_tex_strength": 0.80, "normal_strength": 0.80, "rough_tex_strength": 0.74,
+		"wear": 0.24, "metal_wear": 0.0, "scratches": 0.0, "rust": 0.10, "grime": 0.54, "dust": 0.28, "panel_scale": 0.0,
 	})
 
 
 static func chrome() -> ShaderMaterial:
-	return paint(Color(0.68, 0.70, 0.72), 0.90, 0.24, {
-		"wear": 0.0, "panel_scale": 0.0, "dust": 0.08, "rust": 0.0,
-		"scratches": 0.16, "grime": 0.16, "albedo_tex_strength": 0.22, "normal_strength": 0.18,
+	return paint(Color(0.70, 0.72, 0.75), 0.92, 0.20, {
+		"albedo_tex": world_tex("armor_rha_a.png"), "normal_tex": world_tex("armor_rha_n.png"),
+		"rough_tex": world_tex("armor_rha_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.80, "albedo_tex_strength": 0.20, "normal_strength": 0.16, "rough_tex_strength": 0.30,
+		"wear": 0.0, "panel_scale": 0.0, "dust": 0.06, "rust": 0.0, "scratches": 0.14, "grime": 0.14,
 	})
 
 
 static func rubber() -> ShaderMaterial:
-	return paint(Color(0.065, 0.065, 0.07), 0.0, 0.88, {
-		"use_albedo_tex": 0.0, "normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.28,
-		"wear": 0.0, "panel_scale": 0.0, "scratches": 0.0, "rust": 0.0, "dust": 0.45,
+	return paint(Color(0.11, 0.115, 0.12), 0.0, 0.84, {
+		"albedo_tex": world_tex("rubber_tread_a.png"), "normal_tex": world_tex("rubber_tread_n.png"),
+		"rough_tex": world_tex("rubber_tread_r.png"), "use_albedo_tex": 1.0, "use_rough_tex": 1.0,
+		"albedo_tex_scale": 0.95, "albedo_tex_strength": 0.72, "normal_strength": 0.85, "rough_tex_strength": 0.76,
+		"metal_wear": 0.0, "wear": 0.0, "panel_scale": 0.0, "scratches": 0.0, "rust": 0.0, "dust": 0.42,
 	})
 
 
@@ -1251,107 +1555,127 @@ static func glass(c: Color) -> ShaderMaterial:
 	return window_mat(0.52, Vector2(0.88, 1.08), c.darkened(0.72), muted, 0.48)
 
 
-## 现浇模板混凝土：宽模板缝（防桥墩/护墙横线摩尔纹）+ 废土雨水烟熏与钢筋渗锈做旧
-static func concrete(c: Color, seams := true) -> ShaderMaterial:
-	return paint(c, 0.0, 0.91, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("concrete_a.png"), "albedo_tex_scale": 0.11, "albedo_tex_strength": 0.50,
-		"normal_tex": world_tex("concrete_n.png"), "normal_strength": 0.40,
-		"wear": 0.48, "metal_wear": 0.0, "bare_metal": c.lightened(0.20), "scratches": 0.0,
-		"rust": 0.44, "rust_color": Color(0.22, 0.16, 0.11), "grime": 0.74, "dust": 0.26, "dust_color": Color(0.38, 0.35, 0.30),
-		"panel_scale": 0.22 if seams else 0.0, "detail_scale": 0.82,
-	})
-
-
-## 重工业顺丁错缝窑变砖墙：沉稳风化陶砖 + 雨渍烟灰做旧
-static func brick(c := Color(0.42, 0.27, 0.20), scale := 0.28) -> ShaderMaterial:
-	return paint(c, 0.0, 0.90, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("brick_a.png"), "albedo_tex_scale": scale * 0.84, "albedo_tex_strength": 0.76,
-		"normal_tex": world_tex("brick_n.png"), "normal_strength": 0.66,
-		"wear": 0.44, "metal_wear": 0.0, "bare_metal": c.lightened(0.18), "scratches": 0.0,
-		"rust": 0.36, "rust_color": Color(0.17, 0.13, 0.10), "grime": 0.72, "dust": 0.22, "dust_color": Color(0.40, 0.36, 0.31),
-		"panel_scale": 0.0, "detail_scale": 0.92,
-	})
-
-
-## 梯形压型波纹钢墙板：宽距压型肋 + 工业锈蚀镀锌钢质感（防高频白条闪烁同时保留废土锈蚀）
-static func corrugated(c: Color, rust_amt := 0.36, scale := 0.22) -> ShaderMaterial:
-	return paint(c, 0.36, 0.66, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("corrugated_a.png"), "albedo_tex_scale": scale * 0.74, "albedo_tex_strength": 0.64,
-		"normal_tex": world_tex("corrugated_n.png"), "normal_strength": 0.48,
-		"wear": 0.54, "metal_wear": 1.0, "scratches": 0.24,
-		"rust": minf(rust_amt * 1.10, 0.92), "grime": 0.68, "dust": 0.22,
-		"panel_scale": 0.0, "detail_scale": 0.92,
-	})
-
-
-## 直立锁边 / 重工金属瓦屋面：锈蚀铁皮与工业落灰质感
-static func roof_mat(c: Color, rust_amt := 0.32, sloped := true) -> ShaderMaterial:
-	return paint(c, 0.32, 0.72, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("roof_seam_a.png"), "albedo_tex_scale": 0.19, "albedo_tex_strength": 0.66,
-		"normal_tex": world_tex("roof_seam_n.png"), "normal_strength": 0.48,
-		"roof_uv": 1.0 if sloped else 0.0,
-		"wear": 0.48, "metal_wear": 1.0, "scratches": 0.18,
-		"rust": minf(rust_amt * 1.05, 0.88), "grime": 0.64, "dust": 0.26,
-		"panel_scale": 0.0, "detail_scale": 0.92,
-	})
-
-
-## 沥青油毡防水工业平屋面：深炭旧油毡与风化尘渍
-static func tar_roof(c := Color(0.24, 0.25, 0.26), dust_amt := 0.26) -> ShaderMaterial:
-	return paint(c, 0.0, 0.90, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("tar_roof_a.png"), "albedo_tex_scale": 0.20, "albedo_tex_strength": 0.62,
-		"normal_tex": world_tex("tar_roof_n.png"), "normal_strength": 0.48,
-		"roof_uv": 1.0,
-		"wear": 0.34, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
-		"rust": 0.28, "rust_color": Color(0.16, 0.14, 0.12), "grime": 0.66, "dust": dust_amt, "dust_color": Color(0.36, 0.34, 0.30),
-		"panel_scale": 0.0, "detail_scale": 0.90,
-	})
-
-
-## 粗骨料工业沥青路面：深炭黑湿润沥青 + 磨耗骨料肌理与轻度路面扬尘（消除纯黑塑料带感）
-static func asphalt(c := Color(0.22, 0.225, 0.235)) -> ShaderMaterial:
+## 现浇风化建筑混凝土：1K 实拍清水混凝土模板墙板 PBR（清晰模板拼缝与细腻风化孔洞）
+static func concrete(c: Color, _seams := false) -> ShaderMaterial:
 	return paint(c, 0.0, 0.84, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.26, "albedo_tex_strength": 0.68,
-		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.52,
-		"wear": 0.34, "metal_wear": 0.0, "bare_metal": c.lightened(0.16), "scratches": 0.0,
-		"rust": 0.20, "rust_color": Color(0.16, 0.15, 0.14), "grime": 0.46,
-		"dust": 0.24, "dust_color": Color(0.35, 0.33, 0.29),
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("concrete_a.png"), "albedo_tex_scale": 0.19, "albedo_tex_strength": 0.86,
+		"normal_tex": world_tex("concrete_n.png"), "normal_strength": 0.72,
+		"rough_tex": world_tex("concrete_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.78,
+		"wear": 0.42, "metal_wear": 0.0, "bare_metal": c.lightened(0.18), "scratches": 0.0,
+		"rust": 0.30, "rust_color": Color(0.22, 0.17, 0.13), "grime": 0.64, "dust": 0.22, "dust_color": Color(0.38, 0.36, 0.32),
+		"panel_scale": 0.0, "detail_scale": 0.86,
+	})
+
+
+## 华盛顿/纽约经典切块石灰岩外墙：1K 错缝精切石块 PBR（8层×3块真实立面比例）
+static func limestone(c := Color(0.66, 0.63, 0.57), scale := 0.185) -> ShaderMaterial:
+	return paint(c, 0.0, 0.84, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("limestone_a.png"), "albedo_tex_scale": scale, "albedo_tex_strength": 0.78,
+		"normal_tex": world_tex("limestone_n.png"), "normal_strength": 0.58,
+		"rough_tex": world_tex("limestone_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.68,
+		"wear": 0.28, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
+		"rust": 0.15, "rust_color": Color(0.26, 0.22, 0.17), "grime": 0.46, "dust": 0.16, "dust_color": Color(0.46, 0.44, 0.39),
+		"panel_scale": 0.0, "detail_scale": 0.86,
+	})
+
+
+## 经典顺丁错缝窑变砖墙：1K 实拍陶砖 PBR（真实 25cm 砖长比例 + 灰缝凹凸 + 真实粗糙度差异）
+static func brick(c := Color(0.50, 0.31, 0.23), scale := 0.22) -> ShaderMaterial:
+	return paint(c, 0.0, 0.86, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("brick_a.png"), "albedo_tex_scale": scale, "albedo_tex_strength": 0.84,
+		"normal_tex": world_tex("brick_n.png"), "normal_strength": 0.72,
+		"rough_tex": world_tex("brick_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.72,
+		"wear": 0.36, "metal_wear": 0.0, "bare_metal": c.lightened(0.16), "scratches": 0.0,
+		"rust": 0.22, "rust_color": Color(0.18, 0.14, 0.11), "grime": 0.54, "dust": 0.16, "dust_color": Color(0.40, 0.37, 0.32),
 		"panel_scale": 0.0, "detail_scale": 0.90,
 	})
 
 
-## 压实道砟 / 砂砾河滩与土路材质（低频干净颗粒，抑制远距沙粒闪点）
-static func gravel_mat(c := Color(0.38, 0.35, 0.31), rough := 0.92) -> ShaderMaterial:
+## 压型波纹钢墙板：1K 实拍剥漆锈蚀波纹铁皮 PBR
+static func corrugated(c: Color, rust_amt := 0.36, scale := 0.26) -> ShaderMaterial:
+	return paint(c, 0.34, 0.64, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("corrugated_a.png"), "albedo_tex_scale": clampf(scale * 0.86, 0.18, 0.30), "albedo_tex_strength": 0.76,
+		"normal_tex": world_tex("corrugated_n.png"), "normal_strength": 0.60,
+		"rough_tex": world_tex("corrugated_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.74,
+		"wear": 0.48, "metal_wear": 1.0, "scratches": 0.20,
+		"rust": minf(rust_amt * 1.05, 0.90), "grime": 0.58, "dust": 0.18,
+		"panel_scale": 0.0, "detail_scale": 0.90,
+	})
+
+
+## 直立锁边 / 重工压型金属瓦屋面：1K 实拍工业压型镀锌钢瓦 PBR（清晰肋条凹凸 + 金属粗糙度反差 + 锈蚀落灰）
+static func roof_mat(c: Color, rust_amt := 0.34, sloped := true) -> ShaderMaterial:
+	return paint(c, 0.48, 0.56, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("roof_seam_a.png"), "albedo_tex_scale": 0.22, "albedo_tex_strength": 0.82,
+		"normal_tex": world_tex("roof_seam_n.png"), "normal_strength": 0.76,
+		"rough_tex": world_tex("roof_seam_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.78,
+		"roof_uv": 1.0 if sloped else 0.0,
+		"wear": 0.52, "metal_wear": 1.0, "scratches": 0.22,
+		"rust": minf(rust_amt * 1.15, 0.90), "grime": 0.68, "dust": 0.26,
+		"panel_scale": 0.0, "detail_scale": 0.92,
+	})
+
+
+## 沥青油毡卷材平屋面：1K 实拍沥青卷材 PBR（真实卷材接缝与高光粗糙度变化）
+static func tar_roof(c := Color(0.28, 0.285, 0.295), dust_amt := 0.22) -> ShaderMaterial:
+	return paint(c, 0.0, 0.86, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("tar_roof_a.png"), "albedo_tex_scale": 0.20, "albedo_tex_strength": 0.74,
+		"normal_tex": world_tex("tar_roof_n.png"), "normal_strength": 0.56,
+		"rough_tex": world_tex("tar_roof_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.74,
+		"roof_uv": 1.0,
+		"wear": 0.28, "metal_wear": 0.0, "bare_metal": c.lightened(0.14), "scratches": 0.0,
+		"rust": 0.20, "rust_color": Color(0.16, 0.14, 0.12), "grime": 0.56, "dust": dust_amt, "dust_color": Color(0.36, 0.34, 0.30),
+		"panel_scale": 0.0, "detail_scale": 0.88,
+	})
+
+
+## 粗骨料城市沥青路面：1K 实拍沥青骨料 PBR（校准 B.o.T 级日晒风化中浅灰反照率，保留碎石颗粒与扬尘）
+static func asphalt(c := Color(0.46, 0.47, 0.49)) -> ShaderMaterial:
+	return paint(c, 0.0, 0.84, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("asphalt_a.png"), "albedo_tex_scale": 0.165, "albedo_tex_strength": 0.72,
+		"normal_tex": world_tex("asphalt_n.png"), "normal_strength": 0.82,
+		"rough_tex": world_tex("asphalt_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.78,
+		"wear": 0.38, "metal_wear": 0.0, "bare_metal": c.lightened(0.18), "scratches": 0.0,
+		"rust": 0.14, "rust_color": Color(0.32, 0.30, 0.27), "grime": 0.42,
+		"dust": 0.32, "dust_color": Color(0.56, 0.53, 0.47),
+		"panel_scale": 0.0, "detail_scale": 0.82,
+	})
+
+
+## 压实道砟 / 砂砾河滩与土路材质（1K 实拍碎石砾石）
+static func gravel_mat(c := Color(0.44, 0.41, 0.36), rough := 0.90) -> ShaderMaterial:
 	return paint(c, 0.0, rough, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("ground_gravel_a.png"), "albedo_tex_scale": 0.24, "albedo_tex_strength": 0.58,
-		"normal_tex": world_tex("ground_gravel_n.png"), "normal_strength": 0.48,
-		"wear": 0.12, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
-		"rust": 0.16, "rust_color": c.darkened(0.24), "grime": 0.40,
-		"dust": 0.14, "dust_color": c.lightened(0.06),
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("ground_gravel_a.png"), "albedo_tex_scale": 0.26, "albedo_tex_strength": 0.78,
+		"normal_tex": world_tex("ground_gravel_n.png"), "normal_strength": 0.72,
+		"rough_tex": world_tex("ground_gravel_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.68,
+		"wear": 0.14, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
+		"rust": 0.16, "rust_color": c.darkened(0.24), "grime": 0.42,
+		"dust": 0.16, "dust_color": c.lightened(0.06),
 		"panel_scale": 0.0, "detail_scale": 0.90,
 	})
 
 
-## 自然层理山岩 / 碎石：沉积岩倾斜层理 + 连续风化节理凹凸
+## 自然裂隙花岗岩 / 岸边块石：1K 实拍裂纹巨石 PBR（水线下方自动触发湿润深暗反光）
 static func rock_mat(c: Color) -> ShaderMaterial:
-	return paint(c, 0.0, 0.95, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("rock_strata_a.png"), "albedo_tex_scale": 0.16, "albedo_tex_strength": 0.88,
-		"normal_tex": world_tex("rock_strata_n.png"), "normal_strength": 1.05,
-		"wear": 0.24, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
-		"rust": 0.46, "rust_color": c.darkened(0.34), "grime": 0.86,
-		"dust": 0.28, "dust_color": c.lightened(0.07),
-		"panel_scale": 0.0, "detail_scale": 0.80,
+	return paint(c, 0.0, 0.90, {
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("rock_strata_a.png"), "albedo_tex_scale": 0.24, "albedo_tex_strength": 0.90,
+		"normal_tex": world_tex("rock_strata_n.png"), "normal_strength": 1.15,
+		"rough_tex": world_tex("rock_strata_r.png"), "use_rough_tex": 1.0, "rough_tex_strength": 0.74,
+		"wear": 0.26, "metal_wear": 0.0, "bare_metal": c.lightened(0.12), "scratches": 0.0,
+		"rust": 0.38, "rust_color": c.darkened(0.32), "grime": 0.76,
+		"dust": 0.22, "dust_color": c.lightened(0.08),
+		"panel_scale": 0.0, "detail_scale": 0.85,
 	})
 
 
 ## 纵裂老树皮材质
-static func bark_mat(c := Color(0.30, 0.24, 0.19)) -> ShaderMaterial:
+static func bark_mat(c := Color(0.32, 0.28, 0.23)) -> ShaderMaterial:
 	return paint(c, 0.0, 0.96, {
-		"use_albedo_tex": 1.0, "albedo_tex": world_tex("bark_a.png"), "albedo_tex_scale": 0.42, "albedo_tex_strength": 0.92,
-		"normal_tex": world_tex("bark_n.png"), "normal_strength": 1.08,
-		"wear": 0.12, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
-		"rust": 0.30, "rust_color": c.darkened(0.32), "grime": 0.72,
-		"dust": 0.15, "dust_color": Color(0.36, 0.33, 0.27),
+		"use_albedo_tex": 1.0, "albedo_tex": world_tex("bark_a.png"), "albedo_tex_scale": 0.95, "albedo_tex_strength": 0.92,
+		"normal_tex": world_tex("bark_n.png"), "normal_strength": 1.24,
+		"wear": 0.10, "metal_wear": 0.0, "bare_metal": c.lightened(0.10), "scratches": 0.0,
+		"rust": 0.24, "rust_color": c.darkened(0.30), "grime": 0.68,
+		"dust": 0.16, "dust_color": Color(0.36, 0.33, 0.27),
 		"panel_scale": 0.0, "detail_scale": 1.0,
 	})
 
@@ -1372,50 +1696,50 @@ static func foliage_mat(kind := "pine") -> ShaderMaterial:
 			m.set_shader_parameter("albedo_tex", world_tex("pine_frond_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("pine_frond_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.82, 0.92, 0.78))
-			m.set_shader_parameter("tint_b", Color(1.04, 0.98, 0.80))
-			m.set_shader_parameter("albedo_gain", 1.85)
+			m.set_shader_parameter("tint_a", Color(0.86, 0.92, 0.84))
+			m.set_shader_parameter("tint_b", Color(1.02, 0.98, 0.84))
+			m.set_shader_parameter("albedo_gain", 1.48)
 			m.set_shader_parameter("up_normal_blend", 0.14)
-			m.set_shader_parameter("rough_val", 0.72)
-			m.set_shader_parameter("alpha_cut", 0.24)
-			m.set_shader_parameter("sway_amp", 0.038)
-			m.set_shader_parameter("backlight_str", 0.56)
+			m.set_shader_parameter("rough_val", 0.78)
+			m.set_shader_parameter("alpha_cut", 0.30)
+			m.set_shader_parameter("sway_amp", 0.036)
+			m.set_shader_parameter("backlight_str", 0.54)
 		"broad":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(0.84, 0.92, 0.74))
-			m.set_shader_parameter("tint_b", Color(1.06, 0.96, 0.72))
-			m.set_shader_parameter("albedo_gain", 1.62)
+			m.set_shader_parameter("tint_a", Color(0.86, 0.92, 0.80))
+			m.set_shader_parameter("tint_b", Color(1.04, 0.96, 0.78))
+			m.set_shader_parameter("albedo_gain", 1.44)
 			m.set_shader_parameter("up_normal_blend", 0.16)
-			m.set_shader_parameter("rough_val", 0.68)
-			m.set_shader_parameter("alpha_cut", 0.28)
-			m.set_shader_parameter("sway_amp", 0.048)
-			m.set_shader_parameter("backlight_str", 0.54)
+			m.set_shader_parameter("rough_val", 0.74)
+			m.set_shader_parameter("alpha_cut", 0.30)
+			m.set_shader_parameter("sway_amp", 0.044)
+			m.set_shader_parameter("backlight_str", 0.52)
 		"autumn":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
-			m.set_shader_parameter("tint_a", Color(1.12, 0.78, 0.44))
-			m.set_shader_parameter("tint_b", Color(1.26, 0.92, 0.52))
-			m.set_shader_parameter("albedo_gain", 1.60)
+			m.set_shader_parameter("tint_a", Color(1.10, 0.78, 0.46))
+			m.set_shader_parameter("tint_b", Color(1.24, 0.90, 0.54))
+			m.set_shader_parameter("albedo_gain", 1.40)
 			m.set_shader_parameter("up_normal_blend", 0.16)
-			m.set_shader_parameter("rough_val", 0.70)
-			m.set_shader_parameter("alpha_cut", 0.29)
-			m.set_shader_parameter("sway_amp", 0.044)
-			m.set_shader_parameter("backlight_str", 0.52)
+			m.set_shader_parameter("rough_val", 0.76)
+			m.set_shader_parameter("alpha_cut", 0.30)
+			m.set_shader_parameter("sway_amp", 0.042)
+			m.set_shader_parameter("backlight_str", 0.50)
 		"shrub":
 			m.set_shader_parameter("albedo_tex", world_tex("broadleaf_a.png"))
 			m.set_shader_parameter("normal_tex", world_tex("broadleaf_n.png"))
 			m.set_shader_parameter("use_normal", 1.0)
 			m.set_shader_parameter("tint_a", Color(0.84, 0.90, 0.84))
 			m.set_shader_parameter("tint_b", Color(0.96, 0.94, 0.82))
-			m.set_shader_parameter("albedo_gain", 2.15)
+			m.set_shader_parameter("albedo_gain", 1.38)
 			m.set_shader_parameter("up_normal_blend", 0.62)
 			m.set_shader_parameter("rough_val", 0.86)
-			m.set_shader_parameter("alpha_cut", 0.28)
+			m.set_shader_parameter("alpha_cut", 0.32)
 			m.set_shader_parameter("sway_amp", 0.025)
-			m.set_shader_parameter("backlight_str", 0.44)
+			m.set_shader_parameter("backlight_str", 0.42)
 		"grass":
 			m.set_shader_parameter("albedo_tex", world_tex("grass_tuft_a.png"))
 			m.set_shader_parameter("use_normal", 0.0)
@@ -1464,7 +1788,7 @@ static func _bug_tex(file: String) -> Texture2D:
 	var path := BUG_TEX_DIR + file
 	if ResourceLoader.exists(path):
 		t = load(path)
-		if t != null:
+		if t != null and not (t is CompressedTexture2D):
 			var chk := t.get_image()
 			if chk != null and not chk.has_mipmaps():
 				chk.generate_mipmaps()
@@ -1488,7 +1812,7 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 	m.uv1_scale = Vector3(uv_scale.x, uv_scale.y, 1)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if mob else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	m.normal_enabled = not mob
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT if mob else BaseMaterial3D.DIFFUSE_BURLEY
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
 	match part:
 		"shell":
 			m.albedo_texture = _bug_tex("chitin_%s.png" % kind)
@@ -1496,10 +1820,8 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 				m.normal_texture = _bug_tex("chitin_n.png")
 				m.normal_scale = 1.0
 				m.roughness_texture = _bug_tex("chitin_r.png")
-				m.roughness = 1.0
-				m.clearcoat_enabled = true
-				m.clearcoat = 0.55
-				m.clearcoat_roughness = 0.25
+				m.roughness = 0.88
+				m.metallic_specular = 0.65
 				m.rim_enabled = true
 				m.rim = 0.12
 				m.rim_tint = 0.6
@@ -1510,10 +1832,8 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 			if not mob:
 				m.normal_texture = _bug_tex("leg_n.png")
 				m.roughness_texture = _bug_tex("leg_r.png")
-				m.roughness = 1.0
-				m.clearcoat_enabled = true
-				m.clearcoat = 0.3
-				m.clearcoat_roughness = 0.35
+				m.roughness = 0.92
+				m.metallic_specular = 0.58
 			else:
 				m.roughness = 0.52
 		"eye":
@@ -1531,8 +1851,9 @@ static func bug_mat(kind: String, part := "shell", tint := Color.WHITE, uv_scale
 			m.roughness = 0.4
 			if not mob:
 				m.normal_texture = _bug_tex("membrane_n.png")
-				m.subsurf_scatter_enabled = true
-				m.subsurf_scatter_strength = 0.4
+				m.rim_enabled = true
+				m.rim = 0.18
+				m.rim_tint = 0.45
 		"sac":
 			m.albedo_texture = _bug_tex("sac_a.png")
 			m.roughness = 0.2
@@ -1610,9 +1931,12 @@ uniform vec3 mud : source_color = vec3(0.25, 0.21, 0.17);
 uniform vec3 grass : source_color = vec3(0.28, 0.31, 0.17);
 uniform vec3 grass2 : source_color = vec3(0.39, 0.38, 0.23);
 uniform sampler2D zone_tex : filter_linear, repeat_disable;
+uniform sampler2D outer_zone_tex : filter_linear, repeat_disable;
 uniform sampler2D sector_tex : filter_linear, repeat_disable;
 uniform float zone_half = 180.0;
+uniform float outer_zone_half = 850.0;
 uniform float zone_on = 0.0;
+uniform float outer_zone_on = 0.0;
 uniform float sector_on = 0.0;
 uniform float wet_amt = 0.0;
 varying highp vec3 wp;
@@ -1643,10 +1967,23 @@ void fragment(){
 	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
 	col *= mix(0.88, 1.12, low * 0.55 + macro_var * 0.45);
 
-	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
-	float zfade = bfade.x * bfade.y * zone_on;
 	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
-	vec4 zt = texture(zone_tex, z_uv) * zfade;
+	highp float max_p = max(abs(p.x), abs(p.y));
+	vec4 zt;
+	if (outer_zone_on > 0.5) {
+		if (max_p <= zone_half - 35.0) {
+			zt = texture(zone_tex, z_uv) * zone_on;
+		} else {
+			float ob = smoothstep(zone_half - 30.0, zone_half - 2.0, max_p);
+			float ofade = smoothstep(outer_zone_half + 20.0, outer_zone_half - 40.0, max_p);
+			highp vec2 o_uv = clamp((p + outer_zone_half) / (outer_zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.008, vec2(0.002), vec2(0.998));
+			vec4 ozt = texture(outer_zone_tex, o_uv) * ofade;
+			zt = (ob >= 0.999) ? ozt : mix(texture(zone_tex, z_uv) * zone_on, ozt, ob);
+		}
+	} else {
+		vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
+		zt = texture(zone_tex, z_uv) * (bfade.x * bfade.y * zone_on);
+	}
 
 	// 正常城市尺度风化硬质铺装：沉稳中暗灰细骨料混凝土基底（与浅灰人行道、深炭沥青路拉开清晰三层明度，彻底去除发白积雪感与脏黑云斑）
 	float macro_soot = smoothstep(0.42, 0.86, low * 0.65 + macro_var * 0.35);
@@ -1664,48 +2001,51 @@ void fragment(){
 	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14);
 	col = mix(col, soil, smm);
 
-	vec3 grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.6 + macro_var * 0.4) * g_col * 1.24;
+	vec3 grv = mix(vec3(0.145, 0.142, 0.138), vec3(0.182, 0.176, 0.168), low * 0.6 + macro_var * 0.4) * g_col * 1.05;
 	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10) * (1.0 - pm * 0.55);
 	col = mix(col, grv, am);
+	float urb_flat = clamp(pm + am * 0.85, 0.0, 1.0);
 
 	float road_v = 0.0;
 	float bldg_contact = 0.0;
 	if (abs(sector_on) > 0.5) {
 		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
-		float s_in = 0.0;
+		float s_in = (sector_on > 0.0) ? 1.0 : 0.0;
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
+			float sec_edge = smoothstep(zone_half, zone_half - 14.0, max_p);
 			vec3 sec = texture(sector_tex, s_uv).rgb;
-			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
-			road_v = sec.g * (1.0 - pm * 0.48);
-			bldg_contact = sec.b;
+			float s_raw = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
+			s_in = (sector_on > 0.0) ? mix(1.0, s_raw, sec_edge) : s_raw;
+			road_v = sec.g * (1.0 - pm * 0.48) * sec_edge;
+			bldg_contact = sec.b * sec_edge;
 		}
 		col = mix(col, grv * 0.86, road_v * 0.65);
 		col *= mix(vec3(1.0), vec3(0.50, 0.52, 0.55), bldg_contact * 0.68);
 		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
 		col = mix(col * out_mul, col, s_in);
 	}
-	// 写实雨后地表均匀湿润与克制低洼积水（城区铺装均匀加深，无花斑与泛白霜斑）
+	// 写实雨后地表均匀湿润与克制低洼积水（城区及工业厂坪均匀加深，无花斑与泛白霜斑）
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
 	float p_allow = (1.0 - gmm * 0.82) * (1.0 - smm * 0.75);
-	float basin = 0.50 + (0.5 - low) * 0.64 + (macro_var - 0.5) * 0.48 + (mid - 0.5) * mix(0.22, 0.05, pm);
-	float puddle = w_amt * p_allow * smoothstep(0.745, 0.835, basin);
-	float soak = w_amt * p_allow * smoothstep(0.660, 0.780, basin);
-	col *= mix(1.0, 0.88, w_amt * mix(0.32, 0.75, pm));
-	col *= mix(1.0, mix(0.80, 0.90, pm), soak * 0.58);
-	col = mix(col, col * 0.62 + vec3(0.014, 0.018, 0.024), puddle * 0.68);
+	float basin = 0.50 + (0.5 - low) * 0.64 + (macro_var - 0.5) * 0.48 + (mid - 0.5) * mix(0.22, 0.05, urb_flat);
+	float puddle = w_amt * p_allow * smoothstep(0.775, 0.865, basin) * mix(0.60, 1.0, urb_flat);
+	float soak = w_amt * p_allow * smoothstep(0.700, 0.815, basin);
+	col *= mix(1.0, 0.86, w_amt * mix(0.34, 0.75, urb_flat));
+	col *= mix(1.0, mix(0.80, 0.90, urb_flat), soak * 0.58);
+	col = mix(col, col * 0.64 + vec3(0.014, 0.018, 0.024), puddle * 0.66);
 	ALBEDO = col;
 
-	vec3 n_det = mix(texture(soil_n, p * 0.19).rgb, texture(conc_n, p * 0.32).rgb, pm);
+	vec3 n_det = mix(texture(soil_n, p * 0.19).rgb, texture(conc_n, p * 0.32).rgb, urb_flat);
 	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.48, 0.14, pm) + (n_macro * 2.0 - 1.0) * mix(0.42, 0.03, pm) + vec3(0.0, 0.0, mix(0.76, 0.96, pm)));
-	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.85));
-	ROUGHNESS = mix(mix(0.90, mix(0.86, 0.80, macro_soot), pm), 0.18, puddle * 0.88);
-	ROUGHNESS = mix(ROUGHNESS, 0.46, soak * 0.52 * (1.0 - puddle));
-	SPECULAR = mix(0.28, 0.48, puddle * 0.78);
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * mix(0.48, 0.20, urb_flat) + (n_macro * 2.0 - 1.0) * mix(0.42, 0.035, urb_flat) + vec3(0.0, 0.0, mix(0.76, 0.94, urb_flat)));
+	n_comb = normalize(mix(n_comb, vec3(0.0, 0.0, 1.0), puddle * 0.78));
+	ROUGHNESS = mix(mix(0.90, mix(0.86, 0.80, macro_soot), urb_flat), 0.30, puddle * 0.78);
+	ROUGHNESS = mix(ROUGHNESS, 0.58, soak * 0.48 * (1.0 - puddle));
+	SPECULAR = mix(0.24, 0.38, puddle * 0.64);
 	AO = clamp(1.0 - road_v * 0.16 - bldg_contact * 0.66, 0.22, 1.0);
 	AO_LIGHT_AFFECT = 0.68;
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = mix(0.52, 0.16, pm) * (1.0 - puddle * 0.82);
+	NORMAL_MAP_DEPTH = mix(0.52, 0.22, urb_flat) * (1.0 - puddle * 0.82);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1719,6 +2059,8 @@ void fragment(){
 	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
 	m.set_shader_parameter("conc_a", world_tex("asphalt_a.png"))
 	m.set_shader_parameter("conc_n", world_tex("asphalt_n.png"))
+	m.set_shader_parameter("outer_zone_half", 850.0)
+	m.set_shader_parameter("outer_zone_on", 0.0)
 	m.set_shader_parameter("wet_amt", 0.0)
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
@@ -1734,7 +2076,7 @@ static func ground() -> ShaderMaterial:
 	var sh := Shader.new()
 	sh.code = """
 shader_type spatial;
-render_mode diffuse_burley, specular_schlick_ggx;
+render_mode diffuse_lambert, specular_schlick_ggx;
 uniform sampler2D n_low : filter_linear_mipmap, repeat_enable;
 uniform sampler2D n_hi : filter_linear_mipmap, repeat_enable;
 uniform sampler2D n_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -1744,15 +2086,20 @@ uniform sampler2D grav_a : source_color, filter_linear_mipmap_anisotropic, repea
 uniform sampler2D grav_n : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D conc_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D conc_n : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D grass_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D grass_n : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 dirt_a : source_color = vec3(0.46, 0.41, 0.32);
 uniform vec3 dirt_b : source_color = vec3(0.32, 0.27, 0.20);
 uniform vec3 mud : source_color = vec3(0.25, 0.21, 0.17);
 uniform vec3 grass : source_color = vec3(0.28, 0.31, 0.17);
 uniform vec3 grass2 : source_color = vec3(0.39, 0.38, 0.23);
 uniform sampler2D zone_tex : filter_linear, repeat_disable;
+uniform sampler2D outer_zone_tex : filter_linear, repeat_disable;
 uniform sampler2D sector_tex : filter_linear, repeat_disable;
 uniform float zone_half = 180.0;
+uniform float outer_zone_half = 850.0;
 uniform float zone_on = 0.0;
+uniform float outer_zone_on = 0.0;
 uniform float sector_on = 0.0;
 uniform float wet_amt = 0.0;
 global uniform float weather_rain;
@@ -1788,10 +2135,19 @@ float cracks(vec2 p){
 	return d2 - d1;
 }
 vec2 rot2(vec2 q){ return vec2(q.x * 0.80 - q.y * 0.60, q.x * 0.60 + q.y * 0.80); }
-vec3 sample_dual(sampler2D tex, vec2 uv_a, vec2 uv_b, float sa, float sb, float mb, vec2 dpx, vec2 dpy, vec2 drx, vec2 dry){
-	if (mb <= 0.005) return textureGrad(tex, uv_a, dpx * sa, dpy * sa).rgb;
-	if (mb >= 0.995) return textureGrad(tex, uv_b, drx * sb, dry * sb).rgb;
-	return mix(textureGrad(tex, uv_a, dpx * sa, dpy * sa).rgb, textureGrad(tex, uv_b, drx * sb, dry * sb).rgb, mb);
+vec4 sample_dual4(sampler2D tex, vec2 uv_a, vec2 uv_b, float sa, float sb, float mb, vec2 dpx, vec2 dpy, vec2 drx, vec2 dry){
+	if (mb <= 0.005) return textureGrad(tex, uv_a, dpx * sa, dpy * sa);
+	if (mb >= 0.995) return textureGrad(tex, uv_b, drx * sb, dry * sb);
+	return mix(textureGrad(tex, uv_a, dpx * sa, dpy * sa), textureGrad(tex, uv_b, drx * sb, dry * sb), mb);
+}
+float hblend(float w, float h_base, float h_top, float depth){
+	float wt = clamp(w, 0.0, 1.0);
+	if (wt <= 0.002) return 0.0;
+	if (wt >= 0.998) return 1.0;
+	float ma = max(h_base + (1.0 - wt), h_top + wt) - depth;
+	float b1 = max(h_base + (1.0 - wt) - ma, 0.0);
+	float b2 = max(h_top + wt - ma, 0.0);
+	return b2 / max(b1 + b2, 1e-4);
 }
 
 void vertex(){ wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
@@ -1802,150 +2158,247 @@ void fragment(){
 	vec2 drx = rot2(dpx);
 	vec2 dry = rot2(dpy);
 	float low = texture(n_low, p * 0.0055).r;
-	float med2 = texture(n_low, p * 0.0085 + vec2(0.19, 0.71)).r;
-	float mid = texture(n_low, p * 0.021 + 0.37).r;
-	float hi = texture(n_hi, p * 0.095).r;
-	float hi2 = texture(n_hi, p * 0.42 + 0.2).r;
-	float fw = clamp(1.0 - length(abs(dpx) + abs(dpy)) * 0.42, 0.0, 1.0);
+	float med2 = texture(n_low, p * 0.0092 + vec2(0.19, 0.71)).r;
+	float mid = texture(n_low, p * 0.024 + 0.37).r;
+	float hi = texture(n_hi, p * 0.11).r;
+	float hi2 = texture(n_hi, p * 0.44 + 0.2).r;
+	float fw = clamp(1.0 - length(abs(dpx) + abs(dpy)) * 0.38, 0.0, 1.0);
 	float hi2_aa = mix(0.5, hi2, fw);
 
-	// 预先计算各层权重，只对权重非零的材质执行双角各向异性采样（视觉 1:1 保持，大幅降低 4K 片元带宽）
-	vec2 uv_a = p * 0.20;
-	vec2 uv_b = rot2(p * 0.14 + vec2(7.3, 11.9));
+	// 多尺度双角旋转无缝 UV（真实 3.2m–5.0m 物理平铺比例，俯视角与第一人称皆清晰锐利）
+	vec2 uv_a = p * 0.24;
+	vec2 uv_b = rot2(p * 0.17 + vec2(7.3, 11.9));
 	float m_blend = smoothstep(0.28, 0.72, med2);
-	vec2 uv_ga = p * 0.22;
-	vec2 uv_gb = rot2(p * 0.15 + vec2(3.7, 5.1));
+	vec2 uv_ga = p * 0.26;
+	vec2 uv_gb = rot2(p * 0.185 + vec2(3.7, 5.1));
+	vec2 uv_tra = p * 0.27;
+	vec2 uv_trb = rot2(p * 0.19 + vec2(5.3, 8.7));
 	vec2 uv_ca = p * 0.34;
 	vec2 uv_cb = rot2(p * 0.24 + vec2(9.1, 2.3));
 
 	// 分区地表：R 风化混凝土场坪 / G 废土荒草 / B 翻耕泥土 / A 工业压实油渣道砟
-	vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
-	float zfade = bfade.x * bfade.y * zone_on;
-	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.014, vec2(0.002), vec2(0.998));
-	vec4 zt = texture(zone_tex, z_uv) * zfade;
-
-	float pm = smoothstep(0.28, 0.72, zt.r + (low - 0.5) * 0.12 + (mid - 0.5) * 0.06 + (hi - 0.5) * 0.04);
-	float gmm = smoothstep(0.24, 0.76, zt.g + (low - 0.5) * 0.15 + (mid - 0.5) * 0.18 + (hi - 0.5) * 0.08) * (1.0 - pm * 0.84);
-	float smm = smoothstep(0.24, 0.78, zt.b + (low - 0.5) * 0.16 + (mid - 0.5) * 0.14 + (hi - 0.5) * 0.08);
-	float am = smoothstep(0.28, 0.74, zt.a + (low - 0.5) * 0.14 + (mid - 0.5) * 0.10 + (hi - 0.5) * 0.06) * (1.0 - pm * 0.55);
-
-	float mudm = smoothstep(0.66, 0.86, mid + (hi - 0.5) * 0.12) * (1.0 - pm);
-	float crack_mud = 0.0;
-	if (mudm > 0.02 && fw > 0.14) {
-		float cr = cracks(p * 0.36 + vec2(low, mid) * 1.4);
-		crack_mud = (1.0 - smoothstep(0.015, 0.068, cr)) * mudm * smoothstep(0.14, 0.45, fw);
+	vec2 z_uv = clamp((p + zone_half) / (zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.0085, vec2(0.002), vec2(0.998));
+	highp float max_p = max(abs(p.x), abs(p.y));
+	vec4 zt;
+	if (outer_zone_on > 0.5) {
+		if (max_p <= zone_half - 35.0) {
+			zt = texture(zone_tex, z_uv) * zone_on;
+		} else {
+			float ob = smoothstep(zone_half - 30.0, zone_half - 2.0, max_p);
+			float ofade = smoothstep(outer_zone_half + 20.0, outer_zone_half - 40.0, max_p);
+			highp vec2 o_uv = clamp((p + outer_zone_half) / (outer_zone_half * 2.0) + (vec2(low, mid) - 0.5) * 0.006, vec2(0.002), vec2(0.998));
+			vec4 ozt = texture(outer_zone_tex, o_uv) * ofade;
+			zt = (ob >= 0.999) ? ozt : mix(texture(zone_tex, z_uv) * zone_on, ozt, ob);
+		}
+	} else {
+		vec2 bfade = smoothstep(vec2(zone_half + 4.0), vec2(zone_half - 14.0), abs(p));
+		zt = texture(zone_tex, z_uv) * (bfade.x * bfade.y * zone_on);
 	}
-	float gm = smoothstep(0.44, 0.74, 1.0 - mid + (low - 0.5) * 0.38 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.55);
-	float grav_patch = smoothstep(0.58, 0.80, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm * 0.72);
+
+	float pm_raw = smoothstep(0.24, 0.72, zt.r + (low - 0.5) * 0.10 + (mid - 0.5) * 0.06 + (hi - 0.5) * 0.04);
+	float gmm_raw = smoothstep(0.22, 0.74, zt.g + (low - 0.5) * 0.14 + (mid - 0.5) * 0.16 + (hi - 0.5) * 0.08) * (1.0 - pm_raw * 0.86);
+	float smm = smoothstep(0.24, 0.76, zt.b + (low - 0.5) * 0.14 + (mid - 0.5) * 0.12 + (hi - 0.5) * 0.08);
+	float am = smoothstep(0.26, 0.74, zt.a + (low - 0.5) * 0.12 + (mid - 0.5) * 0.10 + (hi - 0.5) * 0.06) * (1.0 - pm_raw * 0.55);
+
+	float mudm = smoothstep(0.64, 0.86, mid + (hi - 0.5) * 0.14) * (1.0 - clamp(pm_raw + am * 0.35, 0.0, 1.0));
+	float crack_mud = 0.0;
+	if (mudm > 0.02 && fw > 0.25) {
+		float cr = abs(hi * 2.0 - 1.0) * 0.65 + abs(hi2 * 2.0 - 1.0) * 0.35;
+		crack_mud = (1.0 - smoothstep(0.02, 0.11, cr)) * mudm * smoothstep(0.25, 0.55, fw);
+	}
+	float gm_raw = smoothstep(0.42, 0.74, 1.0 - mid + (low - 0.5) * 0.36 + (hi - 0.5) * 0.12) * (1.0 - mudm * 0.52);
+	float grav_raw = smoothstep(0.56, 0.78, hi * 0.55 + (1.0 - low) * 0.45) * (1.0 - gm_raw * 0.68);
 
 	float road_v = 0.0;
 	float bldg_contact = 0.0;
-	float s_in = 0.0;
+	float s_in = (sector_on > 0.0) ? 1.0 : 0.0;
 	if (abs(sector_on) > 0.5) {
 		vec2 s_uv = (p + zone_half) / (zone_half * 2.0);
 		if (s_uv.x >= 0.0 && s_uv.x <= 1.0 && s_uv.y >= 0.0 && s_uv.y <= 1.0) {
+			float sec_edge = smoothstep(zone_half, zone_half - 14.0, max_p);
 			vec3 sec = texture(sector_tex, s_uv).rgb;
-			s_in = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
-			road_v = sec.g * smoothstep(0.25, 0.80, 0.55 + (low - 0.5) * 0.30 + (mid - 0.5) * 0.25) * (1.0 - pm * 0.48);
-			bldg_contact = sec.b;
+			float s_raw = smoothstep(0.20, 0.80, sec.r + (low - 0.5) * 0.16);
+			s_in = (sector_on > 0.0) ? mix(1.0, s_raw, sec_edge) : s_raw;
+			road_v = sec.g * smoothstep(0.24, 0.78, 0.55 + (low - 0.5) * 0.28 + (mid - 0.5) * 0.24) * (1.0 - pm_raw * 0.48) * sec_edge;
+			bldg_contact = sec.b * sec_edge;
 		}
 	}
 
-	bool need_soil = (pm < 0.995) || (gmm > 0.005) || (smm > 0.005);
-	bool need_grav = (grav_patch > 0.005 && pm < 0.995) || (am > 0.005) || (road_v > 0.005);
-	bool need_conc = (pm > 0.005);
+	bool need_soil = (pm_raw < 0.995) || (smm > 0.005);
+	bool need_grass = (pm_raw < 0.995) && ((gm_raw > 0.005) || (gmm_raw > 0.005));
+	bool need_grav = (grav_raw > 0.005 && pm_raw < 0.995) || (am > 0.005) || (road_v > 0.005);
+	bool need_conc = (pm_raw > 0.005);
 
-	vec3 s_col = need_soil ? mix(vec3(0.72), sample_dual(soil_a, uv_a, uv_b, 0.20, 0.14, m_blend, dpx, dpy, drx, dry) * 1.16, 0.64) : vec3(0.72);
-	vec3 g_col = need_grav ? mix(vec3(0.72), sample_dual(grav_a, uv_ga, uv_gb, 0.22, 0.15, m_blend, dpx, dpy, drx, dry) * 1.18, 0.66) : vec3(0.72);
-	vec3 c_col = need_conc ? mix(vec3(0.74), sample_dual(conc_a, uv_ca, uv_cb, 0.34, 0.24, m_blend, dpx, dpy, drx, dry) * 1.12, 0.64) : vec3(0.74);
+	float c_mb = fw < 0.48 ? (m_blend < 0.5 ? 0.0 : 1.0) : m_blend;
+	vec4 s_raw4 = need_soil ? sample_dual4(soil_a, uv_a, uv_b, 0.24, 0.17, c_mb, dpx, dpy, drx, dry) : vec4(0.66, 0.66, 0.66, 0.60);
+	vec4 gr_raw4 = need_grass ? sample_dual4(grass_a, uv_tra, uv_trb, 0.27, 0.19, c_mb, dpx, dpy, drx, dry) : vec4(0.60, 0.60, 0.60, 0.60);
+	vec4 g_raw4 = need_grav ? sample_dual4(grav_a, uv_ga, uv_gb, 0.26, 0.185, c_mb, dpx, dpy, drx, dry) : vec4(0.68, 0.68, 0.68, 0.60);
+	vec3 c_col = need_conc ? sample_dual4(conc_a, uv_ca, uv_cb, 0.34, 0.24, c_mb, dpx, dpy, drx, dry).rgb * 0.88 : vec3(0.58);
 
-	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.26, 0.74, low + (hi - 0.5) * 0.16)) * s_col * 1.16;
-	col = mix(col, mud * s_col * 1.16, mudm * 0.34);
-	col *= 1.0 - crack_mud * 0.34;
+	float h_soil = clamp((s_raw4.a - 0.20) * 1.25, 0.0, 1.0);
+	float h_grass = clamp((gr_raw4.a - 0.20) * 1.25, 0.0, 1.0);
+	float h_grav = clamp((g_raw4.a - 0.20) * 1.25, 0.0, 1.0);
+	float h_conc = clamp(dot(c_col, vec3(0.333)) * 0.72 + 0.18, 0.0, 1.0);
 
-	// 荒原衰草与尘苔：克制脱饱和的枯绿与褐草
-	vec3 gcol = mix(grass, grass2, smoothstep(0.26, 0.74, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42);
-	col = mix(col, gcol, gm * 0.78 * smoothstep(0.18, 0.62, hi2_aa + 0.18));
+	// 1. 真实碎土/干泥基底（校准物理线性能量反照率，杜绝过曝发白雪地感）
+	vec3 s_col = mix(vec3(0.62), s_raw4.rgb * 1.02, 0.90);
+	vec3 g_col = mix(vec3(0.64), g_raw4.rgb * 1.02, 0.92);
+	vec3 col = mix(dirt_b, dirt_a, smoothstep(0.22, 0.78, low + (hi - 0.5) * 0.18)) * s_col * 0.94;
+	col = mix(col, mud * s_col * 0.92, mudm * 0.42);
+	col *= 1.0 - crack_mud * 0.36;
+	float cur_h = h_soil;
 
-	// 散落粗骨料与废墟碎砾斑块
-	col = mix(col, dirt_a * 0.90 * g_col * 1.24, grav_patch * 0.44);
-	col *= mix(0.87, 1.12, low * 0.55 + med2 * 0.45);
+	// 2. 真实 1K 实拍草甸/公园野草（保留真实草叶、枯叶与土壤间隙，叠加远景灌丛团簇色阶杜绝平涂绿毯）
+	float grass_blend = hblend(gm_raw * 0.84, cur_h, h_grass + 0.08, 0.22);
+	float turf_var = smoothstep(0.18, 0.82, low * 0.48 + med2 * 0.30 + hi2_aa * 0.22);
+	float scrub_clump = smoothstep(0.44, 0.78, med2 * 0.52 + mid * 0.48);
+	vec3 grass_tint = mix(grass * vec3(0.84, 0.94, 0.80), grass2 * vec3(1.06, 1.02, 0.88), turf_var);
+	vec3 grass_natural = gr_raw4.rgb * mix(vec3(0.42, 0.52, 0.35), grass_tint * 1.72, 0.64);
+	grass_natural = mix(grass_natural, grass_natural * vec3(0.68, 0.76, 0.62), scrub_clump * 0.38);
+	col = mix(col, grass_natural, grass_blend);
+	cur_h = mix(cur_h, h_grass, grass_blend);
 
-	float pave_soot = 0.0;
-	if (need_conc) {
-		// 正常城市尺度风化硬质铺装：沉稳中暗灰细骨料混凝土基底（与浅石人行道、深炭沥青路拉开三层层次，保留细砂微质感且无雪堆/云斑感）
-		pave_soot = smoothstep(0.42, 0.86, low * 0.65 + med2 * 0.35);
-		float patch_tone = mix(0.93, 1.06, low * 0.55 + med2 * 0.45) * mix(0.96, 1.04, hi2_aa);
-		vec3 pave = vec3(0.172, 0.170, 0.165) * c_col * 1.08 * patch_tone;
-		pave = mix(pave, pave * vec3(0.90, 0.89, 0.88), pave_soot * 0.15);
-		pave = mix(pave, dirt_a * 0.65 * c_col, smoothstep(0.62, 0.90, med2 * 0.60 + low * 0.40) * 0.07);
-		col = mix(col, pave, pm);
-	}
+	// 3. 散落粗骨料与碎砾斑块（Height-Blend 让石砾真实压在泥土上）
+	float grav_w = hblend(grav_raw * 0.62, cur_h, h_grav + 0.06, 0.18);
+	col = mix(col, dirt_a * 0.86 * g_col * 0.96, grav_w);
+	cur_h = mix(cur_h, h_grav, grav_w);
+	col *= mix(0.80, 1.18, low * 0.50 + med2 * 0.50);
 
+	// 4. 公园/绿地分区草坪（Height-Blend 切出清晰草地与土壤边缘，叠加自然枯草与裸土微斑）
+	float gmm = hblend(gmm_raw, cur_h, h_grass + 0.10, 0.20);
 	if (gmm > 0.005) {
-		vec3 gr = mix(vec3(0.18, 0.22, 0.12), vec3(0.29, 0.30, 0.17), smoothstep(0.25, 0.75, low * 0.55 + hi2_aa * 0.45)) * mix(vec3(1.0), s_col * 1.24, 0.42) * (0.90 + low * 0.20);
-		col = mix(col, gr, gmm);
+		vec3 park_tint = mix(grass * vec3(0.86, 1.08, 0.82), grass2 * vec3(1.02, 1.04, 0.86), turf_var);
+		vec3 gr_park = gr_raw4.rgb * mix(vec3(0.38, 0.52, 0.31), park_tint * 1.68, 0.60);
+		gr_park = mix(gr_park, gr_park * vec3(0.66, 0.74, 0.60), scrub_clump * 0.36);
+		float bare_patch = smoothstep(0.62, 0.88, med2 * 0.58 + (1.0 - low) * 0.42) * (1.0 - h_grass * 0.50);
+		gr_park = mix(gr_park, dirt_b * s_col * 0.94, bare_patch * 0.50);
+		gr_park *= 0.82 + low * 0.32;
+		col = mix(col, gr_park, gmm);
+		cur_h = mix(cur_h, h_grass, gmm);
 	}
+	float eff_grass = clamp(max(grass_blend * (1.0 - grav_w), gmm), 0.0, 1.0);
 
+	float furrow_sl = 0.0;
 	if (smm > 0.005) {
-		float furrow = 0.5 + 0.5 * sin((p.x * 0.35 + p.y * 0.94) * 2.1 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4) * fw;
-		vec3 soil = mix(vec3(0.22, 0.18, 0.13), vec3(0.31, 0.25, 0.17), smoothstep(0.2, 0.8, mix(mid, furrow, 0.34))) * s_col * 1.24;
-		col = mix(col, soil, smm);
+		float f_ph = (p.x * 0.35 + p.y * 0.94) * 1.85 + (low - 0.5) * 2.4 + (mid - 0.5) * 1.4;
+		float f_fade = clamp(1.0 - length(abs(dpx) + abs(dpy)) * 0.16, 0.0, 1.0);
+		float furrow = 0.5 + 0.5 * sin(f_ph) * f_fade;
+		furrow_sl = cos(f_ph) * f_fade * smm;
+		vec3 soil = mix(dirt_b * 0.84, dirt_a * 1.04, smoothstep(0.18, 0.82, mix(mid, furrow, 0.48))) * s_col * 0.94;
+		float sw = hblend(smm, cur_h, h_soil + 0.05, 0.20);
+		col = mix(col, soil, sw);
+		eff_grass *= (1.0 - sw);
+		cur_h = mix(cur_h, h_soil, sw);
 	}
 
 	float rut = 0.0;
-	vec3 grv = vec3(0.24);
+	vec3 grv = vec3(0.16);
+	float eff_grav = grav_w;
 	if (am > 0.005 || road_v > 0.005) {
-		rut = smoothstep(0.66, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.42, 0.72, mid) * fw;
-		grv = mix(vec3(0.22, 0.215, 0.20), vec3(0.28, 0.265, 0.24), low * 0.65 + med2 * 0.35) * g_col * 1.24;
-		grv = mix(grv, vec3(0.16, 0.155, 0.145) * g_col * 1.22, smoothstep(0.64, 0.86, mid) * 0.26 + rut * 0.16);
+		rut = smoothstep(0.66, 0.92, abs(sin((p.x * 0.72 + (low - 0.5) * 6.0) * 2.2))) * smoothstep(0.46, 0.76, low * 0.5 + med2 * 0.5) * fw;
+		grv = mix(vec3(0.26, 0.25, 0.23), vec3(0.35, 0.33, 0.30), low * 0.62 + med2 * 0.38) * g_col;
+		grv = mix(grv, vec3(0.20, 0.19, 0.18) * g_col, smoothstep(0.66, 0.88, low * 0.55 + med2 * 0.45) * 0.14 + rut * 0.14);
 		if (am > 0.005) {
-			col = mix(col, grv, am);
+			float aw = hblend(am, cur_h, h_grav + 0.08, 0.18);
+			col = mix(col, grv, aw);
+			eff_grav = max(eff_grav, aw);
+			eff_grass *= (1.0 - aw);
+			cur_h = mix(cur_h, h_grav, aw);
 		}
+	}
+
+	// 5. 城区风化现浇混凝土场坪（错缝 3.1m 混凝土院坪分块 + 3D 法线切缝 + 缝隙返苔与沥青修补，彻底告别平涂灰板与泥斑）
+	float pm = hblend(pm_raw, cur_h, h_conc + 0.10, 0.16);
+	float urb_flat = clamp(pm + am * 0.32, 0.0, 1.0);
+	float pave_soot = 0.0;
+	float pave_seam = 0.0;
+	float pave_crack = 0.0;
+	vec2 pave_seam_n = vec2(0.0);
+	if (pm > 0.005) {
+		pave_soot = smoothstep(0.38, 0.84, low * 0.62 + med2 * 0.38);
+		float row_y = floor(p.y * 0.32);
+		vec2 slab_p = vec2(p.x * 0.32 + mod(row_y, 2.0) * 0.5, p.y * 0.32);
+		vec2 s_id = floor(slab_p);
+		vec2 s_fg = fract(slab_p) - 0.5;
+		vec2 s_dist = 0.5 - abs(s_fg);
+		vec2 s_fw = max(fwidth(slab_p), vec2(1e-4));
+		float seam_aa = clamp(1.0 - max(s_fw.x, s_fw.y) * 2.2, 0.0, 1.0);
+		float sx_j = (1.0 - smoothstep(0.008, 0.008 + s_fw.x * 1.4, s_dist.x)) * seam_aa;
+		float sy_j = (1.0 - smoothstep(0.008, 0.008 + s_fw.y * 1.4, s_dist.y)) * seam_aa;
+		pave_seam = max(sx_j, sy_j);
+		pave_seam_n = vec2(sx_j * sign(s_fg.x), sy_j * sign(s_fg.y)) * 0.42;
+		if (pm > 0.05 && seam_aa > 0.15) {
+			float cr_v = texture(n_low, p * 0.072 + vec2(0.41, 0.19)).r - 0.5;
+			float cr_fw = max(fwidth(cr_v), 0.0012);
+			pave_crack = (1.0 - smoothstep(0.003, 0.003 + cr_fw * 1.4, abs(cr_v))) * smoothstep(0.46, 0.76, med2) * seam_aa;
+		}
+		float slab_tone = mix(0.90, 1.10, h2(s_id).x);
+		float patch_tone = mix(0.90, 1.09, low * 0.54 + med2 * 0.46) * mix(0.93, 1.07, hi2_aa) * slab_tone;
+		vec3 pave = vec3(0.32, 0.312, 0.300) * c_col * patch_tone;
+		pave = mix(pave, pave * vec3(0.80, 0.80, 0.82), pave_soot * 0.34);
+		float joint_weed = max(pave_seam, pave_crack) * smoothstep(0.54, 0.84, mid * 0.65 + low * 0.35);
+		pave = mix(pave, vec3(0.16, 0.21, 0.12), joint_weed * 0.55);
+		pave *= 1.0 - pave_seam * 0.28 - pave_crack * 0.26;
+		col = mix(col, pave, pm);
+		eff_grass *= (1.0 - pm);
+		eff_grav *= (1.0 - pm);
 	}
 
 	float zone_cov = clamp(pm + gmm * 0.88 + smm * 0.88 + am * 0.88, 0.0, 0.94);
 	float wet_film = mudm * (1.0 - zone_cov) * smoothstep(0.70, 0.88, mid) * (1.0 - crack_mud * 0.85);
-	col = mix(col, col * 0.76, wet_film * 0.36);
+	col = mix(col, col * 0.78, wet_film * 0.34);
 	if (abs(sector_on) > 0.5) {
-		col = mix(col, grv * 0.86, road_v * 0.65);
-		// 沉稳烟灰冷调建筑接地接触暗影
-		col *= mix(vec3(1.0), vec3(0.48, 0.50, 0.54), bldg_contact * 0.68);
-		vec3 out_mul = (sector_on > 0.0) ? vec3(0.74, 0.75, 0.78) : vec3(0.24, 0.22, 0.28);
+		float rv_w = hblend(road_v * 0.65, cur_h, h_grav + 0.06, 0.18);
+		col = mix(col, grv * 0.92, rv_w);
+		eff_grav = max(eff_grav, rv_w);
+		eff_grass *= (1.0 - rv_w * 0.85);
+		// 柔和自然的建筑接地接触暗影（避免与 SSAO 叠加形成死黑脏环）
+		col *= mix(vec3(1.0), vec3(0.78, 0.80, 0.84), bldg_contact * 0.36);
+		vec3 out_mul = (sector_on > 0.0) ? vec3(0.85, 0.87, 0.91) : vec3(0.34, 0.32, 0.38);
 		col = mix(col * out_mul, col, s_in);
 	}
-	// 写实雨后均匀湿润与克制低洼浅积水（城区铺装均匀微暗、无花斑云团与泛白冰霜积水）
+
+	// 雨后真实地表润湿与低洼浅积水反光
 	float w_amt = clamp(wet_amt, 0.0, 1.0);
-	float p_allow = (1.0 - gmm * 0.84) * (1.0 - smm * 0.78) * (1.0 - crack_mud * 0.65);
-	float basin = 0.50 + (0.5 - low) * 0.64 + (med2 - 0.5) * 0.48 + (mid - 0.5) * mix(0.24, 0.05, pm);
-	float puddle = w_amt * p_allow * smoothstep(0.745, 0.835, basin);
-	float p_deep = smoothstep(0.790, 0.895, basin);
-	float soak_rim = w_amt * p_allow * smoothstep(0.665, 0.785, basin);
-	float damp_halo = w_amt * smoothstep(0.380, 0.600, basin);
+	float p_allow = (1.0 - eff_grass * 0.82) * (1.0 - smm * 0.72) * (1.0 - crack_mud * 0.65);
+	float basin = 0.50 + (0.5 - low) * 0.64 + (med2 - 0.5) * 0.48 + (mid - 0.5) * mix(0.24, 0.06, urb_flat) - (cur_h - 0.5) * 0.16;
+	float soil_puddle_w = mix(0.55, 1.0, urb_flat);
+	float puddle = w_amt * p_allow * smoothstep(0.755, 0.845, basin) * soil_puddle_w;
+	float p_deep = smoothstep(0.800, 0.895, basin);
+	float soak_rim = w_amt * p_allow * smoothstep(0.680, 0.800, basin);
+	float damp_halo = w_amt * smoothstep(0.380, 0.640, basin);
 	float col_lum = dot(col, vec3(0.299, 0.587, 0.114));
-	col = mix(col, max(mix(vec3(col_lum), col, 1.06), vec3(0.0)), clamp(max(damp_halo * 0.52, soak_rim), 0.0, 1.0));
-	col *= mix(1.0, 0.88, max(w_amt * pm * 0.72, max(damp_halo * 0.48, w_amt * 0.22)) * (1.0 - soak_rim * 0.55));
-	col *= mix(1.0, mix(0.78, 0.89, pm), soak_rim);
-	col = mix(col, mix(col * 0.78, mix(col * 0.60, vec3(0.018, 0.022, 0.028), 0.32), p_deep), puddle);
+	col = mix(col, max(mix(vec3(col_lum), col, 1.08), vec3(0.0)), clamp(max(damp_halo * 0.52, soak_rim), 0.0, 1.0));
+	col *= mix(1.0, 0.86, max(w_amt * urb_flat * 0.68, max(damp_halo * 0.45, w_amt * 0.22)) * (1.0 - soak_rim * 0.52));
+	col *= mix(1.0, mix(0.78, 0.88, urb_flat), soak_rim);
+	col = mix(col, mix(col * 0.76, mix(col * 0.60, vec3(0.025, 0.032, 0.042), 0.26), p_deep), puddle);
 	ALBEDO = col;
 
-	// 中频实感地表法线（荒野保留立体微地形，城区铺装保持建筑级平整细砂微糙，杜绝雪堆/砂纸块感）
-	float grav_n_w = clamp(am + grav_patch * 0.45 + road_v * 0.55, 0.0, 1.0);
-	float n_mb = fw < 0.28 ? (m_blend < 0.5 ? 0.0 : 1.0) : m_blend;
+	// 实拍高细节地表法线（土块 / 真实草叶 / 碎砾石 / 混凝土按 Height-Blend 权重精确混合）
+	bool use_rot_n = m_blend >= 0.5;
 	vec3 n_det = vec3(0.5, 0.5, 1.0);
 	if (pm < 0.995) {
-		vec3 ns = (grav_n_w < 0.995) ? sample_dual(soil_n, uv_a, uv_b, 0.20, 0.14, n_mb, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
-		vec3 ng = (grav_n_w > 0.005) ? sample_dual(grav_n, uv_ga, uv_gb, 0.22, 0.15, n_mb, dpx, dpy, drx, dry) : vec3(0.5, 0.5, 1.0);
-		n_det = mix(ns, ng, grav_n_w);
+		vec3 ns = use_rot_n ? textureGrad(soil_n, uv_b, drx * 0.17, dry * 0.17).rgb : textureGrad(soil_n, uv_a, dpx * 0.24, dpy * 0.24).rgb;
+		n_det = ns;
+		if (eff_grass > 0.005) {
+			vec3 ngr = use_rot_n ? textureGrad(grass_n, uv_trb, drx * 0.19, dry * 0.19).rgb : textureGrad(grass_n, uv_tra, dpx * 0.27, dpy * 0.27).rgb;
+			n_det = mix(n_det, ngr, eff_grass);
+		}
+		if (eff_grav > 0.005) {
+			vec3 ng = use_rot_n ? textureGrad(grav_n, uv_gb, drx * 0.185, dry * 0.185).rgb : textureGrad(grav_n, uv_ga, dpx * 0.26, dpy * 0.26).rgb;
+			n_det = mix(n_det, ng, eff_grav);
+		}
 	}
 	if (pm > 0.005) {
-		vec3 nc = sample_dual(conc_n, uv_ca, uv_cb, 0.34, 0.24, n_mb, dpx, dpy, drx, dry);
+		vec3 nc = use_rot_n ? textureGrad(conc_n, uv_cb, drx * 0.24, dry * 0.24).rgb : textureGrad(conc_n, uv_ca, dpx * 0.34, dpy * 0.34).rgb;
 		n_det = mix(n_det, nc, pm);
 	}
-	vec3 n_macro = texture(n_nrm, p * 0.055).rgb;
-	float det_w = mix(mix(0.32, 0.66, fw), mix(0.16, 0.28, fw), pm);
-	float macro_w = mix(0.40, 0.03, pm);
-	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * det_w + (n_macro * 2.0 - 1.0) * macro_w + vec3(0.0, 0.0, mix(0.72, 0.94, pm)));
+	vec3 n_macro = texture(n_nrm, p * 0.052).rgb * 2.0 - 1.0;
+	vec3 n_macro_far = texture(n_nrm, rot2(p * 0.017) + vec2(0.31, 0.57)).rgb * 2.0 - 1.0;
+	float det_w = mix(mix(0.62, 0.96, fw), mix(0.54, 0.82, fw), urb_flat);
+	float macro_w = mix(0.58, 0.14, urb_flat);
+	vec2 extra_sl = pave_seam_n * pm + vec2(0.35, 0.94) * (furrow_sl * 0.28);
+	vec3 n_comb = normalize((n_det * 2.0 - 1.0) * det_w + (n_macro * 0.62 + n_macro_far * 0.58) * macro_w + vec3(extra_sl.x, extra_sl.y, mix(0.58, 0.74, urb_flat)));
 	vec2 rip_sl = vec2(0.0);
 	if (puddle > 0.02 && weather_rain > 0.01) {
 		float cam_d = length(wp - INV_VIEW_MATRIX[3].xyz);
@@ -1954,23 +2407,22 @@ void fragment(){
 			rip_sl = g_ripple(p, TIME) * puddle * r_fade;
 		}
 	}
-	n_comb = normalize(mix(n_comb, normalize(vec3(rip_sl.x, rip_sl.y, 1.0)), puddle * 0.88));
-	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.78);
-	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.22);
-	float r_base = mix(0.92, 0.80, mudm * (1.0 - zone_cov));
-	r_base = mix(r_base, mix(0.86, 0.80, pave_soot), pm);
-	r_base = mix(r_base, 0.90, am);
-	r_base = mix(r_base, 0.56, max(wet_film, max(damp_halo * 0.55, w_amt * 0.26)));
-	r_base = mix(r_base, 0.36, soak_rim * 0.65);
-	r_base = sqrt(clamp(r_base * r_base + r_var, 0.04, 1.0));
-	ROUGHNESS = mix(r_base, mix(0.19, 0.13, p_deep), puddle * 0.90);
-	SPECULAR = mix(0.28, 0.50, pm * 0.08 + wet_film * 0.14 + soak_rim * 0.20 + puddle * 0.72);
-	AO = clamp(1.0 - crack_mud * 0.48 - am * rut * 0.18 - road_v * 0.16 - bldg_contact * 0.68, 0.18, 1.0);
-	AO_LIGHT_AFFECT = 0.68;
-	CLEARCOAT = max(puddle * 0.28, soak_rim * 0.10);
-	CLEARCOAT_ROUGHNESS = mix(0.24, 0.14, puddle);
+	n_comb = normalize(mix(n_comb, normalize(vec3(rip_sl.x, rip_sl.y, 1.0)), puddle * 0.84));
+	vec3 dn = (dFdx(n_comb) + dFdy(n_comb)) * (1.0 - puddle * 0.76);
+	float r_var = clamp(dot(dn, dn) * 0.65, 0.0, 0.20);
+	float r_base = mix(0.90, 0.78, mudm * (1.0 - zone_cov));
+	r_base = mix(r_base, 0.86 - h_grass * 0.10, eff_grass);
+	r_base = mix(r_base, 0.86 - h_grav * 0.12, eff_grav * 0.75);
+	r_base = mix(r_base, mix(0.84, 0.74, pave_soot), pm);
+	r_base = mix(r_base, mix(0.64, 0.56, urb_flat), max(wet_film, max(damp_halo * 0.45, w_amt * 0.26)));
+	r_base = mix(r_base, mix(0.50, 0.42, urb_flat), soak_rim * 0.62);
+	r_base = sqrt(clamp(r_base * r_base + r_var, 0.03, 1.0));
+	ROUGHNESS = mix(r_base, mix(0.18, 0.10, p_deep), puddle * 0.88);
+	SPECULAR = mix(0.28, 0.58, pm * 0.10 + wet_film * 0.12 + soak_rim * 0.22 + puddle * 0.76);
+	AO = clamp(1.0 - crack_mud * 0.36 - (1.0 - cur_h) * 0.22 * (1.0 - pm) - pm * (pave_seam * 0.28 + pave_crack * 0.22) - am * rut * 0.12 - road_v * 0.12 - bldg_contact * 0.36, 0.46, 1.0);
+	AO_LIGHT_AFFECT = 0.26;
 	NORMAL_MAP = n_comb * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = (mix(mix(0.42, 0.66, fw), mix(0.18, 0.30, fw), pm) + crack_mud * 0.95 + am * 0.18) * (1.0 - puddle * 0.84);
+	NORMAL_MAP_DEPTH = (mix(mix(0.82, 1.08, fw), mix(0.68, 0.88, fw), urb_flat) + crack_mud * 0.95 + pm * (pave_crack * 0.52 + pave_seam * 0.44)) * (1.0 - puddle * 0.86);
 }
 """
 	var m := ShaderMaterial.new()
@@ -1982,15 +2434,19 @@ void fragment(){
 	m.set_shader_parameter("soil_n", world_tex("ground_soil_n.png"))
 	m.set_shader_parameter("grav_a", world_tex("ground_gravel_a.png"))
 	m.set_shader_parameter("grav_n", world_tex("ground_gravel_n.png"))
-	m.set_shader_parameter("conc_a", world_tex("asphalt_a.png"))
-	m.set_shader_parameter("conc_n", world_tex("asphalt_n.png"))
+	m.set_shader_parameter("conc_a", world_tex("concrete_a.png"))
+	m.set_shader_parameter("conc_n", world_tex("concrete_n.png"))
+	m.set_shader_parameter("grass_a", world_tex("ground_grass_a.png"))
+	m.set_shader_parameter("grass_n", world_tex("ground_grass_n.png"))
+	m.set_shader_parameter("outer_zone_half", 850.0)
+	m.set_shader_parameter("outer_zone_on", 0.0)
 	m.set_shader_parameter("wet_amt", 0.0)
 	m.set_meta("no_outline", true)
 	_mat_cache["ground"] = m
 	return m
 
 
-## 3D 视口专用 16x16x16 末世废土胶片 LUT：银留工艺（Bleach-Bypass）适度脱饱和、扎实暗部冷钢青、氧化钨丝微暖高光与扎实电影 S 曲线。
+## 3D 视口专用 16x16x16 B.o.T 硬派写实军工 LUT（配合 ACES Filmic：清透天光冷钢暗部、不压制金属高光肩部、自然微暖日照分色）
 static func cinematic_lut() -> ImageTexture3D:
 	if _tex_cache.has("cinematic_lut"):
 		return _tex_cache["cinematic_lut"]
@@ -2005,19 +2461,18 @@ static func cinematic_lut() -> ImageTexture3D:
 			for x in n:
 				var r0 := float(x) / float(n - 1)
 				var luma := r0 * 0.299 + g0 * 0.587 + b0 * 0.114
-				var sr := lerpf(r0, r0 * r0 * (3.0 - 2.0 * r0), 0.22)
-				var sg := lerpf(g0, g0 * g0 * (3.0 - 2.0 * g0), 0.22)
-				var sb := lerpf(b0, b0 * b0 * (3.0 - 2.0 * b0), 0.22)
-				# 保留沉稳深黑层次与暗部细节可读性，暗部冷钢青，高光微暖锈黄滚降
-				var floor_lift := (1.0 - smoothstep(0.0, 0.18, luma)) * 0.009
-				var sh := (1.0 - smoothstep(0.0, 0.45, luma)) * smoothstep(0.0, 0.04, luma)
-				var hi := smoothstep(0.48, 0.94, luma) * (1.0 - smoothstep(0.95, 1.0, luma) * 0.60)
-				sr += floor_lift * 0.80 - 0.009 * sh + 0.012 * hi
-				sg += floor_lift * 0.92 + 0.002 * sh + 0.005 * hi
-				sb += floor_lift * 1.02 + 0.008 * sh - 0.009 * hi
-				# 轻度银留脱饱和（Bleach-Bypass），赋予钢铁、混凝土与尘雾写实冷峻质感
+				# 轻度微反差（0.05）避免二次压暗中调，完整释放 ACES 的金属折边高光穿透力（p95 205-224）
+				var sr := lerpf(r0, r0 * r0 * (3.0 - 2.0 * r0), 0.05)
+				var sg := lerpf(g0, g0 * g0 * (3.0 - 2.0 * g0), 0.05)
+				var sb := lerpf(b0, b0 * b0 * (3.0 - 2.0 * b0), 0.05)
+				var toe := (1.0 - smoothstep(0.0, 0.18, luma)) * 0.008
+				var sh := (1.0 - smoothstep(0.0, 0.42, luma)) * smoothstep(0.0, 0.04, luma)
+				var hi := smoothstep(0.54, 0.96, luma)
+				sr += toe * 0.88 - 0.005 * sh + 0.007 * hi
+				sg += toe * 0.96 + 0.001 * sh + 0.003 * hi
+				sb += toe * 1.10 + 0.007 * sh - 0.004 * hi
 				var lum2 := sr * 0.299 + sg * 0.587 + sb * 0.114
-				var sat_mul := lerpf(0.88, 0.96, hi)
+				var sat_mul := lerpf(0.97, 0.99, hi)
 				sr = clampf(lum2 + (sr - lum2) * sat_mul, 0.0, 1.0)
 				sg = clampf(lum2 + (sg - lum2) * sat_mul, 0.0, 1.0)
 				sb = clampf(lum2 + (sb - lum2) * sat_mul, 0.0, 1.0)
@@ -2178,8 +2633,9 @@ static func particle_mat(tex: Texture2D, additive := true, prox_fade := -1.0) ->
 
 
 static func _is_cloud_tex(tex: Texture2D) -> bool:
-	# 分类只检查已存在的资源；普通火星不应为了比较而生成三张 256² 噪声贴图。
-	return tex != null and (tex == _tex_cache.get("smoke") or tex == _tex_cache.get("dust_vfx") or tex == _tex_cache.get("cloud"))
+	# 仅真正打包 4 通道 (core, erode_n, detail, mask) 的 smoke / dust_vfx 走 smoke_cloud.gdshader；
+	# cloud_tex 为纯白 RGB=(1,1,1) 贴花图，禁止误入体积烟尘着色器产生硬边白块
+	return tex != null and (tex == _tex_cache.get("smoke") or tex == _tex_cache.get("dust_vfx"))
 
 
 ## 受击热冲击叠加层：双面 Fresnel 轮廓受击脉冲 + 钨钢余烬着色，量化 5 档避免每帧新建材质
@@ -2724,11 +3180,12 @@ void fragment() {
 	float edge = pow(1.0 - clamp(COLOR.r, 0.0, 1.0), 3.0);
 	float side = COLOR.g;
 	float sweep = smoothstep(0.92, 1.0, 0.5 + 0.5 * sin(UV.y * 2.4 - TIME * 2.2));
-	float fill = 0.025 + 0.07 * flick * step(0.82, rnd);
-	float base = fill + 0.08 * rim + 0.20 * line + 0.18 * sweep * line + 0.28 * edge + 0.22 * side;
-	float hit = surge * (0.55 + 1.1 * line + 0.6 * rim + 0.4 * edge);
-	float a = clamp((base + hit) * fade * col.a, 0.0, 0.75);
-	ALBEDO = col.rgb * (0.62 + 1.1 * surge + 0.35 * edge + 0.25 * side);
+	float fill = 0.008 + 0.032 * flick * step(0.84, rnd);
+	float rim_tight = pow(clamp(1.0 - ndv, 0.0, 1.0), 2.6);
+	float base = fill + 0.22 * rim_tight + 0.09 * line * (0.28 + 0.72 * rim) + 0.14 * sweep * line + 0.20 * edge + 0.14 * side;
+	float hit = surge * (0.45 + 0.95 * line + 0.55 * rim + 0.35 * edge);
+	float a = clamp((base + hit) * fade * col.a, 0.0, 0.56);
+	ALBEDO = col.rgb * (0.52 + 1.05 * surge + 0.38 * rim_tight + 0.24 * edge);
 	ALPHA = a;
 }
 """
@@ -3004,12 +3461,14 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 	var e_amt: int = int(opts.get("amount", 24))
 	p.amount = maxi(3, int(round(float(e_amt) * 0.45))) if is_mobile_perf() else e_amt
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	p.lifetime = opts.get("life", 1.0)
 	p.local_coords = opts.get("local", false)
 	p.explosiveness = float(opts.get("explosive", 0.0))
 	p.flatness = float(opts.get("flat", 0.0))
 	var tex: Texture2D = opts.get("tex", soft_dot())
 	var add: bool = bool(opts.get("additive", true))
+	var sz: float = float(opts.get("size", 0.5))
 	var prox: float = float(opts.get("soft_depth", -1.0))
 	if opts.has("mesh"):
 		p.mesh = opts["mesh"]
@@ -3017,10 +3476,11 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 		p.angular_velocity_min = opts.get("ang_min", -240.0)
 		p.angular_velocity_max = opts.get("ang_max", 240.0)
 	else:
-		var qm := QuadMesh.new()
-		qm.size = Vector2.ONE * opts.get("size", 0.5)
-		qm.material = particle_mat(tex, add, prox)
-		p.mesh = qm
+		p.mesh = _burst_res_get("q%d|%s|%s|%.2f" % [tex.get_instance_id(), add, sz, prox], func():
+			var qm := QuadMesh.new()
+			qm.size = Vector2.ONE * sz
+			qm.material = particle_mat(tex, add, prox)
+			return qm)
 		var is_cloud: bool = _is_cloud_tex(tex)
 		if is_cloud or opts.has("angle_min") or opts.has("angle_max"):
 			p.angle_min = float(opts.get("angle_min", -180.0))
@@ -3038,18 +3498,30 @@ static func emitter(parent: Node3D, pos: Vector3, opts: Dictionary) -> CPUPartic
 		p.damping_max = float(opts["damp"])
 	p.scale_amount_min = opts.get("smin", 0.6)
 	p.scale_amount_max = opts.get("smax", 1.2)
-	var curve := Curve.new()
-	curve.add_point(Vector2(0, opts.get("grow0", 0.5)))
-	if opts.has("grow_mid"):
-		curve.add_point(Vector2(clampf(float(opts.get("grow_mid_pos", 0.3)), 0.05, 0.95), float(opts["grow_mid"])))
-	curve.add_point(Vector2(1, opts.get("grow1", 1.0)))
-	p.scale_amount_curve = curve
-	var g := Gradient.new()
-	g.set_color(0, opts.get("c0", Color(1, 0.7, 0.3)))
-	g.set_color(1, opts.get("c1", Color(0.3, 0.1, 0.0, 0.0)))
-	if opts.has("cmid"):
-		g.add_point(clampf(float(opts.get("cmid_pos", 0.3)), 0.05, 0.95), opts.cmid)
-	p.color_ramp = g
+	var g0: float = float(opts.get("grow0", 0.5))
+	var g1: float = float(opts.get("grow1", 1.0))
+	var has_gm: bool = opts.has("grow_mid")
+	var gm_val: float = float(opts.get("grow_mid", (g0 + g1) * 0.5))
+	var gmp: float = clampf(float(opts.get("grow_mid_pos", 0.3)), 0.05, 0.95)
+	p.scale_amount_curve = _burst_res_get("c%s|%s|%s|%s|%s" % [g0, g1, has_gm, gm_val, gmp], func():
+		var curve := Curve.new()
+		curve.add_point(Vector2(0, g0))
+		if has_gm:
+			curve.add_point(Vector2(gmp, gm_val))
+		curve.add_point(Vector2(1, g1))
+		return curve)
+	var c0: Color = opts.get("c0", Color(1, 0.7, 0.3))
+	var c1: Color = opts.get("c1", Color(0.3, 0.1, 0.0, 0.0))
+	var has_cm: bool = opts.has("cmid")
+	var cm_val: Color = opts.get("cmid", c0)
+	var cmp: float = clampf(float(opts.get("cmid_pos", 0.3)), 0.05, 0.95)
+	p.color_ramp = _burst_res_get("g%s|%s|%s|%s|%s" % [c0, c1, has_cm, cm_val, cmp], func():
+		var g := Gradient.new()
+		g.set_color(0, c0)
+		g.set_color(1, c1)
+		if has_cm:
+			g.add_point(cmp, cm_val)
+		return g)
 	if opts.has("ring_r"):
 		_apply_ring_emission(p, opts)
 	elif opts.has("box"):
@@ -3127,6 +3599,7 @@ static func prism(outline: PackedVector2Array, thick: float, bevel := 0.03) -> A
 	_vc = Color(1, 1, 1)
 	st.generate_normals()
 	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_mesh_cache[key] = m
 	return m
@@ -3170,7 +3643,7 @@ static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars
 			m2 = p2 - p1
 		var sub_i := sub
 		if rib > 0.0:
-			sub_i = maxi(sub, mini(128, int(ceil(l1 / (r * 0.25)))))
+			sub_i = maxi(sub, mini(32, int(ceil(l1 / (r * 0.25)))))
 		for k in sub_i:
 			var t := float(k) / sub_i
 			var t2 := t * t
@@ -3240,10 +3713,25 @@ static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars
 			var b = rings[i][j2]
 			var c = rings[i + 1][j2]
 			var d = rings[i + 1][j]
-			for k in [[a, j, i], [c, j + 1, i + 1], [d, j, i + 1], [a, j, i], [b, j + 1, i], [c, j + 1, i + 1]]:
-				st.set_normal(k[0][1])
-				st.set_uv(Vector2(float(k[1]) / seg, float(k[2]) * 0.15))
-				st.add_vertex(k[0][0])
+			for tri_v in [[[a, j, i], [c, j + 1, i + 1], [d, j, i + 1]], [[a, j, i], [b, j + 1, i], [c, j + 1, i + 1]]]:
+				var v0: Vector3 = tri_v[0][0][0]
+				var v1: Vector3 = tri_v[1][0][0]
+				var v2: Vector3 = tri_v[2][0][0]
+				var gn := (v1 - v0).cross(v2 - v0)
+				if gn.length_squared() < 1e-12:
+					continue
+				var front := -gn.normalized()
+				var avg_n: Vector3 = (tri_v[0][0][1] + tri_v[1][0][1] + tri_v[2][0][1]).normalized()
+				if avg_n.dot(front) < 0.0:
+					var tmp = tri_v[1]
+					tri_v[1] = tri_v[2]
+					tri_v[2] = tmp
+					front = -front
+				for k in tri_v:
+					var kn: Vector3 = k[0][1]
+					st.set_normal(kn if kn.dot(front) >= 0.0 else front)
+					st.set_uv(Vector2(float(k[1]) / seg, float(k[2]) * 0.15))
+					st.add_vertex(k[0][0])
 	# 两端封闭端盖（微凸，避免看到空心管口）
 	for e in [[0, -1.0], [rings.size() - 1, 1.0]]:
 		var ri: int = e[0]
@@ -3261,6 +3749,7 @@ static func tube(pts: Array, r: float, seg := 14, sub := 10, rib := 0.0, collars
 				st.set_uv(Vector2(0.5, 0.5))
 				st.add_vertex(v)
 	st.generate_tangents()
+	st.index()
 	var mesh := st.commit()
 	if _tube_cache.size() >= TUBE_CACHE_LIMIT:
 		_tube_cache.erase(_tube_cache.keys()[0])

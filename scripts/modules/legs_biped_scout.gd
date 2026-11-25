@@ -100,11 +100,13 @@ static func build(ctx: Dictionary) -> Node3D:
 		leg.set_meta("sole", -1.44 - 0.096 - hip)
 		leg_parts.append(leg)
 
-	# 紧凑腰部回转座柱（顶接 HP-C1 母座 hip+0.54）
-	K.cy(root, 0.44, 0.38, M_FRAME, Vector3(0, hip + 0.30, 0), Vector3.ZERO, 0.50, 22)
-	K.cy(root, 0.50, 0.10, M_DARK, Vector3(0, hip + 0.48, 0), Vector3.ZERO, 0.52, 24)
-	for sx_g in [-0.30, 0.30]:
-		K.piston(root, Vector3(sx_g, hip + 0.12, -0.18), Vector3(sx_g * 0.82, hip + 0.45, -0.14), 0.024)
+	# 紧凑腰部回转座柱（收进骨盆厚度内 + 外露四向稳定活塞，顶接 HP-C1 母座 hip+0.54）
+	K.bb(root, Vector3(0.68, 0.12, 0.48), M_LEG2, Vector3(0, hip + 0.19, 0.0), Vector3.ZERO, 0.03)
+	K.cy(root, 0.25, 0.32, M_FRAME, Vector3(0, hip + 0.32, 0), Vector3.ZERO, 0.23, 22)
+	K.cy(root, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.48, 0), Vector3.ZERO, 0.31, 24)
+	for sx_g in [-0.29, 0.29]:
+		K.piston(root, Vector3(sx_g, hip + 0.19, -0.19), Vector3(sx_g * 0.84, hip + 0.46, -0.15), 0.023)
+		K.piston(root, Vector3(sx_g, hip + 0.19, 0.19), Vector3(sx_g * 0.84, hip + 0.46, 0.15), 0.023)
 	K.socket(root, "core", Vector3(0, hip + 0.54, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "biped")

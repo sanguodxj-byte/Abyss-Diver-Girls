@@ -1,0 +1,248 @@
+{
+  "pack_id": "abyss_diver_girls_poi_buildings_wave5_ruined",
+  "name": "潜渊少女 · 审计清单新批（首领地标与重工防务 10 项 · 全部残破）",
+  "condition": "ruined",
+  "condition_label": "残破废墟",
+  "uv_mapping": "metric_local_box_and_seamless_cylindrical_uv1_uv2",
+  "pbr_texture_channels": [
+    "albedo_srgb",
+    "tangent_normal_linear",
+    "roughness_linear"
+  ],
+  "pbr_surfaces": [
+    "concrete_formwork",
+    "concrete_bunker",
+    "plaster_stucco",
+    "stone_ashlar",
+    "rubble_aggregate",
+    "brick_masonry",
+    "brick_refractory",
+    "steel_riveted",
+    "steel_galvanized",
+    "steel_oxidized",
+    "corrugated_metal",
+    "painted_metal",
+    "brushed_alloy",
+    "asphalt_road",
+    "tar_membrane",
+    "timber_plank",
+    "woven_canvas",
+    "ceramic_tile"
+  ],
+  "upstream_repo": "sanguodxj-byte/Abyss-Diver-Girls",
+  "total_buildings": 10,
+  "total_meshes": 2195,
+  "total_triangles": 168952,
+  "buildings": [
+    {
+      "id": "poi_egret_bridge",
+      "code": "LM-01",
+      "audit_tag": "P1-POI-03",
+      "condition": "ruined",
+      "condition_badge": "坠毁残破",
+      "ruin_notes": "背部双跨拱壳撕裂露肋；右舷与舰首装甲舷窗震碎残片；断桅斜插土堤；撕裂尾部拖出粗重高压缆束。",
+      "name": "白鹭号 · 坠毁装甲舰桥舱（残破）",
+      "en_name": "Ruined Egret Bridge Wreck",
+      "upstream_source": "scripts/map_ext/poi/egret_bridge.gd",
+      "gd_output_path": "scripts/map_ext/poi/egret_bridge_remake.gd",
+      "footprint_m": [
+        20,
+        9.8,
+        16
+      ],
+      "meshes": 229,
+      "triangles": 19808,
+      "old_defects": "旧版甲板破口露出的 5 根骨架仅 4 边折管、尾部 5 根线束为 5 边细杆、斜插断桅 8 边且姿态喷口 14 边。",
+      "remake_highlights": "【残破废墟版】背部装甲拱壳大段撕裂暴露弯曲钢肋与舱内海图台/黑匣子 + 24段姿态喷口 + 16段尾部断缆 + 斜插断桅与撞击土堤。"
+    },
+    {
+      "id": "lm_geothermal_vault",
+      "code": "LM-02",
+      "audit_tag": "P1-LM-01",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "安全壳正面三瓣穹顶彻底炸穿露出紫铜线圈与发光核心；顶部蒸汽集箱震歪；东侧高压蒸汽巨管折断露锯齿断口。",
+      "name": "零号深渊井 · 地热磁约束腔（残破）",
+      "en_name": "Ruined Geothermal Vault",
+      "upstream_source": "scripts/map_ext/landmarks_boss.gd::_geothermal_vault",
+      "gd_output_path": "scripts/map_ext/landmarks/lm_geothermal_vault_remake.gd",
+      "footprint_m": [
+        22,
+        15.6,
+        20
+      ],
+      "meshes": 112,
+      "triangles": 16052,
+      "old_defects": "旧版 19.2m 圆形竞技台仅 12 边形大盘，12.4m 反应堆安全壳与穹顶仅 12~16 段，跨顶巨型蒸汽弯管仅 4 段折线。",
+      "remake_highlights": "【残破废墟版】48段高精度圆形战台与安全壳 + 正面三瓣穹顶炸穿露36段紫铜磁约束线圈 + 歪斜蒸汽集箱 + 东侧跨顶蒸汽巨管拦腰爆断。"
+    },
+    {
+      "id": "lm_submarine_drydock",
+      "code": "LM-03",
+      "audit_tag": "P1-LM-02",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "潜艇指挥塔围壳中弹歪斜、潜望镜弯折；跨坞龙门吊起吊小车变形卡死；干船坞阶梯岸壁坍塌碎石。",
+      "name": "东湾船坞港 · 潜艇干船坞（残破）",
+      "en_name": "Ruined Submarine Drydock",
+      "upstream_source": "scripts/map_ext/landmarks_boss.gd::_submarine_drydock",
+      "gd_output_path": "scripts/map_ext/landmarks/lm_submarine_drydock_remake.gd",
+      "footprint_m": [
+        24,
+        14.2,
+        16
+      ],
+      "meshes": 125,
+      "triangles": 11452,
+      "old_defects": "旧版 4.3m 直径巨型潜艇耐压壳仅 20 边、艏艉锥 18 边棱角生硬，潜望镜 10 边且龙门吊钢索仅 6 边。",
+      "remake_highlights": "【残破废墟版】48段流线潜艇耐压壳与48段环肋 + 歪斜指挥塔与20段潜望镜 + 阶梯干船坞混凝土池与钢沉箱门 + 跨坞变形龙门吊。"
+    },
+    {
+      "id": "lm_central_terminus",
+      "code": "LM-04",
+      "audit_tag": "P1-LM-03",
+      "condition": "ruined",
+      "condition_badge": "塌顶残破",
+      "ruin_notes": "车站拱形屋面塌空60%暴露16段弧形钢桁架；西主站房整角屋顶与上层角墙崩毁；钟楼尖顶歪斜。",
+      "name": "旧城中央总站 · 塌顶拱形站厅（残破）",
+      "en_name": "Ruined Central Terminus Vault",
+      "upstream_source": "scripts/map_ext/landmarks_boss.gd::_central_terminus",
+      "gd_output_path": "scripts/map_ext/landmarks/lm_central_terminus_remake.gd",
+      "footprint_m": [
+        23,
+        13.8,
+        17
+      ],
+      "meshes": 386,
+      "triangles": 25932,
+      "old_defects": "旧版 20.8m 大跨度穹顶半圆拱肋仅分 8 段折板，缺乏站房柱廊、内凹窗洞、真实铁轨月台与结构坍塌层次。",
+      "remake_highlights": "【残破废墟版】6道16段贝塞尔大跨度拱形钢桁架 + 60%拱顶掀空露肋 + 西侧主楼整角掀顶断墙 + 歪斜28段铜框钟楼尖顶。"
+    },
+    {
+      "id": "lm_missile_silo",
+      "code": "LM-05",
+      "audit_tag": "P1-LM-03",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "左侧防爆巨门卡死上掀28°、右侧变形半开露出井内未发导弹头；发控地堡整角崩塌；遥测警报桅杆折弯。",
+      "name": "战略地下导弹发射井 · 爆裂井口（残破）",
+      "en_name": "Ruined Underground Missile Silo",
+      "upstream_source": "scripts/map_ext/landmarks_boss.gd::_missile_silo",
+      "gd_output_path": "scripts/map_ext/landmarks/lm_missile_silo_remake.gd",
+      "footprint_m": [
+        19,
+        11.4,
+        19
+      ],
+      "meshes": 222,
+      "triangles": 13300,
+      "old_defects": "旧版井盖开闭液压巨缸仅 12 边圆柱、井口环面低分段且缺少发控堡垒与防爆导焰槽细节。",
+      "remake_highlights": "【残破废墟版】48段强化发射井口 + 双扇40吨防爆巨门液压卡死不对称掀开露弹头 + 4组24段镀铬液压巨缸 + 缺角发控地堡与折弯警报桅。"
+    },
+    {
+      "id": "bldg_abyss_gate_rig",
+      "code": "BLD-01",
+      "audit_tag": "P1-BLD-A1",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "48段封印巨环正面崩缺露齿；两组液压锁栓震歪错位；钻塔顶部天车座与24段滑轮组剧烈扭斜。",
+      "name": "深渊封印井环门与地热钻井塔台（残破）",
+      "en_name": "Ruined Abyss Gate Rig",
+      "upstream_source": "scripts/buildings/poi_abyss_gate_rig.gd",
+      "gd_output_path": "scripts/buildings/bldg_abyss_gate_rig_remake.gd",
+      "footprint_m": [
+        16,
+        13.4,
+        16
+      ],
+      "meshes": 195,
+      "triangles": 13944,
+      "old_defects": "旧版直径 7.36m 封印巨环仅 16 段、32 根液压锁栓仅 10 段、防喷器手轮 12 段、天车滑轮 14 段且主动钻杆仅 6 边。",
+      "remake_highlights": "【残破废墟版】48段深渊封印井环崩裂露齿 + 8组24段液压锁井锚钳错位 + 24段BOP手轮阀堆 + 12.8m四柱钻塔天车剧烈歪斜。"
+    },
+    {
+      "id": "bldg_chem_plant",
+      "code": "BLD-02",
+      "audit_tag": "P1-BLD-A2",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "北侧36段主精馏塔66%处拦腰炸断露残齿与歪斜32段环形走道；回流鹅颈管崩落；左侧机房整角掀顶断墙。",
+      "name": "废土催化分馏塔与管廊化工厂（残破）",
+      "en_name": "Ruined Chemical Distillation Plant",
+      "upstream_source": "scripts/buildings/bldg_chem_plant.gd",
+      "gd_output_path": "scripts/buildings/bldg_chem_plant_remake.gd",
+      "footprint_m": [
+        16,
+        11.2,
+        11
+      ],
+      "meshes": 270,
+      "triangles": 20596,
+      "old_defects": "旧版精馏塔混凝土底座仅 10 边、6 层环形走道 12 段、主塔筒 18 段、工艺管 10 段且 33 根爬梯横杆仅 8 段。",
+      "remake_highlights": "【残破废墟版】双36段不锈钢精馏塔（北主塔拦腰炸断露锯齿钢口+32段歪斜环形走道） + 24段管桥阀轮 + 左侧压缩机房整角掀顶崩墙。"
+    },
+    {
+      "id": "bldg_oil_tank_chimney",
+      "code": "BLD-03",
+      "audit_tag": "P1-BLD-A3",
+      "condition": "ruined",
+      "condition_badge": "断囱残破",
+      "ruin_notes": "右侧32段耐火砖烟囱拦腰斜断露锯齿残口与歪斜钢箍；左侧36段储油罐顶盖掀翘；护笼与罐顶护栏全面高分段化。",
+      "name": "立式储油罐与高炉烟囱组（残破）",
+      "en_name": "Ruined Oil Tank & Blast Chimney",
+      "upstream_source": "scripts/buildings/ind_oil_tank_chimney.gd",
+      "gd_output_path": "scripts/buildings/bldg_oil_tank_chimney_remake.gd",
+      "footprint_m": [
+        13.6,
+        12.6,
+        10.6
+      ],
+      "meshes": 94,
+      "triangles": 11452,
+      "old_defects": "旧版 36 根罐顶栏杆与护笼支架误用 6 边圆柱，11.5m 烟囱主筒 16 段、护笼圆环 12 段且泵撬管汇仅 12 段。",
+      "remake_highlights": "【残破废墟版】36段铆接储油罐顶盖掀翘塌陷 + 32段耐火砖高炉烟囱70%处斜断露锯齿砖口与歪斜钢箍 + 24段护笼与泵阀撬块。"
+    },
+    {
+      "id": "bldg_command_bunker",
+      "code": "BLD-04",
+      "audit_tag": "P1-BLD-A4",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "屋顶测地线雷达罩正面崩开暴露中弹歪斜的内部雷达盘；主堡整角掀顶且上层角墙崩塌露断柱钢筋。",
+      "name": "雷达穹顶防炮击指挥地堡（残破）",
+      "en_name": "Ruined Radar Command Bunker",
+      "upstream_source": "scripts/buildings/bldg_command_bunker.gd",
+      "gd_output_path": "scripts/buildings/bldg_command_bunker_remake.gd",
+      "footprint_m": [
+        14.6,
+        8.8,
+        11
+      ],
+      "meshes": 257,
+      "triangles": 13800,
+      "old_defects": "旧版直径 3.24m 雷达罩仅 5 层 10 边圆柱叠加，防爆门手轮 14 段，24 根窗栅与避雷针仅 8~10 段。",
+      "remake_highlights": "【残破废墟版】多面体测地线雷达罩正面三瓣炸穿露28段歪斜追踪雷达盘 + 整角掀顶断墙露指挥室地图台 + 24段潜艇式防爆门轮与抗爆斜扶壁。"
+    },
+    {
+      "id": "bldg_substation",
+      "code": "BLD-05",
+      "audit_tag": "P1-BLD-A5",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "配电主控室整角屋顶与上层外墙崩毁露断筋；南侧主变储油枕震斜、高压瓷瓶套管折断；A字龙门避雷针歪斜。",
+      "name": "110KV 高压瓷瓶龙门变电站（残破）",
+      "en_name": "Ruined 110KV Substation",
+      "upstream_source": "scripts/buildings/bldg_substation.gd",
+      "gd_output_path": "scripts/buildings/bldg_substation_remake.gd",
+      "footprint_m": [
+        15.2,
+        8.4,
+        10.6
+      ],
+      "meshes": 305,
+      "triangles": 22616,
+      "old_defects": "旧版 36 个高压瓷瓶伞裙仅 12 边、双主变储油枕 14 边、避雷器与母线 10 边且窗栅仅 8 边。",
+      "remake_highlights": "【残破废墟版】砖混配电主控室整角掀顶崩墙 + 防爆防火墙分隔双油浸主变（24段储油枕 + 20段多伞裙瓷瓶折歪） + 受损110KV钢构A字龙门母线架。"
+    }
+  ]
+}

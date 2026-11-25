@@ -20,9 +20,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_CORE2 := K.armor_sub(c, 0.48)
 
 	# 腰部回转座圈 + 机械承力骨架 + 主胸舱
-	K.cy(torso, 0.46, 0.22, M_DARK, Vector3(0, 0.06, 0.0), Vector3.ZERO, 0.48, 28)
-	A.add(torso, A.torus(0.42, 0.49, 30), M_GUN, Vector3(0, 0.12, 0.0), Vector3.ZERO, Vector3(1, 0.45, 1), false)
-	K.bb(torso, Vector3(1.32, 0.88, 1.12), M_FRAME, Vector3(0, 0.26, 0.06), Vector3.ZERO, 0.055)
+	K.cy(torso, 0.36, 0.16, M_DARK, Vector3(0, 0.075, 0.0), Vector3.ZERO, 0.36, 28)
+	A.add(torso, A.torus(0.335, 0.375, 30), M_GUN, Vector3(0, 0.05, 0.0), Vector3.ZERO, Vector3(1, 0.45, 1), false)
+	K.bb(torso, Vector3(1.32, 0.66, 1.12), M_FRAME, Vector3(0, 0.37, 0.06), Vector3.ZERO, 0.05)
 	K.plate(torso, K.crect(1.52, 0.68, [0.18, 0.18, 0.10, 0.10]), 1.14, M_CORE2, Vector3(0, 0.38, 0.10), Vector3.ZERO, 0.048)
 
 	# 胸甲：中央多面复合主甲 + 下部螺栓副甲 + 两翼外倾反应装甲

@@ -11,18 +11,20 @@ const MenuShip := preload("res://scripts/menu_ship.gd")
 const Bay03Hangar := preload("res://scripts/airship/bay03_hangar.gd")
 const MechScript := preload("res://scripts/mech.gd")
 
-## 既有游戏场景在 87.2m 信天翁号局部坐标系中的精确装配锚点：
-## - OBS-2：menu_ship.gd 的 WindowWall 位于 (1.0, 0.8, 0.0) 外倾 -14°，叠加 (13.5, 5.6, -7.12) 后精确重合船体 OBS-2 窗框中心 (14.5, 6.4, -7.12)
-## - BAY 03：hub.gd 的转盘顶面位于 y=0.16，叠加 (0.0, 1.4, 0.0) 后精确重合船体 MechPad_Anchor (0.0, 1.56, 0.0)
-const OBS2_MOUNT_POS_EXACT := Vector3(13.5, 5.6, -7.12)
-const OBS2_MOUNT_POS := Vector3(13.5, 5.605, -7.12)
-const BAY03_MOUNT_POS := Vector3(0.0, 1.4, 0.0)
+## 同步 1.80x 泰坦级重型载机母舰尺度（全长 87.2m → 157.0m，全高 ~65.7m）：
+## - 母舰外骨骼、浮空气囊、推进吊舱按 CARRIER_SCALE = 1.80 放大；
+## - OBS-2 观景舱内部（menu_ship.gd）保持 1:1 真人尺度，锚定于放大后的左舷窗框位置；
+## - BAY 03 整备舱（bay03_hangar.gd）原生以 1:1 世界米构建（11.7m 回转台 + 1.05m 真人护栏栈桥），锚定于放大后的底层甲板高度。
+const CARRIER_SCALE := 1.80
+const OBS2_MOUNT_POS_EXACT := Vector3(13.5 * CARRIER_SCALE, 5.6 * CARRIER_SCALE, -7.12 * CARRIER_SCALE)
+const OBS2_MOUNT_POS := Vector3(13.5 * CARRIER_SCALE, 5.605 * CARRIER_SCALE, -7.12 * CARRIER_SCALE)
+const BAY03_MOUNT_POS := Vector3(0.0, 1.4 * CARRIER_SCALE, 0.0)
 
 static var _glass_cache := {}
 ## 已合批的 17 个母舰外骨骼/舱室纯资源蓝图（不含任何孤立 Node 引用，零退出泄漏；二次构建 <10ms）
 static var _shell_blueprint: Array = []
 static var _marker_blueprint: Array = []
-static var _mech_pad_pos := Vector3(0.0, 1.56, 0.0)
+static var _mech_pad_pos := Vector3(0.0, 1.56 * CARRIER_SCALE, 0.0)
 
 static func _glass_mat(col: Color, alpha: float) -> StandardMaterial3D:
 	var key := "%s|%.3f" % [col.to_html(false), alpha]
@@ -3735,6 +3737,22 @@ static func build_integrated(opts := {}) -> Node3D:
 			if old_bay != null:
 				root.remove_child(old_bay)
 				old_bay.free()
+		for ch_sc in root.get_children():
+			if not (ch_sc is Node3D):
+				continue
+			var n_sc: Node3D = ch_sc
+			if n_sc.name == "Airship_GodotMarkers":
+				for mk_c in n_sc.get_children():
+					if mk_c is Marker3D:
+						var mk3: Marker3D = mk_c
+						mk3.position *= CARRIER_SCALE
+						if mk3.has_meta("look_at"):
+							mk3.set_meta("look_at", (mk3.get_meta("look_at") as Vector3) * CARRIER_SCALE)
+			elif n_sc.name == "MechPad_Anchor":
+				n_sc.position *= CARRIER_SCALE
+			else:
+				n_sc.position *= CARRIER_SCALE
+				n_sc.scale *= CARRIER_SCALE
 		if do_batch:
 			_batch_airship_subsystems(root)
 			if replace_obs2 and replace_bay03 and _shell_blueprint.is_empty():
@@ -3859,12 +3877,12 @@ static func set_cutaway_mode(root: Node3D, mode: String) -> void:
 		bay_root = br.get("root", null)
 
 	if mode == "legacy_obs2":
-		# 主菜单既有视觉 100% 无损模式：保留既有 OBS-2 原样与原阴影；屏蔽外部船体阴影投射与挡窗外壳
+		# 主菜单既有视觉 100% 无损模式：保留既有 OBS-2 原样与原阴影；屏蔽不可见的机库舱室、右舷外壳与外部船体阴影投射
 		if obs2_anchor != null:
 			obs2_anchor.visible = true
 			MenuShip.set_airship_fit(obs2_anchor, false)
 		if bay_anchor != null:
-			bay_anchor.visible = true
+			bay_anchor.visible = false
 		if bay_root != null:
 			Bay03Hangar.set_airship_fit(bay_root, true)
 		_set_shell_shadows(root, false)
@@ -3872,12 +3890,12 @@ static func set_cutaway_mode(root: Node3D, mode: String) -> void:
 			for sn in root.get_meta("_shell_nodes"):
 				var n3: Node3D = sn
 				if is_instance_valid(n3):
-					n3.visible = (n3.name != "Hull_PortArmorShell" and n3.name != "Propulsion_PortNacelles")
+					n3.visible = (n3.name != "Hull_PortArmorShell" and n3.name != "Propulsion_PortNacelles" and n3.name != "Hull_DecksAndBulkheads" and n3.name != "Aft_CompanionwayStaircase" and not n3.name.begins_with("Cabin_") and not n3.name.contains("Starboard"))
 		for ch in root.find_children("*", "Node3D", true, false):
 			if not ch.has_meta("cutaway_group"):
 				continue
 			var g: String = str(ch.get_meta("cutaway_group"))
-			if g == "port_shell":
+			if g == "port_shell" or g == "starboard_shell" or g == "upper_envelope_starboard":
 				ch.visible = false
 			else:
 				ch.visible = true

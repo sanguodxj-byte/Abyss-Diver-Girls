@@ -17,6 +17,7 @@ uniform vec3 fog_tint : source_color = vec3(0.52, 0.50, 0.44);
 
 uniform float cloud_drift = 0.0026;
 uniform float urban_horizon = 0.55;
+uniform float ocean_east_mask = 0.0;
 uniform float storm_amount = 0.0;
 uniform float cavern_mode = 0.0;
 
@@ -41,54 +42,55 @@ void sky() {
 
 	if (AT_CUBEMAP_PASS) {
 		if (cavern_mode > 0.5) {
-			vec3 c_up = mix(sky_horizon, sky_top, smoothstep(0.0, 0.75, max(y, 0.0)));
-			vec3 c_dn = mix(sky_ground, sky_bottom, smoothstep(0.0, 0.85, max(-y, 0.0)));
+			vec3 c_up = mix(sky_horizon, sky_top, smoothstep(0.0, 0.75, max(y, 0.0))) * 1.18;
+			vec3 c_dn = mix(sky_ground, sky_bottom, smoothstep(0.0, 0.85, max(-y, 0.0))) * 1.05;
 			COLOR = mix(c_dn, c_up, smoothstep(-0.08, 0.08, y));
 		} else {
+			// 废土电影级天光 IBL：适度增强天空半球辐射度点亮玻璃/金属反光，同时压稳地面反弹保持厚重战后阴影体积感
 			float yy = clamp(y, 0.0, 1.0);
 			vec2 d_xz_c = length(d.xz) > 1e-4 ? normalize(d.xz) : vec2(0.0, 1.0);
 			vec2 l_xz_c = length(L.xz) > 1e-4 ? normalize(L.xz) : vec2(0.0, 1.0);
 			float az_c = max(dot(d_xz_c, l_xz_c), 0.0);
 			vec3 hz_cool = sky_horizon * vec3(0.92, 0.96, 1.04);
 			vec3 hz_warm = mix(sky_horizon, sun_tint, 0.34) * 1.08;
-			vec3 hz_dir = mix(hz_cool, hz_warm, pow(az_c, 2.2) * (1.0 - storm_amount * 0.65));
-			vec3 up_c = mix(hz_dir, mix(hz_dir, sky_top, 0.58), smoothstep(0.0, 0.24, yy));
-			up_c = mix(up_c, sky_top, smoothstep(0.18, 0.82, yy));
-			up_c += sun_tint * (pow(sd, 4.5) * 0.20 + pow(sd, 16.0) * 0.16) * (1.0 - storm_amount * 0.65);
-			vec3 dn_c = mix(sky_ground * 0.88, sky_bottom, smoothstep(0.0, 0.75, clamp(-y, 0.0, 1.0)));
-			vec3 env_c = mix(dn_c, up_c, smoothstep(-0.06, 0.06, y));
-			env_c = mix(env_c, fog_tint, storm_amount * 0.55);
-			COLOR = min(env_c, vec3(5.5));
+			vec3 hz_dir = mix(hz_cool, hz_warm, pow(az_c, 2.0) * (1.0 - storm_amount * 0.65));
+			vec3 hz_haze_c = mix(fog_tint, hz_dir, 0.60);
+			vec3 up_c = mix(hz_haze_c, mix(hz_dir, sky_top, 0.56), smoothstep(0.0, 0.24, yy));
+			up_c = mix(up_c, sky_top * 1.04, smoothstep(0.18, 0.82, yy));
+			up_c *= 1.04;
+			up_c += sun_tint * (pow(sd, 5.0) * 0.30 + pow(sd, 32.0) * 0.85) * (1.0 - storm_amount * 0.65);
+			vec3 bounce_lo = max(sky_ground * 0.62, sky_bottom * 1.15 + sky_ground * 0.24);
+			vec3 dn_c = mix(hz_haze_c * 0.94, mix(sky_ground * 0.78, bounce_lo, smoothstep(0.08, 0.78, clamp(-y, 0.0, 1.0))), smoothstep(0.02, 0.22, clamp(-y, 0.0, 1.0)));
+			vec3 env_c = mix(dn_c, up_c, smoothstep(-0.05, 0.05, y));
+			env_c = mix(env_c, fog_tint * 1.12, storm_amount * 0.50);
+			COLOR = min(env_c, vec3(6.5));
 		}
 	} else if (cavern_mode > 0.5) {
-		// 地下深渊封闭岩穹：玄武岩层理、钟乳垂脊与幽紫生物发光孢子菌脉
-		vec3 hz = sample_pano(horizon_pano, d, 0.0);
-		vec3 cl = sample_pano(cloud_pano, d, TIME * cloud_drift * 0.45);
-		vec3 cl2 = sample_pano(cloud_pano, normalize(vec3(-d.z, d.y * 0.92, d.x)), -TIME * cloud_drift * 0.28 + 0.37);
+		// 地下深渊封闭岩穹：深邃火山岩穹渐变 + 柔和体积孢子雾带（消除刺眼漂浮紫色细丝虫纹）
+		vec3 cl = sample_pano(cloud_pano, d, TIME * cloud_drift * 0.32);
+		vec3 cl2 = sample_pano(cloud_pano, normalize(vec3(-d.z, d.y * 0.88, d.x)), -TIME * cloud_drift * 0.22 + 0.37);
 
-		float strata = clamp(hz.b, 0.0, 0.72) / 0.72;
-		float vein = smoothstep(0.66, 0.94, hz.b);
-		float pulse = 0.78 + 0.22 * sin(TIME * 1.35 + d.x * 4.0 + d.z * 3.0);
+		float elev = clamp(y, 0.0, 1.0);
+		float pulse = 0.88 + 0.12 * sin(TIME * 0.95 + d.x * 2.5 + d.z * 2.0);
 
-		vec3 rock_dark = sky_bottom * 0.85;
-		vec3 rock_mid = mix(sky_top * 1.15, sky_horizon * 0.82, strata);
-		vec3 col = mix(rock_dark, rock_mid, smoothstep(0.12, 0.88, strata * 0.75 + cl.b * 0.25));
+		// 深沉玄武岩穹主基调：低空泛深紫灰地热薄霭，高穹沉入近黑火山岩顶
+		vec3 dome_low = mix(fog_tint, sky_horizon, 0.55) * 0.92;
+		vec3 dome_mid = mix(sky_top * 0.88, sky_horizon * 0.62, smoothstep(0.18, 0.82, cl.r * 0.55 + cl2.r * 0.45));
+		vec3 dome_top = sky_bottom * 0.68;
+		vec3 col = mix(dome_low, dome_mid, smoothstep(0.0, 0.34, elev));
+		col = mix(col, dome_top, smoothstep(0.28, 0.90, elev));
 
-		// 远端洞壁垂脊剪影
-		float wall_band = smoothstep(0.32, -0.06, abs(y)) * hz.r;
-		col = mix(col, sky_bottom * 0.65, wall_band * 0.55);
+		// 柔和体积孢子薄霭与远端暗紫生物微光漫射（无硬边亮线）
+		float mist_band = smoothstep(0.32, 0.86, cl.g * 0.58 + cl2.g * 0.42);
+		float arch_fade = smoothstep(0.02, 0.32, elev) * (1.0 - smoothstep(0.45, 0.92, elev));
+		vec3 bio_mist = mix(vec3(0.20, 0.12, 0.36), vec3(0.14, 0.24, 0.42), cl2.b);
+		col = mix(col, col + bio_mist * 0.34 * pulse, mist_band * arch_fade * clamp(cloud_tint.a, 0.25, 0.85));
 
-		// 穹顶裂隙生物荧光脉络与漂浮孢子薄霭
-		vec3 bio_col = mix(vec3(0.46, 0.22, 0.88), vec3(0.28, 0.62, 0.95), cl2.g);
-		col += bio_col * vein * pulse * 1.35 * smoothstep(-0.08, 0.22, y);
-		float spore_haze = smoothstep(0.25, 0.85, cl.g * 0.6 + cl2.r * 0.4) * cloud_tint.a;
-		col = mix(col, cloud_tint.rgb * 1.15, spore_haze * 0.34 * smoothstep(-0.15, 0.45, y));
-
-		// 水平面深渊雾气收束
-		float rim_fog = exp(-abs(y) * 9.5);
-		col = mix(col, mix(fog_tint, sky_horizon, 0.45), rim_fog * 0.68);
+		// 水平面深渊雾气收束，与火山口黑曜岩环壁无痕衔接
+		float rim_fog = exp(-abs(y) * 8.0);
+		col = mix(col, mix(fog_tint, sky_horizon, 0.42), rim_fog * 0.72);
 		if (y < 0.0) {
-			col = mix(col, sky_bottom, smoothstep(0.0, 0.62, -y));
+			col = mix(col, sky_bottom, smoothstep(0.0, 0.58, -y));
 		}
 		COLOR = col;
 	} else {
@@ -146,32 +148,40 @@ void sky() {
 			col += sun_tint * disc * 9.5 * sun_vis;
 		}
 
-		// 下半球远地面渐变（消除高处俯视或地图边缘外的悬空黑底）
+		// 下半球远地面渐变（与 AT_CUBEMAP_PASS 地平线大气色严格一致，消除远距地表/海水与天空盒接缝）
+		vec3 hz_haze = mix(fog_tint, hz_base, 0.56);
 		if (y < 0.03) {
 			float dn = clamp(-y, 0.0, 1.0);
-			vec3 g_col = mix(sky_ground, sky_bottom, smoothstep(0.02, 0.68, dn));
-			float g_haze = exp(-dn * 11.0);
-			g_col = mix(g_col, mix(fog_tint, sky_horizon, 0.45), g_haze * 0.82);
-			col = mix(g_col, col, smoothstep(-0.012, 0.018, y));
+			vec3 g_col = mix(sky_ground, sky_bottom, smoothstep(0.04, 0.70, dn));
+			float g_haze = exp(-dn * 9.5);
+			g_col = mix(g_col, hz_haze, clamp(g_haze * 0.94, 0.0, 1.0));
+			col = mix(g_col, col, smoothstep(-0.024, 0.022, y));
 		}
 
-		// 360 度远景山脊与废土工业天际线剪影
+		// 东湾开阔海面方位角遮罩（+X 为东）：在东湾船坞港/铁锈工业带海面向东淡出静态烘培山脊与工业剪影
+		float east_open = smoothstep(-0.15, 0.35, d.x) * clamp(ocean_east_mask, 0.0, 1.0);
+		float sil_mask = 1.0 - east_open;
+
+		// 360 度远景山脊与废土工业天际线剪影（脚部随地平线薄霭柔化，避免水平硬线）
 		vec3 hz = sample_pano(horizon_pano, d, 0.0);
-		float far_ridge = hz.r * smoothstep(-0.06, 0.005, y) * (1.0 - smoothstep(0.08, 0.16, y));
+		float foot_soft = smoothstep(-0.012, 0.018, y);
+		float far_ridge = hz.r * sil_mask * foot_soft * (1.0 - smoothstep(0.08, 0.16, y));
 		if (far_ridge > 0.002) {
-			vec3 ridge_col = mix(sky_ground * 0.56, mix(fog_tint, sky_horizon, 0.55), 0.68);
+			vec3 ridge_col = mix(sky_ground * 0.56, mix(fog_tint, sky_horizon, 0.55), 0.72);
 			ridge_col += sun_tint * az_sun * 0.14 * clear_sun;
-			col = mix(col, ridge_col, clamp(far_ridge * 1.15, 0.0, 0.86) * (1.0 - storm_amount * 0.6));
+			col = mix(col, ridge_col, clamp(far_ridge * 1.12, 0.0, 0.84) * (1.0 - storm_amount * 0.6));
 		}
-		float ind_sil = hz.g * urban_horizon * smoothstep(-0.05, 0.004, y) * (1.0 - smoothstep(0.07, 0.14, y));
+		float ind_sil = hz.g * urban_horizon * sil_mask * foot_soft * (1.0 - smoothstep(0.07, 0.14, y));
 		if (ind_sil > 0.002) {
-			vec3 ind_col = mix(sky_bottom * 1.35 + sky_ground * 0.35, fog_tint, 0.52);
-			col = mix(col, ind_col, clamp(ind_sil * 1.25, 0.0, 0.82) * (1.0 - storm_amount * 0.7));
+			vec3 ind_col = mix(sky_bottom * 1.35 + sky_ground * 0.35, fog_tint, 0.58);
+			col = mix(col, ind_col, clamp(ind_sil * 1.20, 0.0, 0.78) * (1.0 - storm_amount * 0.7));
 		}
 
-		// 地平线大气雾带与沙暴风沙墙融合
-		float hz_band = exp(-abs(y) * 22.0);
-		col = mix(col, mix(fog_tint, sky_horizon, 0.48), hz_band * 0.46);
+		// 地平线柔和大气雾带（y ∈ [-0.04, 0.14] 无缝承接 FOG_MODE_DEPTH 空气透视与东湾水天一线）
+		float hz_up = exp(-max(y, 0.0) * 14.5) * smoothstep(0.16, 0.0, y);
+		float hz_dn = exp(-max(-y, 0.0) * 26.0);
+		float hz_band = (y >= 0.0 ? hz_up : hz_dn) * smoothstep(-0.06, -0.01, y);
+		col = mix(col, hz_haze, clamp(hz_band * (0.58 + east_open * 0.16), 0.0, 0.84));
 		if (storm_amount > 0.001) {
 			float dust_wall = smoothstep(0.68, -0.08, y) * storm_amount;
 			vec3 storm_col = mix(fog_tint, sky_horizon * 0.92, 0.35 + 0.15 * cp1.g);

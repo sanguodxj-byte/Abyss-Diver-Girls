@@ -19,16 +19,16 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_CORE := K.armor(c, 0.44)
 	var M_CORE2 := K.armor_sub(c, 0.48)
 
-	# 腰部回转座圈 + 分段护腰齿圈块 + 稳定液压油缸 + 承力底盘托架（消除腰腹黑色空隙断层）
-	K.cy(torso, 0.46, 0.24, M_DARK, Vector3(0, 0.06, 0.02), Vector3.ZERO, 0.49, 26)
-	A.add(torso, A.torus(0.42, 0.50, 28), M_GUN, Vector3(0, 0.11, 0.02), Vector3.ZERO, Vector3(1, 0.48, 1), false)
+	# 腰部回转座圈 + 分段护腰齿圈块 + 外露稳定液压油缸 + 承力底盘托架（严格对齐标准 HP-C1 r=0.36 接合面）
+	K.cy(torso, 0.35, 0.14, M_DARK, Vector3(0, 0.065, 0.0), Vector3.ZERO, 0.36, 26)
+	A.add(torso, A.torus(0.335, 0.372, 28), M_GUN, Vector3(0, 0.03, 0.0), Vector3.ZERO, Vector3(1, 0.48, 1), false)
 	for wi in 6:
 		var wa := TAU * float(wi) / 6.0 + PI / 6.0
-		K.bb(torso, Vector3(0.18, 0.13, 0.09), M_CORE2 if wi % 2 == 0 else M_GUN, Vector3(cos(wa) * 0.45, 0.04, sin(wa) * 0.45 + 0.02), Vector3(0, -rad_to_deg(wa) + 90.0, 0), 0.014)
+		K.bb(torso, Vector3(0.12, 0.075, 0.05), M_CORE2 if wi % 2 == 0 else M_GUN, Vector3(cos(wa) * 0.355, 0.028, sin(wa) * 0.355), Vector3(0, -rad_to_deg(wa) + 90.0, 0), 0.010)
 	for sx in [-1.0, 1.0]:
-		var wx: float = sx * 0.38
-		K.piston(torso, Vector3(wx, -0.02, -0.16), Vector3(wx * 1.15, 0.22, -0.26), 0.024)
-	K.bb(torso, Vector3(1.04, 0.68, 1.04), M_FRAME, Vector3(0, 0.24, 0.12), Vector3.ZERO, 0.05)
+		var wx: float = sx * 0.31
+		K.piston(torso, Vector3(wx, 0.0, -0.20), Vector3(wx * 1.24, 0.18, -0.30), 0.022)
+	K.bb(torso, Vector3(1.04, 0.56, 1.04), M_FRAME, Vector3(0, 0.30, 0.12), Vector3.ZERO, 0.045)
 	K.plate(torso, K.crect(1.24, 0.58, [0.16, 0.16, 0.08, 0.08]), 1.08, M_CORE2, Vector3(0, 0.30, 0.18), Vector3.ZERO, 0.045)
 	K.plate(torso, K.trap(1.12, 0.82, 0.22, 0.05), 0.92, M_CORE, Vector3(0, 0.63, 0.18), Vector3.ZERO, 0.038)
 

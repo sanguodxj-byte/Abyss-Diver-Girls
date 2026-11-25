@@ -1,7 +1,7 @@
 # 全仓 3D 模型待替换与低面数整改清单
 
-> **更新日期**：2026-11-21（基于全仓代码静态核查 + 六大生态 16 张俯视/战术实拍复检 + Batch 3 10 项精修地标/环境预制体接入）  
-> **维护原则**：**只保留尚未替换、实拍仍有灰盒/素盒/低模/比例缺陷的待办模型**；已完成替换且实机质感良好的项目（底层几何库 `P0-CORE-01~10`、全部 10 项技能/部署装置 `P0-SKL-01~10`、全部 10 项导弹/炮弹/弹壳/发射巢 `P0-MSL-01~10`、6 款新精修大件 `veh_transport_vtol`/`veh_mbt_tank_wreck`/`veh_rail_wagon`/`veh_submarine_hull`/`supply_airdrop_pod`/`distress_beacon`、Batch 3 10 款重工地标与环境设施 `bld_central_terminus`/`bld_converter_foundry`/`lm_radio_mast`/`lm_observation_tower`/`lm_wind_turbine`/`lm_crystal_survey_rig`/`env_extract_beacon_tower`/`env_world_portal_gate`/`env_perimeter_pontoon`/`hub_mech_docking_bay`、`extract_zone`/`world_link`/`hub`、28 款精修建筑/载具预制体及 88 个机甲模块等）已全部移出本清单。  
+> **更新日期**：2026-11-21（基于全仓代码静态核查 + 六大生态 16 张俯视/战术实拍复检 + Batch 3 10 项精修地标/环境预制体接入 + 晶脉与全量小物件精修）  
+> **维护原则**：**只保留尚未替换、实拍仍有灰盒/素盒/低模/比例缺陷的待办模型**；已完成替换且实机质感良好的项目（底层几何库 `P0-CORE-01~10`、全部 10 项技能/部署装置 `P0-SKL-01~10`、全部 10 项导弹/炮弹/弹壳/发射巢 `P0-MSL-01~10`、6 款新精修大件 `veh_transport_vtol`/`veh_mbt_tank_wreck`/`veh_rail_wagon`/`veh_submarine_hull`/`supply_airdrop_pod`/`distress_beacon`、Batch 3 10 款重工地标与环境设施 `bld_central_terminus`/`bld_converter_foundry`/`lm_radio_mast`/`lm_observation_tower`/`lm_wind_turbine`/`lm_crystal_survey_rig`/`env_extract_beacon_tower`/`env_world_portal_gate`/`env_perimeter_pontoon`/`hub_mech_docking_bay`、全量 13 类可交互物资箱 `loot_box.gd`、40 款背包 3D 特写道具与重烘焙图标 `item_models.gd`、战区与 POI 高频小物件 `raid.gd`/`poi_kit.gd`、`extract_zone`/`world_link`/`hub`、28 款精修建筑/载具预制体及 88 个机甲模块等）已全部移出本清单。  
 > **关联文档**：本清单聚焦**场景建筑、地标、POI、载具、植被与零倒角/灰盒实体模型替换**；巨型首领 GLB 一体化精雕与敌群 PBR 化请见互补清单 [modeling_polish_todo.md](modeling_polish_todo.md)。
 
 ---
@@ -12,7 +12,7 @@
 | :---: | :--- | :--- | :--- | :--- |
 | **P0** | `REM-P0-01` ~ `06` | **最刺眼的灰盒 / 素盒 / 生态低模 / 比例失调** | 6 大项（含本次俯视图新补入 4 项） | 干船坞红龙门吊素盒、`egret_bridge` 白灰方盒、`coolant_channel` 60m 灰长条、`ter_arid_flora_pylon` 89 处低模与 `shrub_mesh` 俯视黑点、建筑-载具比例失调、远景/窄楼/主菜单裸盒 |
 | **P1** | `REM-P1-01` ~ `05` | **未预制化的 POI 主楼、地标、旧车厢/货柜与主菜单舰** | 5 大项 | 医院/学校/教堂等实心箱 POI、剩余 4 座旧内联首领地标与 7 座常规地标、铁路旧罐车/敞车与零倒角铁轨、坠落货柜、主菜单飞船 |
-| **P2** | `REM-P2-01` ~ `04` | **虫巢、特写物件精修、历史字面参数清理与 CI 门禁** | 4 大项 | 虫巢积木感结构、背包 3D 特写道具与物资箱细化、`bug.gd`/`bugs2.gd` 历史字面低段清理、新增静态防回退门禁 |
+| **P2** | `REM-P2-01`、`03`、`04` | **虫巢、历史字面参数清理与 CI 门禁** | 3 大项（原 `REM-P2-02` 背包 3D 道具与全量物资箱/场景小物件已完成移出） | 虫巢积木感结构、`bug.gd`/`bugs2.gd` 历史字面低段清理、新增静态防回退门禁 |
 
 ---
 
@@ -110,10 +110,6 @@
   - **代码位置**：`scripts/nest.gd` L33-92
   - **现状缺陷**：虽然 `art.gd` 已兜底圆筒分段，但整座虫巢仍由中心同心圆筒 + 规则放射排列的 `bevel_box` 护板拼出，整体呈机械对称积木感，缺少与地表岩渣/菌毯融合的破土体量与有机/重工侵蚀细节。
   - **整改目标**：重制多层次不规则破土基座 + 撕裂装甲井壁 + 内部可视热熔/脉动腔体，与周围菌毯贴花自然衔接。
-
-- [ ] **REM-P2-02** **背包 3D 特写道具与高频物资箱细化**【原 `P2-PROP-01` / `02`】
-  - **代码位置**：`scripts/item_models.gd`（51 处旧字面低段参数，背包特写界面直接近距展示）、`scripts/loot_box.gd`（16 处旧字面低段参数，局内高频近距交互）
-  - **整改目标**：曲面分段虽已有 `art.gd` 兜底，但部分早期道具（罐头/信标/电池棒/工具/医疗包等）和箱体锁扣/提手/阀门造型仍偏简单，逐批补强硬表面倒角细部，并同步规范源码字面分段参数。
 
 - [ ] **REM-P2-03** **常规程序化敌群/首领精雕衔接与历史低段字面清理**【衔接 `modeling_polish_todo.md`；`world_link.gd` 竖井与转场闸门已升级接入 `env_world_portal_gate`】
   - **代码位置**：`scripts/bug.gd`、`scripts/bugs2.gd`

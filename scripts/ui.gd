@@ -344,13 +344,19 @@ class CooldownTile extends Control:
 class Radar extends Control:
 	var raid
 	var rng_m := 48.0
+	var _redraw_acc := 0.05
 
 	func _init() -> void:
 		custom_minimum_size = Vector2(200, 200)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	func _process(_d: float) -> void:
-		queue_redraw()
+	func _process(d: float) -> void:
+		if not is_visible_in_tree():
+			return
+		_redraw_acc += d
+		if _redraw_acc >= 0.05:
+			_redraw_acc = 0.0
+			queue_redraw()
 
 	## 地形：以机甲为中心，从地形图取样贴成圆形
 	func _draw_terrain(c: Vector2, r: float) -> void:
@@ -1157,6 +1163,10 @@ class Crosshair extends Control:
 	var bloom := 0.0
 	var spin := 0.0
 	var hit_t := 0.0
+	var _aim_vis := 0.0
+	var _lock_px := Vector2.ZERO
+	var _lock_hp := -1.0
+	var _lock_show := false
 	var _init_done := false
 	const AMBER := Color(0.78, 0.48, 0.16)
 	const HIT_COL := Color(1.0, 0.46, 0.16)
@@ -1175,7 +1185,7 @@ class Crosshair extends Control:
 		var m := get_viewport().get_mouse_position().clamp(Vector2.ZERO, vp_sz)
 		var fp_on := false
 		if mech and is_instance_valid(mech):
-			fp_on = mech.raid != null and mech.raid.has_method("is_first_person") and mech.raid.is_first_person()
+			fp_on = mech.raid != null and ((mech.raid.has_method("is_free_look_view") and mech.raid.is_free_look_view()) or (mech.raid.has_method("is_first_person") and mech.raid.is_first_person()))
 			var cam0 := get_viewport().get_camera_3d()
 			if fp_on:
 				if cam0 and mech.raid.aim_override != null and not cam0.is_position_behind(mech.aim_point):
@@ -1185,37 +1195,62 @@ class Crosshair extends Control:
 			else:
 				var joy_on: bool = (mech.raid != null and (bool(mech.raid.get("_joy_aim_active")) or mech.raid.aim_override != null)) or (mech.raid != null and mech.raid.hud != null and mech.raid.hud.is_touch_busy())
 				if cam0 and joy_on:
-					var ap := Vector3(mech.aim_point.x, 1.8, mech.aim_point.z)
+					var ap := Vector3(mech.aim_point.x, mech.aim_point.y, mech.aim_point.z)
 					if not cam0.is_position_behind(ap):
 						m = cam0.unproject_position(ap).clamp(Vector2.ZERO, vp_sz)
 		if not _init_done:
 			pos = m
 			pip = m
 			_init_done = true
-		pos = m if fp_on else pos.lerp(m, 1.0 - exp(-16.0 * d))
+		# 外圈准星零延迟紧跟鼠标指针（消除俯视射击拖泥带水感），内圈弹着点 pip 独立展示躯干转向惯性
+		pos = m
 		spin += d * 0.6
 		if hit_t > 0.0:
 			hit_t = maxf(0.0, hit_t - d * 4.5)
 		if mech and is_instance_valid(mech):
+			var want_aim := 0.0
+			if mech.raid != null and mech.raid.has_method("is_over_shoulder") and mech.raid.is_over_shoulder() and "_ots_aim_blend" in mech.raid:
+				want_aim = clampf(float(mech.raid.get("_ots_aim_blend")), 0.0, 1.0)
+			else:
+				want_aim = 1.0 if bool(mech.get("is_aiming")) else 0.0
+			_aim_vis = lerpf(_aim_vis, want_aim, clampf(1.0 - exp(-14.0 * d), 0.0, 1.0))
 			var r := 0.0
 			for k in mech.recoil:
 				r = maxf(r, mech.recoil[k])
 			bloom = maxf(bloom - d * 3.0, r)
 			var cam := get_viewport().get_camera_3d()
+			_lock_show = false
 			if cam and mech.torso:
 				var w: Vector3
-				if fp_on:
-					var origin3: Vector3 = mech.torso.global_position
-					var dist3 := clampf(mech.aim_point.distance_to(origin3), 4.0, 120.0)
+				if mech.has_method("fire_control_world_point"):
+					w = mech.fire_control_world_point()
+				elif fp_on:
+					var sc_m: float = float(mech.MECH_VIS_SCALE) if "MECH_VIS_SCALE" in mech else 1.8
+					var origin3: Vector3 = mech.torso.global_position + Vector3(0.0, 0.28 * sc_m, 0.0)
+					var dist3 := clampf(mech.aim_point.distance_to(origin3), 4.0, 140.0)
 					w = origin3 + mech.aim_dir() * dist3
 				else:
 					var o: Vector3 = mech.global_position
 					var dist := clampf(Vector2(mech.aim_point.x - o.x, mech.aim_point.z - o.z).length(), 0.0, 80.0)
 					w = o + mech.aim_dir() * dist
-					w.y = 1.8
+					w.y = mech.aim_point.y
 				if not cam.is_position_behind(w):
 					var up := cam.unproject_position(w).clamp(Vector2(-160, -160), vp_sz + Vector2(160, 160))
 					pip = pip.lerp(up, 1.0 - exp(-30.0 * d))
+				# 越肩/第一人称实况敌方锁定菱框与血条投影
+				var le = mech.get("aim_locked_enemy")
+				if fp_on and le != null and is_instance_valid(le) and (le is Node3D) and le.get("dying") != true and le.get("dead") != true:
+					var l3 := le as Node3D
+					var lpos: Vector3 = mech.raid._target_visual_center(l3) if (mech.raid != null and mech.raid.has_method("_target_visual_center")) else (l3.global_position + Vector3(0.0, 1.5, 0.0))
+					if not cam.is_position_behind(lpos):
+						_lock_px = cam.unproject_position(lpos)
+						var hp_v = l3.get("hp")
+						var mhp_v = l3.get("max_hp")
+						_lock_hp = clampf(float(hp_v) / maxf(1.0, float(mhp_v)), 0.0, 1.0) if (hp_v != null and mhp_v != null) else -1.0
+						_lock_show = true
+		else:
+			_aim_vis = 0.0
+			_lock_show = false
 		queue_redraw()
 
 	func _seg(a: Vector2, b: Vector2, c: Color, w: float) -> void:
@@ -1224,9 +1259,59 @@ class Crosshair extends Control:
 
 	func _draw() -> void:
 		var p := pos
-		var white := STEEL
-		var gap := 15.0 + bloom * 9.0
-		var arm := 7.0
+		var vp_sz := get_viewport_rect().size
+		var locked: bool = mech != null and is_instance_valid(mech) and bool(mech.get("aim_target_locked"))
+		var white := Color(1.0, 0.56, 0.18, 0.96) if locked else STEEL
+		var gap := lerpf(15.5, 8.2, _aim_vis) + bloom * lerpf(9.0, 4.2, _aim_vis)
+		var arm := lerpf(7.0, 5.5, _aim_vis)
+		# 右键火控光学外框（极简军工四角镜框 + 水平/垂直密位标尺，不遮挡外围视野但瞄准状态一目了然）
+		if _aim_vis > 0.04:
+			var a_fcs := _aim_vis * 0.58
+			var f_col := Color(1.0, 0.64, 0.24, a_fcs) if locked else Color(0.84, 0.90, 0.92, a_fcs)
+			var f_sh := Color(0.0, 0.0, 0.0, a_fcs * 0.65)
+			# 密位测距十字延展线
+			for sgn: float in [-1.0, 1.0]:
+				var h0 := p + Vector2(sgn * (gap + 14.0), 0.0)
+				var h1 := p + Vector2(sgn * (gap + 44.0), 0.0)
+				draw_line(h0, h1, f_sh, 3.0, false)
+				draw_line(h0, h1, f_col, 1.2, false)
+				for tk: float in [22.0, 32.0, 42.0]:
+					var tx: float = p.x + sgn * (gap + tk)
+					draw_line(Vector2(tx, p.y - 3.0), Vector2(tx, p.y + 3.0), f_col, 1.0, false)
+				var v0 := p + Vector2(0.0, sgn * (gap + 14.0))
+				var v1 := p + Vector2(0.0, sgn * (gap + 32.0))
+				draw_line(v0, v1, f_sh, 3.0, false)
+				draw_line(v0, v1, f_col, 1.2, false)
+			# 视野中心 62% 区域的四角火控光学框
+			var hw := minf(vp_sz.x * 0.30, 340.0) * lerpf(1.12, 1.0, _aim_vis)
+			var hh := minf(vp_sz.y * 0.29, 200.0) * lerpf(1.12, 1.0, _aim_vis)
+			var clen := 22.0
+			for sx: float in [-1.0, 1.0]:
+				for sy: float in [-1.0, 1.0]:
+					var c_pt := p + Vector2(sx * hw, sy * hh)
+					draw_line(c_pt, c_pt + Vector2(-sx * clen, 0.0), f_sh, 3.4, false)
+					draw_line(c_pt, c_pt + Vector2(0.0, -sy * clen), f_sh, 3.4, false)
+					draw_line(c_pt, c_pt + Vector2(-sx * clen, 0.0), f_col, 1.4, false)
+					draw_line(c_pt, c_pt + Vector2(0.0, -sy * clen), f_col, 1.4, false)
+		# 实况敌方锁定菱框与紧凑血条（越肩/第一人称锁敌即时视觉反馈）
+		if _lock_show:
+			var lp := _lock_px
+			var lr := lerpf(16.0, 12.5, _aim_vis)
+			var lcol := Color(1.0, 0.56, 0.16, lerpf(0.76, 0.96, _aim_vis))
+			var pts := PackedVector2Array([
+				lp + Vector2(0.0, -lr), lp + Vector2(lr, 0.0),
+				lp + Vector2(0.0, lr), lp + Vector2(-lr, 0.0), lp + Vector2(0.0, -lr)
+			])
+			for pi in 4:
+				draw_line(pts[pi], pts[pi + 1], Color(0.0, 0.0, 0.0, 0.55), 3.2, false)
+				draw_line(pts[pi], pts[pi + 1], lcol, 1.5, false)
+			if _lock_hp >= 0.0:
+				var bw := 32.0
+				var bh := 3.5
+				var bx := lp.x - bw * 0.5
+				var by := lp.y - lr - 9.0
+				draw_rect(Rect2(bx - 1.0, by - 1.0, bw + 2.0, bh + 2.0), Color(0.0, 0.0, 0.0, 0.65), true)
+				draw_rect(Rect2(bx, by, bw * _lock_hp, bh), Color(1.0, 0.38, 0.18, 0.92), true)
 		# 四角括号
 		for k in 4:
 			var ang := PI * 0.25 + k * PI * 0.5
@@ -1238,6 +1323,8 @@ class Crosshair extends Control:
 		# 中心十字点
 		for dv in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
 			_seg(p + dv * 3.0, p + dv * 6.0, white, 1.5)
+		if _aim_vis > 0.25:
+			draw_circle(p, 1.8, white)
 		# 命中提示：自然收缩的四角斜向角标
 		if hit_t > 0.0:
 			var h_ease := pow(hit_t, 1.85)
@@ -1291,6 +1378,25 @@ class Crosshair extends Control:
 			draw_arc(p, rr, a0, a0 + PI * 0.56, 14, Color(0, 0, 0, 0.35), 4.0, false)
 			draw_arc(p, rr, a0, a0 + PI * 0.56 * (1.0 - fr), 14, Color(AMBER.r, AMBER.g, AMBER.b, 0.9), 2.0, false)
 			i += 1
+		# 越肩模式极简激光测距、火控倍率与肩位微标（B.o.T 风格军工火控准星信息）
+		if mech.raid != null and mech.raid.has_method("is_over_shoulder") and mech.raid.is_over_shoulder():
+			var fnt := ThemeDB.fallback_font
+			if fnt != null:
+				var d_m: float = float(mech.raid.get("_ots_aim_dist")) if "_ots_aim_dist" in mech.raid else 0.0
+				var sh_s := "R" if float(mech.raid.get("ots_shoulder_side")) > 0.0 else "L"
+				var dist_s := ("%03dm" % int(roundf(d_m))) if d_m > 0.5 else "---m"
+				var pfx := ""
+				if locked:
+					pfx = "LOCK 2.1x  " if _aim_vis > 0.35 else "LOCK  "
+				elif _aim_vis > 0.35:
+					pfx = "FCS 3.3x  " if (mech.has_method("is_scoping") and mech.is_scoping()) else "FCS 2.1x  "
+				var txt := "%s%s  %s" % [pfx, dist_s, sh_s]
+				var tcol := Color(1.0, 0.62, 0.22, 0.96) if locked else (Color(0.92, 0.96, 0.96, 0.90) if _aim_vis > 0.35 else Color(0.84, 0.87, 0.88, 0.72))
+				var fsz := 11
+				var tw := fnt.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz).x
+				var tp := Vector2(p.x - tw * 0.5, p.y + gap + (38.0 if _aim_vis > 0.35 else 22.0))
+				draw_string(fnt, tp + Vector2(1.0, 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz, Color(0, 0, 0, 0.68))
+				draw_string(fnt, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz, tcol)
 
 
 ## 高清 3D 子视口：项目用 canvas_items 拉伸、基准分辨率 1280×720。
@@ -1310,6 +1416,7 @@ class HiResView extends Control:
 		add_child(box)
 		sv = SubViewport.new()
 		sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		sv.set_meta("_hires_owner", weakref(self))
 		box.add_child(sv)
 
 	func _ready() -> void:
@@ -1322,15 +1429,39 @@ class HiResView extends Control:
 		var k := get_viewport().get_final_transform().get_scale().x
 		return maxf(k, 0.25)
 
-	func _fit() -> void:
+	func prepare_for_window_size(win_px: Vector2i) -> void:
+		if not is_inside_tree() or win_px.x <= 0 or win_px.y <= 0:
+			return
+		_fit(true, win_px)
+
+	func _fit(allow_auto_scale := true, override_px := Vector2i.ZERO) -> void:
 		if not is_inside_tree():
 			return
 		var k := pixel_scale()
-		var px := Vector2i(maxi(1, int(round(size.x * k))), maxi(1, int(round(size.y * k))))
-		sv.size = px
-		GameData.apply_quality(sv)
-		box.size = Vector2(px)
-		box.scale = Vector2.ONE / k
+		var ctrl_sz := size
+		if ctrl_sz.x <= 0.5 or ctrl_sz.y <= 0.5:
+			var vr := get_viewport_rect().size
+			if vr.x <= 0.5 or vr.y <= 0.5:
+				return
+			ctrl_sz = vr
+		var px: Vector2i = override_px if (override_px.x > 0 and override_px.y > 0) else Vector2i(maxi(1, int(round(ctrl_sz.x * k))), maxi(1, int(round(ctrl_sz.y * k))))
+		if OS.has_feature("web") or OS.has_feature("mobile"):
+			GameData.apply_quality(sv, allow_auto_scale, px, true)
+			if sv.size != px:
+				sv.size = px
+			box.size = Vector2(px)
+			box.scale = Vector2(ctrl_sz.x / float(px.x), ctrl_sz.y / float(px.y))
+			box.position = Vector2.ZERO
+			return
+		# 桌面端直接把 SubViewport 尺寸设为缩放后的 3D 目标分辨率（由 SubViewportContainer 线性合成到原生 4K 窗口，
+		# UI 文本仍保持 100% 原生 4K）：彻底避免为菜单/机库分配原生 4K SubViewport + 4K FSR 中间缓冲及切全屏 VMA 显存暴涨。
+		var sc := GameData.compute_desktop_scale(px, allow_auto_scale)
+		var sv_px := Vector2i(maxi(1, int(round(px.x * sc))), maxi(1, int(round(px.y * sc))))
+		GameData.apply_quality(sv, allow_auto_scale, sv_px, true)
+		if sv.size != sv_px:
+			sv.size = sv_px
+		box.size = Vector2(sv_px)
+		box.scale = Vector2(ctrl_sz.x / float(sv_px.x), ctrl_sz.y / float(sv_px.y))
 		box.position = Vector2.ZERO
 
 

@@ -20,16 +20,16 @@ static func build(ctx: Dictionary) -> Node3D:
 	var leg_parts: Array = []
 	var hip := 1.62
 
-	# ---- 骨盆：重工承力胯架 + 前后楔形裙甲 + 装甲护腰座圈 ----
+	# ---- 骨盆：重工承力胯架 + 前后楔形裙甲 + 外露液压护腰 ----
 	K.bb(root, Vector3(1.06, 0.36, 0.68), M_FRAME, Vector3(0, hip + 0.04, 0.02), Vector3.ZERO, 0.05)
-	K.bb(root, Vector3(0.88, 0.28, 0.62), M_LEG2, Vector3(0, hip + 0.28, 0.02), Vector3.ZERO, 0.045)
+	K.bb(root, Vector3(0.86, 0.18, 0.58), M_LEG2, Vector3(0, hip + 0.23, 0.02), Vector3.ZERO, 0.04)
 	K.plate(root, K.trap(0.64, 0.90, 0.46, 0.07), 0.12, M_LEG, Vector3(0, hip + 0.02, -0.38), Vector3(16, 0, 0), 0.032)
 	K.plate(root, K.crect(0.38, 0.06), 0.13, M_ACC, Vector3(0, hip + 0.18, -0.42), Vector3(16, 0, 0), 0.008)
 	K.plate(root, K.trap(0.74, 0.94, 0.42, 0.06), 0.12, M_LEG2, Vector3(0, hip + 0.02, 0.38), Vector3(-14, 0, 0), 0.032)
 	A.vent(root, Vector3(0.46, 0.18, 0.04), Vector3(0, hip + 0.04, 0.44), Vector3(-14, 180, 0), 4)
-	for sx_g in [-0.36, 0.36]:
-		K.piston(root, Vector3(sx_g, hip + 0.12, -0.24), Vector3(sx_g * 0.78, hip + 0.48, -0.18), 0.028)
-		K.piston(root, Vector3(sx_g, hip + 0.12, 0.24), Vector3(sx_g * 0.78, hip + 0.48, 0.18), 0.028)
+	for sx_g in [-0.35, 0.35]:
+		K.piston(root, Vector3(sx_g, hip + 0.24, -0.22), Vector3(sx_g * 0.78, hip + 0.48, -0.17), 0.026)
+		K.piston(root, Vector3(sx_g, hip + 0.24, 0.22), Vector3(sx_g * 0.78, hip + 0.48, 0.17), 0.026)
 
 	for sx in [-0.62, 0.62]:
 		var side: float = sign(sx)
@@ -102,12 +102,11 @@ static func build(ctx: Dictionary) -> Node3D:
 		leg.set_meta("sole", -1.5 - 0.06 - hip)   # 足底相对髋的高度（地面）
 		leg_parts.append(leg)
 
-	# ---- 宽厚装甲腰柱（顶端是 HP-C1 母座，消除细管蛮腰感） ----
-	K.cy(root, 0.48, 0.42, M_FRAME, Vector3(0, hip + 0.32, 0), Vector3.ZERO, 0.54, 24)
-	K.cy(root, 0.52, 0.12, M_DARK, Vector3(0, hip + 0.48, 0), Vector3.ZERO, 0.54, 26)
-	for i in 4:
-		var a := TAU * i / 4.0 + 0.4
-		A.hose(root, Vector3(cos(a) * 0.44, hip + 0.22, sin(a) * 0.44), Vector3(cos(a) * 0.40, hip + 0.48, sin(a) * 0.40), Vector3(cos(a) * 0.07, 0, sin(a) * 0.07), 0.020)
+	# ---- 收口装甲腰柱 + 外露液压管线（彻底收进骨盆厚度内，顶接 HP-C1 母座） ----
+	K.cy(root, 0.28, 0.34, M_FRAME, Vector3(0, hip + 0.34, 0), Vector3.ZERO, 0.26, 24)
+	K.cy(root, 0.36, 0.10, M_DARK, Vector3(0, hip + 0.485, 0), Vector3.ZERO, 0.315, 26)
+	for a in [0.18, -0.18, PI - 0.18, PI + 0.18]:
+		A.hose(root, Vector3(cos(a) * 0.31, hip + 0.27, sin(a) * 0.31), Vector3(cos(a) * 0.30, hip + 0.47, sin(a) * 0.30), Vector3(cos(a) * 0.05, 0, sin(a) * 0.05), 0.018)
 	K.socket(root, "core", Vector3(0, hip + 0.55, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "biped")

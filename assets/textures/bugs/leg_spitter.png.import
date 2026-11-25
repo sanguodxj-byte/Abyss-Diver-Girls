@@ -3,25 +3,27 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://hykkpe0tn6cl"
-path="res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.ctex"
+path.bptc="res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.bptc.ctex"
+path.astc="res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/bugs/leg_spitter.png"
-dest_files=["res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.ctex"]
+dest_files=["res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.bptc.ctex", "res://.godot/imported/leg_spitter.png-8a07f8cc46376fa3d9017c5e77c9d1a3.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

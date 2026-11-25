@@ -33,6 +33,7 @@ var hit_sfx := ""
 var source = null
 ## 对象池键（raid._tracer 设置）；非空时寿命结束 / 命中后回池而不是删除
 var pool_key := ""
+var _ray_q: PhysicsRayQueryParameters3D = null
 
 
 ## 复用前把所有飞行状态恢复成新建时的默认值（外观节点保留）
@@ -96,7 +97,7 @@ func _physics_tick(delta: float) -> void:
 		position += vel * delta
 		if tail:
 			traveled += vel.length() * delta
-			var L := clampf(traveled - tail_offset, 0.0, tail_len)
+			var L := clampf(maxf(traveled - tail_offset, minf(tail_len, 0.45) if traveled > 0.04 else 0.0), 0.0, tail_len)
 			tail.visible = L > 0.012
 			tail.scale.z = maxf(L, 0.01)
 			tail.position.z = tail_offset + L * 0.5
@@ -116,9 +117,16 @@ func _physics_tick(delta: float) -> void:
 	flight_dist += vel.length() * delta
 	var from := global_position
 	var to := from + vel * delta
-	var q := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
+	if _ray_q == null:
+		_ray_q = PhysicsRayQueryParameters3D.new()
+	_ray_q.from = from
+	_ray_q.to = to
+	_ray_q.collision_mask = mask
+	_ray_q.exclude = exclude
 	var hit_t := Prof.t0()
-	var r := get_world_3d().direct_space_state.intersect_ray(q)
+	var r := get_world_3d().direct_space_state.intersect_ray(_ray_q)
+	if r.is_empty() and (mask & 4) != 0 and aoe <= 0.0 and raid != null and is_instance_valid(raid) and raid.has_method("check_small_bug_graze"):
+		r = raid.check_small_bug_graze(from, to, exclude)
 	Prof.add("projectile.ray", hit_t)
 	if not r.is_empty():
 		var c = r.collider
@@ -161,7 +169,7 @@ func _physics_tick(delta: float) -> void:
 	global_position = to
 	if tail:
 		traveled += vel.length() * delta
-		var L := clampf(traveled - tail_offset, 0.0, tail_len)
+		var L := clampf(maxf(traveled - tail_offset, minf(tail_len, 0.45) if traveled > 0.04 else 0.0), 0.0, tail_len)
 		tail.visible = L > 0.012
 		tail.scale.z = maxf(L, 0.01)
 		tail.position.z = tail_offset + L * 0.5

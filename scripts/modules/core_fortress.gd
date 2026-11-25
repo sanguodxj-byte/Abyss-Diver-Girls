@@ -17,12 +17,12 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_A2 := K.armor(c.darkened(0.22), 0.55)
 	var M_BAR := A.metal(Color(0.22, 0.22, 0.23))
 	# 加粗回转座圈 + 齿圈 + 加强筋 + 下腹承重托架
-	K.cy(root, 0.52, 0.32, M_DARK, Vector3(0, 0.13, 0), Vector3.ZERO, 0.58, 32)
-	A.add(root, A.torus(0.5, 0.58, 40), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.20, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
+	K.cy(root, 0.41, 0.24, M_DARK, Vector3(0, 0.115, 0), Vector3.ZERO, 0.36, 32)
+	A.add(root, A.torus(0.365, 0.42, 40), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.15, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
 	K.bb(root, Vector3(1.52, 0.26, 1.64), M_FRAME, Vector3(0, 0.18, 0.10), Vector3.ZERO, 0.05)
 	for i in 8:
 		var a := TAU * i / 8.0
-		K.bb(root, Vector3(0.05, 0.14, 0.18), M_DARK, Vector3(cos(a) * 0.5, 0.32, sin(a) * 0.5), Vector3(0, -rad_to_deg(a), 0), 0.01)
+		K.bb(root, Vector3(0.05, 0.14, 0.16), M_DARK, Vector3(cos(a) * 0.41, 0.26, sin(a) * 0.41), Vector3(0, -rad_to_deg(a), 0), 0.01)
 	# 车体
 	K.bb(root, Vector3(1.76, 1.5, 1.9), M_FRAME, Vector3(0, 1.0, 0.15), Vector3.ZERO, 0.14)
 	# 首上主装甲 + 间隙披挂板（带支撑螺柱）

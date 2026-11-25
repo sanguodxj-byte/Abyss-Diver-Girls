@@ -3,25 +3,27 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bmt2s4efnq7mu"
-path="res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.ctex"
+path.bptc="res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.bptc.ctex"
+path.astc="res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/bugs/mech_panel_n.png"
-dest_files=["res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.ctex"]
+dest_files=["res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.bptc.ctex", "res://.godot/imported/mech_panel_n.png-f036be3ff74de31feffe100dd78a8fdc.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=1
+compress/normal_map=2
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

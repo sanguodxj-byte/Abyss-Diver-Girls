@@ -56,7 +56,7 @@ static func wall_line(raid, c: Vector3, length: float, hgt: float, rot: float, g
 			var ch = Vector3(raid.rng.randf_range(0.7, 1.8), raid.rng.randf_range(0.25, 0.8), 0.6)
 			A.add(sb, A.bevel_box(ch, 0.07), A.concrete(col.darkened(0.16)), Vector3(rx, h * 0.5 + ch.y * 0.4, raid.rng.randf_range(-0.05, 0.05)))
 			if raid.rng.randf() < 0.65:
-				A.add(sb, A.cyl(0.018, raid.rng.randf_range(0.35, 0.65), 0.018, 6), M_REB,
+				A.add(sb, A.cyl(0.018, raid.rng.randf_range(0.35, 0.65), 0.018, 14), M_REB,
 					Vector3(rx + raid.rng.randf_range(-0.25, 0.25), h * 0.5 + ch.y * 0.65, 0.0),
 					Vector3(raid.rng.randf_range(-16, 16), 0, raid.rng.randf_range(-18, 18)), Vector3.ONE, false)
 
@@ -133,7 +133,7 @@ static func lattice(raid, p: Vector3, hgt: float, base: float) -> void:
 		for sz in [-1.0, 1.0]:
 			var a := p + Vector3(sx * base * 0.5, 0, sz * base * 0.5)
 			var b := p + Vector3(sx * top * 0.5, hgt, sz * top * 0.5)
-			A.add(raid.world, A.tube([a, b], 0.1, 8, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([a, b], 0.1, 14, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	for k in 3:
 		var t := float(k) / 3.0
 		var t2 := float(k + 1) / 3.0
@@ -146,9 +146,9 @@ static func lattice(raid, p: Vector3, hgt: float, base: float) -> void:
 			var bx := Vector3(r1, y1, -r1).rotated(Vector3.UP, PI * 0.5 * sd)
 			var cx := Vector3(-r2, y2, -r2).rotated(Vector3.UP, PI * 0.5 * sd)
 			var dx := Vector3(r2, y2, -r2).rotated(Vector3.UP, PI * 0.5 * sd)
-			A.add(raid.world, A.tube([p + ax, p + bx], 0.055, 6, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(raid.world, A.tube([p + ax, p + dx], 0.05, 6, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-			A.add(raid.world, A.tube([p + bx, p + cx], 0.05, 6, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + ax, p + bx], 0.055, 14, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + ax, p + dx], 0.05, 14, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(raid.world, A.tube([p + bx, p + cx], 0.05, 14, 2), M2, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(base * 0.9, 0.16, 0.16), 0.02), M, p + Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(0.16, 0.16, base * 0.9), 0.02), M, p + Vector3(0, hgt, 0), Vector3.ZERO, Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(base, 1, base)))
@@ -184,14 +184,22 @@ static func label(_raid, _c: Vector3, _text: String, _hgt := 7.0) -> void:
 
 static func rubble(raid, p: Vector3, s: float, col := CONCRETE_DARK) -> void:
 	var M := A.concrete(col, false)
-	for i in 5:
+	var M_DRK := A.rock_mat(col.darkened(0.22))
+	var M_REB := A.paint(Color(0.32, 0.16, 0.09), 0.62, 0.72, {"rust": 0.90, "panel_scale": 0.0})
+	for si in 2:
+		var ang: float = raid.rng.randf() * TAU
+		var sp := p + Vector3(cos(ang) * s * 0.25, 0.10 + float(si) * 0.05, sin(ang) * s * 0.25)
+		A.add(raid.world, A.bevel_box(Vector3(s * 0.48, 0.12, s * 0.36), 0.02), M, sp, Vector3(raid.rng.randf_range(12, 26), raid.rng.randf() * 360.0, raid.rng.randf_range(-16, 16)))
+		var rdir := Vector3(cos(ang), 0.42, sin(ang)).normalized()
+		A.add(raid.world, A.tube([sp, sp + rdir * maxf(0.45, s * 0.35)], 0.015, 14, 4), M_REB, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	for i in 7:
 		var a = raid.rng.randf() * TAU
-		var d = raid.rng.randf_range(0.2, 1.0) * s
+		var d = raid.rng.randf_range(0.12, 1.0) * s
 		var q = raid.rng.randf_range(0.3, 1.0) * s
-		A.add(raid.world, A.rock_mesh(raid.rng.randi() % 12), M,
-			p + Vector3(cos(a) * d, q * 0.10, sin(a) * d),
+		A.add(raid.world, A.rock_mesh(raid.rng.randi() % 12, 20), M if i % 2 == 0 else M_DRK,
+			p + Vector3(cos(a) * d, q * 0.12, sin(a) * d),
 			Vector3(raid.rng.randf() * 30, raid.rng.randf() * 360, raid.rng.randf() * 30),
-			Vector3(q * 0.55, q * 0.28, q * 0.45))
+			Vector3(q * 0.55, q * 0.30, q * 0.46))
 
 
 static func car(raid, p: Vector3, rot := INF) -> void:
@@ -207,41 +215,54 @@ static func car(raid, p: Vector3, rot := INF) -> void:
 static func cable(raid, a: Vector3, b: Vector3, sag: float, r := 0.05, col := STEEL) -> MeshInstance3D:
 	var mid := (a + b) * 0.5 + Vector3(0, -sag, 0)
 	var pts := [a, a.lerp(mid, 0.6) + Vector3(0, -sag * 0.25, 0), mid, b.lerp(mid, 0.6) + Vector3(0, -sag * 0.25, 0), b]
-	var mi := A.add(raid.world, A.tube(pts, r, 6, 5), A.metal(col), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var mi := A.add(raid.world, A.tube(pts, r, 14, 8), A.metal(col), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	return mi
 
 
 static func pipe(raid, a: Vector3, b: Vector3, r := 0.22, col := RUST) -> MeshInstance3D:
-	var mi := A.add(raid.world, A.tube([a, b], r, 14, 3), A.paint(col, 0.55, 0.6, {"wear": 0.5, "rust": 0.8, "panel_scale": 0.0}), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var mi := A.add(raid.world, A.tube([a, b], r, 16, 4), A.paint(col, 0.55, 0.6, {"wear": 0.5, "rust": 0.8, "panel_scale": 0.0}), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 	return mi
 
 
-## 桌面 + 抽屉柜 + 台面铁夹/终端壳：办公室、控制台、售票处的底子
+## 桌面 + 抽屉柜 + CRT 工业终端、键盘、咖啡杯与文件夹：办公室、控制台、售票处的底子
 static func desk(raid, p: Vector3, rot: float, w := 2.4, col := RUST) -> void:
 	var M := A.paint(col, 0.25, 0.68, {"wear": 0.6, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0})
 	var M_ST := A.metal(STEEL)
 	var M_DK := A.paint(col.darkened(0.28), 0.35, 0.72, {"wear": 0.5, "rust": 0.5})
+	var M_TERM := A.paint(Color(0.22, 0.24, 0.23), 0.28, 0.56, {"wear": 0.45, "panel_scale": 0.0})
+	var M_SCR := A.emit(Color(0.22, 0.72, 0.48), 1.4)
+	var M_PAP := A.paint(Color(0.82, 0.78, 0.68), 0.0, 0.88, {"panel_scale": 0.0})
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
 	A.add(n, A.bevel_box(Vector3(w, 0.08, 1.02), 0.02), M, Vector3(0, 0.86, 0))
 	A.add(n, A.bevel_box(Vector3(w + 0.03, 0.04, 1.05), 0.01), M_ST, Vector3(0, 0.84, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(0.09, 0.82, 0.90), 0.015), M_ST, Vector3(-(w * 0.5 - 0.10), 0.41, 0))
+	# 左侧工字钢支腿与脚垫 + 右侧三抽屉钢柜
+	A.add(n, A.bevel_box(Vector3(0.08, 0.82, 0.86), 0.015), M_ST, Vector3(-(w * 0.5 - 0.10), 0.41, 0))
+	A.add(n, A.bevel_box(Vector3(0.16, 0.04, 0.94), 0.008), M_DK, Vector3(-(w * 0.5 - 0.10), 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
 	var ped_x: float = w * 0.5 - 0.30
-	A.add(n, A.bevel_box(Vector3(0.52, 0.78, 0.88), 0.025), M_DK, Vector3(ped_x, 0.40, 0))
+	A.add(n, A.bevel_box(Vector3(0.54, 0.80, 0.88), 0.025), M_DK, Vector3(ped_x, 0.40, 0))
 	for dr in 3:
-		A.add(n, A.bevel_box(Vector3(0.44, 0.20, 0.03), 0.008), M, Vector3(ped_x, 0.18 + dr * 0.23, 0.45), Vector3.ZERO, Vector3.ONE, false)
-		A.add(n, A.bevel_box(Vector3(0.16, 0.03, 0.04), 0.005), M_ST, Vector3(ped_x, 0.20 + dr * 0.23, 0.47), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.45, 0.20, 0.03), 0.008), M, Vector3(ped_x, 0.18 + dr * 0.23, 0.45), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.16, 0.028, 0.04), 0.005), A.chrome(), Vector3(ped_x, 0.20 + dr * 0.23, 0.47), Vector3.ZERO, Vector3.ONE, false)
 	A.add(n, A.bevel_box(Vector3(w * 0.65, 0.52, 0.05), 0.01), M_DK, Vector3(-0.12, 0.52, -0.44))
-	A.add(n, A.bevel_box(Vector3(0.36, 0.06, 0.44), 0.01), A.paint(Color(0.22, 0.25, 0.26), 0.2, 0.75), Vector3(-w * 0.22, 0.93, 0.08), Vector3(0, 14, 0), Vector3.ONE, false)
+	# 台面细节：厚壳 CRT 监控终端 + 键盘 + 文件夹叠 + 搪瓷杯
+	var tx := -w * 0.20
+	A.add(n, A.bevel_box(Vector3(0.44, 0.36, 0.38), 0.025, 0.84), M_TERM, Vector3(tx, 1.09, -0.14), Vector3(0, 12, 0))
+	A.add(n, A.bevel_box(Vector3(0.32, 0.23, 0.03), 0.008), M_SCR, Vector3(tx + 0.035, 1.11, 0.04), Vector3(-6, 12, 0), Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(0.42, 0.045, 0.18), 0.008), M_TERM, Vector3(tx + 0.05, 0.92, 0.22), Vector3(6, 10, 0), Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(0.30, 0.035, 0.36), 0.006), M_PAP, Vector3(w * 0.18, 0.92, 0.06), Vector3(0, -16, 0), Vector3.ONE, false)
+	A.add(n, A.cyl(0.048, 0.11, 0.044, 16), A.paint(Color(0.68, 0.24, 0.18), 0.2, 0.45), Vector3(w * 0.34, 0.955, 0.20), Vector3.ZERO, Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(w, 1, 1.2)))
 
 
 static func shelf(raid, p: Vector3, rot: float, hgt := 2.2, w := 2.0) -> void:
 	var M := A.paint(STEEL, 0.6, 0.58, {"wear": 0.5, "rust": 0.7, "panel_scale": 0.0})
-	var M_BIN := A.paint(Color(0.26, 0.32, 0.35), 0.35, 0.65, {"wear": 0.55, "rust": 0.45})
-	var M_BOX := A.paint(Color(0.44, 0.36, 0.24), 0.15, 0.82, {"wear": 0.6, "dust": 0.5})
+	var M_BIN := A.paint(Color(0.24, 0.34, 0.40), 0.35, 0.62, {"wear": 0.50, "rust": 0.35})
+	var M_BOX := A.paint(Color(0.48, 0.38, 0.24), 0.12, 0.82, {"wear": 0.55, "dust": 0.45})
+	var M_CAN := A.paint(Color(0.66, 0.22, 0.16), 0.32, 0.48, {"wear": 0.45, "rust": 0.40})
+	var M_YEL := A.paint(Color(0.76, 0.56, 0.16), 0.35, 0.52, {"wear": 0.45})
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
@@ -249,26 +270,42 @@ static func shelf(raid, p: Vector3, rot: float, hgt := 2.2, w := 2.0) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			A.add(n, A.bevel_box(Vector3(0.07, hgt, 0.07), 0.01), M, Vector3(sx * w * 0.5, hgt * 0.5, sz * 0.28))
-	A.add(n, A.tube([Vector3(-w * 0.48, 0.25, -0.28), Vector3(w * 0.48, hgt - 0.18, -0.28)], 0.022, 5, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.tube([Vector3(w * 0.48, 0.25, -0.28), Vector3(-w * 0.48, hgt - 0.18, -0.28)], 0.022, 5, 2), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(n, A.bevel_box(Vector3(0.13, 0.03, 0.13), 0.005), M, Vector3(sx * w * 0.5, 0.015, sz * 0.28), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.tube([Vector3(-w * 0.48, 0.25, -0.28), Vector3(w * 0.48, hgt - 0.18, -0.28)], 0.020, 14, 3), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.tube([Vector3(w * 0.48, 0.25, -0.28), Vector3(-w * 0.48, hgt - 0.18, -0.28)], 0.020, 14, 3), M, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var step_y: float = (hgt - 0.34) / 3.0
 	for k in 4:
-		var sy: float = 0.22 + k * (hgt - 0.34) / 3.0
+		var sy: float = 0.22 + k * step_y
 		A.add(n, A.bevel_box(Vector3(w + 0.04, 0.05, 0.62), 0.01), M, Vector3(0, sy, 0))
-	A.add(n, A.bevel_box(Vector3(w * 0.34, 0.26, 0.44), 0.02), M_BIN, Vector3(-w * 0.24, 0.38, 0.02), Vector3(0, 4, 0), Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(w * 0.28, 0.28, 0.42), 0.02), M_BOX, Vector3(w * 0.22, 0.22 + (hgt - 0.34) / 3.0 + 0.16, -0.02), Vector3(0, -6, 0), Vector3.ONE, false)
+	# 各层丰富杂物：防静电周转箱、纸箱、双油漆桶、便携油桶与电池包
+	A.add(n, A.bevel_box(Vector3(w * 0.32, 0.26, 0.44), 0.02), M_BIN, Vector3(-w * 0.26, 0.37, 0.02), Vector3(0, 4, 0), Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(w * 0.24, 0.30, 0.36), 0.02), M_CAN, Vector3(w * 0.24, 0.39, -0.02), Vector3(0, -8, 0), Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(w * 0.28, 0.28, 0.42), 0.02), M_BOX, Vector3(w * 0.22, 0.22 + step_y + 0.16, -0.02), Vector3(0, -6, 0), Vector3.ONE, false)
+	for di in 2:
+		A.add(n, A.cyl(0.11, 0.28, 0.11, 16), M_YEL if di == 0 else M_BIN, Vector3(-w * 0.28 + float(di) * 0.26, 0.22 + step_y + 0.16, 0.04), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(w * 0.36, 0.22, 0.40), 0.02), M_BIN, Vector3(-0.06, 0.22 + step_y * 2.0 + 0.13, 0.0), Vector3(0, 3, 0), Vector3.ONE, false)
 	raid.blocks.append(raid._rect_for(p, Vector3(w, 1, 0.9)))
 
 
 static func bench(raid, p: Vector3, rot: float, w := 1.8) -> void:
-	var M := A.paint(Color(0.32, 0.25, 0.18), 0.0, 0.85, {"wear": 0.7, "dust": 0.6, "rust": 0.4, "panel_scale": 0.0})
+	var M := A.paint(Color(0.34, 0.26, 0.18), 0.0, 0.85, {"wear": 0.7, "dust": 0.6, "rust": 0.3, "panel_scale": 0.0})
+	var M_IRON := A.metal(Color(0.15, 0.17, 0.18))
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	A.add(n, A.bevel_box(Vector3(w, 0.09, 0.5), 0.02), M, Vector3(0, 0.42, 0))
-	A.add(n, A.bevel_box(Vector3(w, 0.5, 0.07), 0.02), M, Vector3(0, 0.68, -0.24), Vector3(-8, 0, 0))
+	# 三条座板 + 两条斜背板 + 弧形铸铁椅架与扶手
+	for si in 3:
+		var sz_p := -0.14 + float(si) * 0.145
+		A.add(n, A.bevel_box(Vector3(w, 0.042, 0.12), 0.012), M, Vector3(0, 0.45 - (0.01 if si == 2 else 0.0), sz_p), Vector3(6.0 if si == 2 else -2.0, 0, 0))
+	for bi in 2:
+		A.add(n, A.bevel_box(Vector3(w, 0.135, 0.038), 0.012), M, Vector3(0, 0.63 + float(bi) * 0.17, -0.23 - float(bi) * 0.042), Vector3(-14, 0, 0))
 	for sx in [-1.0, 1.0]:
-		A.add(n, A.bevel_box(Vector3(0.07, 0.42, 0.44), 0.01), A.metal(STEEL), Vector3(sx * w * 0.42, 0.21, 0))
+		var lx: float = sx * w * 0.42
+		A.add(n, A.tube([Vector3(lx, 0.02, 0.22), Vector3(lx, 0.42, 0.17), Vector3(lx, 0.42, -0.18), Vector3(lx, 0.85, -0.29)], 0.024, 14, 6), M_IRON, Vector3.ZERO)
+		A.add(n, A.tube([Vector3(lx, 0.02, -0.24), Vector3(lx, 0.42, -0.18)], 0.022, 14, 4), M_IRON, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.tube([Vector3(lx, 0.44, 0.18), Vector3(lx, 0.60, 0.19), Vector3(lx, 0.60, -0.21)], 0.019, 14, 6), M_IRON, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.cyl(0.016, w * 0.84, 0.016, 16), M_IRON, Vector3(0, 0.21, -0.04), Vector3(0, 0, 90), Vector3.ONE, false)
 
 
 static func sign(raid, p: Vector3, rot: float, _text: String, w := 3.0, hgt := 1.0) -> void:
@@ -276,9 +313,19 @@ static func sign(raid, p: Vector3, rot: float, _text: String, w := 3.0, hgt := 1
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	A.add(n, A.bevel_box(Vector3(w, hgt, 0.1), 0.02), A.paint(Color(0.12, 0.13, 0.12), 0.2, 0.7, {"wear": 0.5, "rust": 0.5, "dust": 0.5, "panel_scale": 0.0}), Vector3(0, 0, 0))
+	var M_ST := A.metal(STEEL)
+	var M_DRK := A.metal(Color(0.14, 0.15, 0.16))
+	var M_FACE := A.paint(Color(0.14, 0.16, 0.15), 0.2, 0.68, {"wear": 0.5, "rust": 0.45, "dust": 0.5, "panel_scale": 0.0})
+	# 外钢框 + 警示底边条 + 主标牌面板 + 顶部双射灯臂 + 双 16 段镀锌立柱与法兰座
+	A.add(n, A.bevel_box(Vector3(w + 0.14, hgt + 0.14, 0.08), 0.02), M_DRK, Vector3(0, 0, -0.02))
+	A.add(n, A.bevel_box(Vector3(w, hgt, 0.08), 0.015), M_FACE, Vector3.ZERO)
+	A.add(n, A.bevel_box(Vector3(w - 0.08, 0.12, 0.095), 0.008), A.hazard(), Vector3(0, -hgt * 0.38, 0.005), Vector3.ZERO, Vector3.ONE, false)
 	for sx in [-1.0, 1.0]:
-		A.add(n, A.cyl(0.06, 2.4, 0.06, 12), A.metal(STEEL), Vector3(sx * w * 0.36, -1.25, 0))
+		var px: float = sx * w * 0.36
+		A.add(n, A.cyl(0.058, 2.4, 0.064, 16), M_ST, Vector3(px, -1.25, -0.04))
+		A.add(n, A.cyl(0.15, 0.08, 0.17, 16), M_DRK, Vector3(px, -2.42, -0.04), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.tube([Vector3(px * 0.72, hgt * 0.52, -0.02), Vector3(px * 0.72, hgt * 0.64, 0.24), Vector3(px * 0.72, hgt * 0.58, 0.36)], 0.018, 14, 5), M_DRK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.24, 0.09, 0.14), 0.015), M_DRK, Vector3(px * 0.72, hgt * 0.55, 0.38), Vector3(24, 0, 0), Vector3.ONE, false)
 
 
 static func railing(raid, c: Vector3, length: float, rot: float, hgt := 1.1) -> void:
@@ -287,7 +334,8 @@ static func railing(raid, c: Vector3, length: float, rot: float, hgt := 1.1) -> 
 	var n := maxi(2, int(length / 2.0))
 	for i in n + 1:
 		var t := -length * 0.5 + length * float(i) / n
-		A.add(raid.world, A.cyl(0.05, hgt, 0.05, 10), M, c + dir * t + Vector3(0, hgt * 0.5, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.cyl(0.045, hgt, 0.048, 16), M, c + dir * t + Vector3(0, hgt * 0.5, 0), Vector3.ZERO, Vector3.ONE, false)
+		A.add(raid.world, A.cyl(0.09, 0.04, 0.095, 16), M, c + dir * t + Vector3(0, 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
 	var bar := Node3D.new()
 	raid.world.add_child(bar)
 	bar.position = c + Vector3(0, hgt, 0)
@@ -317,7 +365,7 @@ static func roof_kit(raid, c: Vector3, size: Vector2, top: float, col := CONCRET
 		A.add(raid.world, A.bevel_box(Vector3(1.25, 0.55, 1.19), 0.01), M_DARK, p + Vector3(0, -0.05, 0), Vector3.ZERO, Vector3.ONE, false)
 		A.add(raid.world, A.cyl(0.43, 0.10, 0.45, 20), M_DUCT, p + Vector3(0, 0.53, 0), Vector3.ZERO, Vector3.ONE, false)
 		A.add(raid.world, A.cyl(0.37, 0.12, 0.37, 18), M_DARK, p + Vector3(0, 0.535, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 镀锌铁皮排风管道 + 屋顶检修楼梯间舱口 + 通信避雷桅杆
+	# 镀锌铁皮排风管道 + 屋顶检修楼梯间舱口 + 通信避雷桅杆（带交叉振子与红航标灯）
 	if size.x > 6.0 and size.y > 6.0:
 		var dl: float = size.x * 0.46
 		var dp := c + Vector3(-size.x * 0.06, top + 0.42, -size.y * 0.24)
@@ -325,10 +373,14 @@ static func roof_kit(raid, c: Vector3, size: Vector2, top: float, col := CONCRET
 		for di in 3:
 			var dx_off: float = (-0.38 + di * 0.38) * dl
 			A.add(raid.world, A.bevel_box(Vector3(0.08, 0.48, 0.52), 0.01), M_DARK, dp + Vector3(dx_off, -0.04, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(raid.world, A.cyl(0.32, 1.25, 0.32, 18), A.metal(Color(0.30, 0.30, 0.28)), c + Vector3(size.x * 0.3, top + 0.62, size.y * 0.28))
-	A.add(raid.world, A.cyl(0.42, 0.14, 0.24, 16), M_DUCT, c + Vector3(size.x * 0.3, top + 1.30, size.y * 0.28), Vector3.ZERO, Vector3.ONE, false)
+	A.add(raid.world, A.cyl(0.32, 1.25, 0.32, 20), A.metal(Color(0.30, 0.30, 0.28)), c + Vector3(size.x * 0.3, top + 0.62, size.y * 0.28))
+	A.add(raid.world, A.cyl(0.42, 0.14, 0.24, 20), M_DUCT, c + Vector3(size.x * 0.3, top + 1.30, size.y * 0.28), Vector3.ZERO, Vector3.ONE, false)
 	A.add(raid.world, A.bevel_box(Vector3(1.3, 0.26, 1.5), 0.03), A.paint(Color(0.34, 0.35, 0.33), 0.5, 0.6, {"rust": 0.7}), c + Vector3(-size.x * 0.30, top + 0.14, size.y * 0.28))
-	A.add(raid.world, A.cyl(0.05, 2.6, 0.03, 10), A.metal(Color(0.38, 0.38, 0.36)), c + Vector3(size.x * 0.38, top + 1.3, -size.y * 0.34))
+	var ant_p := c + Vector3(size.x * 0.38, top, -size.y * 0.34)
+	A.add(raid.world, A.cyl(0.032, 2.6, 0.052, 16), A.metal(Color(0.38, 0.38, 0.36)), ant_p + Vector3(0, 1.3, 0))
+	A.add(raid.world, A.cyl(0.015, 0.95, 0.015, 14), M_DUCT, ant_p + Vector3(0, 2.05, 0), Vector3(0, 0, 90), Vector3.ONE, false)
+	A.add(raid.world, A.cyl(0.015, 0.75, 0.015, 14), M_DUCT, ant_p + Vector3(0, 1.65, 0), Vector3(90, 0, 0), Vector3.ONE, false)
+	A.add(raid.world, A.sphere(0.055, 0.11, 16), A.emit(Color(1.0, 0.22, 0.14), 3.4), ant_p + Vector3(0, 2.64, 0), Vector3.ZERO, Vector3.ONE, false)
 
 
 ## 台阶：沿局部 +Z 上行，p 为最下一级前缘中心（带踏步防滑钢护角与两侧斜梁护帮）
@@ -347,7 +399,7 @@ static func steps(raid, p: Vector3, n: int, rise: float, run: float, width: floa
 		var tot_z := run * float(n)
 		for sx in [-1.0, 1.0]:
 			var x_s: float = sx * (width * 0.5 + 0.05)
-			A.add(n3, A.tube([Vector3(x_s, rise * 0.35, 0.0), Vector3(x_s, tot_y + 0.05, tot_z)], 0.055, 6, 2), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+			A.add(n3, A.tube([Vector3(x_s, rise * 0.35, 0.0), Vector3(x_s, tot_y + 0.05, tot_z)], 0.055, 14, 3), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 
 
 ## 遮阳棚 / 工业雨棚：四根带底盘立柱 + 工字钢横檩框 + 压型波纹顶板（板在 3 米以上，没有碰撞体）

@@ -14,8 +14,8 @@ static func build(ctx: Dictionary) -> Node3D:
 	var M_ACC := K.accent()
 	var M_A := K.armor(c, 0.45)
 	var M_A2 := K.armor(c.darkened(0.22), 0.45)
-	K.cy(root, 0.46, 0.30, M_DARK, Vector3(0, 0.12, 0), Vector3.ZERO, 0.48, 28)
-	A.add(root, A.torus(0.42, 0.49, 36), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.18, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
+	K.cy(root, 0.365, 0.22, M_DARK, Vector3(0, 0.105, 0), Vector3.ZERO, 0.36, 28)
+	A.add(root, A.torus(0.335, 0.375, 36), A.metal(Color(0.3, 0.3, 0.32)), Vector3(0, 0.10, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
 	K.bb(root, Vector3(1.06, 0.24, 0.96), M_FRAME, Vector3(0, 0.18, 0.04), Vector3.ZERO, 0.04)
 	K.bb(root, Vector3(1.2, 1.0, 1.1), M_FRAME, Vector3(0, 0.74, 0.05), Vector3.ZERO, 0.05)
 	# 正面战术舰桥舱：多面装甲 + 防弹眉檐 + 三分格镀膜观察窗 + 下颔数据链天线盒

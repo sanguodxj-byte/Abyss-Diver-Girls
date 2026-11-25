@@ -159,7 +159,7 @@ static func build_mantis(b, body: Node3D, s: float) -> void:
 		b.scythes.append(sc)
 	for i in 2:
 		for sx: float in [-1.0, 1.0]:
-			b._mleg(body, Vector3(sx * 0.17 * s, by - 0.02 * s, (0.05 + i * 0.4) * s), sx * (-15.0 + i * 45.0), sx, 1.1 * s, by, 0.058 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), i == 1)
+			b._mleg(body, Vector3(sx * 0.18 * s, by - 0.02 * s, (0.05 + i * 0.4) * s), sx * (-15.0 + i * 45.0), sx, 1.1 * s, by, 0.076 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), i == 1)
 
 
 ## 爆破工兵机（bomber）：十六棱防锈红高压燃料储罐 + 四道钢制法兰抱箍 + 黄铜泄压阀 + 黄黑防撞推板 + 内凹琥珀液位视窗
@@ -349,7 +349,7 @@ static func build_mortar(b, body: Node3D, s: float) -> void:
 	b.sac = b._box(body, b._glow(0.9), Vector3(-0.32 * s, by + 0.18 * s, 0.5 * s), Vector3(0.14, 0.02, 0.14) * s)
 	for i in 3:
 		for sx: float in [-1.0, 1.0]:
-			b._mleg(body, Vector3(sx * 0.5 * s, by - 0.02 * s, (-0.38 + i * 0.4) * s), sx * (-25.0 + i * 25.0), sx, 0.75 * s, by, 0.058 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), false)
+			b._mleg(body, Vector3(sx * 0.5 * s, by - 0.02 * s, (-0.38 + i * 0.4) * s), sx * (-25.0 + i * 25.0), sx, 0.78 * s, by, 0.078 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), false)
 
 
 ## 高脚电磁狙击平台（lancer）：加固桁架四足高架底盘 + 激光光学观瞄仪 + 腹下双轨铜线圈电磁反器材长炮 + 散热鳍片高压电容箱
@@ -404,7 +404,7 @@ static func build_lancer(b, body: Node3D, s: float) -> void:
 	# 四条加固桁架驻锄高脚腿（加粗股胫截面，消除牙签感）
 	for i in 2:
 		for sx: float in [-1.0, 1.0]:
-			b._mleg(body, Vector3(sx * 0.22 * s, by - 0.04 * s, (-0.14 + i * 0.52) * s), sx * (32.0 - i * 72.0), sx, 1.62 * s, by, 0.078 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0))
+			b._mleg(body, Vector3(sx * 0.24 * s, by - 0.04 * s, (-0.14 + i * 0.52) * s), sx * (32.0 - i * 72.0), sx, 1.62 * s, by, 0.094 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0))
 
 
 ## 隧道掘进机虫（burrower）：TBM 硬岩滚刀盘（旋转）+ 黄黑防坍塌护盾环 + 五节铰接矿山车厢 + 八条铲土短腿
@@ -520,7 +520,7 @@ static func build_overseer(b, body: Node3D, s: float) -> void:
 	b.sac = b._box(body, b._glow(1.0), Vector3(0, by - 0.10 * s, 0.56 * s), Vector3(0.24, 0.06, 0.012) * s)
 	for i in 2:
 		for sx: float in [-1.0, 1.0]:
-			b._zleg(body, Vector3(sx * 0.28 * s, by - 0.05 * s, (-0.2 + i * 0.5) * s), sx * (30.0 - i * 70.0), sx, 1.25 * s, by, 0.065 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), false)
+			b._zleg(body, Vector3(sx * 0.30 * s, by - 0.05 * s, (-0.2 + i * 0.5) * s), sx * (30.0 - i * 70.0), sx, 1.25 * s, by, 0.084 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), false)
 
 
 ## 伐木/破拆链锯机（ripper）：防滚架驼背柴油机舱 + 双穿孔防烫排烟囱 + 双液压采伐链锯大臂（scythes）+ 六条反关节抓地腿
@@ -584,7 +584,7 @@ static func build_ripper(b, body: Node3D, s: float) -> void:
 	b.sac = b._box(body, b._glow(1.0), Vector3(0, by + 0.12 * s, 0.65 * s), Vector3(0.22, 0.08, 0.012) * s)
 	for i in 3:
 		for sx: float in [-1.0, 1.0]:
-			b._zleg(body, Vector3(sx * 0.34 * s, by - 0.08 * s, (-0.25 + i * 0.35) * s), sx * (-25.0 + i * 25.0), sx, 1.02 * s, by, 0.065 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), i == 2)
+			b._zleg(body, Vector3(sx * 0.36 * s, by - 0.08 * s, (-0.25 + i * 0.35) * s), sx * (-25.0 + i * 25.0), sx, 1.04 * s, by, 0.086 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), i == 2)
 
 
 # ============================================================ 巨型攻城母舰 / 重装平台 ============================================================
@@ -666,7 +666,7 @@ static func build_brood(b, body: Node3D, s: float) -> void:
 	# 八条重型矿山支腿
 	for i in 4:
 		for sx: float in [-1.0, 1.0]:
-			_hleg(b, body, Vector3(sx * 0.48 * s, by - 0.02 * s, (-0.45 + i * 0.32) * s), sx * (-45.0 + i * 30.0), sx, s * 0.95, by, float(i % 2) * PI + (PI if sx > 0 else 0.0), 1.15, 0.45)
+			_hleg(b, body, Vector3(sx * 0.50 * s, by - 0.02 * s, (-0.45 + i * 0.32) * s), sx * (-45.0 + i * 30.0), sx, s * 0.95, by, float(i % 2) * PI + (PI if sx > 0 else 0.0), 1.15, 0.58)
 
 
 ## 破城高炉巨像（colossus）：超重型六足移动高炉攻城平台。
@@ -756,4 +756,4 @@ static func build_colossus(b, body: Node3D, s: float) -> void:
 	# 六条超重型驻锄柱腿
 	for i in 3:
 		for sx: float in [-1.0, 1.0]:
-			_hleg(b, body, Vector3(sx * 0.66 * s, by - 0.05 * s, (-0.4 + i * 0.45) * s), sx * (-30.0 + i * 30.0), sx, s, by - 0.05 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), 1.05, 0.6)
+			_hleg(b, body, Vector3(sx * 0.68 * s, by - 0.05 * s, (-0.4 + i * 0.45) * s), sx * (-30.0 + i * 30.0), sx, s, by - 0.05 * s, float(i % 2) * PI + (PI if sx > 0 else 0.0), 1.05, 0.74)

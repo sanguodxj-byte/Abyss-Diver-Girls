@@ -3,27 +3,29 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c1ipqdbbr2oq1"
-path="res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.ctex"
+path.bptc="res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.bptc.ctex"
+path.astc="res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/world/mtn_scree_r.png"
-dest_files=["res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.ctex"]
+dest_files=["res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.bptc.ctex", "res://.godot/imported/mtn_scree_r.png-a88f62edcb84e64376f5e38c75857530.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

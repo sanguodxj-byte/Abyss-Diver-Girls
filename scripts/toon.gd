@@ -121,7 +121,8 @@ func _on_added(n: Node) -> void:
 
 
 const ENV_KEYS := ["tonemap_mode", "tonemap_exposure", "adjustment_saturation", "adjustment_contrast", "adjustment_color_correction",
-	"ssao_intensity", "ssil_enabled", "volumetric_fog_density", "fog_density", "glow_intensity", "ambient_light_energy"]
+	"ssao_intensity", "ssil_enabled", "volumetric_fog_density", "fog_mode", "fog_density", "fog_depth_begin", "fog_depth_end",
+	"fog_depth_curve", "fog_aerial_perspective", "glow_intensity", "ambient_light_energy"]
 
 
 func _style_env(on: bool) -> void:
@@ -142,7 +143,16 @@ func _style_env(on: bool) -> void:
 	env.ssao_intensity = float(_env_orig["ssao_intensity"]) * 0.4
 	env.ssil_enabled = false
 	env.volumetric_fog_density = float(_env_orig["volumetric_fog_density"]) * 0.5
-	env.fog_density = float(_env_orig["fog_density"]) * 0.6
+	if int(_env_orig["fog_mode"]) == Environment.FOG_MODE_DEPTH:
+		# 深度雾模式下保持地平线全消融上限，只适度后推起雾距离与幂次曲线，让近中景卡通剪影更通透而不露硬地平线
+		env.fog_mode = Environment.FOG_MODE_DEPTH
+		env.fog_density = maxf(0.88, float(_env_orig["fog_density"]) * 0.96)
+		env.fog_depth_begin = float(_env_orig["fog_depth_begin"]) * 1.25
+		env.fog_depth_end = float(_env_orig["fog_depth_end"]) * 1.08
+		env.fog_depth_curve = clampf(float(_env_orig["fog_depth_curve"]) * 1.14, 1.0, 2.4)
+		env.fog_aerial_perspective = clampf(float(_env_orig["fog_aerial_perspective"]) * 0.92, 0.0, 1.0)
+	else:
+		env.fog_density = float(_env_orig["fog_density"]) * 0.6
 	env.glow_intensity = float(_env_orig["glow_intensity"]) * 1.2
 	env.ambient_light_energy = float(_env_orig["ambient_light_energy"]) * 1.25  # 卡通暗部更亮更平
 

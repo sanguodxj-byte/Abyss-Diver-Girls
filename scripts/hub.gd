@@ -11,6 +11,7 @@ extends Control
 signal deploy_requested
 
 const MV = preload("res://scripts/mech_visual.gd")
+const MechPaint = preload("res://scripts/mech_paint.gd")
 const MechScript = preload("res://scripts/mech.gd")
 const A = preload("res://scripts/art.gd")
 const UI = preload("res://scripts/ui.gd")
@@ -68,17 +69,17 @@ const TAB_TINT := {
 
 
 class Hd2Backdrop extends Control:
-	var accent := Color(0.78, 0.48, 0.16)
+	var accent := Color(0.96, 0.63, 0.20)
 
 	func set_tab(tab_key: String) -> void:
-		accent = TAB_TINT.get(tab_key, Color(0.78, 0.48, 0.16))
+		accent = TAB_TINT.get(tab_key, Color(0.96, 0.63, 0.20))
 		queue_redraw()
 
 	func _draw() -> void:
 		var r := Rect2(Vector2.ZERO, size)
 		draw_rect_filled_grad(r)
-		var step := 48.0
-		var grid_c := Color(0.38, 0.41, 0.44, 0.045)
+		var step := 56.0
+		var grid_c := Color(0.50, 0.62, 0.72, 0.035)
 		var x := 0.0
 		while x <= size.x:
 			draw_line(Vector2(x, 0.0), Vector2(x, size.y), grid_c, 1.0)
@@ -87,33 +88,26 @@ class Hd2Backdrop extends Control:
 		while y <= size.y:
 			draw_line(Vector2(0.0, y), Vector2(size.x, y), grid_c, 1.0)
 			y += step
-		# 隔行工业校准十字线（灰黑钢线）与横向舱壁接缝
-		var cross_c := Color(0.46, 0.49, 0.52, 0.09)
+		var cross_c := Color(0.64, 0.76, 0.86, 0.09)
 		var gx := step * 2.0
 		while gx < size.x:
 			var gy := step * 2.0
 			while gy < size.y:
-				draw_line(Vector2(gx - 4.0, gy), Vector2(gx + 4.0, gy), cross_c, 1.0)
-				draw_line(Vector2(gx, gy - 4.0), Vector2(gx, gy + 4.0), cross_c, 1.0)
+				draw_line(Vector2(gx - 3.5, gy), Vector2(gx + 3.5, gy), cross_c, 1.0)
+				draw_line(Vector2(gx, gy - 3.5), Vector2(gx, gy + 3.5), cross_c, 1.0)
 				gy += step * 2.0
 			gx += step * 2.0
-		draw_line(Vector2(0.0, size.y * 0.5), Vector2(size.x, size.y * 0.5), Color(0.05, 0.055, 0.06, 0.55), 2.0)
-		var ac := Color(accent.r, accent.g, accent.b, 0.10)
-		var sc := Color(0.38, 0.41, 0.44, 0.10)
-		for k in 5:
-			var ox := size.x - 240.0 + float(k) * 32.0
-			draw_line(Vector2(ox, 0.0), Vector2(ox + 160.0, 160.0), ac if k % 2 == 0 else sc, 2.0, true)
 
 	func draw_rect_filled_grad(r: Rect2) -> void:
 		var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
-		var c0 := Color(0.062, 0.068, 0.074, 0.98)
-		var c1 := Color(0.092, 0.100, 0.108, 0.98)
+		var c0 := Color(0.024, 0.030, 0.040, 0.97)
+		var c1 := Color(0.012, 0.016, 0.022, 0.99)
 		draw_polygon(pts, PackedColorArray([c0, c0, c1, c1]))
 var ctx_popup: PopupMenu
 var ctx_id := ""
 var ctx_from := ""
 
-## 整备视图（装备槽、属性汇总、仓库网格）
+## 整备视图（AC6 悬浮挂点叶片 · 3D 火控引线 · 右侧换装对比抽屉）
 var slot_buttons := {}
 var slot_cells := {}
 var slot_name_lbls := {}
@@ -125,10 +119,32 @@ var popup_slot := ""
 var popup_map := {}
 var maint_grid
 var maint_ids: Array = []
-var maint_filter := "all"
+var maint_filter := "slot"
 var maint_count_lbl: Label
 var maint_mass_lbl: Label
 var maint_squad_lbl: Label
+var maint_overlay: Control
+var maint_drawer: PanelContainer
+var maint_drawer_title: Label
+var maint_cmp_box: Control
+var maint_equip_btn: Button
+var maint_unequip_btn: Button
+var maint_swap_slot := ""
+var maint_sel_id := ""
+var maint_filter_btns := {}
+var maint_paint_open := false
+var maint_paint_blade: Control
+var maint_paint_drawer: PanelContainer
+var maint_paint_status_lbl: Label
+var maint_paint_preset_btns := {}
+var maint_paint_pat_btns := {}
+var maint_paint_wear_btns := {}
+var maint_paint_chan := "primary"
+var maint_paint_chan_btns := {}
+var maint_paint_swatch_btns: Array = []
+var maint_paint_picker: ColorPickerButton
+var maint_paint_hex_lbl: Label
+var _paint_syncing := false
 
 ## 交易视图（商人卡片 → 货架 / 仓库 / 交易栏）
 var trade_list_root: Control
@@ -432,7 +448,7 @@ func _ready() -> void:
 	var content := Control.new()
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.offset_top = K.TOP_H
-	content.offset_bottom = -K.BOT_H - 64
+	content.offset_bottom = -K.BOT_H
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
 
@@ -638,13 +654,6 @@ func _build_top_bar() -> void:
 	clock_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	th.add_child(clock_lbl)
 
-	var codex_btn := Button.new()
-	codex_btn.text = Loc.t("图鉴", "Codex")
-	codex_btn.tooltip_text = Loc.t("查看世界观、怪物、成员与战利品图鉴", "Browse crew profiles, modules, bestiary, and sector intel")
-	codex_btn.custom_minimum_size = Vector2(58, 28)
-	codex_btn.pressed.connect(func(): _switch_tab("codex"))
-	th.add_child(codex_btn)
-
 	var coop_button := Button.new()
 	coop_button.text = Loc.t("联机小队", "Co-op Squad")
 	if not Net.available():
@@ -683,53 +692,57 @@ func _update_clock() -> void:
 		clock_lbl.text = "%02d:%02d" % [int(t.hour), int(t.minute)]
 
 
-# ============================================================ 底部主导航栏（等宽、当前项高亮）
+# ============================================================ 底部主导航栏（AC6 一体化火控导航列 + 右侧斜切出击主令）
 func _build_bottom_bar() -> void:
 	var bar := PanelContainer.new()
 	var sb: StyleBox = K.px9("botbar9", 12, 12, K.M, 4).duplicate()
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 2
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
 	bar.add_theme_stylebox_override("panel", sb)
 	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	bar.offset_top = -K.BOT_H
 	add_child(bar)
 
-	var h := K.hbox(4)
+	var h := K.hbox(6)
 	bar.add_child(h)
 	var grp := ButtonGroup.new()
-	# 左二 / 中间出击圆钮 / 右二，两组等宽展开，整体左右对称
 	var left := K.hbox(4)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.alignment = BoxContainer.ALIGNMENT_END
+	left.alignment = BoxContainer.ALIGNMENT_BEGIN
 	h.add_child(left)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(136, 0)
-	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	h.add_child(gap)
-	var right := K.hbox(4)
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.alignment = BoxContainer.ALIGNMENT_BEGIN
-	h.add_child(right)
-	for td in [["maintenance", "整备", "LOADOUT", left], ["trade", "交易", "TRADERS", left],
-			["skills", "技能", "HIDEOUT", right], ["stash", "仓库", "STASH", right]]:
-		var key: String = td[0]
-		var btn = K.NavButton.new(td[1], td[2], "nav_" + key)
+	for td in [
+		["maintenance", Loc.t("整备", "LOADOUT"), "LOADOUT", "nav_maintenance"],
+		["trade", Loc.t("交易", "TRADERS"), "TRADERS", "nav_trade"],
+		["skills", Loc.t("技能", "HIDEOUT"), "HIDEOUT", "nav_skills"],
+		["stash", Loc.t("仓库", "STASH"), "STASH", "nav_stash"],
+		["codex", Loc.t("图鉴", "CODEX"), "CODEX", ""],
+	]:
+		var key: String = str(td[0])
+		var btn = K.NavButton.new(str(td[1]), str(td[2]), str(td[3]))
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		btn.custom_minimum_size = Vector2(142, 38)
+		if key == "codex":
+			var c_ic := K.icon_rect(K.small_icon("equip"), 22)
+			var bh_in := btn.get_child(0) as HBoxContainer
+			if bh_in:
+				bh_in.add_child(c_ic)
+				bh_in.move_child(c_ic, 0)
+				btn.icon_rect = c_ic
 		btn.button_group = grp
 		btn.pressed.connect(func(): _switch_tab(key))
 		nav_buttons[key] = btn
-		td[3].add_child(btn)
+		left.add_child(btn)
 
-	# 圆形出击钮：压在底栏中线上，直径 104，向上探出底栏
-	var dep = K.DeployButton.new("出击", "SORTIE", "")
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(sp)
+
+	var dep = K.DeployButton.new(Loc.t("出击", "SORTIE"), "SORTIE", "nav_deploy")
 	dep.button_group = grp
 	dep.pressed.connect(func(): _switch_tab("deploy"))
 	nav_buttons["deploy"] = dep
-	dep.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	dep.offset_left = -52
-	dep.offset_right = 52
-	dep.offset_top = -104
-	dep.offset_bottom = 0
-	add_child(dep)
+	h.add_child(dep)
 
 
 func _finish_page_transition(page: Control, key: Variant, hide_after: bool, tweens: Dictionary, modes: Dictionary) -> void:
@@ -908,7 +921,8 @@ func _open_hub_settings(initial_tab := "video") -> void:
 	var fs := CheckButton.new()
 	fs.text = Loc.t("全屏", "Fullscreen")
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-	fs.toggled.connect(func(on): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED))
+	fs.toggled.connect(func(on):
+		GameData.set_fullscreen(on))
 	pg_v.add_child(fs)
 
 	var vs := CheckButton.new()
@@ -988,9 +1002,10 @@ func _open_hub_settings(initial_tab := "video") -> void:
 
 	pg_o.add_child(UI.label(Loc.t("视角模式", "Camera Mode"), 12, K.CREAM_DIM))
 	var view_opt := OptionButton.new()
-	view_opt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	view_opt.add_item(Loc.t("斜俯视", "Top-Down"), 0)
 	view_opt.add_item(Loc.t("第一人称", "First-Person"), 1)
-	view_opt.selected = GameData.view_mode
+	view_opt.add_item(Loc.t("第三人称越肩", "Over-the-Shoulder"), 2)
+	view_opt.selected = clampi(GameData.view_mode, 0, 2)
 	view_opt.item_selected.connect(func(i):
 		GameData.view_mode = i
 		GameData.save_game())
@@ -1196,29 +1211,656 @@ func _stack(list: Array, filter := "all") -> Array:
 	return out
 
 
-# ============================================================ 1. 整备视图（装备槽 · 3D 机甲 · 仓库网格 · 属性汇总条）
+# ============================================================ 1. 整备视图（AC6 光学火控悬浮叶片 · 3D 引线 · 多格换装对比抽屉）
+const SLOT_TITLES := {
+	"back": "背部导轨",
+	"arm_l": "左臂武装",
+	"gen": "动力核心",
+	"core": "躯干核心",
+	"arm_r": "右臂武装",
+	"legs": "机动底盘",
+}
+
+
+static func _slot_summary_ac6(slot: String, id: String) -> Array:
+	if id == "":
+		return [Loc.t("— 空置 —", "— EMPTY —"), "", 0.0]
+	var m: Dictionary = GameData.module(id)
+	var nm: String = GameData.item_name(id)
+	var spec := ""
+	var gauge := 0.55
+	match slot:
+		"arm_l", "arm_r":
+			var dmg: float = float(m.get("dmg", 0.0)) * float(m.get("pellets", 1))
+			var rng: int = int(round(float(m.get("range", 10.0))))
+			var pen: int = int(m.get("pen", 20))
+			spec = "DMG %.0f  │  RNG %d  │  PEN %dmm" % [dmg, rng, pen]
+			gauge = clampf(dmg / 110.0, 0.24, 1.0)
+		"core":
+			var ccap: float = float(m.get("cargo", 12.0))
+			spec = "AP %d  │  %s  │  %s %d%s" % [int(m.get("hp", 100)), Loc.armor_tier(int(m.get("armor_class", 2))), Loc.t("货舱", "Cargo"), GameData.cargo_grid_cap(ccap), Loc.t("格", "c")]
+			gauge = clampf(float(m.get("hp", 100)) / 260.0, 0.28, 1.0)
+		"legs":
+			spec = "SPD %.1f  │  LOAD %.0fkg  │  %s %d" % [float(m.get("speed", 6.0)), float(m.get("load", 48.0)), Loc.t("工效", "Ergo"), int(m.get("ergo", 60))]
+			gauge = clampf(float(m.get("load", 48.0)) / 110.0, 0.28, 1.0)
+		"back":
+			var sk: Dictionary = GameData.module_skill_info(id)
+			var sname: String = str(sk.get("name", Loc.t("挂载模块", "Mount")))
+			spec = "%s  │  CD %.0fs  │  EN %.0f" % [sname, float(m.get("cd", 10.0)), float(m.get("cost", 8.0))]
+			gauge = 0.72
+		"gen":
+			var eff: int = int(round((1.0 - float(m.get("eff", 1.0))) * 100.0))
+			spec = "%s %.0f  │  +%d%%" % [Loc.t("电力", "EN"), float(m.get("energy", 200.0)), maxi(0, eff)]
+			gauge = clampf(float(m.get("energy", 200.0)) / 420.0, 0.28, 1.0)
+	return [nm, spec, gauge]
+
+
+class MaintSlotBlade extends DropButton:
+	var slot_key := ""
+	var label_cn := ""
+	var is_left := true
+	var active := false
+	var right_fn: Callable
+	var _hover := false
+
+	func _init(sl: String, lcn: String, left_side: bool) -> void:
+		slot_key = sl
+		label_cn = lcn
+		is_left = left_side
+		custom_minimum_size = Vector2(284, 70)
+		focus_mode = Control.FOCUS_NONE
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+			add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		mouse_entered.connect(func(): _hover = true; queue_redraw())
+		mouse_exited.connect(func(): _hover = false; queue_redraw())
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+			if right_fn.is_valid():
+				right_fn.call()
+				accept_event()
+
+	func _draw() -> void:
+		var f: Font = get_theme_default_font()
+		var r := Rect2(Vector2.ZERO, size)
+		var id: String = str(GameData.loadout.get(slot_key, ""))
+		var it: Dictionary = GameData.item(id) if id != "" else {}
+		var rar: int = clampi(int(it.get("rar", 0)), 0, 3) if id != "" else 0
+		var rar_col: Color = GameData.RARITY_COLORS[rar] if id != "" else K.CREAM_DIM
+		var mass_w: float = float(it.get("w", 0.0)) if id != "" else 0.0
+		var gsz: Vector2i = GameData.item_grid_size(id) if id != "" else Vector2i(1, 1)
+		var hi: bool = active or _hover
+
+		var c_outer := Color(0.095, 0.066, 0.034, 0.90) if active else (Color(0.045, 0.058, 0.074, 0.88) if _hover else Color(0.024, 0.031, 0.040, 0.85))
+		var c_inner := Color(0.048, 0.036, 0.022, 0.60) if active else Color(0.016, 0.022, 0.030, 0.56)
+		var ctl := 8.0 if is_left else 0.0
+		var ctr := 0.0 if is_left else 8.0
+		var cbr := 0.0 if is_left else 8.0
+		var cbl := 8.0 if is_left else 0.0
+		var poly := PackedVector2Array([
+			Vector2(ctl, 0.0),
+			Vector2(r.size.x - ctr, 0.0),
+			Vector2(r.size.x, ctr),
+			Vector2(r.size.x, r.size.y - cbr),
+			Vector2(r.size.x - cbr, r.size.y),
+			Vector2(cbl, r.size.y),
+			Vector2(0.0, r.size.y - cbl),
+			Vector2(0.0, ctl),
+		])
+		var cols := PackedColorArray()
+		for p in poly:
+			var t := clampf(p.x / maxf(1.0, r.size.x), 0.0, 1.0)
+			cols.append(c_outer.lerp(c_inner, t if is_left else (1.0 - t)))
+		draw_polygon(poly, cols)
+
+		var rail_c := K.AMBER if active else (K.LINE2 if _hover else K.LINE)
+		draw_line(Vector2(ctl, 0.0), Vector2(r.size.x - ctr, 0.0), rail_c, 1.3 if hi else 1.0, true)
+		draw_line(Vector2(cbl, r.size.y), Vector2(r.size.x - cbr, r.size.y), Color(rail_c.r, rail_c.g, rail_c.b, rail_c.a * 0.68), 1.0, true)
+		var edge_x := 0.0 if is_left else (r.size.x - 2.5)
+		draw_rect(Rect2(edge_x, 8.0, 2.5, r.size.y - 16.0), K.AMBER if active else rar_col)
+
+		var bcol := K.AMBER if active else K.LINE2
+		var arm := 5.0
+		for pt in [Vector2(1, 1), Vector2(r.size.x - 1, 1), Vector2(1, r.size.y - 1), Vector2(r.size.x - 1, r.size.y - 1)]:
+			var sx := 1.0 if pt.x < r.size.x * 0.5 else -1.0
+			var sy := 1.0 if pt.y < r.size.y * 0.5 else -1.0
+			draw_line(pt, pt + Vector2(arm * sx, 0), bcol, 1.15)
+			draw_line(pt, pt + Vector2(0, arm * sy), bcol, 1.15)
+
+		var ic_w := 64.0
+		var ic_h := r.size.y - 12.0
+		var ic_x := 9.0 if is_left else (r.size.x - 9.0 - ic_w)
+		var ic_rect := Rect2(ic_x, 6.0, ic_w, ic_h)
+		draw_rect(ic_rect, Color(0.012, 0.016, 0.022, 0.68))
+		draw_rect(ic_rect, Color(rar_col.r, rar_col.g, rar_col.b, 0.85 if hi else 0.45), false, 1.0)
+		draw_rect(Rect2(ic_rect.position, Vector2(12.0, 2.0)), rar_col)
+		if id != "":
+			var tex: Texture2D = load("res://scripts/item_icons.gd").icon(id)
+			if tex != null:
+				var ir := ic_rect.grow(-3.5)
+				var sc := minf(ir.size.x / maxf(1.0, float(tex.get_width())), ir.size.y / maxf(1.0, float(tex.get_height())))
+				var isz := Vector2(float(tex.get_width()) * sc, float(tex.get_height()) * sc)
+				draw_texture_rect(tex, Rect2(ir.position + (ir.size - isz) * 0.5, isz), false)
+
+		var tx0 := (ic_rect.end.x + 9.0) if is_left else 11.0
+		var tw := r.size.x - ic_w - 28.0
+		var hub_sc = load("res://scripts/hub.gd")
+		var info: Array = hub_sc._slot_summary_ac6(slot_key, id)
+
+		draw_string(f, Vector2(tx0 + 1.0, 17.0), label_cn, HORIZONTAL_ALIGNMENT_LEFT, tw - 74.0, 10, Color(0, 0, 0, 0.88))
+		draw_string(f, Vector2(tx0, 16.0), label_cn, HORIZONTAL_ALIGNMENT_LEFT, tw - 74.0, 10, K.AMBER if active else K.STEEL)
+		if id != "":
+			var meta_txt := "%d×%d · %.0fKG" % [gsz.x, gsz.y, mass_w]
+			draw_string(f, Vector2(tx0 + 1.0, 17.0), meta_txt, HORIZONTAL_ALIGNMENT_RIGHT, tw, 10, Color(0, 0, 0, 0.88))
+			draw_string(f, Vector2(tx0, 16.0), meta_txt, HORIZONTAL_ALIGNMENT_RIGHT, tw, 10, K.CREAM_DIM)
+
+		draw_string(f, Vector2(tx0 + 1.0, 37.0), str(info[0]), HORIZONTAL_ALIGNMENT_LEFT, tw, 13, Color(0, 0, 0, 0.90))
+		draw_string(f, Vector2(tx0, 36.0), str(info[0]), HORIZONTAL_ALIGNMENT_LEFT, tw, 13, Color(1.0, 0.95, 0.86) if active else (rar_col if id != "" else K.CREAM_DIM))
+		if str(info[1]) != "":
+			draw_string(f, Vector2(tx0 + 1.0, 53.0), str(info[1]), HORIZONTAL_ALIGNMENT_LEFT, tw, 10, Color(0, 0, 0, 0.88))
+			draw_string(f, Vector2(tx0, 52.0), str(info[1]), HORIZONTAL_ALIGNMENT_LEFT, tw, 10, K.CREAM_DIM)
+
+		var segs := 16
+		var gap := 1.5
+		var sw := (tw - gap * float(segs - 1)) / float(segs)
+		var lit := int(round(clampf(float(info[2]), 0.0, 1.0) * float(segs)))
+		for i in segs:
+			var sr := Rect2(tx0 + float(i) * (sw + gap), r.size.y - 7.5, sw, 2.5)
+			draw_rect(sr, (K.AMBER if active else Color(0.56, 0.78, 0.88, 0.82)) if i < lit else Color(0.80, 0.88, 0.94, 0.11))
+		_hot_overlay()
+
+
+static func _draw_paint_chip(ctrl: Control, r: Rect2, c_pri: Color, c_sec: Color, c_acc: Color, pat: int, is_def := false) -> void:
+	ctrl.draw_rect(r, Color(0.012, 0.016, 0.022, 0.92))
+	var ir := r.grow(-1.5)
+	var x0 := ir.position.x
+	var x3 := ir.end.x
+	var y0 := ir.position.y
+	var y1 := ir.end.y
+	var w := ir.size.x
+	var sk := minf(ir.size.y * 0.28, w * 0.14)
+	var s1t := x0 + w * 0.48
+	var s1b := s1t - sk
+	var s2t := x0 + w * 0.80
+	var s2b := s2t - sk
+	ctrl.draw_colored_polygon(PackedVector2Array([Vector2(x0, y0), Vector2(s1t, y0), Vector2(s1b, y1), Vector2(x0, y1)]), c_pri)
+	ctrl.draw_colored_polygon(PackedVector2Array([Vector2(s1t, y0), Vector2(s2t, y0), Vector2(s2b, y1), Vector2(s1b, y1)]), c_sec)
+	ctrl.draw_colored_polygon(PackedVector2Array([Vector2(s2t, y0), Vector2(x3, y0), Vector2(x3, y1), Vector2(s2b, y1)]), c_acc)
+	if pat == 1:
+		ctrl.draw_circle(Vector2(x0 + w * 0.26, (y0 + y1) * 0.52), minf(w, ir.size.y) * 0.18, c_sec.lightened(0.08))
+		ctrl.draw_circle(Vector2(x0 + w * 0.56, y0 + ir.size.y * 0.34), minf(w, ir.size.y) * 0.13, c_pri.darkened(0.28))
+	elif pat == 2:
+		var mpt := Vector2(x0 + w * 0.30, (y0 + y1) * 0.5)
+		ctrl.draw_colored_polygon(PackedVector2Array([Vector2(x0 + w * 0.14, y0), Vector2(x0 + w * 0.38, y0), mpt]), c_sec.darkened(0.18))
+		ctrl.draw_line(Vector2(x0 + w * 0.18, y1), Vector2(x0 + w * 0.44, y0), Color(1, 1, 1, 0.18), 1.0, true)
+	elif pat == 3:
+		for si in 2:
+			var ox := x0 + w * (0.16 + float(si) * 0.22)
+			ctrl.draw_line(Vector2(ox + sk * 0.7, y0 + 1.0), Vector2(ox - sk * 0.5, y1 - 1.0), c_sec.darkened(0.32), 2.2, true)
+	if is_def:
+		ctrl.draw_rect(Rect2(x0 + 2.0, y0 + 2.0, 6.0, 2.0), Color(0.86, 0.92, 0.98, 0.85))
+	ctrl.draw_line(Vector2(x0, y0 + 0.5), Vector2(x3, y0 + 0.5), Color(1, 1, 1, 0.14), 1.0)
+	ctrl.draw_rect(r, Color(0.72, 0.82, 0.90, 0.48), false, 1.0)
+
+
+class MaintPaintBlade extends Button:
+	var active := false
+	var _hover := false
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(284, 64)
+		focus_mode = Control.FOCUS_NONE
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+			add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		mouse_entered.connect(func(): _hover = true; queue_redraw())
+		mouse_exited.connect(func(): _hover = false; queue_redraw())
+
+	func _draw() -> void:
+		var f: Font = get_theme_default_font()
+		var r := Rect2(Vector2.ZERO, size)
+		var cfg: Dictionary = MechPaint.sanitize(GameData.mech_paint)
+		var is_def: bool = MechPaint.is_factory_default(cfg)
+		var c_pri := Color.from_string(str(cfg.primary), Color(0.35, 0.37, 0.35))
+		var c_sec := Color.from_string(str(cfg.secondary), Color(0.24, 0.26, 0.24))
+		var c_acc := Color.from_string(str(cfg.accent), Color(0.82, 0.60, 0.16))
+		var hi: bool = active or _hover
+
+		var c_outer := Color(0.095, 0.066, 0.034, 0.90) if active else (Color(0.045, 0.058, 0.074, 0.88) if _hover else Color(0.024, 0.031, 0.040, 0.85))
+		var c_inner := Color(0.048, 0.036, 0.022, 0.60) if active else Color(0.016, 0.022, 0.030, 0.56)
+		var ctl := 8.0
+		var cbl := 8.0
+		var poly := PackedVector2Array([
+			Vector2(ctl, 0.0), Vector2(r.size.x, 0.0), Vector2(r.size.x, r.size.y),
+			Vector2(cbl, r.size.y), Vector2(0.0, r.size.y - cbl), Vector2(0.0, ctl),
+		])
+		var cols := PackedColorArray()
+		for p in poly:
+			var t := clampf(p.x / maxf(1.0, r.size.x), 0.0, 1.0)
+			cols.append(c_outer.lerp(c_inner, t))
+		draw_polygon(poly, cols)
+
+		var rail_c := K.AMBER if active else (K.LINE2 if _hover else K.LINE)
+		draw_line(Vector2(ctl, 0.0), Vector2(r.size.x, 0.0), rail_c, 1.3 if hi else 1.0, true)
+		draw_line(Vector2(cbl, r.size.y), Vector2(r.size.x, r.size.y), Color(rail_c.r, rail_c.g, rail_c.b, rail_c.a * 0.68), 1.0, true)
+		draw_rect(Rect2(0.0, 8.0, 2.5, r.size.y - 16.0), K.AMBER if active else c_acc)
+
+		var bcol := K.AMBER if active else K.LINE2
+		for pt in [Vector2(1, 1), Vector2(r.size.x - 1, 1), Vector2(1, r.size.y - 1), Vector2(r.size.x - 1, r.size.y - 1)]:
+			var sx := 1.0 if pt.x < r.size.x * 0.5 else -1.0
+			var sy := 1.0 if pt.y < r.size.y * 0.5 else -1.0
+			draw_line(pt, pt + Vector2(5.0 * sx, 0), bcol, 1.15)
+			draw_line(pt, pt + Vector2(0, 5.0 * sy), bcol, 1.15)
+
+		var ic_rect := Rect2(9.0, 7.0, 64.0, r.size.y - 14.0)
+		var hub_sc = load("res://scripts/hub.gd")
+		hub_sc._draw_paint_chip(self, ic_rect, c_pri, c_sec, c_acc, int(cfg.pattern), is_def)
+
+		var tx0 := ic_rect.end.x + 9.0
+		var tw := r.size.x - 64.0 - 28.0
+		var hdr_txt := Loc.t("◆ 涂装定制", "◆ PAINT BAY")
+		var tag_txt := Loc.t("原厂", "OEM") if is_def else Loc.t("整机", "CAMO")
+		draw_string(f, Vector2(tx0 + 1.0, 17.0), hdr_txt, HORIZONTAL_ALIGNMENT_LEFT, tw - 48.0, 10, Color(0, 0, 0, 0.88))
+		draw_string(f, Vector2(tx0, 16.0), hdr_txt, HORIZONTAL_ALIGNMENT_LEFT, tw - 48.0, 10, K.AMBER if active else K.STEEL)
+		draw_string(f, Vector2(tx0, 16.0), tag_txt, HORIZONTAL_ALIGNMENT_RIGHT, tw, 10, K.CREAM_DIM)
+
+		var main_nm := MechPaint.display_name(cfg)
+		draw_string(f, Vector2(tx0 + 1.0, 35.0), main_nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 13, Color(0, 0, 0, 0.90))
+		draw_string(f, Vector2(tx0, 34.0), main_nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 13, Color(1.0, 0.95, 0.86) if active else K.CREAM)
+
+		var sub_nm := Loc.t("点击切换迷彩与军工色板", "Click for Camo & Swatches") if is_def else ("%s · %s" % [MechPaint.pattern_name(int(cfg.pattern)), MechPaint.wear_name(int(cfg.wear))])
+		draw_string(f, Vector2(tx0 + 1.0, 51.0), sub_nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 10, Color(0, 0, 0, 0.88))
+		draw_string(f, Vector2(tx0, 50.0), sub_nm, HORIZONTAL_ALIGNMENT_LEFT, tw, 10, K.CREAM_DIM)
+
+		var bw3 := (tw - 4.0) / 3.0
+		draw_rect(Rect2(tx0, r.size.y - 6.5, bw3, 2.5), c_pri)
+		draw_rect(Rect2(tx0 + bw3 + 2.0, r.size.y - 6.5, bw3, 2.5), c_sec)
+		draw_rect(Rect2(tx0 + (bw3 + 2.0) * 2.0, r.size.y - 6.5, bw3, 2.5), c_acc)
+
+
+class PaintPresetChip extends Button:
+	var preset_data := {}
+	var selected := false
+	var _hover := false
+
+	func _init(pd: Dictionary) -> void:
+		preset_data = pd
+		custom_minimum_size = Vector2(0, 32)
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		focus_mode = Control.FOCUS_NONE
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+			add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		mouse_entered.connect(func(): _hover = true; queue_redraw())
+		mouse_exited.connect(func(): _hover = false; queue_redraw())
+
+	func _draw() -> void:
+		var f: Font = get_theme_default_font()
+		var r := Rect2(Vector2.ZERO, size)
+		var bg := Color(0.11, 0.075, 0.032, 0.94) if selected else (Color(0.048, 0.062, 0.080, 0.92) if _hover else Color(0.020, 0.026, 0.035, 0.88))
+		draw_rect(r, bg)
+		var bc := K.AMBER if selected else (K.LINE2 if _hover else K.LINE)
+		draw_rect(r, bc, false, 1.5 if selected else 1.0)
+		if selected:
+			draw_rect(Rect2(0, 4, 2.5, r.size.y - 8), K.AMBER_HI)
+		var c_pri := Color.from_string(str(preset_data.get("primary", "#585e58")), Color(0.35, 0.37, 0.35))
+		var c_sec := Color.from_string(str(preset_data.get("secondary", "#3d423e")), Color(0.24, 0.26, 0.24))
+		var c_acc := Color.from_string(str(preset_data.get("accent", "#d19929")), Color(0.82, 0.60, 0.16))
+		var is_def := str(preset_data.get("id", "")) == "default"
+		var hub_sc = load("res://scripts/hub.gd")
+		hub_sc._draw_paint_chip(self, Rect2(6.0, 5.0, 38.0, r.size.y - 10.0), c_pri, c_sec, c_acc, int(preset_data.get("pattern", 0)), is_def)
+		var nm := Loc.t(str(preset_data.get("zh", "")), str(preset_data.get("en", "")))
+		draw_string(f, Vector2(51.0, r.size.y * 0.5 + 4.5), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 56.0, 12, K.AMBER_HI if selected else K.CREAM)
+
+
+class PaintSwatchBtn extends Button:
+	var hex_str := "#585e58"
+	var selected := false
+	var _hover := false
+
+	func _init(hx := "#585e58") -> void:
+		hex_str = hx
+		custom_minimum_size = Vector2(0, 28)
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		focus_mode = Control.FOCUS_NONE
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+			add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		mouse_entered.connect(func(): _hover = true; queue_redraw())
+		mouse_exited.connect(func(): _hover = false; queue_redraw())
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		draw_rect(r, Color(0.012, 0.016, 0.022, 0.95))
+		var col := Color.from_string(hex_str, Color(0.4, 0.4, 0.4))
+		var ir := r.grow(-3.0)
+		draw_rect(ir, col)
+		draw_line(Vector2(ir.position.x, ir.position.y + 0.5), Vector2(ir.end.x, ir.position.y + 0.5), Color(1, 1, 1, 0.22), 1.0)
+		draw_line(Vector2(ir.position.x, ir.end.y - 0.5), Vector2(ir.end.x, ir.end.y - 0.5), Color(0, 0, 0, 0.35), 1.0)
+		if selected:
+			draw_rect(r, K.AMBER_HI, false, 2.0)
+		elif _hover:
+			draw_rect(r, K.CREAM, false, 1.2)
+		else:
+			draw_rect(r, K.LINE, false, 1.0)
+
+
+class MaintTelemetryOverlay extends Control:
+	var hub_ref: Control
+
+	func _init(h: Control) -> void:
+		hub_ref = h
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _grad_h(r: Rect2, c0: Color, c1: Color) -> void:
+		draw_polygon(
+			PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]),
+			PackedColorArray([c0, c1, c1, c0])
+		)
+
+	func _grad_v(r: Rect2, c0: Color, c1: Color) -> void:
+		draw_polygon(
+			PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]),
+			PackedColorArray([c0, c0, c1, c1])
+		)
+
+	func _seg_bar(r: Rect2, frac: float, segs: int, on_col: Color) -> void:
+		var f := clampf(frac, 0.0, 1.0)
+		var gap := 1.5
+		var sw := (r.size.x - gap * float(segs - 1)) / float(segs)
+		var lit := int(round(f * float(segs)))
+		for i in segs:
+			draw_rect(Rect2(r.position.x + float(i) * (sw + gap), r.position.y, sw, r.size.y), on_col if i < lit else Color(0.82, 0.90, 0.96, 0.11))
+
+	func _socket_pos(slot: String) -> Vector2:
+		var fb := {
+			"back": Vector2(size.x * 0.47, 118.0),
+			"arm_l": Vector2(size.x * 0.42, 240.0),
+			"gen": Vector2(size.x * 0.46, 300.0),
+			"core": Vector2(size.x * 0.52, 196.0),
+			"arm_r": Vector2(size.x * 0.58, 240.0),
+			"legs": Vector2(size.x * 0.54, 396.0),
+		}
+		if hub_ref == null or hub_ref.preview_cam == null or hub_ref.preview_mech == null or not is_instance_valid(hub_ref.preview_mech):
+			return fb.get(slot, size * 0.5)
+		var cam: Camera3D = hub_ref.preview_cam
+		var vp_sz: Vector2 = Vector2(hub_ref.hangar_vp.size) if hub_ref.hangar_vp != null else hub_ref.size
+		var sc_xy := Vector2(hub_ref.size.x / maxf(1.0, vp_sz.x), hub_ref.size.y / maxf(1.0, vp_sz.y))
+		var mods: Dictionary = hub_ref.preview_mech.get_meta("modules", {})
+		var mnode: Node3D = mods.get(slot, null)
+		if mnode == null or not is_instance_valid(mnode):
+			return fb.get(slot, size * 0.5)
+		var loff := Vector3.ZERO
+		match slot:
+			"core": loff = Vector3(-0.22, 0.44, -0.44)
+			"legs": loff = Vector3(-0.46, 0.86, -0.22)
+			"arm_l": loff = Vector3(-0.20, -0.04, -0.52)
+			"arm_r": loff = Vector3(0.20, -0.04, -0.52)
+			"back": loff = Vector3(0.22, 0.40, 0.12)
+			"gen": loff = Vector3(0.28, -0.18, 0.22)
+		var wpos: Vector3 = mnode.to_global(loff)
+		if cam.is_position_behind(wpos):
+			return fb.get(slot, size * 0.5)
+		var pt: Vector2 = cam.unproject_position(wpos) * sc_xy - Vector2(0.0, float(K.TOP_H))
+		return Vector2(clampf(pt.x, 336.0, size.x - 336.0), clampf(pt.y, 24.0, size.y - 110.0))
+
+	func _draw_reticle(pt: Vector2, active: bool) -> void:
+		if active:
+			draw_arc(pt, 15.0, 0.0, TAU, 36, Color(K.AMBER.r, K.AMBER.g, K.AMBER.b, 0.20), 3.6, true)
+			for i in 4:
+				var a0 := TAU * float(i) / 4.0 + 0.22
+				draw_arc(pt, 11.5, a0, a0 + 1.12, 10, K.AMBER, 1.4, true)
+			draw_circle(pt, 2.3, K.AMBER)
+			draw_circle(pt, 1.0, Color(1, 1, 1, 0.98))
+		else:
+			var r := 5.0
+			draw_polyline(PackedVector2Array([pt + Vector2(0, -r), pt + Vector2(r, 0), pt + Vector2(0, r), pt + Vector2(-r, 0), pt + Vector2(0, -r)]), Color(0.58, 0.80, 0.92, 0.72), 1.1, true)
+			draw_circle(pt, 1.7, Color(0.94, 0.98, 1.0, 0.90))
+
+	func _draw_leader(from_pt: Vector2, to_pt: Vector2, is_left: bool, active: bool) -> void:
+		var dy := to_pt.y - from_pt.y
+		var diag_dx := minf(absf(to_pt.x - from_pt.x) * 0.52, absf(dy))
+		var elbow := Vector2(to_pt.x - (diag_dx if is_left else -diag_dx), from_pt.y)
+		var pts := PackedVector2Array([from_pt, elbow, to_pt])
+		if active:
+			draw_polyline(pts, Color(K.AMBER.r, K.AMBER.g, K.AMBER.b, 0.22), 3.6, true)
+			draw_polyline(pts, K.AMBER, 1.35, true)
+			draw_circle(from_pt, 2.2, K.AMBER)
+		else:
+			draw_polyline(pts, Color(0.64, 0.80, 0.88, 0.36), 1.0, true)
+			draw_circle(from_pt, 1.7, Color(0.68, 0.84, 0.92, 0.65))
+
+	func _draw() -> void:
+		if hub_ref == null:
+			return
+		var f: Font = get_theme_default_font()
+		var swap_open: bool = str(hub_ref.maint_swap_slot) != "" or bool(hub_ref.maint_paint_open)
+		_grad_h(Rect2(0, 0, 340, size.y), Color(0.010, 0.013, 0.018, 0.72), Color(0.010, 0.013, 0.018, 0.0))
+		_grad_h(Rect2(size.x - 360, 0, 360, size.y), Color(0.010, 0.013, 0.018, 0.0), Color(0.010, 0.013, 0.018, 0.76))
+
+		if not swap_open:
+			var ctr := Vector2(size.x * 0.5, size.y * 0.43)
+			draw_arc(ctr, 212.0, -0.34, 0.34, 24, Color(0.60, 0.78, 0.88, 0.12), 1.0, true)
+			draw_arc(ctr, 212.0, PI - 0.34, PI + 0.34, 24, Color(0.60, 0.78, 0.88, 0.12), 1.0, true)
+
+		for sl in ["back", "arm_l", "gen", "core", "arm_r", "legs"]:
+			var btn: Control = hub_ref.slot_buttons.get(sl, null)
+			if btn == null or not btn.visible:
+				continue
+			var is_l: bool = sl in ["back", "arm_l", "gen"]
+			var act: bool = (str(hub_ref.maint_swap_slot) == sl)
+			var s_pt := _socket_pos(sl)
+			var b_pt := Vector2(btn.position.x + btn.size.x + 2.0 if is_l else btn.position.x - 2.0, btn.position.y + btn.size.y * 0.5)
+			_draw_leader(b_pt, s_pt, is_l, act)
+			_draw_reticle(s_pt, act)
+
+		if swap_open and hub_ref.maint_drawer != null and hub_ref.maint_drawer.visible:
+			var sel_sl := str(hub_ref.maint_swap_slot)
+			if sel_sl in ["core", "arm_r", "legs"]:
+				var sp2 := _socket_pos(sel_sl)
+				_draw_leader(Vector2(hub_ref.maint_drawer.position.x - 2.0, 136.0), sp2, false, true)
+				_draw_reticle(sp2, true)
+		if hub_ref.maint_paint_open and hub_ref.maint_paint_blade != null and hub_ref.maint_paint_blade.visible:
+			var pb: Control = hub_ref.maint_paint_blade
+			var sp_p := _socket_pos("core")
+			_draw_leader(Vector2(pb.position.x + pb.size.x + 2.0, pb.position.y + pb.size.y * 0.5), sp_p, true, true)
+			_draw_reticle(sp_p, true)
+
+		# Bottom Telemetry Wings
+		var st: Dictionary = GameData.compute_stats(GameData.loadout)
+		var cw: float = float(GameData.weight_of(GameData.cargo))
+		var sf: float = float(GameData.speed_factor(st, cw))
+		_grad_v(Rect2(0, size.y - 98, size.x, 98), Color(0.010, 0.013, 0.018, 0.0), Color(0.010, 0.013, 0.018, 0.90))
+		_grad_h(Rect2(14, size.y - 74, 430, 64), Color(0.014, 0.018, 0.024, 0.74), Color(0.014, 0.018, 0.024, 0.16))
+		var ly := size.y - 62.0
+		draw_line(Vector2(22, ly - 6), Vector2(428, ly - 6), K.LINE, 1.0)
+		draw_rect(Rect2(22, ly - 7, 32, 2), K.STEEL)
+
+		var left_stats := [
+			[Loc.t("结构", "AP"), "%d" % int(st.hp), clampf(float(st.hp) / 260.0, 0.0, 1.0), K.OK_C],
+			[Loc.t("护甲", "ARM"), "%d%%" % int(round(float(st.get("armor", 0.0)) * 100.0)), clampf(float(st.get("armor", 0.0)) / 0.5, 0.0, 1.0), K.STEEL],
+			[Loc.t("电力", "EN"), "%d" % int(st.energy), clampf(float(st.energy) / 420.0, 0.0, 1.0), K.AMBER],
+		]
+		for i in 3:
+			var bx := 22.0 + float(i) * 138.0
+			var d: Array = left_stats[i]
+			draw_string(f, Vector2(bx, ly + 10), str(d[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, K.CREAM_DIM)
+			draw_string(f, Vector2(bx, ly + 33), str(d[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, K.CREAM)
+			_seg_bar(Rect2(bx, ly + 41, 124, 3.5), float(d[2]), 14, d[3])
+
+		if not swap_open:
+			_grad_h(Rect2(size.x - 468, size.y - 74, 454, 64), Color(0.014, 0.018, 0.024, 0.16), Color(0.014, 0.018, 0.024, 0.78))
+			var rx0 := size.x - 458.0
+			draw_line(Vector2(rx0, ly - 6), Vector2(size.x - 22, ly - 6), K.LINE, 1.0)
+			draw_rect(Rect2(size.x - 54, ly - 7, 32, 2), K.AMBER)
+
+			var total_load: float = float(st.mass) + cw
+			var max_load: float = maxf(1.0, float(st.load))
+			var over: bool = sf <= 0.99
+			var spd_val: float = float(st.speed) * sf
+
+			draw_string(f, Vector2(rx0, ly + 10), Loc.t("速度", "SPD"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, K.CREAM_DIM)
+			draw_string(f, Vector2(rx0, ly + 33), "%.1f" % spd_val, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, K.CREAM)
+			_seg_bar(Rect2(rx0, ly + 41, 102, 3.5), clampf(spd_val / 9.0, 0.0, 1.0), 12, K.STEEL)
+
+			var lx2 := rx0 + 116.0
+			draw_string(f, Vector2(lx2, ly + 10), Loc.t("承重", "LOAD"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, K.NG_C if over else K.CREAM_DIM)
+			draw_string(f, Vector2(lx2, ly + 33), "%.0f/%.0f" % [total_load, max_load], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, K.NG_C if over else K.CREAM)
+			_seg_bar(Rect2(lx2, ly + 41, 112, 3.5), clampf(total_load / max_load, 0.0, 1.0), 12, K.NG_C if over else K.AMBER)
+
+			var lx3 := rx0 + 244.0
+			var used_c: int = GameData.cargo_cells_used(GameData.cargo)
+			var max_c: int = GameData.cargo_grid_cap(float(st.cargo))
+			var rows_c: int = GameData.cargo_grid_rows(float(st.cargo))
+			draw_string(f, Vector2(lx3, ly + 10), Loc.t("货舱 %d/%d格 · %.1f/%.0fkg", "Cargo %d/%dc · %.1f/%.0fkg") % [used_c, max_c, cw, float(st.cargo)], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, K.CREAM_DIM)
+			var pk: Dictionary = K.GridPack.pack(GameData.cargo_sizes(GameData.cargo), GameData.CARGO_COLS, rows_c)
+			var rects: Array = pk.get("placements", [])
+			var cmap: PackedInt32Array = pk.get("cell_to_idx", PackedInt32Array())
+			var cs := 29.0
+			var gy0 := ly + 16.0
+			for gr_x in GameData.CARGO_COLS:
+				var occ: int = int(cmap[gr_x]) if gr_x < cmap.size() else -1
+				if occ < 0:
+					var er := Rect2(lx3 + float(gr_x) * (cs + 2.0), gy0, cs, cs)
+					draw_rect(er, Color(0.018, 0.024, 0.032, 0.80))
+					draw_rect(er, K.LINE, false, 1.0)
+			var icons_lib = load("res://scripts/item_icons.gd")
+			for ci in GameData.cargo.size():
+				if ci >= rects.size():
+					continue
+				var rc: Rect2i = rects[ci]
+				if rc.position.x < 0 or rc.position.y >= 1:
+					continue
+				var mr := Rect2(lx3 + float(rc.position.x) * (cs + 2.0), gy0, float(rc.size.x) * cs + float(rc.size.x - 1) * 2.0, cs)
+				var cid := str(GameData.cargo[ci])
+				var irar := clampi(int(GameData.item(cid).get("rar", 0)), 0, 3)
+				var irc: Color = GameData.RARITY_COLORS[irar]
+				draw_rect(mr, Color(irc.r * 0.18 + 0.02, irc.g * 0.18 + 0.025, irc.b * 0.18 + 0.03, 0.90))
+				draw_rect(mr, Color(irc.r, irc.g, irc.b, 0.80), false, 1.0)
+				if rc.size.x > 1:
+					for sub_x in range(1, rc.size.x):
+						var sx := mr.position.x + float(sub_x) * (cs + 2.0) - 1.0
+						draw_line(Vector2(sx, mr.position.y + 3.0), Vector2(sx, mr.end.y - 3.0), Color(1, 1, 1, 0.12), 1.0)
+				var itex: Texture2D = icons_lib.icon(cid)
+				if itex != null:
+					var ir2 := mr.grow(-2.5)
+					var sc2 := minf(ir2.size.x / maxf(1.0, float(itex.get_width())), ir2.size.y / maxf(1.0, float(itex.get_height())))
+					var isz2 := Vector2(float(itex.get_width()) * sc2, float(itex.get_height()) * sc2)
+					draw_texture_rect(itex, Rect2(ir2.position + (ir2.size - isz2) * 0.5, isz2), false)
+
+
+class MaintCompareBox extends Control:
+	var slot_key := ""
+	var cand_id := ""
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(0, 206)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var f: Font = get_theme_default_font()
+		var r := Rect2(Vector2.ZERO, size)
+		draw_rect(r, Color(0.014, 0.018, 0.024, 0.88))
+		draw_rect(r, K.LINE2, false, 1.0)
+		draw_rect(Rect2(0, 0, r.size.x, 22), Color(0.07, 0.09, 0.12, 0.78))
+		draw_string(f, Vector2(8, 15), Loc.t("参数对比", "COMPARE"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, K.CREAM)
+
+		var cur_id: String = str(GameData.loadout.get(slot_key, "")) if slot_key != "" else ""
+		var cur_nm: String = GameData.item_name(cur_id) if cur_id != "" else Loc.t("空置", "Empty")
+		var cur_g: Vector2i = GameData.item_grid_size(cur_id) if cur_id != "" else Vector2i(1, 1)
+		var has_cand: bool = cand_id != "" and GameData.is_module(cand_id)
+		var cand_nm: String = GameData.item_name(cand_id) if has_cand else "—"
+		var cand_g: Vector2i = GameData.item_grid_size(cand_id) if has_cand else cur_g
+		var hdr_r := "%s (%d×%d)" % [cur_nm, cur_g.x, cur_g.y]
+		if has_cand and cand_id != cur_id:
+			hdr_r += "  ▸  %s (%d×%d)" % [cand_nm, cand_g.x, cand_g.y]
+		draw_string(f, Vector2(80, 15), hdr_r, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 88, 10, K.AMBER)
+
+		var mc: Dictionary = GameData.module(cur_id) if cur_id != "" else {}
+		var mn: Dictionary = GameData.module(cand_id) if has_cand else mc
+		var st_cur: Dictionary = GameData.compute_stats(GameData.loadout)
+		var cw_cur: float = float(GameData.weight_of(GameData.cargo))
+		var load_cur: float = float(st_cur.mass) + cw_cur
+		var w_cur_m: float = float(mc.get("w", 0.0))
+		var w_new_m: float = float(mn.get("w", w_cur_m))
+		var load_new: float = load_cur - w_cur_m + w_new_m
+		var load_cap: float = maxf(1.0, float(st_cur.load) - float(mc.get("load", 0.0)) + float(mn.get("load", float(mc.get("load", 0.0)))))
+
+		var rows: Array = []
+		if slot_key in ["arm_l", "arm_r"] or str(mn.get("slot", "")) == "arm":
+			var dc: float = float(mc.get("dmg", 0.0)) * float(mc.get("pellets", 1))
+			var dn: float = float(mn.get("dmg", 0.0)) * float(mn.get("pellets", 1))
+			rows.append([Loc.t("单发伤害", "Damage"), dc, dn, 140.0, true])
+			rows.append([Loc.t("穿甲深度", "Pen"), float(mc.get("pen", 0.0)), float(mn.get("pen", 0.0)), 80.0, true])
+			rows.append([Loc.t("有效射程", "Range"), float(mc.get("range", 0.0)), float(mn.get("range", 0.0)), 24.0, true])
+			rows.append([Loc.t("人机工效", "Ergo"), float(mc.get("ergo", 0.0)), float(mn.get("ergo", 0.0)), 100.0, true])
+		elif slot_key == "core":
+			rows.append([Loc.t("结构耐久", "Hull"), float(mc.get("hp", 0.0)), float(mn.get("hp", 0.0)), 240.0, true])
+			rows.append([Loc.t("防弹等级", "Armor"), float(mc.get("armor_class", 0.0)), float(mn.get("armor_class", 0.0)), 6.0, true])
+			rows.append([Loc.t("货舱容量", "Cargo"), float(mc.get("cargo", 0.0)), float(mn.get("cargo", 0.0)), 36.0, true])
+			rows.append([Loc.t("人机工效", "Ergo"), float(mc.get("ergo", 0.0)), float(mn.get("ergo", 0.0)), 100.0, true])
+		elif slot_key == "legs":
+			rows.append([Loc.t("底盘承重", "Load Cap"), float(mc.get("load", 0.0)), float(mn.get("load", 0.0)), 130.0, true])
+			rows.append([Loc.t("巡航速度", "Speed"), float(mc.get("speed", 0.0)), float(mn.get("speed", 0.0)), 10.0, true])
+			rows.append([Loc.t("结构耐久", "Hull"), float(mc.get("hp", 0.0)), float(mn.get("hp", 0.0)), 140.0, true])
+			rows.append([Loc.t("人机工效", "Ergo"), float(mc.get("ergo", 0.0)), float(mn.get("ergo", 0.0)), 100.0, true])
+		else:
+			rows.append([Loc.t("电力容量", "Energy"), float(mc.get("energy", 0.0)), float(mn.get("energy", 0.0)), 420.0, true])
+			rows.append([Loc.t("结构耐久", "Hull"), float(mc.get("hp", 0.0)), float(mn.get("hp", 0.0)), 120.0, true])
+			rows.append([Loc.t("冷却时间", "Cooldown"), float(mc.get("cd", 0.0)), float(mn.get("cd", 0.0)), 30.0, false])
+			rows.append([Loc.t("能量消耗", "Cost"), float(mc.get("cost", 0.0)), float(mn.get("cost", 0.0)), 40.0, false])
+		rows.append([Loc.t("总计负重", "Total Mass"), load_cur, load_new, load_cap, false])
+
+		var ry := 38.0
+		for rw in rows:
+			var lbl := str(rw[0])
+			var vc := float(rw[1])
+			var vn := float(rw[2])
+			var vm := maxf(1.0, float(rw[3]))
+			var hi_good: bool = bool(rw[4])
+			var diff := vn - vc
+			var good: bool = (diff >= 0.0) if hi_good else (diff <= 0.0)
+			var dcol: Color = K.CREAM_DIM if absf(diff) < 0.05 else (K.OK_C if good else K.NG_C)
+			var dtxt := "—" if absf(diff) < 0.05 else ("%+.1f %s" % [diff, "▲" if diff > 0.0 else "▼"] if absf(diff) < 10.0 and fmod(absf(diff), 1.0) > 0.05 else "%+.0f %s" % [diff, "▲" if diff > 0.0 else "▼"])
+
+			draw_string(f, Vector2(10, ry), lbl, HORIZONTAL_ALIGNMENT_LEFT, 130, 10, K.CREAM_DIM)
+			draw_string(f, Vector2(146, ry), ("%.1f ▸ %.1f" if vm <= 12.0 else "%.0f ▸ %.0f") % [vc, vn], HORIZONTAL_ALIGNMENT_LEFT, 130, 11, K.CREAM)
+			draw_string(f, Vector2(10, ry), dtxt, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 20, 10, dcol)
+
+			var br := Rect2(10, ry + 5, r.size.x - 20, 4.0)
+			draw_rect(br, Color(1, 1, 1, 0.08))
+			var wc := br.size.x * clampf(vc / vm, 0.0, 1.0)
+			var wn := br.size.x * clampf(vn / vm, 0.0, 1.0)
+			if wn >= wc:
+				draw_rect(Rect2(br.position, Vector2(wn, br.size.y)), Color(dcol.r, dcol.g, dcol.b, 0.85))
+				draw_rect(Rect2(br.position, Vector2(wc, br.size.y)), Color(0.86, 0.90, 0.94, 0.92))
+			else:
+				draw_rect(Rect2(br.position, Vector2(wc, br.size.y)), Color(dcol.r, dcol.g, dcol.b, 0.75))
+				draw_rect(Rect2(br.position, Vector2(wn, br.size.y)), Color(0.86, 0.90, 0.94, 0.92))
+			ry += 34.0
+
+
 func _build_maintenance_view(parent: Control) -> void:
 	var v_m := _view(parent, "maintenance")
-	const LW := 300.0
-	const RW := 300.0
+	explode_btn = null
 
-	explode_btn = Button.new()
-	explode_btn.text = Loc.t("◇ 拆解视图", "◇ Exploded View")
-	explode_btn.custom_minimum_size = Vector2(128, 28)
-	explode_btn.set_meta("sfx", "")
-	explode_btn.pressed.connect(_toggle_explode)
-	_at(explode_btn, v_m, [0.0, 0.0, 0.0, 0.0], [K.M + LW + K.GAP, K.GAP, K.M + LW + K.GAP + 128, K.GAP + 28])
+	maint_overlay = MaintTelemetryOverlay.new(self)
+	v_m.add_child(maint_overlay)
 
-	# 左：装备槽列
-	var lp := _tpanel(v_m, Loc.t("装备", "Equipment"), "Equipment", LEFT, [K.M, K.GAP, K.M + LW, -K.GAP])
-	maint_mass_lbl = lp[2]
-	var v: VBoxContainer = lp[1]
-	v.add_theme_constant_override("separation", 4)
-	for slot in GameData.SLOTS:
-		var b := DropButton.new()
-		b.custom_minimum_size = Vector2(0, 64)
-		b.focus_mode = Control.FOCUS_NONE
-		b.pressed.connect(_open_slot_menu.bind(slot))
+	var bw := 284.0
+	var bh := 70.0
+	var left_slots := [["back", 56.0], ["arm_l", 144.0], ["gen", 232.0]]
+	var right_slots := [["core", 56.0], ["arm_r", 144.0], ["legs", 232.0]]
+
+	for pair in left_slots + right_slots:
+		var slot: String = str(pair[0])
+		var sy: float = float(pair[1])
+		var is_l: bool = slot in ["back", "arm_l", "gen"]
+		var b := MaintSlotBlade.new(slot, Loc.t(SLOT_TITLES.get(slot, slot), SLOT_EN.get(slot, slot)), is_l)
+		b.pressed.connect(_toggle_maint_swap.bind(slot))
+		b.right_fn = func(): _open_slot_menu(slot)
 		b.can_fn = func(d: Dictionary): return str(d.get("kind", "")) == "stash" and GameData.slot_accepts(slot, str(d.get("id", "")))
 		b.drop_fn = func(d: Dictionary): _equip_to(slot, str(d.id))
 		b.drag_fn = func():
@@ -1227,128 +1869,353 @@ func _build_maintenance_view(parent: Control) -> void:
 		b.tip_fn = func():
 			var cur: String = GameData.loadout.get(slot, "")
 			return null if cur == "" else _item_tip({"id": cur})
-		v.add_child(b)
-		var m := MarginContainer.new()
-		m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		for kk in [["margin_left", 6], ["margin_right", 8], ["margin_top", 6], ["margin_bottom", 6]]:
-			m.add_theme_constant_override(kk[0], kk[1])
-		b.add_child(m)
-		var bh := K.hbox(8)
-		bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		m.add_child(bh)
-		var ic = K.IconCell.new(48)
-		ic.set_box_size(Vector2(68, 48))
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bh.add_child(ic)
-		var bv := K.vbox(2)
-		bv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		bh.add_child(bv)
-		var top_row := K.hbox(6)
-		top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bv.add_child(top_row)
-		top_row.add_child(UI.label(GameData.SLOT_NAMES[slot], 12, K.CREAM_DIM))
-		var en := UI.label(SLOT_EN.get(slot, str(slot).to_upper()), 12, K.CREAM_DIM)
-		en.visible = false
-		en.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		top_row.add_child(en)
-		var nl := UI.label("", 12)
-		nl.clip_text = true
-		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		bv.add_child(nl)
-		var st := UI.label("", 11, K.CREAM_DIM)
-		st.clip_text = true
-		st.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		bv.add_child(st)
-		for c in [top_row, nl, st, bv]:
-			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		for c in top_row.get_children():
-			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if is_l:
+			_at(b, v_m, [0.0, 0.0, 0.0, 0.0], [22.0, sy, 22.0 + bw, sy + bh])
+		else:
+			_at(b, v_m, [1.0, 0.0, 1.0, 0.0], [-22.0 - bw, sy, -22.0, sy + bh])
 		slot_buttons[slot] = b
-		slot_cells[slot] = ic
-		slot_name_lbls[slot] = nl
-		slot_stat_lbls[slot] = st
 
-	var lsp := Control.new()
-	lsp.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(lsp)
+	maint_paint_blade = MaintPaintBlade.new()
+	(maint_paint_blade as Button).pressed.connect(_toggle_maint_paint)
+	_at(maint_paint_blade, v_m, [0.0, 0.0, 0.0, 0.0], [22.0, 320.0, 22.0 + bw, 320.0 + 64.0])
 
-	# 右：仓库网格
-	var rp := _tpanel(v_m, Loc.t("仓库", "Stash"), "Stash", RIGHT, [-K.M - RW, K.GAP, -K.M, -K.GAP])
+	# 右侧按需展开的 AC6 换装对比抽屉（保留多格 ItemGrid 占用）
+	var rp := _tpanel(v_m, Loc.t("挂点整备", "Hardpoint"), "", RIGHT, [-22.0 - 440.0, 14.0, -22.0, -10.0])
+	maint_drawer = rp[0]
+	maint_drawer.visible = false
+	maint_drawer_title = maint_drawer.get_meta("title_lbl")
 	maint_count_lbl = rp[2]
 	var rv: VBoxContainer = rp[1]
+
 	var fh := K.hbox(4)
 	rv.add_child(fh)
 	var fg := ButtonGroup.new()
-	for cf in [["all", Loc.t("全部", "All")], ["module", Loc.t("模块", "Modules")], ["other", Loc.t("物资", "Items")]]:
-		var k: String = cf[0]
-		var fb := K.button(cf[1], 24)
+	for cf in [["slot", Loc.t("兼容", "Fit")], ["all", Loc.t("全部", "All")], ["module", Loc.t("模块", "Modules")], ["other", Loc.t("物资", "Items")]]:
+		var k: String = str(cf[0])
+		var fb := K.button(str(cf[1]), 24)
 		fb.toggle_mode = true
 		fb.button_group = fg
-		fb.button_pressed = k == "all"
-		fb.custom_minimum_size.x = 56
+		fb.button_pressed = (k == "slot")
+		fb.custom_minimum_size.x = 50
 		fb.pressed.connect(func():
 			maint_filter = k
 			_populate_maint_grid())
 		fh.add_child(fb)
-	maint_grid = _grid_widget(K.CELL, "stash")
+		maint_filter_btns[k] = fb
+	var fsp := Control.new()
+	fsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fh.add_child(fsp)
+	maint_unequip_btn = K.button(Loc.t("卸下", "Detach"), 24)
+	maint_unequip_btn.custom_minimum_size.x = 52
+	maint_unequip_btn.pressed.connect(func():
+		if maint_swap_slot != "":
+			_unequip(maint_swap_slot))
+	fh.add_child(maint_unequip_btn)
+	var close_b := K.button("×", 24)
+	close_b.custom_minimum_size.x = 28
+	close_b.pressed.connect(func(): _toggle_maint_swap(""))
+	fh.add_child(close_b)
+
+	maint_grid = _grid_widget(50, "stash")
 	maint_grid.show_names = true
-	maint_grid.item_activated.connect(func(i):
-		if i < maint_ids.size():
-			_quick_equip(str(maint_ids[i])))
-	maint_grid.item_context.connect(func(i):
-		if i < maint_ids.size():
+	maint_grid.min_rows = 4
+	maint_grid.item_selected.connect(func(i: int):
+		if i >= 0 and i < maint_ids.size():
+			maint_sel_id = str(maint_ids[i])
+			_update_maint_swap_ui())
+	maint_grid.item_activated.connect(func(i: int):
+		if i >= 0 and i < maint_ids.size():
+			var cid := str(maint_ids[i])
+			if maint_swap_slot != "" and GameData.slot_accepts(maint_swap_slot, cid):
+				_equip_to(maint_swap_slot, cid)
+			else:
+				_quick_equip(cid))
+	maint_grid.item_context.connect(func(i: int):
+		if i >= 0 and i < maint_ids.size():
 			_open_ctx(str(maint_ids[i]), "stash"))
 	maint_grid.accept_drop = func(d: Dictionary): return str(d.get("kind", "")) == "slot"
 	maint_grid.on_drop = func(d: Dictionary): _unequip(str(d.slot))
 	rv.add_child(_scroll(maint_grid))
 
-	# 中下：属性汇总条
-	var sp := K.frame(6)
-	_at(sp, v_m, [0.0, 1.0, 1.0, 1.0], [K.M + LW + K.GAP, -K.GAP - 76, -K.M - RW - K.GAP, -K.GAP])
-	var sv := K.vbox(4)
-	sp.add_child(sv)
-	var shh := K.hbox(6)
-	sv.add_child(shh)
-	shh.add_child(UI.label(Loc.t("机体性能", "Mech Specs"), 12, K.CREAM))
-	var sr := K.Rule.new()
-	sr.solid = true
-	sr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	shh.add_child(sr)
-	maint_squad_lbl = UI.label("", 12, K.CREAM_DIM)
-	shh.add_child(maint_squad_lbl)
-	var sh := K.hbox(0)
-	sv.add_child(sh)
-	var first := true
-	for k in [["hp", Loc.t("结构", "Hull"), "HP", UI.HP_C], ["armor", Loc.t("护甲", "Armor"), "ARM", K.STEEL], ["energy", Loc.t("能源", "Energy"), "EN", UI.EN_C],
-			["speed", Loc.t("速度", "Speed"), "SPD", UI.INFO], ["load", Loc.t("承重", "Load"), "LOAD", K.AMBER_HI], ["cargo", Loc.t("货舱", "Cargo"), "CARGO", UI.GOOD]]:
-		if not first:
-			_vsep(sh, 34)
-		first = false
-		var cell := K.vbox(2)
-		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var cm := MarginContainer.new()
-		cm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cm.add_theme_constant_override("margin_left", 6)
-		cm.add_theme_constant_override("margin_right", 6)
-		cm.add_child(cell)
-		sh.add_child(cm)
-		var lh := K.hbox(4)
-		cell.add_child(lh)
-		lh.add_child(UI.label(k[1], 12, K.CREAM_DIM))
-		var en := UI.label(k[2], 12, K.CREAM_DIM)
-		en.visible = false
-		lh.add_child(en)
-		var val := UI.label("", 12, K.CREAM)
-		cell.add_child(val)
-		var bar = K.PixBar.new(6)
-		bar.color = k[3]
-		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cell.add_child(bar)
-		stat_rows[k[0]] = [bar, val]
+	maint_cmp_box = MaintCompareBox.new()
+	rv.add_child(maint_cmp_box)
+
+	maint_equip_btn = K.primary(Loc.t("安装替换", "EQUIP MODULE"), 34)
+	maint_equip_btn.pressed.connect(func():
+		if maint_swap_slot != "" and maint_sel_id != "" and GameData.slot_accepts(maint_swap_slot, maint_sel_id):
+			_equip_to(maint_swap_slot, maint_sel_id)
+		elif maint_sel_id != "":
+			_quick_equip(maint_sel_id))
+	rv.add_child(maint_equip_btn)
+
+	# 右侧按需展开的极简军工涂装定制抽屉（不遮挡中央 3D 转台，一键预设 + 迷彩 + 旧化 + 色板）
+	var pp := _tpanel(v_m, Loc.t("涂装定制", "Paint Bay"), "CAMO", RIGHT, [-22.0 - 420.0, 14.0, -22.0, -10.0])
+	maint_paint_drawer = pp[0]
+	maint_paint_drawer.visible = false
+	var pv_root: VBoxContainer = pp[1]
+
+	var p_top := K.hbox(6)
+	pv_root.add_child(p_top)
+	maint_paint_status_lbl = UI.label("", 12, K.AMBER_HI)
+	maint_paint_status_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	maint_paint_status_lbl.clip_text = true
+	maint_paint_status_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	p_top.add_child(maint_paint_status_lbl)
+	var reset_pb := K.button(Loc.t("恢复原厂", "Factory"), 24)
+	reset_pb.custom_minimum_size.x = 74
+	reset_pb.pressed.connect(func(): _select_paint_preset("default"))
+	p_top.add_child(reset_pb)
+	var close_pb := K.button("×", 24)
+	close_pb.custom_minimum_size.x = 28
+	close_pb.pressed.connect(_toggle_maint_paint)
+	p_top.add_child(close_pb)
+
+	var pv_body := K.vbox(8)
+	pv_root.add_child(_scroll(pv_body))
+
+	_sec(pv_body, Loc.t("一键军工预设", "Military Presets"), "PRESETS")
+	var pre_grid := GridContainer.new()
+	pre_grid.columns = 2
+	pre_grid.add_theme_constant_override("h_separation", 6)
+	pre_grid.add_theme_constant_override("v_separation", 5)
+	pv_body.add_child(pre_grid)
+	maint_paint_preset_btns.clear()
+	for pd: Dictionary in MechPaint.PRESETS:
+		var pid := str(pd.get("id", "default"))
+		var chip := PaintPresetChip.new(pd)
+		chip.pressed.connect(_select_paint_preset.bind(pid))
+		pre_grid.add_child(chip)
+		maint_paint_preset_btns[pid] = chip
+
+	_sec(pv_body, Loc.t("迷彩制式", "Camo Pattern"), "PATTERN")
+	var pat_row := K.hbox(5)
+	pv_body.add_child(pat_row)
+	var pat_grp := ButtonGroup.new()
+	maint_paint_pat_btns.clear()
+	for pi in 4:
+		var pb := K.button(MechPaint.pattern_name(pi), 28)
+		pb.toggle_mode = true
+		pb.button_group = pat_grp
+		pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pb.pressed.connect(_set_paint_pattern.bind(pi))
+		pat_row.add_child(pb)
+		maint_paint_pat_btns[pi] = pb
+
+	_sec(pv_body, Loc.t("漆面旧化", "Surface Wear"), "WEAR")
+	var wear_row := K.hbox(5)
+	pv_body.add_child(wear_row)
+	var wear_grp := ButtonGroup.new()
+	maint_paint_wear_btns.clear()
+	for wi in 3:
+		var wb := K.button(MechPaint.wear_name(wi), 28)
+		wb.toggle_mode = true
+		wb.button_group = wear_grp
+		wb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		wb.pressed.connect(_set_paint_wear.bind(wi))
+		wear_row.add_child(wb)
+		maint_paint_wear_btns[wi] = wb
+
+	_sec(pv_body, Loc.t("快捷军工色板", "Custom Palette"), "PALETTE")
+	var ch_row := K.hbox(5)
+	pv_body.add_child(ch_row)
+	var ch_grp := ButtonGroup.new()
+	maint_paint_chan_btns.clear()
+	for cd in [
+		["primary", Loc.t("主装甲色", "Primary")],
+		["secondary", Loc.t("迷彩副色", "Secondary")],
+		["accent", Loc.t("战术点缀", "Accent")],
+	]:
+		var ck := str(cd[0])
+		var cb := K.button(str(cd[1]), 28)
+		cb.toggle_mode = true
+		cb.button_group = ch_grp
+		cb.button_pressed = (ck == maint_paint_chan)
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.pressed.connect(_set_paint_channel.bind(ck))
+		ch_row.add_child(cb)
+		maint_paint_chan_btns[ck] = cb
+
+	var sw_grid := GridContainer.new()
+	sw_grid.columns = 6
+	sw_grid.add_theme_constant_override("h_separation", 5)
+	sw_grid.add_theme_constant_override("v_separation", 5)
+	pv_body.add_child(sw_grid)
+	maint_paint_swatch_btns.clear()
+	for si in 12:
+		var sb := PaintSwatchBtn.new(MechPaint.ARMOR_SWATCHES[si])
+		sb.pressed.connect(func(): _set_paint_color_hex(sb.hex_str))
+		sw_grid.add_child(sb)
+		maint_paint_swatch_btns.append(sb)
+
+	var pick_row := K.hbox(8)
+	pv_body.add_child(pick_row)
+	var pick_lbl := UI.label(Loc.t("自由调色", "Custom Color"), 12, K.CREAM_DIM)
+	pick_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pick_row.add_child(pick_lbl)
+	maint_paint_picker = ColorPickerButton.new()
+	maint_paint_picker.edit_alpha = false
+	maint_paint_picker.custom_minimum_size = Vector2(92, 26)
+	maint_paint_picker.color_changed.connect(func(c: Color):
+		if not _paint_syncing:
+			_set_paint_color_hex("#" + c.to_html(false), false))
+	pick_row.add_child(maint_paint_picker)
+	maint_paint_hex_lbl = UI.label("#585E58", 12, K.STEEL)
+	maint_paint_hex_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pick_row.add_child(maint_paint_hex_lbl)
+
+
+func _toggle_maint_paint() -> void:
+	maint_paint_open = not maint_paint_open
+	if maint_paint_open:
+		maint_swap_slot = ""
+		maint_sel_id = ""
+	Audio.play_ui("ui_tab")
+	_update_maint_swap_ui()
+
+
+func _promote_paint_custom(cfg: Dictionary) -> Dictionary:
+	var out := MechPaint.sanitize(cfg)
+	if MechPaint.is_factory_default(out):
+		var core_id := str(GameData.loadout.get("core", ""))
+		var mod_info: Dictionary = GameData.module(core_id) if core_id != "" else {}
+		if mod_info.has("color") and mod_info.color is Color:
+			var raw_c: Color = mod_info.color
+			var g := (raw_c.r + raw_c.g + raw_c.b) / 3.0
+			var mc := raw_c.lerp(Color(g, g, g), 0.55).darkened(0.24)
+			out["primary"] = "#" + mc.to_html(false)
+			out["secondary"] = "#" + mc.darkened(0.26).to_html(false)
+	out["preset"] = "custom"
+	return out
+
+
+func _commit_paint_config(cfg: Dictionary, play_sfx := true) -> void:
+	GameData.mech_paint = MechPaint.sanitize(cfg)
+	if preview_mech and is_instance_valid(preview_mech):
+		MechPaint.apply(preview_mech, GameData.mech_paint)
+	GameData.save_game()
+	if play_sfx:
+		Audio.play_ui("ui_equip")
+	_update_maint_paint_ui()
+
+
+func _select_paint_preset(pid: String) -> void:
+	_commit_paint_config(MechPaint.config_from_preset(pid), true)
+
+
+func _set_paint_pattern(pat: int) -> void:
+	if _paint_syncing:
+		return
+	var cur := MechPaint.sanitize(GameData.mech_paint)
+	if not MechPaint.is_factory_default(cur) and int(cur.pattern) == pat:
+		return
+	var nxt := _promote_paint_custom(cur)
+	nxt["pattern"] = clampi(pat, 0, 3)
+	_commit_paint_config(nxt, true)
+
+
+func _set_paint_wear(w: int) -> void:
+	if _paint_syncing:
+		return
+	var cur := MechPaint.sanitize(GameData.mech_paint)
+	if not MechPaint.is_factory_default(cur) and int(cur.wear) == w:
+		return
+	var nxt := _promote_paint_custom(cur)
+	nxt["wear"] = clampi(w, 0, 2)
+	_commit_paint_config(nxt, true)
+
+
+func _set_paint_channel(ch: String) -> void:
+	if _paint_syncing:
+		return
+	maint_paint_chan = ch
+	Audio.play_ui("ui_tab")
+	_update_maint_paint_ui()
+
+
+func _set_paint_color_hex(hx: String, play_sfx := true) -> void:
+	if _paint_syncing:
+		return
+	var nxt := _promote_paint_custom(GameData.mech_paint)
+	nxt[maint_paint_chan] = hx.to_lower()
+	_commit_paint_config(nxt, play_sfx)
+
+
+func _update_maint_paint_ui() -> void:
+	_paint_syncing = true
+	var cfg := MechPaint.sanitize(GameData.mech_paint)
+	var pid := str(cfg.preset)
+	if maint_paint_blade != null and is_instance_valid(maint_paint_blade):
+		(maint_paint_blade as MaintPaintBlade).active = maint_paint_open
+		maint_paint_blade.queue_redraw()
+	if maint_paint_drawer != null and is_instance_valid(maint_paint_drawer):
+		maint_paint_drawer.visible = maint_paint_open
+	if maint_paint_status_lbl != null:
+		var nm := MechPaint.display_name(cfg)
+		maint_paint_status_lbl.text = nm if MechPaint.is_factory_default(cfg) else ("%s · %s · %s" % [nm, MechPaint.pattern_name(int(cfg.pattern)), MechPaint.wear_name(int(cfg.wear))])
+	for k in maint_paint_preset_btns:
+		var chip: PaintPresetChip = maint_paint_preset_btns[k]
+		chip.selected = (str(k) == pid)
+		chip.queue_redraw()
+	for pi in maint_paint_pat_btns:
+		(maint_paint_pat_btns[pi] as Button).button_pressed = (int(pi) == int(cfg.pattern))
+	for wi in maint_paint_wear_btns:
+		(maint_paint_wear_btns[wi] as Button).button_pressed = (int(wi) == int(cfg.wear))
+	for ck in maint_paint_chan_btns:
+		(maint_paint_chan_btns[ck] as Button).button_pressed = (str(ck) == maint_paint_chan)
+	var palette: Array = MechPaint.ACCENT_SWATCHES if maint_paint_chan == "accent" else MechPaint.ARMOR_SWATCHES
+	var cur_hex := str(cfg.get(maint_paint_chan, "#585e58")).to_lower()
+	for si in maint_paint_swatch_btns.size():
+		var sb: PaintSwatchBtn = maint_paint_swatch_btns[si]
+		sb.hex_str = str(palette[si]).to_lower() if si < palette.size() else "#585e58"
+		sb.selected = (not MechPaint.is_factory_default(cfg)) and (sb.hex_str == cur_hex)
+		sb.queue_redraw()
+	if maint_paint_picker != null:
+		maint_paint_picker.color = Color.from_string(cur_hex, Color(0.35, 0.37, 0.35))
+	if maint_paint_hex_lbl != null:
+		maint_paint_hex_lbl.text = cur_hex.to_upper()
+	_paint_syncing = false
+
+
+func _toggle_maint_swap(slot: String) -> void:
+	if slot == "" or maint_swap_slot == slot:
+		maint_swap_slot = ""
+	else:
+		maint_paint_open = false
+		maint_swap_slot = slot
+		maint_filter = "slot"
+		if maint_filter_btns.has("slot"):
+			(maint_filter_btns["slot"] as Button).button_pressed = true
+	maint_sel_id = ""
+	Audio.play_ui("ui_tab")
+	_populate_maint_grid()
+	_update_maint_swap_ui()
+
+
+func _update_maint_swap_ui() -> void:
+	var open: bool = maint_swap_slot != ""
+	var right_busy: bool = open or maint_paint_open
+	if maint_drawer != null:
+		maint_drawer.visible = open
+	for sl in slot_buttons:
+		var b = slot_buttons[sl]
+		b.active = (sl == maint_swap_slot)
+		if sl in ["core", "arm_r", "legs"]:
+			b.visible = not right_busy
+		b.queue_redraw()
+	if open and maint_drawer_title != null:
+		maint_drawer_title.text = Loc.t(SLOT_TITLES.get(maint_swap_slot, maint_swap_slot), SLOT_EN.get(maint_swap_slot, maint_swap_slot))
+	if maint_unequip_btn != null:
+		maint_unequip_btn.disabled = (maint_swap_slot == "" or str(GameData.loadout.get(maint_swap_slot, "")) == "")
+	if maint_cmp_box != null:
+		maint_cmp_box.slot_key = maint_swap_slot
+		maint_cmp_box.cand_id = maint_sel_id
+		maint_cmp_box.queue_redraw()
+	if maint_equip_btn != null:
+		var can_eq: bool = maint_sel_id != "" and GameData.stash.has(maint_sel_id) and ((maint_swap_slot != "" and GameData.slot_accepts(maint_swap_slot, maint_sel_id)) or GameData.is_module(maint_sel_id))
+		maint_equip_btn.disabled = not can_eq
+	_update_maint_paint_ui()
+	if maint_overlay != null:
+		maint_overlay.queue_redraw()
 
 
 # ============================================================ 2. 交易视图（单页：商人条 / 货架 / 仓库 / 成交栏 / 委托 / 账户）
@@ -1361,7 +2228,7 @@ func _build_trade_view(parent: Control) -> void:
 	trade_list_root = trade_deal_root
 
 	const DEAL_H := 70.0
-	const BOT_H := 140.0
+	const BOT_H := 162.0
 	const TOP_H2 := 104.0
 
 	# ---- 商人条：头像 + 名称 + 身份 + 好感 + 供货
@@ -1610,10 +2477,11 @@ func _update_deal() -> void:
 		deal_after_lbl.text = Loc.t("余额 ¥ %s", "Balance ¥ %s") % _fmt_money(GameData.money)
 		return
 	var it := GameData.item(id)
+	var gsz_d: Vector2i = GameData.item_grid_size(id)
 	deal_cell.set_entry({"id": id, "count": GameData.count_in_stash(id)})
 	deal_name_lbl.text = (Loc.t("买入  ", "Buy  ") if trade_side == "buy" else Loc.t("卖出  ", "Sell  ")) + str(it.name)
 	deal_name_lbl.add_theme_color_override("font_color", GameData.RARITY_COLORS[int(it.rar)])
-	deal_info_lbl.text = Loc.t("%s · %.1fkg · 仓库 ×%d · %s", "%s · %.1fkg · Stash ×%d · %s") % [GameData.CAT_NAMES.get(it.cat, ""), float(it.w), GameData.count_in_stash(id), Growth.subst(str(it.get("desc", "")))]
+	deal_info_lbl.text = Loc.t("%s · %d×%d · %.1fkg · 库存 ×%d", "%s · %d×%d · %.1fkg · Stash ×%d") % [GameData.CAT_NAMES.get(it.cat, ""), gsz_d.x, gsz_d.y, float(it.w), GameData.count_in_stash(id)]
 	deal_price_lbl.text = "¥ %s" % _fmt_money(price)
 	var after := GameData.money - price if trade_side == "buy" else GameData.money + price
 	deal_after_lbl.text = Loc.t("余额 ¥ %s  →  ¥ %s", "Balance ¥ %s  →  ¥ %s") % [_fmt_money(GameData.money), _fmt_money(after)]
@@ -1693,7 +2561,6 @@ func _build_deploy_view(parent: Control) -> void:
 	var bsp := Control.new()
 	bsp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	bv.add_child(bsp)
-	bv.add_child(K.hazard_strip())
 	var nx := K.primary(Loc.t("下一步 · 确认携带  →", "Next · Loadout Check  →"), 52)
 	nx.add_theme_font_size_override("font_size", 18)
 	nx.pressed.connect(func(): _deploy_show(2))
@@ -1780,7 +2647,6 @@ func _build_deploy_view(parent: Control) -> void:
 	deploy_err = UI.label("", 12, UI.BAD)
 	deploy_err.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dv.add_child(deploy_err)
-	dv.add_child(K.hazard_strip())
 	deploy_btn = K.primary(Loc.t("▼  空投出击", "▼  LAUNCH SORTIE"), 60)
 	deploy_btn.add_theme_font_size_override("font_size", 18)
 	deploy_btn.set_meta("sfx", "ui_confirm")
@@ -2081,8 +2947,8 @@ func _rebuild_skills() -> void:
 			skills_right_lbl.text = Loc.t("研究室 %s", "Lab %s") % Loc.lv(Growth.facility_level("lab"))
 			_skills_research()
 		"pilot":
-			skills_title_lbl.text = Loc.t("主角能力 · 实战熟练度", "Pilot Proficiency & Talents")
-			skills_right_lbl.text = Loc.t("实战使用自动升级 · 零物资消耗", "Levels via combat use · zero cost")
+			skills_title_lbl.text = Loc.t("主角能力", "Pilot Proficiency")
+			skills_right_lbl.text = ""
 			_skills_pilot()
 		"pods":
 			skills_title_lbl.text = Loc.t("部署仓 · 战斗队友", "Deploy Pods · Combat Squad")
@@ -2273,16 +3139,15 @@ func _skills_pilot() -> void:
 	sum_card.add_child(sv)
 	var sh := K.hbox(8)
 	sv.add_child(sh)
-	sh.add_child(UI.label(Loc.t("实战熟练度总览", "Field Proficiency Summary"), 12, UI.ACCENT))
+	sh.add_child(UI.label(Loc.t("熟练度总览", "Proficiency"), 12, UI.ACCENT))
 	var sp_f := Control.new()
 	sp_f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sh.add_child(sp_f)
 	sh.add_child(K.tag(Loc.t("总计 %d / %d级", "Total Lv.%d / %d") % [total_lv, total_mx], total_lv > 0))
-	sv.add_child(K.req_row(Loc.t("精英专精 / 初段精力", "Elite / Fresh Focus"), "★%d/%d · ▲129%%" % [elite_cnt, Growth.ability_ids().size()], true))
-	sv.add_child(K.wrap(Loc.t("战区移动/负重/交火/损管/搜刮自动升级（零资源消耗）", "Levels automatically via movement, load, combat, repairs & looting (zero cost)"), K.CREAM_DIM))
+	sv.add_child(K.req_row(Loc.t("精英专精 / 精力倍率", "Elite / Focus"), "★%d/%d · ▲129%%" % [elite_cnt, Growth.ability_ids().size()], true))
 	th.add_child(sum_card)
 
-	_sec(skills_body, Loc.t("实战熟练度", "Proficiency"), "Proficiency", Loc.t("实战行动自动成长 · 单局初段 129% 专注加成 / 过度重复疲劳递减", "Grows via combat action · 129% fresh focus bonus early, diminishing returns later"))
+	_sec(skills_body, Loc.t("实战熟练度", "Proficiency"), "")
 	var g := _grid(4)
 	g.add_theme_constant_override("v_separation", 6)
 	skills_body.add_child(g)
@@ -2326,7 +3191,7 @@ func _proficiency_card(id: String) -> PanelContainer:
 	tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_h.add_child(tl)
-	title_h.add_child(K.tag(Loc.t("★ 满级专精", "★ ELITE") if elite else Loc.t("%d/%d级", "Lv.%d/%d") % [lv, mx], lv > 0))
+	title_h.add_child(K.tag(Loc.t("★ 满级", "★ ELITE") if elite else Loc.t("%d/%d级", "Lv.%d/%d") % [lv, mx], lv > 0))
 	var sub_h := K.hbox(4)
 	tv.add_child(sub_h)
 	var cat_lb := UI.label(str(d.get("cat", Loc.t("技能", "Skill"))), 10, K.CREAM_DIM)
@@ -2354,17 +3219,7 @@ func _proficiency_card(id: String) -> PanelContainer:
 	bar.set_frac(1.0 if elite or need <= 0.0 else clampf(xp / need, 0.0, 1.0))
 	v.add_child(bar)
 
-	v.add_child(K.wrap(Loc.t("每级：", "Per Level: ") + str(d.get("effect", "")), UI.GOOD if lv > 0 else UI.INFO))
-	var el_txt := str(d.get("elite", ""))
-	if el_txt != "":
-		v.add_child(K.wrap(Loc.t("满级：", "Mastery: ") + el_txt, UI.ACCENT if elite else K.CREAM_DIM))
-	var fill := Control.new()
-	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(fill)
-	var how_box := PanelContainer.new()
-	how_box.add_theme_stylebox_override("panel", K.px9("inset9", 5, 5, 3, 3))
-	how_box.add_child(K.wrap(Loc.t("锻炼：", "Trained by: ") + str(d.get("how", "")), Color(0.76, 0.80, 0.72)))
-	v.add_child(how_box)
+	v.add_child(K.wrap(str(d.get("effect", "")), UI.GOOD if lv > 0 else UI.INFO))
 	return c
 
 
@@ -2474,7 +3329,7 @@ func _build_stash_view(parent: Control) -> void:
 
 	stash_list = _grid_widget(56, "stash")
 	stash_list.show_names = true
-	stash_list.empty_text = Loc.t("货架空空荡荡，暂无该类物资。", "No items in this category.")
+	stash_list.empty_text = ""
 	stash_list.item_selected.connect(_on_stash_selected)
 	stash_list.item_activated.connect(func(_i): _move_to_cargo())
 	stash_list.item_context.connect(func(i):
@@ -2829,43 +3684,46 @@ func _build_hangar() -> void:
 	sv.add_child(preview_root)
 
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.2, 0.22, 0.32)
-	sky_mat.sky_horizon_color = Color(0.85, 0.55, 0.38)
-	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06)
+	sky_mat.sky_top_color = Color(0.26, 0.32, 0.42)
+	sky_mat.sky_horizon_color = Color(0.68, 0.58, 0.48)
+	sky_mat.ground_horizon_color = Color(0.24, 0.25, 0.28)
+	sky_mat.ground_bottom_color = Color(0.14, 0.15, 0.18)
 	var sky := Sky.new()
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	sky.sky_material = sky_mat
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.025, 0.035)
+	env.background_color = Color(0.05, 0.06, 0.08)
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.52
+	env.ambient_light_energy = 1.15
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.12
+	env.tonemap_exposure = 1.24
+	env.tonemap_white = 6.0
 	var mob := OS.has_feature("mobile") or OS.has_feature("web")
 	var mob_ren := RenderingServer.get_current_rendering_method() == "mobile"
 	env.glow_enabled = true
 	env.glow_normalized = true
-	env.glow_intensity = 0.52 if (mob and GameData.quality == 0) else 0.68
-	env.glow_strength = 0.92
-	env.glow_bloom = 0.04
-	env.glow_hdr_threshold = 1.0
-	env.set_glow_level(1, 0.85)
-	env.set_glow_level(2, 0.7)
-	env.set_glow_level(3, 0.45)
+	env.glow_intensity = 0.42 if (mob and GameData.quality == 0) else 0.54
+	env.glow_strength = 0.88
+	env.glow_bloom = 0.02
+	env.glow_hdr_threshold = 1.12
+	env.set_glow_level(1, 0.80)
+	env.set_glow_level(2, 0.62)
+	env.set_glow_level(3, 0.38)
 	env.ssao_enabled = (not mob) and (not mob_ren)
-	env.ssao_radius = 1.15
-	env.ssao_intensity = 2.4
-	env.ssao_detail = 0.85
-	env.ssao_light_affect = 0.3
+	env.ssao_radius = 0.88
+	env.ssao_intensity = 1.55
+	env.ssao_detail = 0.80
+	env.ssao_light_affect = 0.18
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.08, 0.09, 0.12)
-	env.fog_density = 0.018
+	env.fog_light_color = Color(0.12, 0.14, 0.18)
+	env.fog_density = 0.008
 	env.volumetric_fog_enabled = false
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 1.06
+	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.00
 	var we := WorldEnvironment.new()
 	we.environment = env
 	preview_root.add_child(we)
@@ -2894,17 +3752,17 @@ func _build_hangar() -> void:
 	preview_root.set_meta("_keep_tt", turntable)
 
 	var key := SpotLight3D.new()
-	key.position = Vector3(2.5, 9.0, 4.0)
-	key.light_energy = 9.2
-	key.spot_range = 20.0
-	key.spot_angle = 32.0
+	key.position = Vector3(6.8, 10.6, 10.8)
+	key.light_energy = 21.0
+	key.spot_range = 42.0
+	key.spot_angle = 42.0
 	key.shadow_enabled = not OS.has_feature("web") or GameData.quality >= 1
-	key.shadow_bias = 0.02
-	key.shadow_normal_bias = 1.0
-	key.shadow_blur = 0.35 if (mob or mob_ren) else 1.15
+	key.shadow_bias = 0.018
+	key.shadow_normal_bias = 0.36
+	key.shadow_blur = 0.35 if (mob or mob_ren) else 0.78
 	key.light_color = Color(1.0, 0.95, 0.88)
 	preview_root.add_child(key)
-	key.look_at_from_position(key.position, Vector3(0, 1.5, 0))
+	key.look_at_from_position(key.position, Vector3(0, 3.0, 0))
 
 	# UPDATE_ONCE 反射探针仅启动时烘焙一次，每帧零额外开销，低画质也保留机甲金属高光质感
 	# WebGL 反射探针六面烘焙会触发深度/模板 blit 格式错误；网页保留天空环境反射。
@@ -2912,17 +3770,18 @@ func _build_hangar() -> void:
 		var rp := ReflectionProbe.new()
 		rp.update_mode = ReflectionProbe.UPDATE_ONCE
 		rp.box_projection = true
-		rp.size = Vector3(28, 12, 22)
-		rp.position = Vector3(0, 4.0, -1.0)
-		rp.intensity = 0.72
+		rp.size = Vector3(42, 18, 36)
+		rp.position = Vector3(0, 6.8, -1.8)
+		rp.intensity = 0.85
 		rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
 		preview_root.add_child(rp)
 
 	var h_lights := [
-		[Vector3(-5.0, 3.5, -2.0), Color(0.32, 0.75, 1.0), 3.0, 9.5],
-		[Vector3(5.0, 2.5, -2.5), Color(1.0, 0.56, 0.22), 2.5, 9.5],
-		[Vector3(-2.6, 3.4, -6.6), Color(0.56, 0.72, 0.92), 1.65, 10.5],
-		[Vector3(2.6, 4.4, -5.6), Color(1.0, 0.74, 0.42), 1.95, 10.5],
+		[Vector3(-8.8, 6.2, -3.6), Color(0.42, 0.78, 1.0), 5.2, 18.5],
+		[Vector3(8.8, 4.8, -4.4), Color(1.0, 0.64, 0.32), 4.4, 18.5],
+		[Vector3(-4.6, 6.0, -11.5), Color(0.58, 0.74, 0.94), 3.4, 19.5],
+		[Vector3(4.6, 7.6, -9.8), Color(1.0, 0.78, 0.50), 3.8, 19.5],
+		[Vector3(0.0, 1.25, 3.8), Color(0.92, 0.84, 0.72), 3.2, 11.5],
 	]
 	var max_hl := 2 if ((mob or mob_ren) and GameData.quality == 0) else h_lights.size()
 	for hi in max_hl:
@@ -2935,30 +3794,30 @@ func _build_hangar() -> void:
 		preview_root.add_child(l)
 
 	var front := SpotLight3D.new()
-	front.position = Vector3(-1.5, 3.2, 7.0)
-	front.light_energy = 3.0
-	front.spot_range = 14.0
-	front.spot_angle = 30.0
-	front.light_color = Color(0.85, 0.9, 1.0)
+	front.position = Vector3(-5.6, 5.4, 13.4)
+	front.light_energy = 8.4
+	front.spot_range = 32.0
+	front.spot_angle = 44.0
+	front.light_color = Color(0.82, 0.89, 1.0)
 	preview_root.add_child(front)
-	front.look_at_from_position(front.position, Vector3(0, 2.0, 0))
+	front.look_at_from_position(front.position, Vector3(0, 3.1, 0))
 
 	var fillv := DirectionalLight3D.new()
-	fillv.rotation_degrees = Vector3(-30, 160, 0)
-	fillv.light_energy = 0.25
-	fillv.light_color = Color(0.6, 0.7, 1.0)
+	fillv.rotation_degrees = Vector3(-28, 155, 0)
+	fillv.light_energy = 0.42
+	fillv.light_color = Color(0.68, 0.78, 0.96)
 	preview_root.add_child(fillv)
 
-	A.emitter(preview_root, Vector3(0, 3, 0), {"amount": 28, "life": 8.0, "size": 0.04, "box": Vector3(6, 3, 4), "spread": 180.0, "vmin": 0.05, "vmax": 0.15,
+	A.emitter(preview_root, Vector3(0, 5.2, 0), {"amount": 28, "life": 8.0, "size": 0.05, "box": Vector3(11, 5.5, 8), "spread": 180.0, "vmin": 0.05, "vmax": 0.15,
 		"gravity": Vector3(0, -0.02, 0), "c0": Color(1, 0.9, 0.8, 0.0), "cmid": Color(1, 0.9, 0.8, 0.6), "c1": Color(1, 0.9, 0.8, 0.0), "grow0": 1.0, "grow1": 1.0})
 
 	var cam := Camera3D.new()
-	cam.position = Vector3(0, 3.1, 8.8)
+	cam.position = Vector3(0, 5.15, 15.6)
 	cam.fov = 40
 	cam.near = 0.25
-	cam.far = 45.0
+	cam.far = 95.0
 	preview_root.add_child(cam)
-	cam.look_at(Vector3(0, 1.9, 0))
+	cam.look_at(Vector3(0, 3.32, 0))
 	preview_cam = cam
 
 
@@ -2970,8 +3829,8 @@ func _toggle_explode() -> void:
 	if preview_mech:
 		MV.explode(preview_mech, 1.0 if exploded else 0.0, 0.6)
 	if preview_cam:
-		var to := Vector3(0, 4.4, 14.5) if exploded else Vector3(0, 3.1, 8.8)
-		var look := Vector3(0, 2.7, 0) if exploded else Vector3(0, 1.9, 0)
+		var to := Vector3(0, 7.2, 24.5) if exploded else Vector3(0, 5.15, 15.6)
+		var look := Vector3(0, 4.6, 0) if exploded else Vector3(0, 3.32, 0)
 		var tw := create_tween()
 		tw.tween_method(func(t: float):
 			preview_cam.position = preview_cam.position.lerp(to, t)
@@ -2990,6 +3849,8 @@ func _process(delta: float) -> void:
 		if not drag:
 			spin += delta * 0.35
 		turntable.rotation.y = lerp_angle(turntable.rotation.y, spin, clamp(delta * 8.0, 0.0, 1.0))
+		if maint_overlay != null and maint_overlay.visible:
+			maint_overlay.queue_redraw()
 	if airship:
 		AlbatrossAirship.spin_propellers(airship, delta, 10.0)
 
@@ -3016,21 +3877,32 @@ func refresh() -> void:
 	if preview_mech and is_instance_valid(preview_mech):
 		if GameData.loadout != _last_preview_loadout:
 			_last_preview_loadout = GameData.loadout.duplicate()
+			MechPaint.restore_for_rebatch(preview_mech)
 			MV.apply(preview_mech, GameData.loadout, true)
 			MechScript._batch_visual(preview_mech)
+			preview_mech.scale = Vector3.ONE * MechScript.MECH_VIS_SCALE
+			preview_mech.position.y = 0.238
+		MechPaint.apply(preview_mech, GameData.mech_paint)
 	elif turntable:
 		_last_preview_loadout = GameData.loadout.duplicate()
 		preview_mech = MV.build(GameData.loadout, true, false)
 		MechScript._batch_visual(preview_mech)
+		MechPaint.apply(preview_mech, GameData.mech_paint)
 		turntable.add_child(preview_mech)
-		preview_mech.position.y = 0.168
+		preview_mech.scale = Vector3.ONE * MechScript.MECH_VIS_SCALE
+		preview_mech.position.y = 0.238
 		preview_mech.rotation.y = PI
+	_update_maint_paint_ui()
 
 	var mass := 0.0
 	for slot in GameData.SLOTS:
+		var id: String = GameData.loadout.get(slot, "")
+		if id != "":
+			mass += float(GameData.module(id).get("w", 0.0))
+		if slot_buttons.has(slot) and is_instance_valid(slot_buttons[slot]):
+			(slot_buttons[slot] as Control).queue_redraw()
 		if not slot_name_lbls.has(slot):
 			continue
-		var id: String = GameData.loadout.get(slot, "")
 		var nl: Label = slot_name_lbls[slot]
 		var stl: Label = slot_stat_lbls[slot]
 		if id == "":
@@ -3051,7 +3923,6 @@ func refresh() -> void:
 				sub_s += Loc.t(" · 侦察", " · Recon")
 			stl.text = sub_s
 			slot_cells[slot].set_entry({"id": id})
-			mass += float(m.w)
 
 	var st := GameData.compute_stats(GameData.loadout)
 	var cw := GameData.weight_of(GameData.cargo)
@@ -3090,6 +3961,7 @@ func refresh() -> void:
 
 	_populate_stash_list()
 	_populate_maint_grid()
+	_update_maint_swap_ui()
 	_populate_deploy_stash()
 	_refresh_shop()
 	_refresh_trade_list()
@@ -3288,13 +4160,27 @@ func _populate_stash_list() -> void:
 func _populate_maint_grid() -> void:
 	if maint_grid == null:
 		return
-	var es := _stack(GameData.stash, maint_filter)
+	var raw_filter := "module" if maint_filter == "slot" else maint_filter
+	var es := _stack(GameData.stash, raw_filter)
+	if maint_filter == "slot" and maint_swap_slot != "":
+		var fit: Array = []
+		for e in es:
+			if GameData.slot_accepts(maint_swap_slot, str(e.id)):
+				fit.append(e)
+		es = fit
 	maint_ids.clear()
 	for e in es:
 		maint_ids.append(e.id)
 		if GameData.is_module(str(e.id)):
 			e["hint"] = ""
+	maint_grid.empty_text = ""
 	maint_grid.set_entries(es)
+	if maint_sel_id == "" and not maint_ids.is_empty() and maint_swap_slot != "":
+		maint_sel_id = str(maint_ids[0])
+	var sidx := maint_ids.find(maint_sel_id)
+	maint_grid.select(sidx)
+	if sidx < 0:
+		maint_sel_id = ""
 	if maint_count_lbl:
 		maint_count_lbl.text = Loc.t("%d 件 · %.1f kg", "%d items · %.1f kg") % [GameData.stash.size(), GameData.weight_of(GameData.stash)]
 
@@ -3310,7 +4196,7 @@ func _populate_deploy_stash() -> void:
 			e["hint"] = ""
 			es.append(e)
 			deploy_stash_ids.append(e.id)
-	deploy_stash_list.empty_text = Loc.t("仓库里没有消耗品或食物。", "No consumables or rations in stash.")
+	deploy_stash_list.empty_text = ""
 	deploy_stash_list.set_entries(es)
 
 
@@ -3328,7 +4214,7 @@ func _populate_cargo() -> void:
 	for id in GameData.cargo:
 		cargo_ids.append(id)
 		es.append({"id": id, "count": 1, "hint": ""})
-	cargo_list.empty_text = Loc.t("货舱是空的：从左侧装入消耗品与食物。", "Cargo bay empty: load consumables and rations from the left.")
+	cargo_list.empty_text = ""
 	cargo_list.set_entries(es)
 
 
@@ -3462,7 +4348,7 @@ func _on_stash_selected(i: int) -> void:
 	if stash_use_lbl:
 		var uses := Growth.material_uses(selected_stash)
 		var sep := ", " if Loc.is_en() else "、"
-		stash_use_lbl.text = (Loc.t("可用于：", "Used for: ") + sep.join(uses)) if not uses.is_empty() else Loc.t("当前没有升级项目需要这件物资。", "Not required by any current facility or research upgrade.")
+		stash_use_lbl.text = sep.join(uses) if not uses.is_empty() else "—"
 		stash_use_lbl.add_theme_color_override("font_color", UI.INFO if not uses.is_empty() else K.CREAM_DIM)
 
 

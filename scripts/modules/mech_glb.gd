@@ -12,18 +12,24 @@ const K = preload("res://scripts/modules/kit.gd")
 
 const GLB_DIR := "res://assets/models/mech_modules/"
 const TRIM_SHADER_PATH := "res://shaders/mech_trim.gdshader"
+const DECAL_SHADER_PATH := "res://shaders/mech_decal.gdshader"
 const TRIM_A_PATH := "res://assets/textures/mech_trim_a.png"
 const TRIM_N_PATH := "res://assets/textures/mech_trim_n.png"
 const TRIM_ORM_PATH := "res://assets/textures/mech_trim_orm.png"
+const DETAIL_N_PATH := "res://assets/textures/mech_detail_n.png"
+const DECAL_A_PATH := "res://assets/textures/mech_decal_a.png"
 
 static var _packed_cache := {}       ## base_id -> PackedScene
 static var _loading := {}            ## path -> true
 static var _mat_cache := {}          ## key -> Material
 static var _mirror_cache := {}       ## mesh_rid -> ArrayMesh (X-mirrored with flipped winding)
 static var _trim_shader: Shader = null
+static var _decal_shader: Shader = null
 static var _trim_a: Texture2D = null
 static var _trim_n: Texture2D = null
 static var _trim_orm: Texture2D = null
+static var _detail_n: Texture2D = null
+static var _decal_a: Texture2D = null
 
 
 static func glb_path(base_id: String) -> String:
@@ -42,6 +48,11 @@ static func request_glb(base_id: String) -> void:
 		return
 	var p := glb_path(base_id)
 	if _loading.has(p) or not ResourceLoader.exists(p):
+		return
+	if DisplayServer.get_name() == "headless":
+		var sync_res := load(p)
+		if sync_res is PackedScene:
+			_packed_cache[base_id] = sync_res
 		return
 	var err := ResourceLoader.load_threaded_request(p, "PackedScene")
 	if err == OK:
@@ -68,12 +79,18 @@ static func glb_ready(base_id: String) -> bool:
 static func _ensure_trim_assets() -> void:
 	if _trim_shader == null:
 		_trim_shader = load(TRIM_SHADER_PATH) as Shader
+	if _decal_shader == null and ResourceLoader.exists(DECAL_SHADER_PATH):
+		_decal_shader = load(DECAL_SHADER_PATH) as Shader
 	if _trim_a == null:
 		_trim_a = _load_tex_fallback(TRIM_A_PATH)
 	if _trim_n == null:
 		_trim_n = _load_tex_fallback(TRIM_N_PATH)
 	if _trim_orm == null:
 		_trim_orm = _load_tex_fallback(TRIM_ORM_PATH)
+	if _detail_n == null:
+		_detail_n = _load_tex_fallback(DETAIL_N_PATH)
+	if _decal_a == null:
+		_decal_a = _load_tex_fallback(DECAL_A_PATH)
 
 
 static func _load_tex_fallback(res_path: String) -> Texture2D:
@@ -90,9 +107,9 @@ static func _load_tex_fallback(res_path: String) -> Texture2D:
 	return null
 
 
-static func _trim_mat(col: Color, met: float, rgh: float, wear_v := 0.48, raw_alb := 0.0, takes_dmg := 0.0, n_str := 1.15) -> ShaderMaterial:
+static func _trim_mat(col: Color, met: float, rgh: float, wear_v := 0.52, raw_alb := 0.0, takes_dmg := 0.0, n_str := 1.18, det_str := 0.44, paint_role := "") -> ShaderMaterial:
 	_ensure_trim_assets()
-	var key := "tr|%s|%.2f|%.2f|%.2f|%.0f|%.0f|%.2f" % [col.to_html(false), met, rgh, wear_v, raw_alb, takes_dmg, n_str]
+	var key := "tr|%s|%.2f|%.2f|%.2f|%.0f|%.0f|%.2f|%.2f|%s" % [col.to_html(false), met, rgh, wear_v, raw_alb, takes_dmg, n_str, det_str, paint_role]
 	var cached: ShaderMaterial = _mat_cache.get(key)
 	if cached != null:
 		return cached
@@ -105,15 +122,34 @@ static func _trim_mat(col: Color, met: float, rgh: float, wear_v := 0.48, raw_al
 	sm.set_shader_parameter("raw_albedo", raw_alb)
 	sm.set_shader_parameter("takes_damage", takes_dmg)
 	sm.set_shader_parameter("normal_strength", n_str)
-	sm.set_shader_parameter("ao_strength", 0.90)
+	sm.set_shader_parameter("detail_normal_str", det_str)
+	sm.set_shader_parameter("ao_strength", 0.96)
+	if paint_role != "":
+		sm.set_meta("paint_role", paint_role)
 	if _trim_a != null:
 		sm.set_shader_parameter("trim_albedo", _trim_a)
 	if _trim_n != null:
 		sm.set_shader_parameter("trim_normal", _trim_n)
 	if _trim_orm != null:
 		sm.set_shader_parameter("trim_orm", _trim_orm)
+	if _detail_n != null:
+		sm.set_shader_parameter("detail_normal", _detail_n)
 	sm.set_shader_parameter("noise_lo", A.noise_tex("grime_raw"))
 	_mat_cache[key] = sm
+	return sm
+
+
+static func _decal_mat() -> Material:
+	_ensure_trim_assets()
+	var cached: Material = _mat_cache.get("mech_decal")
+	if cached != null:
+		return cached
+	var sm := ShaderMaterial.new()
+	sm.shader = _decal_shader
+	if _decal_a != null:
+		sm.set_shader_parameter("decal_tex", _decal_a)
+	sm.render_priority = 1
+	_mat_cache["mech_decal"] = sm
 	return sm
 
 
@@ -123,43 +159,65 @@ static func _slot_mat(mat_slot: String, ctx: Dictionary) -> Material:
 	var gc: Color = info.get("color", Color(0.30, 0.80, 0.95))
 	match mat_slot:
 		"armor":
-			return _trim_mat(c, 0.15, 0.58, 0.44, 0.0, 1.0, 1.15)
+			return _trim_mat(c, 0.03, 0.62, 0.56, 0.0, 1.0, 1.18, 0.46, "armor")
 		"armor_sub":
-			return _trim_mat(c.darkened(0.24), 0.20, 0.56, 0.48, 0.0, 1.0, 1.15)
+			return _trim_mat(c.darkened(0.22), 0.04, 0.58, 0.58, 0.0, 1.0, 1.18, 0.44, "armor_sub")
 		"armor_dark":
-			return _trim_mat(c.darkened(0.46), 0.28, 0.54, 0.42, 0.0, 1.0, 1.12)
+			return _trim_mat(c.darkened(0.44), 0.06, 0.64, 0.48, 0.0, 1.0, 1.14, 0.40, "armor_dark")
+		"armor_oxide":
+			return _trim_mat(Color(0.44, 0.21, 0.17), 0.04, 0.60, 0.62, 0.0, 1.0, 1.18, 0.46, "armor_oxide")
 		"dark":
-			return _trim_mat(Color(0.11, 0.118, 0.132), 0.54, 0.52, 0.32, 0.0, 0.0, 1.08)
+			return _trim_mat(Color(0.14, 0.15, 0.168), 0.76, 0.44, 0.36, 0.0, 0.0, 1.10, 0.36)
 		"gunmetal":
-			return _trim_mat(Color(0.19, 0.205, 0.228), 0.68, 0.44, 0.38, 0.0, 0.0, 1.12)
+			return _trim_mat(Color(0.24, 0.258, 0.285), 0.84, 0.36, 0.44, 0.0, 0.0, 1.14, 0.38)
 		"chrome":
-			return _trim_mat(Color(0.72, 0.75, 0.80), 0.92, 0.22, 0.18, 0.0, 0.0, 0.55)
+			return _trim_mat(Color(0.78, 0.81, 0.85), 0.96, 0.16, 0.18, 0.0, 0.0, 0.50, 0.14)
 		"copper":
-			return _trim_mat(Color(0.64, 0.36, 0.20), 0.85, 0.32, 0.28, 0.0, 0.0, 0.80)
+			return _trim_mat(Color(0.72, 0.40, 0.22), 0.88, 0.28, 0.30, 0.0, 0.0, 0.80, 0.22)
 		"brass":
-			return _trim_mat(Color(0.62, 0.48, 0.22), 0.82, 0.34, 0.30, 0.0, 0.0, 0.84)
+			return _trim_mat(Color(0.68, 0.53, 0.24), 0.86, 0.30, 0.32, 0.0, 0.0, 0.82, 0.22)
 		"rubber":
-			return _trim_mat(Color(0.075, 0.080, 0.088), 0.03, 0.90, 0.10, 0.0, 0.0, 1.20)
+			return _trim_mat(Color(0.085, 0.090, 0.098), 0.00, 0.88, 0.08, 0.0, 0.0, 1.22, 0.30)
 		"hazard":
-			return _trim_mat(Color.WHITE, 0.08, 0.56, 0.42, 1.0, 0.0, 0.95)
+			return _trim_mat(Color.WHITE, 0.03, 0.58, 0.50, 1.0, 0.0, 0.96, 0.34)
 		"accent":
-			return _trim_mat(K.ACCENT, 0.14, 0.56, 0.46, 0.0, 0.0, 1.00)
+			return _trim_mat(Color(0.82, 0.60, 0.16), 0.04, 0.56, 0.54, 0.0, 0.0, 1.02, 0.36, "accent")
+		"decal":
+			return _decal_mat()
 		"bore":
 			return K.bore_mat()
 		"glass":
-			return K.canopy(K.VISOR, 0.28)
+			var gk := "obsidian_optic_glass"
+			var gm: Material = _mat_cache.get(gk)
+			if gm == null:
+				var sm := StandardMaterial3D.new()
+				sm.albedo_color = Color(0.022, 0.036, 0.046)
+				sm.metallic = 0.28
+				sm.roughness = 0.05
+				sm.metallic_specular = 0.95
+				sm.clearcoat_enabled = true
+				sm.clearcoat = 1.0
+				sm.clearcoat_roughness = 0.03
+				sm.rim_enabled = true
+				sm.rim = 0.45
+				sm.rim_tint = 0.35
+				_mat_cache[gk] = sm
+				gm = sm
+			return gm
 		"emit_headlight":
 			return A.emit(Color(1.0, 0.94, 0.80), 2.4)
 		"emit_amber":
-			return A.emit(Color(0.95, 0.70, 0.20), 2.0)
+			return A.emit(Color(1.0, 0.66, 0.16), 2.4)
+		"emit_green":
+			return A.emit(Color(0.32, 0.98, 0.26), 2.6)
 		"emit_cyan":
 			return A.emit(Color(0.28, 0.90, 0.72), 2.0)
 		"emit_red":
 			return A.emit(Color(0.95, 0.24, 0.18), 2.2)
 		"emit_core":
-			return A.emit(gc, 1.4)
+			return A.emit(gc, 1.8)
 		_:
-			return _trim_mat(c, 0.28, 0.46, 0.48, 0.0, 1.0, 1.15)
+			return _trim_mat(c, 0.04, 0.60, 0.54, 0.0, 1.0, 1.18, 0.44, "armor")
 
 
 static func _load_scene_instance(base_id: String) -> Node3D:

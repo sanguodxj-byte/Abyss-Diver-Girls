@@ -7,6 +7,7 @@ const MapsData = preload("res://scripts/maps.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 const AudioReg = preload("res://scripts/audio/audio_registry.gd")
 const GridPack = preload("res://scripts/grid_pack.gd")
+const MechPaint = preload("res://scripts/mech_paint.gd")
 
 const CARGO_COLS := 6
 
@@ -307,13 +308,14 @@ var money := 1500
 var stash: Array = []
 var cargo: Array = []      ## 下一次出击要带的东西
 var loadout := {}
+var mech_paint: Dictionary = MechPaint.default_config()
 var raids := 0
 ## 画质：0 流畅 / 1 高 / 2 极致（新存档默认“高”：极致档 1.5 倍超采样 + MSAA4x + TAA + SSIL，中端显卡压力过大）
 const _ZH_QUALITY_NAMES := ["流畅", "高", "极致"]
 var QUALITY_NAMES := _ZH_QUALITY_NAMES.duplicate()
 var quality := 1
 var render_style := 0  # 0 写实 1 三渲二
-var view_mode := 0     # 0 第三人称 1 第一人称
+var view_mode := 2     # 0 斜俯视 1 第一人称 2 第三人称越肩 (B.o.T)
 var mouse_sens := 1.0  # 鼠标视角灵敏度倍率（0.2 ~ 2.5）
 var show_fps := false  # 右上角显示实时 FPS
 var _has_global_show_fps := false
@@ -374,6 +376,95 @@ func _ready() -> void:
 	if not load_game():
 		new_game()
 	call_deferred("_bind_quest_events")
+	call_deferred("_bind_viewport_resize")
+
+
+var _managed_vps: Array[WeakRef] = []
+var _resize_recheck_pending := false
+
+
+func _bind_viewport_resize() -> void:
+	var root_vp := get_tree().root if get_tree() else null
+	if root_vp != null and not root_vp.size_changed.is_connected(_on_root_viewport_resized):
+		root_vp.size_changed.connect(_on_root_viewport_resized)
+
+
+func _on_root_viewport_resized() -> void:
+	call_deferred("_reapply_all_viewports")
+	if not _resize_recheck_pending and get_tree() != null:
+		_resize_recheck_pending = true
+		get_tree().create_timer(0.12).timeout.connect(_on_resize_recheck_timeout)
+
+
+func _on_resize_recheck_timeout() -> void:
+	_resize_recheck_pending = false
+	_reapply_all_viewports()
+
+
+func _register_managed_vp(vp: Viewport) -> void:
+	if not (vp is SubViewport):
+		return
+	var id := vp.get_instance_id()
+	var alive: Array[WeakRef] = []
+	var found := false
+	for r: WeakRef in _managed_vps:
+		var obj = r.get_ref()
+		if obj != null and is_instance_valid(obj):
+			alive.append(r)
+			if obj.get_instance_id() == id:
+				found = true
+	if not found:
+		alive.append(weakref(vp))
+	_managed_vps = alive
+
+
+func _reapply_all_viewports() -> void:
+	if get_tree() == null:
+		return
+	apply_quality(get_tree().root)
+	var alive: Array[WeakRef] = []
+	for r: WeakRef in _managed_vps:
+		var obj = r.get_ref()
+		if obj != null and is_instance_valid(obj) and obj is SubViewport:
+			alive.append(r)
+			var sv := obj as SubViewport
+			if sv.has_meta("_hires_owner"):
+				var owner_ref: Variant = sv.get_meta("_hires_owner")
+				var owner = owner_ref.get_ref() if owner_ref is WeakRef else null
+				if owner != null and is_instance_valid(owner) and owner.has_method("_fit"):
+					owner._fit()
+					continue
+			apply_quality(sv)
+	_managed_vps = alive
+
+
+func refresh_all_viewports() -> void:
+	_reapply_all_viewports()
+
+
+## 统一切换全屏/窗口：切全屏前在同一帧预先配置目标分辨率的缩放与 MSAA，
+## 避免 Vulkan/VMA 先按原生 4K 分配超大渲染目标、下一帧再二次分配导致 1.5~2GB 显存滞留触发 WDDM 换页卡顿。
+func set_fullscreen(on: bool) -> void:
+	if on:
+		var scr_idx := DisplayServer.window_get_current_screen()
+		var target_sz := DisplayServer.screen_get_size(scr_idx)
+		if target_sz.x > 0 and target_sz.y > 0 and get_tree() != null:
+			apply_quality(get_tree().root, true, target_sz)
+			for r: WeakRef in _managed_vps:
+				var obj = r.get_ref()
+				if obj != null and is_instance_valid(obj) and obj is SubViewport:
+					var sv := obj as SubViewport
+					if sv.has_meta("_hires_owner"):
+						var owner_ref: Variant = sv.get_meta("_hires_owner")
+						var owner = owner_ref.get_ref() if owner_ref is WeakRef else null
+						if owner != null and is_instance_valid(owner) and owner.has_method("prepare_for_window_size"):
+							owner.prepare_for_window_size(target_sz)
+							continue
+					apply_quality(sv, true, target_sz)
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		call_deferred("_reapply_all_viewports")
 
 
 func _capture_zh_base() -> void:
@@ -432,6 +523,7 @@ func _setup_input() -> void:
 	_key("use_repair", [KEY_2])
 	_key("call_transport", [KEY_T])
 	_key("toggle_view", [KEY_F5])
+	_key("swap_shoulder", [KEY_Q])            # Q：越肩视角切换左右肩位
 	_key("pause", [KEY_ESCAPE])
 	_mouse("fire_left", MOUSE_BUTTON_LEFT)
 	_mouse("fire_right", MOUSE_BUTTON_RIGHT)
@@ -1115,6 +1207,7 @@ func _sanitize_loaded_markers(raw_list: Array) -> Array:
 func new_game() -> void:
 	money = 1500
 	loadout = STARTER.duplicate()
+	mech_paint = MechPaint.default_config()
 	stash = ["fuel_cell", "fuel_cell", "repair_kit", "beacon", "arm_shotgun", "can_food"]
 	cargo = ["fuel_cell", "repair_kit", "beacon"]
 	raids = 0
@@ -1137,7 +1230,7 @@ func _payload() -> Dictionary:
 	for k in _sections:
 		sec[k] = _sections[k][0].call()
 	var prog: Dictionary = sec.get("progress", {}) if typeof(sec.get("progress", {})) == TYPE_DICTIONARY else {}
-	return {"money": money, "stash": stash, "cargo": cargo, "loadout": loadout,
+	return {"money": money, "stash": stash, "cargo": cargo, "loadout": loadout, "mech_paint": mech_paint,
 		"raids": raids, "extracts_ok": extracts_ok, "quest_state": quest_state, "quest_progress": quest_progress, "quests": quests, "quality": quality, "render_style": render_style, "view_mode": view_mode, "mouse_sens": mouse_sens, "show_fps": show_fps, "render_scale_mode": render_scale_mode, "map_id": map_id,
 		"seen_enemies": seen_enemies, "map_markers": map_markers, "sections": sec,
 		"meta": {"slot": slot, "saved_at": Time.get_unix_time_from_system(), "name": str(prog.get("player_name", ""))}}
@@ -1241,10 +1334,11 @@ func load_game() -> bool:
 	for slot_k: String in STARTER:
 		var cur_id := _migrate_item_id(str(loadout.get(slot_k, STARTER[slot_k])))
 		loadout[slot_k] = cur_id if MODULES.has(cur_id) else STARTER[slot_k]
+	mech_paint = MechPaint.sanitize(d.get("mech_paint", {}))
 	raids = int(d.get("raids", 0))
 	quality = int(d.get("quality", 0 if OS.has_feature("mobile") or OS.has_feature("web") else 1))
 	render_style = int(d.get("render_style", 0))
-	view_mode = clampi(int(d.get("view_mode", 0)), 0, 1)
+	view_mode = clampi(int(d.get("view_mode", 2)), 0, 2)
 	mouse_sens = clampf(float(d.get("mouse_sens", 1.0)), 0.2, 2.5)
 	if not _has_global_show_fps and d.has("show_fps"):
 		show_fps = bool(d.get("show_fps", false))
@@ -1275,6 +1369,11 @@ const _LEGACY_ID_MAP := {
 	"legs_wraith": "legs_biped_scout",
 	"legs_spring": "legs_biped_scout",
 	"legs_wheel": "legs_tread_light",
+	"core_ka52_alligator": "core_fennek_recon",
+	"core_mi24_hind": "core_assault",
+	"core_trieste_bathy": "core_fortress",
+	"gen_naval_pwr_s9g": "gen_reactor",
+	"gen_stirling_aip": "gen_hfc",
 }
 
 func _migrate_item_id(id: String) -> String:
@@ -1558,83 +1657,131 @@ func apply_env_quality(env: Environment, sun: DirectionalLight3D = null) -> void
 			env.ssr_enabled = false
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_radius = 1.90
-			env.ssao_intensity = 2.15
-			env.ssao_power = 1.55
-			env.ssao_detail = 0.70
-			env.ssao_sharpness = 0.92
-			env.ssao_light_affect = 0.32
+			env.ssao_radius = 1.40
+			env.ssao_intensity = 1.32
+			env.ssao_power = 1.24
+			env.ssao_detail = 0.56
+			env.ssao_sharpness = 0.90
+			env.ssao_light_affect = 0.09
 			env.glow_enabled = true
+			env.set_glow_level(0, 0.20)
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, true, 0.35, 1, 40.0, 120.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(false)
 			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_LOW, false)
-			RenderingServer.directional_shadow_atlas_set_size(4096, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
-			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.directional_shadow_atlas_set_size(2048, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
 			if sun:
 				sun.shadow_bias = 0.045
-				sun.shadow_normal_bias = 1.55
-				sun.light_angular_distance = 0.24
-				sun.shadow_blur = 0.72
-				sun.directional_shadow_blend_splits = true
+				sun.shadow_normal_bias = 1.45
+				sun.light_angular_distance = 0.55
+				sun.shadow_blur = 1.30
+				sun.directional_shadow_blend_splits = false
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 				sun.directional_shadow_split_1 = 0.38
-				sun.directional_shadow_max_distance = 74.0
+				sun.directional_shadow_max_distance = 96.0
+				sun.directional_shadow_fade_start = 0.86
 		1:
-			env.ssr_enabled = not compat and not mobile_renderer
-			env.ssr_max_steps = 32
+			env.volumetric_fog_enabled = false
+			env.ssr_enabled = false
 			env.ssil_enabled = false
 			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_radius = 2.10
-			env.ssao_intensity = 2.25
-			env.ssao_power = 1.55
+			env.ssao_radius = 1.25
+			env.ssao_intensity = 1.72
+			env.ssao_power = 1.32
 			env.ssao_detail = 0.72
 			env.ssao_sharpness = 0.92
-			env.ssao_light_affect = 0.30
+			env.ssao_light_affect = 0.24
 			env.glow_enabled = true
+			env.set_glow_level(0, 0.20)
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_LOW, true, 0.5, 1, 60.0, 180.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(false)
 			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_LOW, false)
 			RenderingServer.directional_shadow_atlas_set_size(4096, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			if sun:
+				sun.shadow_bias = 0.022
+				sun.shadow_normal_bias = 0.34
+				sun.light_angular_distance = 0.46
+				sun.shadow_blur = 0.86
+				sun.directional_shadow_blend_splits = false
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+				sun.directional_shadow_split_1 = 0.34
+				sun.directional_shadow_max_distance = 118.0
+				sun.directional_shadow_fade_start = 0.86
+		_:
+			env.volumetric_fog_enabled = false
+			env.ssr_enabled = not compat and not mobile_renderer
+			env.ssr_max_steps = 20
+			env.ssil_enabled = not compat and not mobile_renderer
+			env.ssil_radius = 3.6
+			env.ssil_intensity = 0.48
+			env.ssil_sharpness = 0.90
+			env.ssil_normal_rejection = 1.0
+			env.ssao_enabled = not compat and not mobile_renderer
+			env.ssao_radius = 1.35
+			env.ssao_intensity = 1.85
+			env.ssao_power = 1.34
+			env.ssao_detail = 0.78
+			env.ssao_sharpness = 0.92
+			env.ssao_light_affect = 0.28
+			env.glow_enabled = true
+			env.set_glow_level(0, 0.22)
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_MEDIUM, true, 0.5, 1, 75.0, 220.0)
+			RenderingServer.environment_set_ssil_quality(RenderingServer.ENV_SSIL_QUALITY_LOW, true, 0.5, 2, 50.0, 150.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(true)
+			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
+			RenderingServer.directional_shadow_atlas_set_size(8192, true)
 			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
 			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 			if sun:
-				sun.shadow_bias = 0.042
-				sun.shadow_normal_bias = 1.25
-				sun.light_angular_distance = 0.34
-				sun.shadow_blur = 1.35
-				sun.directional_shadow_blend_splits = true
-				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-				sun.directional_shadow_split_1 = 0.52
-				sun.directional_shadow_max_distance = 92.0
-		_:
-			env.ssr_enabled = not compat and not mobile_renderer
-			env.ssr_max_steps = 48
-			env.ssil_enabled = not compat and not mobile_renderer
-			env.ssao_enabled = not compat and not mobile_renderer
-			env.ssao_radius = 2.20
-			env.ssao_intensity = 2.35
-			env.ssao_power = 1.55
-			env.ssao_detail = 0.75
-			env.ssao_sharpness = 0.92
-			env.ssao_light_affect = 0.30
-			env.glow_enabled = true
-			RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, true)
-			RenderingServer.directional_shadow_atlas_set_size(4096, true)
-			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
-			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
-			if sun:
-				sun.shadow_bias = 0.04
-				sun.shadow_normal_bias = 1.50
-				sun.light_angular_distance = 0.32
-				sun.shadow_blur = 0.86
+				sun.shadow_bias = 0.018
+				sun.shadow_normal_bias = 0.28
+				sun.light_angular_distance = 0.44
+				sun.shadow_blur = 0.78
 				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-				sun.directional_shadow_max_distance = 112.0
+				sun.directional_shadow_split_1 = 0.12
+				sun.directional_shadow_split_2 = 0.30
+				sun.directional_shadow_split_3 = 0.58
+				sun.directional_shadow_max_distance = 145.0
+				sun.directional_shadow_fade_start = 0.88
+
+
+## 计算桌面端 3D 渲染缩放倍率（统一用于主视口与 HiResView 子视口）。
+func compute_desktop_scale(pixel_size: Vector2i, allow_auto_scale := true) -> float:
+	match render_scale_mode:
+		1:
+			return 1.0
+		2:
+			return 0.85
+		3:
+			return 0.75
+		4:
+			return 0.67
+		_:
+			if allow_auto_scale:
+				# 以总像素限制自动档，覆盖 4K/超宽屏和菜单、机库的子视口。
+				var target_height: float = [960.0, 1080.0, 1260.0][clampi(quality, 0, 2)]
+				var pixel_budget := target_height * target_height * (16.0 / 9.0)
+				return clampf(sqrt(pixel_budget / maxf(1.0, float(pixel_size.x) * pixel_size.y)), 0.25, 1.0)
+			return 1.0
 
 
 ## 应用抗锯齿 / 渲染缩放到主视口或子视口。
-## 自动档以 1080/1260/1440p 等效像素预算限制 3D，超过预算使用 FSR；UI 保持原生分辨率。
+## 自动档以 960/1080/1260p 等效像素预算限制 3D，超过预算使用缩放；UI 保持原生分辨率。
 ## 显式选择 100% 原生时不自动缩放。
-func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
+func apply_quality(vp: Viewport = null, allow_auto_scale := true, target_pixel_size := Vector2i.ZERO, skip_scale := false) -> void:
 	if vp == null:
 		vp = get_tree().root
+	_register_managed_vp(vp)
+	if not skip_scale and vp is SubViewport and vp.has_meta("_hires_owner") and not OS.has_feature("web") and not OS.has_feature("mobile"):
+		var owner_ref: Variant = vp.get_meta("_hires_owner")
+		var owner = owner_ref.get_ref() if owner_ref is WeakRef else null
+		if owner != null and is_instance_valid(owner) and owner.has_method("_fit"):
+			owner._fit(allow_auto_scale, target_pixel_size)
+			return
 	if OS.has_feature("web"):
 		Engine.max_fps = 60
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
@@ -1665,40 +1812,52 @@ func apply_quality(vp: Viewport = null, allow_auto_scale := true) -> void:
 				vp.scaling_3d_scale = 1.0
 				vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 		return
-	# 桌面端：硬件 MSAA + 各向异性过滤 + 高分屏 FSR 清晰缩放（2D UI 永远保持原生窗口分辨率）
-	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-	vp.use_taa = false
+	# 桌面端：先确定实际内部 3D 渲染分辨率，再按像素密度自适应 MSAA；高分屏统一 2x MSAA 避免全屏切换触发 4x/2x VMA 显存池重分配
+	if vp.screen_space_aa != Viewport.SCREEN_SPACE_AA_DISABLED:
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	if vp.use_taa:
+		vp.use_taa = false
+	var pixel_size: Vector2i
+	if target_pixel_size.x > 0 and target_pixel_size.y > 0:
+		pixel_size = target_pixel_size
+	elif vp is SubViewport:
+		pixel_size = (vp as SubViewport).size
+	else:
+		var win_px: Vector2i = DisplayServer.window_get_size()
+		var vp_px: Vector2i = (vp as Window).size if vp is Window else Vector2i(vp.get_visible_rect().size)
+		pixel_size = win_px if (win_px.x > 0 and win_px.y > 0) else vp_px
+		if vp_px.x * vp_px.y > pixel_size.x * pixel_size.y:
+			pixel_size = vp_px
+	var scale := 1.0 if skip_scale else compute_desktop_scale(pixel_size, allow_auto_scale)
+	var rt_h := float(pixel_size.y) * scale
+	var scr_h := DisplayServer.screen_get_size(DisplayServer.window_get_current_screen()).y
+	var want_msaa: Viewport.MSAA = Viewport.MSAA_2X
+	var want_aniso: Viewport.AnisotropicFiltering = Viewport.ANISOTROPY_8X
 	match quality:
 		0:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
+			want_msaa = Viewport.MSAA_DISABLED if rt_h >= 1200.0 else Viewport.MSAA_2X
+			want_aniso = Viewport.ANISOTROPY_4X
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, true, 0.35, 1, 40.0, 120.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(false)
 		1:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
+			want_msaa = Viewport.MSAA_2X
+			want_aniso = Viewport.ANISOTROPY_8X
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_LOW, true, 0.5, 1, 50.0, 160.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(false)
 		_:
-			vp.msaa_3d = Viewport.MSAA_4X
-			vp.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
-	var pixel_size := (vp as SubViewport).size if vp is SubViewport else DisplayServer.window_get_size()
-	var scale := 1.0
-	match render_scale_mode:
-		1:
-			scale = 1.0
-		2:
-			scale = 0.85
-		3:
-			scale = 0.75
-		4:
-			scale = 0.67
-		_:
-			if allow_auto_scale:
-				# 以总像素限制自动档，覆盖 4K/超宽屏和菜单、机库的子视口。
-				var target_height: float = [1080.0, 1260.0, 1440.0][clampi(quality, 0, 2)]
-				var pixel_budget := target_height * target_height * (16.0 / 9.0)
-				scale = clampf(sqrt(pixel_budget / maxf(1.0, float(pixel_size.x) * pixel_size.y)), 0.25, 1.0)
-	if scale < 0.995:
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+			want_msaa = Viewport.MSAA_4X if (rt_h <= 1120.0 and scr_h <= 1200) else Viewport.MSAA_2X
+			want_aniso = Viewport.ANISOTROPY_16X
+			RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_MEDIUM, true, 0.5, 1, 60.0, 180.0)
+			RenderingServer.environment_glow_set_use_bicubic_upscale(true)
+	if vp.msaa_3d != want_msaa:
+		vp.msaa_3d = want_msaa
+	if vp.anisotropic_filtering_level != want_aniso:
+		vp.anisotropic_filtering_level = want_aniso
+	var want_mode: Viewport.Scaling3DMode = Viewport.SCALING_3D_MODE_FSR if scale < 0.995 else Viewport.SCALING_3D_MODE_BILINEAR
+	var want_scale := scale if scale < 0.995 else 1.0
+	if vp.scaling_3d_mode != want_mode:
+		vp.scaling_3d_mode = want_mode
+	if want_mode == Viewport.SCALING_3D_MODE_FSR and not is_equal_approx(vp.fsr_sharpness, 0.28):
 		vp.fsr_sharpness = 0.28
-		vp.scaling_3d_scale = scale
-	else:
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-		vp.scaling_3d_scale = 1.0
+	if not is_equal_approx(vp.scaling_3d_scale, want_scale):
+		vp.scaling_3d_scale = want_scale

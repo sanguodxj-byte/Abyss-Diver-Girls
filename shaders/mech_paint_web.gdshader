@@ -34,6 +34,9 @@ uniform float albedo_tex_scale = 0.24;
 uniform float albedo_tex_strength : hint_range(0.0, 1.0) = 0.78;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float normal_strength : hint_range(0.0, 2.0) = 0.55;
+uniform sampler2D rough_tex : hint_roughness_r, filter_linear_mipmap, repeat_enable;
+uniform float use_rough_tex = 0.0;
+uniform float rough_tex_strength : hint_range(0.0, 1.0) = 0.0;
 
 varying highp vec3 lpos;
 varying vec3 lnrm;
@@ -60,15 +63,16 @@ void vertex() {
 	vec3 sz = MODEL_MATRIX[2].xyz;
 	vec3 scale = max(vec3(length(sx), length(sy), length(sz)), vec3(1e-3));
 	mat3 rot_m = mat3(sx / scale.x, sy / scale.y, sz / scale.z);
-	if (tint_mode == 2 && dot(CUSTOM0.xyz, CUSTOM0.xyz) > 0.01 && CUSTOM0.w > 0.5) {
+	if (tint_mode == 2 && dot(CUSTOM0.xyz, CUSTOM0.xyz) > 0.01 && abs(CUSTOM0.w) > 0.5) {
 		lpos = vec3(UV.x, UV.y, UV2.x);
 		lnrm = normalize(CUSTOM0.xyz);
 		wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		wnrm = normalize(rot_m * NORMAL);
-		float flip_s = CUSTOM0.w > 1.5 ? -1.0 : 1.0;
-		rot_x = rot_m * q_rot(CUSTOM1, vec3(1.0, 0.0, 0.0));
-		rot_y = rot_m * q_rot(CUSTOM1, vec3(0.0, 1.0, 0.0));
-		rot_z = rot_m * (q_rot(CUSTOM1, vec3(0.0, 0.0, 1.0)) * flip_s);
+		float flip_s = (CUSTOM0.w < 0.0 || CUSTOM0.w > 1.5) ? -1.0 : 1.0;
+		vec4 cq = normalize(CUSTOM1);
+		rot_x = rot_m * q_rot(cq, vec3(1.0, 0.0, 0.0));
+		rot_y = rot_m * q_rot(cq, vec3(0.0, 1.0, 0.0));
+		rot_z = rot_m * (q_rot(cq, vec3(0.0, 0.0, 1.0)) * flip_s);
 	} else {
 		lpos = VERTEX * scale;
 		vec3 n_sc = NORMAL / scale;

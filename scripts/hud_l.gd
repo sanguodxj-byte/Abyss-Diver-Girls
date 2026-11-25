@@ -32,6 +32,8 @@ class HoloPortrait extends SubViewportContainer:
 	var meshes := {}     ## slot -> [MeshInstance3D]
 	var shown := {}      ## slot -> 上次显示的颜色档位（变化时闪烁）
 	var flash := {}
+	var _sent_col := {}
+	var _sent_flash := {}
 	var t := 0.0
 	var _rt_acc := 0.0
 
@@ -69,9 +71,9 @@ void fragment() {
 
 	func _on_resized() -> void:
 		if vp != null and is_instance_valid(vp):
-			var cap := 220 if OS.has_feature("mobile") else 360
-			var mult := 1.5 if OS.has_feature("mobile") else 2.2
-			vp.size = Vector2i(maxi(int(round(size.x * mult)), cap), maxi(int(round(size.y * mult)), cap))
+			var cap := 180 if OS.has_feature("mobile") else 224
+			var mult := 1.25 if OS.has_feature("mobile") else 1.5
+			vp.size = Vector2i(clampi(int(round(size.x * mult)), 128, cap), clampi(int(round(size.y * mult)), 128, cap))
 			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 	func setup(m) -> void:
@@ -85,6 +87,8 @@ void fragment() {
 		meshes.clear()
 		shown.clear()
 		flash.clear()
+		_sent_col.clear()
+		_sent_flash.clear()
 		var pm := ShaderMaterial.new()
 		var ps := Shader.new()
 		ps.code = POST
@@ -93,10 +97,10 @@ void fragment() {
 		vp = SubViewport.new()
 		vp.own_world_3d = true
 		vp.transparent_bg = true
-		vp.msaa_3d = Viewport.MSAA_DISABLED if OS.has_feature("mobile") else Viewport.MSAA_4X
-		var cap := 220 if OS.has_feature("mobile") else 360
-		var mult := 1.5 if OS.has_feature("mobile") else 2.2
-		vp.size = Vector2i(maxi(int(round(size.x * mult)), cap), maxi(int(round(size.y * mult)), cap))
+		vp.msaa_3d = Viewport.MSAA_DISABLED
+		var cap := 180 if OS.has_feature("mobile") else 224
+		var mult := 1.25 if OS.has_feature("mobile") else 1.5
+		vp.size = Vector2i(clampi(int(round(size.x * mult)), 128, cap), clampi(int(round(size.y * mult)), 128, cap))
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 		add_child(vp)
 		if not resized.is_connected(_on_resized):
@@ -256,12 +260,11 @@ void fragment() {
 		return float(mech.parts.get(slot, 1.0))
 
 	func _process(delta: float) -> void:
-		if mech == null or model == null:
+		if mech == null or model == null or not is_visible_in_tree():
 			return
 		t += delta
 		_rt_acc += delta
-		var dirty := _rt_acc >= 0.05
-		model.rotation.y = -0.48 + sin(t * 0.55) * 0.14
+		var dirty := _rt_acc >= 0.20
 		for slot in mats:
 			var f := part_frac(slot)
 			var band := 4 if f > 0.75 else (3 if f > 0.5 else (2 if f > 0.25 else (1 if f > 0.0 else 0)))
@@ -271,17 +274,28 @@ void fragment() {
 				dirty = true
 				for mi in meshes[slot]:
 					mi.visible = band > 0
-			if flash[slot] > 0.0:
-				flash[slot] = max(0.0, flash[slot] - delta * 2.5)
+			var fl: float = float(flash[slot])
+			if fl > 0.0:
+				fl = maxf(0.0, fl - delta * 2.5)
+				flash[slot] = fl
 				dirty = true
 			var c := _col(f)
 			if band == 1:
 				c = c * (0.65 + 0.35 * sin(t * 12.0))   # 红色档闪烁告警
-				dirty = true
-			mats[slot].set_shader_parameter("col", Vector3(c.r, c.g, c.b))
-			mats[slot].set_shader_parameter("flash", flash[slot])
+				if _rt_acc >= 0.08:
+					dirty = true
+			var cv := Vector3(c.r, c.g, c.b)
+			var prev_c = _sent_col.get(slot)
+			if prev_c == null or (prev_c as Vector3).distance_squared_to(cv) > 0.00002:
+				_sent_col[slot] = cv
+				mats[slot].set_shader_parameter("col", cv)
+			var prev_f: float = float(_sent_flash.get(slot, -1.0))
+			if absf(prev_f - fl) > 0.004:
+				_sent_flash[slot] = fl
+				mats[slot].set_shader_parameter("flash", fl)
 		if dirty and vp != null:
 			_rt_acc = 0.0
+			model.rotation.y = -0.48 + sin(t * 0.55) * 0.14
 			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
@@ -453,6 +467,8 @@ class SkillSlot extends Control:
 	var press_flash := 0.0
 	var was_ready := true
 	var _last_trig_ms := -1000
+	var _prev_state := Vector4i(-1, -1, -1, -1)
+	var _cd_acc := 0.0
 
 	func setup(m, k: String, label: String) -> void:
 		mech = m
@@ -465,6 +481,8 @@ class SkillSlot extends Control:
 		var info: Dictionary = m.skill_info(k)
 		icon = Icons.ui_icon(str(info.get("icon", "dash")))
 		custom_minimum_size = Vector2(84, 96)
+		_prev_state = Vector4i(-1, -1, -1, -1)
+		queue_redraw()
 
 	func trigger() -> void:
 		if mech == null or mech.input_locked or mech.dead:
@@ -486,9 +504,30 @@ class SkillSlot extends Control:
 			accept_event()
 
 	func _process(delta: float) -> void:
-		ready_flash = max(0.0, ready_flash - delta * 2.0)
-		press_flash = max(0.0, press_flash - delta * 5.0)
-		queue_redraw()
+		if not is_visible_in_tree() or mech == null:
+			return
+		var flashing := ready_flash > 0.0 or press_flash > 0.0
+		if ready_flash > 0.0:
+			ready_flash = maxf(0.0, ready_flash - delta * 2.0)
+		if press_flash > 0.0:
+			press_flash = maxf(0.0, press_flash - delta * 5.0)
+		var info: Dictionary = mech.skill_info(key)
+		var cd_val := float(info.cd)
+		var ok_i := 1 if bool(info.ok) else 0
+		var act_i := 1 if bool(info.active) else 0
+		var rdy_i := 1 if (bool(info.ok) and cd_val <= 0.0 and mech.can_spend(float(info.cost))) else 0
+		var cd_q := int(ceil(cd_val * 20.0)) if cd_val > 0.0 else 0
+		var cur := Vector4i(ok_i, act_i, rdy_i, cd_q)
+		var dirty := flashing or cur != _prev_state
+		if cd_val > 0.0 and not flashing and cur == _prev_state:
+			_cd_acc += delta
+			if _cd_acc >= 0.05:
+				_cd_acc = 0.0
+				dirty = true
+		if dirty:
+			_prev_state = cur
+			_cd_acc = 0.0
+			queue_redraw()
 
 	func _draw() -> void:
 		var info: Dictionary = mech.skill_info(key)
@@ -557,12 +596,27 @@ class SkillSlot extends Control:
 # ====================================================================== 能源条（横轨底部刻槽里）
 class EnergyStrip extends Control:
 	var mech
-	func _process(_d: float) -> void:
-		queue_redraw()
+	var _last_q := -1
+	var _blink_acc := 0.0
+	func _process(delta: float) -> void:
+		if mech == null or not is_visible_in_tree():
+			return
+		var f: float = clampf(mech.energy / maxf(mech.max_energy, 0.001), 0.0, 1.0)
+		var q := int(round(f * 100.0))
+		var blinking: bool = mech.emergency > 0.0 or mech.energy_seconds_left() < 45.0
+		if q != _last_q:
+			_last_q = q
+			_blink_acc = 0.0
+			queue_redraw()
+		elif blinking:
+			_blink_acc += delta
+			if _blink_acc >= 0.05:
+				_blink_acc = 0.0
+				queue_redraw()
 	func _draw() -> void:
 		if mech == null:
 			return
-		var f: float = clampf(mech.energy / mech.max_energy, 0.0, 1.0)
+		var f: float = clampf(mech.energy / maxf(mech.max_energy, 0.001), 0.0, 1.0)
 		var n := int(size.x / 6.0)
 		var a := 1.0
 		if mech.emergency > 0.0 or mech.energy_seconds_left() < 45.0:
@@ -575,15 +629,42 @@ class EnergyStrip extends Control:
 # ====================================================================== 货舱负重条（拐角底槽，纯图形）
 class CargoStrip extends Control:
 	var mech
-	func _process(_d: float) -> void:
-		queue_redraw()
+	var _check_acc := 0.25
+	var _blink_acc := 0.0
+	var _last_cnt := -1
+	var _last_q := -1
+	var _cached_f := 0.0
+	var _cached_over := false
+	func _process(delta: float) -> void:
+		if mech == null or not is_visible_in_tree():
+			return
+		_check_acc += delta
+		var cnt: int = mech.cargo.size()
+		if cnt != _last_cnt or _check_acc >= 0.20:
+			_check_acc = 0.0
+			_last_cnt = cnt
+			var cap: float = maxf(mech.cargo_cap(), 1.0)
+			var f: float = clampf(mech.cargo_weight() / cap, 0.0, 1.0)
+			var over: bool = mech.speed_mult() < 0.99
+			var q := int(round(f * 100.0)) + (1000 if over else 0)
+			if q != _last_q:
+				_last_q = q
+				_cached_f = f
+				_cached_over = over
+				_blink_acc = 0.0
+				queue_redraw()
+				return
+		if _cached_over:
+			_blink_acc += delta
+			if _blink_acc >= 0.05:
+				_blink_acc = 0.0
+				queue_redraw()
 	func _draw() -> void:
 		if mech == null:
 			return
-		var cap: float = maxf(mech.cargo_cap(), 1.0)
-		var f: float = clampf(mech.cargo_weight() / cap, 0.0, 1.0)
+		var f := _cached_f
 		var n := maxi(1, int(size.x / 6.0))
-		var over: bool = mech.speed_mult() < 0.99
+		var over := _cached_over
 		var a := 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.015) if over else 1.0
 		var col := Color(0.80, 0.24, 0.18, a) if over else (Color(0.84, 0.56, 0.22, a) if f > 0.75 else Color(0.56, 0.70, 0.62, a))
 		for i in n:
@@ -769,6 +850,8 @@ class TouchBtn extends Control:
 	var _icon: Texture2D
 	var _hold_touch_id := -1
 	var _touch_seen_ms := -10000
+	var _prev_sig := Vector3i(-1, -1, -1)
+	var _cd_acc := 0.0
 
 	func setup(m, k: String, _t: String, _s: String, rad := 29.0, h = null) -> void:
 		mech = m
@@ -882,10 +965,42 @@ class TouchBtn extends Control:
 			accept_event()
 
 	func _process(delta: float) -> void:
+		if not is_visible_in_tree():
+			if _hold_touch_id != -1:
+				release()
+			return
 		if _hold_touch_id == -2 and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			release()
-		press_t = maxf(0.0, press_t - delta * 5.0)
-		queue_redraw()
+		var dirty := press_t > 0.0
+		if press_t > 0.0:
+			press_t = maxf(0.0, press_t - delta * 5.0)
+		if mech == null:
+			if dirty:
+				queue_redraw()
+			return
+		var cd_q := 0
+		var ok_i := 1
+		var act_i := 0
+		if kind in ["dash", "ability"]:
+			var sk_k := "space" if kind == "dash" else "f"
+			var info: Dictionary = mech.skill_info(sk_k)
+			ok_i = 1 if (bool(info.ok) and mech.can_spend(float(info.cost))) else 0
+			if float(info.cd) > 0.0 and bool(info.ok):
+				cd_q = int(ceil(clampf(float(info.cd) / maxf(float(info.cd_max), 0.01), 0.0, 1.0) * 50.0))
+		elif kind == "reload":
+			cd_q = int(ceil(maxf(mech.reload_frac("arm_l"), mech.reload_frac("arm_r")) * 50.0))
+		elif kind == "aim":
+			act_i = 1 if (hud != null and bool(hud.get("touch_aim_on"))) else 0
+		elif kind == "fire":
+			act_i = 1 if is_held() else 0
+		elif kind == "view":
+			act_i = int(mech.raid.view_mode) if (mech.raid != null and "view_mode" in mech.raid) else 0
+		var sig := Vector3i(ok_i, act_i, cd_q)
+		if sig != _prev_sig:
+			_prev_sig = sig
+			dirty = true
+		if dirty:
+			queue_redraw()
 
 	func _draw() -> void:
 		if mech == null:
@@ -909,7 +1024,7 @@ class TouchBtn extends Control:
 		elif kind == "fire":
 			active_state = is_held()
 		elif kind == "view":
-			active_state = mech.raid != null and mech.raid.has_method("is_first_person") and mech.raid.is_first_person()
+			active_state = mech.raid != null and ((mech.raid.has_method("is_free_look_view") and mech.raid.is_free_look_view()) or (mech.raid.has_method("is_first_person") and mech.raid.is_first_person()))
 		var boost := maxf(press_t, 1.0 if active_state else 0.0)
 		var amber := Color(0.92, 0.52, 0.16) if active_state else (Color(0.78, 0.48, 0.16) if ok else Color(0.42, 0.44, 0.46))
 		draw_circle(c + Vector2(0, 2), r + 1.0, Color(0, 0, 0, lerpf(0.16, 0.30, boost)))

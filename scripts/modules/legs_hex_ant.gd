@@ -26,8 +26,8 @@ static func build(ctx: Dictionary) -> Node3D:
 	for sx in [-0.46, 0.46]:
 		K.cy(legs, 0.036, 1.84, M_GUN, Vector3(sx, hip - 0.12, 0.0), Vector3(90, 0, 0), -1.0, 10)
 		K.grab_iron(legs, 0.52, 0.05, Vector3(sx, hip + 0.18, -0.52), Vector3(0, sign(sx) * -90.0, 0), 0.013)
-	K.cy(legs, 0.48, 0.28, M_LEG2, Vector3(0, hip + 0.32, 0.0), Vector3.ZERO, 0.56, 24)
-	K.cy(legs, 0.50, 0.10, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.52, 24)
+	K.cy(legs, 0.34, 0.26, M_LEG2, Vector3(0, hip + 0.34, 0.0), Vector3.ZERO, 0.40, 24)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.37, 24)
 
 	# 车首工兵电动牵引绞盘 + 黄黑警示保险杠 + 双工兵强光作业灯
 	K.bb(legs, Vector3(0.86, 0.16, 0.14), M_GUN, Vector3(0, hip - 0.04, -1.04), Vector3.ZERO, 0.02)

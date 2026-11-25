@@ -22,7 +22,7 @@ static func build(ctx: Dictionary) -> Node3D:
 
 	# ---- 军用正关节战术骨盆：中央楔形防弹裆块 + 左右独立铰接前裙甲（Faulds）+ 后置散热尾裙 ----
 	K.bb(root, Vector3(1.28, 0.46, 0.86), M_FRAME, Vector3(0, hip + 0.06, 0.02), Vector3.ZERO, 0.06)
-	K.bb(root, Vector3(1.04, 0.30, 0.76), M_LEG2, Vector3(0, hip + 0.34, 0.02), Vector3.ZERO, 0.05)
+	K.bb(root, Vector3(1.02, 0.22, 0.72), M_LEG2, Vector3(0, hip + 0.27, 0.02), Vector3.ZERO, 0.045)
 	# 中央突击裆部重甲
 	K.plate(root, K.trap(0.38, 0.48, 0.54, 0.05), 0.22, M_LEG2, Vector3(0, hip - 0.04, -0.48), Vector3(10, 0, 0), 0.035)
 	K.plate(root, K.crect(0.28, 0.055), 0.23, M_ACC, Vector3(0, hip + 0.14, -0.50), Vector3(10, 0, 0), 0.006)
@@ -108,12 +108,14 @@ static func build(ctx: Dictionary) -> Node3D:
 		leg.set_meta("sole", -1.54 - 0.12 - hip)
 		leg_parts.append(leg)
 
-	# 装甲腰柱（顶接 HP-C1 母座 hip+0.55）
-	K.cy(root, 0.52, 0.42, M_FRAME, Vector3(0, hip + 0.32, 0), Vector3.ZERO, 0.56, 26)
-	K.cy(root, 0.54, 0.10, M_DARK, Vector3(0, hip + 0.49, 0), Vector3.ZERO, 0.56, 26)
-	for i in 4:
-		var a := TAU * i / 4.0 + 0.4
-		A.hose(root, Vector3(cos(a) * 0.48, hip + 0.22, sin(a) * 0.48), Vector3(cos(a) * 0.42, hip + 0.48, sin(a) * 0.42), Vector3(cos(a) * 0.07, 0, sin(a) * 0.07), 0.022)
+	# 收口装甲腰柱 + 外露四向稳定活塞与侧向油管（顶接 HP-C1 母座 hip+0.55）
+	K.cy(root, 0.32, 0.34, M_FRAME, Vector3(0, hip + 0.34, 0), Vector3.ZERO, 0.31, 26)
+	K.cy(root, 0.36, 0.10, M_DARK, Vector3(0, hip + 0.485, 0), Vector3.ZERO, 0.34, 26)
+	for sx_g in [-0.38, 0.38]:
+		K.piston(root, Vector3(sx_g, hip + 0.28, -0.24), Vector3(sx_g * 0.78, hip + 0.48, -0.18), 0.028)
+		K.piston(root, Vector3(sx_g, hip + 0.28, 0.24), Vector3(sx_g * 0.78, hip + 0.48, 0.18), 0.028)
+	for a in [0.18, -0.18, PI - 0.18, PI + 0.18]:
+		A.hose(root, Vector3(cos(a) * 0.35, hip + 0.31, sin(a) * 0.35), Vector3(cos(a) * 0.33, hip + 0.48, sin(a) * 0.33), Vector3(cos(a) * 0.055, 0, sin(a) * 0.055), 0.020)
 	K.socket(root, "core", Vector3(0, hip + 0.55, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "biped")

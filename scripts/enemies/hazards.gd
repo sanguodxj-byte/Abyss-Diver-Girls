@@ -260,6 +260,8 @@ class SpikeRow extends Node3D:
 		color = c
 		for i in count:
 			var p: Vector3 = from + dir * gap * i
+			if raid != null and raid.has_method("in_wet") and raid.in_wet(Vector2(p.x, p.z)):
+				continue
 			var mk := Mark.new()
 			raid.fx.add_child(mk)
 			mk.setup(raid, p, 1.5, delay * (i + 1) + 0.05, color)
@@ -277,6 +279,9 @@ class SpikeRow extends Node3D:
 
 	func _thrust(i: int) -> void:
 		var p: Vector3 = from + dir * gap * i
+		# 河湖深水区域不破水生成陆地岩刺簇
+		if raid != null and raid.has_method("in_wet") and raid.in_wet(Vector2(p.x, p.z)):
+			return
 		var h := 2.6 + float(i % 2) * 0.6
 		var spk := Node3D.new()
 		spk.position = p

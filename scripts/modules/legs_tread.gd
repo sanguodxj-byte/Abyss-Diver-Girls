@@ -26,8 +26,8 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.plate(legs, K.crect(2.02, 0.36, [0.34, 0.14, 0.06, 0.12]), 1.24, M_LEG, Vector3(0, 1.04, 0.04), Vector3(0, 90, 0), 0.04)
 	# 倾斜炮塔座圈基座（Barbette）：从 y=1.12 平顺过渡至 hip+0.55 (1.60)
 	K.plate(legs, K.crect(1.18, 1.28, [0.28, 0.28, 0.24, 0.24]), 0.26, M_LEG2, Vector3(0, 1.28, 0.0), Vector3(90, 0, 0), 0.04)
-	K.cy(legs, 0.54, 0.24, M_LEG, Vector3(0, 1.44, 0.0), Vector3.ZERO, 0.64, 26)
-	K.cy(legs, 0.52, 0.08, M_DARK, Vector3(0, 1.55, 0.0), Vector3.ZERO, 0.54, 26)
+	K.cy(legs, 0.38, 0.20, M_LEG, Vector3(0, 1.45, 0.0), Vector3.ZERO, 0.48, 26)
+	K.cy(legs, 0.36, 0.08, M_DARK, Vector3(0, 1.545, 0.0), Vector3.ZERO, 0.40, 26)
 	K.periscope(legs, 0.20, 0.08, Vector3(0, 1.25, -0.68), Vector3.ZERO)
 
 	# 首上反应甲与防浪板 + 首下推土/防雷倾板 + 锻钢牵引钩

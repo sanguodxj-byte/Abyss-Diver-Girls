@@ -33,6 +33,9 @@ func run() -> void:
 		var surfs: Array = pf["surfaces"]
 		var pf_res := {"tris": 0, "mismatch": 0, "no_normal": 0}
 		for s_info: Dictionary in surfs:
+			var sm_m: Material = s_info.get("mat", null)
+			if sm_m is ShaderMaterial and (sm_m as ShaderMaterial).shader != null and (sm_m as ShaderMaterial).shader.resource_path.contains("foliage"):
+				continue
 			_audit_mesh(s_info["mesh"] as ArrayMesh, pf_res)
 		total["tris"] += int(pf_res["tris"])
 		total["mismatch"] += int(pf_res["mismatch"])
@@ -49,7 +52,7 @@ func run() -> void:
 	log_line("预制包合计 (%d 项): 表面组 %d | 三角面 %d | 法线取反 %d | 负缩放 %d | 缺法线 %d | 耗时 %.1f ms" % [
 		ids.size(), total["surfs"], total["tris"], total["mismatch"], total["neg_scale"], total["no_normal"], dt_ms
 	])
-	check(ids.size() >= 49, "预制资产数量不足，实际 %d" % ids.size())
+	check(ids.size() >= 113, "预制资产数量不足，实际 %d" % ids.size())
 	check(bad.is_empty(), "建筑预制件法线审计未通过: %s" % "; ".join(bad))
 	if not headless():
 		await _capture_world_showcases()

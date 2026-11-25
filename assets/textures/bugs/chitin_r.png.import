@@ -3,25 +3,27 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://1cut3kdguqan"
-path="res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.ctex"
+path.bptc="res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.bptc.ctex"
+path.astc="res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/bugs/chitin_r.png"
-dest_files=["res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.ctex"]
+dest_files=["res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.bptc.ctex", "res://.godot/imported/chitin_r.png-d39ce33b4a5f4b5004ef5095eba4da6a.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

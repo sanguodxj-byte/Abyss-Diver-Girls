@@ -8,7 +8,7 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_front, depth_test_disabl
 
 global uniform vec3 sun_dir_world;
 
-uniform sampler2D depth_tex : hint_depth_texture, filter_linear_mipmap, repeat_disable;
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable;
 uniform vec3 box_half = vec3(10.0, 2.2, 10.0);
 uniform vec3 dust_lit : source_color = vec3(0.50, 0.48, 0.43);
 uniform vec3 dust_shadow : source_color = vec3(0.15, 0.14, 0.13);
@@ -21,6 +21,18 @@ uniform float tube_width : hint_range(0.5, 5.0) = 1.75;
 uniform float density_scale : hint_range(0.2, 6.0) = 3.20;
 uniform float hot_strength : hint_range(0.0, 2.5) = 0.85;
 uniform float seed_off = 0.0;
+
+varying flat vec3 v_ro_local;
+varying flat vec3 v_sun_local;
+varying vec3 v_frag_local;
+
+void vertex() {
+	mat4 inv_model = inverse(MODEL_MATRIX);
+	v_ro_local = (inv_model * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
+	vec3 sun_d = length(sun_dir_world) > 1e-3 ? normalize(sun_dir_world) : normalize(vec3(0.45, 0.62, 0.64));
+	v_sun_local = normalize((inv_model * vec4(sun_d, 0.0)).xyz);
+	v_frag_local = VERTEX;
+}
 
 float hash31(vec3 p) {
 	p = fract(p * 0.1031);
@@ -135,19 +147,21 @@ void fragment() {
 		discard;
 	}
 
-	mat4 inv_model = inverse(MODEL_MATRIX);
-	vec3 ro = (inv_model * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
-	vec3 frag_w = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	vec3 frag_l = (inv_model * vec4(frag_w, 1.0)).xyz;
-	vec3 rd = normalize(frag_l - ro);
+	vec3 ro = v_ro_local;
+	vec3 rd = normalize(v_frag_local - ro);
 
 	vec3 safe_rd = vec3(
 		rd.x >= 0.0 ? max(rd.x, 1e-5) : min(rd.x, -1e-5),
 		rd.y >= 0.0 ? max(rd.y, 1e-5) : min(rd.y, -1e-5),
 		rd.z >= 0.0 ? max(rd.z, 1e-5) : min(rd.z, -1e-5)
 	);
-	vec3 t0s = (-box_half - ro) / safe_rd;
-	vec3 t1s = (box_half - ro) / safe_rd;
+	// 按当前尘浪真实包络高度收紧步进上界，避免把步数浪费在空空气中造成粗网点闪烁
+	float h_env_top = sin(clamp(progress * 1.15, 0.0, 1.0) * 3.14159265) * 0.46 + (1.0 - progress * 0.22) * 0.54;
+	float active_top_y = min(box_half.y, -box_half.y + max_height * clamp(h_env_top, 0.36, 1.06) * 1.65);
+	vec3 box_min = vec3(-box_half.x, -box_half.y, -box_half.z);
+	vec3 box_max = vec3(box_half.x, active_top_y, box_half.z);
+	vec3 t0s = (box_min - ro) / safe_rd;
+	vec3 t1s = (box_max - ro) / safe_rd;
 	vec3 tmin = min(t0s, t1s);
 	vec3 tmax = max(t0s, t1s);
 	float t_enter = max(max(tmin.x, max(tmin.y, tmin.z)), 0.0);
@@ -168,13 +182,12 @@ void fragment() {
 		discard;
 	}
 
-	vec3 sun_d = length(sun_dir_world) > 1e-3 ? normalize(sun_dir_world) : normalize(vec3(0.45, 0.62, 0.64));
-	vec3 sun_l = normalize((inv_model * vec4(sun_d, 0.0)).xyz);
+	vec3 sun_l = v_sun_local;
 
-	const int STEPS = 18;
+	const int STEPS = 14;
 	float march_len = t_exit - t_enter;
 	float step_len = march_len / float(STEPS);
-	float jitter = ign(FRAGCOORD.xy);
+	float jitter = 0.5 + (ign(FRAGCOORD.xy) - 0.5) * 0.45;
 
 	vec3 accum_col = vec3(0.0);
 	float transmittance = 1.0;

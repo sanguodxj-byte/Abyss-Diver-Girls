@@ -56,6 +56,9 @@ func _exit_tree() -> void:
 		for m in pb.values():
 			if m is Node and is_instance_valid(m) and (m as Node).get_parent() == null:
 				(m as Node).free()
+		var pnpc = job.get("pending_npc", null)
+		if pnpc is Node and is_instance_valid(pnpc):
+			(pnpc as Node).queue_free()
 	_spawn_jobs.clear()
 
 
@@ -267,19 +270,33 @@ func _step_spawn_queue() -> void:
 			job["phase"] = 2
 			_finish_module_batch(job, slot, mod)
 		return
-	_spawn_jobs.pop_front()
-	var finish_t := Prof.t0()
-	var visual := MV.assemble_prebuilt(lo, prebuilt, true, true)
-	Prof.add("spawn.assemble", finish_t)
-	var ex: Dictionary = job["extra"]
-	if str(job["kind"]) == "ally":
-		var n = Npc.new()
-		n.raid = raid
-		n.pilot = str(ex["pilot"])
-		raid.add_child(n)
+	var pending_npc = job.get("pending_npc", null)
+	if pending_npc == null:
+		var finish_t := Prof.t0()
+		var visual := MV.assemble_prebuilt(lo, prebuilt, true, false)
+		Prof.add("spawn.assemble", finish_t)
+		var ex: Dictionary = job["extra"]
+		var npc_node = Npc.new()
+		npc_node.raid = raid
+		if is_ally:
+			npc_node.pilot = str(ex["pilot"])
+		raid.add_child(npc_node)
+		npc_node.set_physics_process(false)
 		finish_t = Prof.t0()
-		n.setup_npc(lo, "ally", int(ex["tier"]), visual)
+		npc_node.begin_setup_npc(lo, "ally" if is_ally else "rover", int(ex["tier"]) if is_ally else 1, visual)
 		Prof.add("spawn.npc_setup", finish_t)
+		if npc_node.vis_anchor != null:
+			npc_node.vis_anchor.visible = false
+		job["pending_npc"] = npc_node
+		_spawn_cooldown = 0 if is_ally else 1
+		return
+	_spawn_jobs.pop_front()
+	var ex: Dictionary = job["extra"]
+	var finish_t := Prof.t0()
+	pending_npc.finish_setup_npc()
+	Prof.add("spawn.npc_setup", finish_t)
+	if is_ally:
+		var n = pending_npc
 		var hp_v: float = float(ex.get("hp", -1.0))
 		if hp_v > 0.0:
 			n.hp = clampf(hp_v, 1.0, n.max_hp)
@@ -288,11 +305,14 @@ func _step_spawn_queue() -> void:
 		var off: Vector3 = ALLY_SLOTS[si % ALLY_SLOTS.size()]
 		var at: Vector3 = raid.mech.global_position if Npc._ok(raid.mech) else (ex["at"] as Vector3)
 		n.global_position = _free_near(at + off)
+		if n.vis_anchor != null:
+			n.vis_anchor.visible = true
+		n.set_physics_process(true)
 		allies.append(n)
 		if raid.transit.is_empty():
 			var land: Vector3 = n.global_position
 			n.global_position = land + Vector3(0, 18, 0)
-			var tw := n.create_tween()
+			var tw: Tween = n.create_tween()
 			tw.tween_interval(0.10 * si)
 			tw.tween_property(n, "global_position", land + Vector3(0, 0.2, 0), 0.7).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			tw.tween_callback(func():
@@ -305,12 +325,7 @@ func _step_spawn_queue() -> void:
 	else:
 		var sq: Dictionary = ex["sq"]
 		sq["pending"] = maxi(0, int(sq.get("pending", 1)) - 1)
-		var r = Npc.new()
-		r.raid = raid
-		raid.add_child(r)
-		finish_t = Prof.t0()
-		r.setup_npc(lo, "rover", 1, visual)
-		Prof.add("spawn.npc_setup", finish_t)
+		var r = pending_npc
 		r.squad = sq
 		var si: int = int(ex["slot_i"])
 		r.slot_i = si
@@ -321,6 +336,9 @@ func _step_spawn_queue() -> void:
 		Prof.add("spawn.place", finish_t)
 		r.legs.rotation.y = yaw
 		r.torso.rotation.y = yaw
+		if r.vis_anchor != null:
+			r.vis_anchor.visible = true
+		r.set_physics_process(true)
 		sq.members.append(r)
 		_spawn_cooldown = 2
 

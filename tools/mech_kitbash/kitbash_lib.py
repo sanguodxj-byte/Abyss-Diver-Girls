@@ -17,7 +17,7 @@ import bmesh
 from mathutils import Vector, Matrix, Euler
 from mathutils.bvhtree import BVHTree
 
-from specs import TRIM_BANDS, VALID_MAT_SLOTS, HP_C1_RADIUS, HP_C1_CORE_Y_BOT
+from specs import TRIM_BANDS, DECAL_CELLS, VALID_MAT_SLOTS, HP_C1_RADIUS, HP_C1_CORE_Y_BOT
 
 C_G2B = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
 C_B2G = C_G2B.transposed()
@@ -26,18 +26,21 @@ MAT_PREVIEW_COLORS = {
     "armor":          (0.46, 0.45, 0.40, 1.0),
     "armor_sub":      (0.35, 0.34, 0.30, 1.0),
     "armor_dark":     (0.24, 0.25, 0.26, 1.0),
+    "armor_oxide":    (0.46, 0.22, 0.17, 1.0),
     "dark":           (0.14, 0.145, 0.16, 1.0),
     "gunmetal":       (0.23, 0.24, 0.26, 1.0),
     "chrome":         (0.78, 0.80, 0.84, 1.0),
-    "copper":         (0.64, 0.36, 0.21, 1.0),
-    "brass":          (0.60, 0.48, 0.23, 1.0),
+    "copper":         (0.68, 0.38, 0.21, 1.0),
+    "brass":          (0.64, 0.50, 0.23, 1.0),
     "rubber":         (0.085, 0.09, 0.095, 1.0),
     "hazard":         (0.95, 0.95, 0.95, 1.0),
-    "accent":         (0.64, 0.52, 0.19, 1.0),
+    "accent":         (0.76, 0.56, 0.18, 1.0),
+    "decal":          (0.92, 0.90, 0.84, 1.0),
     "bore":           (0.015, 0.015, 0.018, 1.0),
     "glass":          (0.18, 0.42, 0.38, 1.0),
     "emit_headlight": (1.0, 0.94, 0.80, 1.0),
-    "emit_amber":     (0.95, 0.70, 0.20, 1.0),
+    "emit_amber":     (0.98, 0.68, 0.18, 1.0),
+    "emit_green":     (0.32, 0.98, 0.26, 1.0),
     "emit_cyan":      (0.25, 0.85, 0.68, 1.0),
     "emit_red":       (0.92, 0.22, 0.18, 1.0),
     "emit_core":      (0.30, 0.80, 0.95, 1.0),
@@ -110,6 +113,9 @@ def trap_2d(wb: float, wt: float, h: float, cut: float = 0.0):
     return out
 
 
+_METER_BANDS = {"armor_slab", "armor_ribs", "bolt_flange", "radiator_fin", "plain_metal", "hazard"}
+
+
 def _assign_box_uv(bm, band_key, tile_u=1.0, tile_v=1.0):
     u0, v0, u1, v1 = TRIM_BANDS[band_key]
     du, dv = u1 - u0, v1 - v0
@@ -121,38 +127,63 @@ def _assign_box_uv(bm, band_key, tile_u=1.0, tile_v=1.0):
     zs = [v.co.z for v in bm.verts]
     min_v = Vector((min(xs), min(ys), min(zs)))
     span = Vector((max(max(xs) - min(xs), 1e-4), max(max(ys) - min(ys), 1e-4), max(max(zs) - min(zs), 1e-4)))
+    use_meter = band_key in _METER_BANDS
     for f in bm.faces:
         n = f.normal
         ax, ay, az = abs(n.x), abs(n.y), abs(n.z)
+        if az >= ax and az >= ay:
+            w_m, h_m = span.x, span.y
+        elif ay >= ax:
+            w_m, h_m = span.x, span.z
+        else:
+            w_m, h_m = span.y, span.z
+        # Calibrate horizontal repeat by real world meters for continuous bands so bolts/chevrons never stretch!
+        eff_tu = max(0.35, min(3.0, w_m * 1.05 * tile_u)) if use_meter else tile_u
+        eff_tv = tile_v
         for loop in f.loops:
             p = loop.vert.co - min_v
             if az >= ax and az >= ay:
-                nu = (p.x / span.x) * tile_u
-                nv = (p.y / span.y) * tile_v
+                nu = (p.x / span.x) * eff_tu
+                nv = (p.y / span.y) * eff_tv
             elif ay >= ax:
-                nu = (p.x / span.x) * tile_u
-                nv = 1.0 - (p.z / span.z) * tile_v
+                nu = (p.x / span.x) * eff_tu
+                nv = 1.0 - (p.z / span.z) * eff_tv
             else:
-                nu = (p.y / span.y) * tile_u
-                nv = 1.0 - (p.z / span.z) * tile_v
-            nu = max(0.0, min(1.0, nu))
-            nv = max(0.0, min(1.0, nv))
+                nu = (p.y / span.y) * eff_tu
+                nv = 1.0 - (p.z / span.z) * eff_tv
+            # Wrap cleanly within [0.02..0.98] of band when tiling > 1.0 instead of clamping to 1.0!
+            nu = (nu % 1.0) if eff_tu > 1.001 else max(0.0, min(1.0, nu))
+            nv = (nv % 1.0) if eff_tv > 1.001 else max(0.0, min(1.0, nv))
             loop[uv_layer].uv = (u0 + nu * du, 1.0 - (v0 + nv * dv))
 
 
 def _assign_cyl_uv(bm, band_key, u_repeats=1.0):
     u0, v0, u1, v1 = TRIM_BANDS[band_key]
     du, dv = u1 - u0, v1 - v0
+    pu0, pv0, pu1, pv1 = TRIM_BANDS["plain_metal"]
+    pdu, pdv = pu1 - pu0, pv1 - pv0
     uv_layer = bm.loops.layers.uv.verify()
+    xs = [v.co.x for v in bm.verts]
+    ys = [v.co.y for v in bm.verts]
     zs = [v.co.z for v in bm.verts]
+    xmin, xspan = min(xs), max(max(xs) - min(xs), 1e-4)
+    ymin, yspan = min(ys), max(max(ys) - min(ys), 1e-4)
     zmin, zspan = min(zs), max(max(zs) - min(zs), 1e-4)
+    flat_cap_bands = ("gear_collar", "bolt_flange", "dust_boot", "braid_hose")
     for f in bm.faces:
-        for loop in f.loops:
-            co = loop.vert.co
-            ang = (math.atan2(co.y, co.x) / math.tau) % 1.0
-            nu = (ang * u_repeats) % 1.0
-            nv = max(0.0, min(1.0, 1.0 - (co.z - zmin) / zspan))
-            loop[uv_layer].uv = (u0 + nu * du, 1.0 - (v0 + nv * dv))
+        if abs(f.normal.z) > 0.72 and band_key in flat_cap_bands:
+            # Map flat cylinder end-caps cleanly to plain_metal -> eliminates radial sunburst moire!
+            for loop in f.loops:
+                nu = max(0.0, min(1.0, (loop.vert.co.x - xmin) / xspan))
+                nv = max(0.0, min(1.0, (loop.vert.co.y - ymin) / yspan))
+                loop[uv_layer].uv = (pu0 + nu * pdu, 1.0 - (pv0 + nv * pdv))
+        else:
+            for loop in f.loops:
+                co = loop.vert.co
+                ang = (math.atan2(co.y, co.x) / math.tau) % 1.0
+                nu = (ang * u_repeats) % 1.0
+                nv = max(0.0, min(1.0, 1.0 - (co.z - zmin) / zspan))
+                loop[uv_layer].uv = (u0 + nu * du, 1.0 - (v0 + nv * dv))
 
 
 class KitbashScene:
@@ -230,7 +261,8 @@ class KitbashScene:
         return f"{prefix}_{self._part_seq}"
 
     def _finalize(self, name, bm, mat_slot, band_key, M_local_in_group,
-                  bevel_w=0.0, bevel_seg=1, cyl_uv=False, u_rep=1.0, tile_u=1.0, tile_v=1.0, group=None):
+                  bevel_w=0.0, bevel_seg=1, cyl_uv=False, u_rep=1.0, tile_u=1.0, tile_v=1.0, group=None,
+                  flat_shade=False):
         assert mat_slot in VALID_MAT_SLOTS, f"Invalid mat_slot: {mat_slot}"
         gkey = group or self.active_group
         ginfo = self.groups[gkey]
@@ -250,20 +282,21 @@ class KitbashScene:
         self.col.objects.link(obj)
         obj.matrix_world = ginfo["M_world"] @ M_local_in_group
         obj.data.materials.append(self.mats[mat_slot])
-        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
+        mesh.polygons.foreach_set("use_smooth", [not flat_shade] * len(mesh.polygons))
 
         if bevel_w > 0.0:
             mb = obj.modifiers.new("Bevel", "BEVEL")
             mb.width = bevel_w
             mb.segments = bevel_seg
-            mb.profile = 0.55
+            mb.profile = 0.50
             mb.limit_method = "ANGLE"
-            mb.angle_limit = math.radians(28.0)
+            mb.angle_limit = math.radians(14.0)
             mb.use_clamp_overlap = True
-        mw = obj.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
-        mw.mode = "FACE_AREA"
-        mw.weight = 50
-        mw.keep_sharp = True
+        if not flat_shade:
+            mw = obj.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
+            mw.mode = "FACE_AREA_WITH_ANGLE"
+            mw.weight = 100
+            mw.keep_sharp = True
 
         ginfo["parts"].append((obj, mat_slot))
         return obj
@@ -300,7 +333,7 @@ class KitbashScene:
         return self._finalize(name, bm, mat_slot, band_key, M, bevel_w, bevel_seg, False, 1.0, tile_u, tile_v, group)
 
     def loft(self, name, sections, mat_slot, band_key, pos=(0, 0, 0), rot_deg=(0, 0, 0),
-             bevel_w=0.010, bevel_seg=1, M_parent=None, tile_u=1.0, tile_v=1.0, group=None):
+             bevel_w=0.010, bevel_seg=1, M_parent=None, tile_u=1.0, tile_v=1.0, group=None, flat_shade=False):
         bm = bmesh.new()
         rings = [[bm.verts.new((gx, -gz, gy)) for (gx, gy) in pts] for gz, pts in sections]
         n = len(rings[0])
@@ -314,7 +347,7 @@ class KitbashScene:
         M = g2b_mat(pos, rot_deg)
         if M_parent is not None:
             M = M_parent @ M
-        return self._finalize(name, bm, mat_slot, band_key, M, bevel_w, bevel_seg, False, 1.0, tile_u, tile_v, group)
+        return self._finalize(name, bm, mat_slot, band_key, M, bevel_w, bevel_seg, False, 1.0, tile_u, tile_v, group, flat_shade=flat_shade)
 
     def lathe(self, name, prof_rz, segs, mat_slot, band_key, pos=(0, 0, 0), rot_deg=(0, 0, 0),
               M_parent=None, u_rep=1.0, group=None):
@@ -347,17 +380,33 @@ class KitbashScene:
             chamf=0.005, hollow_r=0.0, M_parent=None, u_rep=1.0, group=None):
         hh = h * 0.5
         c = min(chamf, h * 0.22, min(r_top, r_bot) * 0.35)
+        use_guard = (segs >= 14 and h > 0.22)
         if hollow_r > 0.001:
-            prof = [
-                (hollow_r, -hh), (r_bot - c, -hh), (r_bot, -hh + c),
-                (r_top, hh - c), (r_top - c, hh),
-                (hollow_r + c * 0.35, hh), (hollow_r, hh - c * 0.35), (hollow_r, -hh),
-            ]
+            if use_guard:
+                g = min(c * 2.2, hh * 0.45)
+                prof = [
+                    (hollow_r, -hh), (r_bot - c, -hh), (r_bot, -hh + c), (r_bot, -hh + g),
+                    (r_top, hh - g), (r_top, hh - c), (r_top - c, hh),
+                    (hollow_r + c * 0.35, hh), (hollow_r, hh - c * 0.35), (hollow_r, -hh),
+                ]
+            else:
+                prof = [
+                    (hollow_r, -hh), (r_bot - c, -hh), (r_bot, -hh + c),
+                    (r_top, hh - c), (r_top - c, hh),
+                    (hollow_r + c * 0.35, hh), (hollow_r, hh - c * 0.35), (hollow_r, -hh),
+                ]
         else:
-            prof = [
-                (0.0, -hh), (r_bot - c, -hh), (r_bot, -hh + c),
-                (r_top, hh - c), (r_top - c, hh), (0.0, hh),
-            ]
+            if use_guard:
+                g = min(c * 2.2, hh * 0.45)
+                prof = [
+                    (0.0, -hh), (r_bot - c, -hh), (r_bot, -hh + c), (r_bot, -hh + g),
+                    (r_top, hh - g), (r_top, hh - c), (r_top - c, hh), (0.0, hh),
+                ]
+            else:
+                prof = [
+                    (0.0, -hh), (r_bot - c, -hh), (r_bot, -hh + c),
+                    (r_top, hh - c), (r_top - c, hh), (0.0, hh),
+                ]
         return self.lathe(name, prof, segs, mat_slot, band_key, pos, rot_deg, M_parent, u_rep, group)
 
     def tube_path(self, name, pts_godot, r, segs=8, mat_slot="gunmetal", band_key="braid_hose",
@@ -434,7 +483,7 @@ class KitbashScene:
         a, b = Vector(p_from), Vector(p_to)
         mid = (a + b) * 0.5
         d = b - a
-        L = max(d.length, 0.02)
+        L = max(d.length, 0.12)
         up_g = d.normalized()
         ref = Vector((0, 0, 1)) if abs(up_g.z) < 0.9 else Vector((1, 0, 0))
         xg = up_g.cross(ref).normalized()
@@ -447,29 +496,36 @@ class KitbashScene:
         )) @ C_B2G
         if M_parent is not None:
             M = M_parent @ M
-        self.cyl(f"{prefix}_cyl", r * 1.75, r * 1.75, L * 0.46, 12, "gunmetal", "plain_metal", (0, -L * 0.21, 0), (0, 0, 0), 0.004, M_parent=M, group=group)
-        self.cyl(f"{prefix}_boot", r * 1.92, r * 1.85, L * 0.22, 12, "rubber", "dust_boot", (0, L * 0.08, 0), (0, 0, 0), 0.003, M_parent=M, u_rep=2.0, group=group)
-        self.cyl(f"{prefix}_seal", r * 2.05, r * 2.05, 0.026, 12, "brass", "gear_collar", (0, -L * 0.01, 0), (0, 0, 0), 0.003, M_parent=M, group=group)
-        self.cyl(f"{prefix}_rod", r * 0.92, r * 0.92, L * 0.90, 10, "chrome", "plain_metal", (0, 0.0, 0), (0, 0, 0), 0.002, M_parent=M, group=group)
+        y_cyl0, y_cyl1 = -0.43 * L, -0.05 * L
+        h_cyl = max(0.032, y_cyl1 - y_cyl0)
+        y_seal0 = y_cyl1 + 0.008
+        h_seal = 0.024
+        y_seal1 = y_seal0 + h_seal
+        y_boot0 = y_seal1 + 0.008
+        y_boot1 = max(y_boot0 + 0.030, 0.24 * L)
+        self.cyl(f"{prefix}_cyl", r * 1.75, r * 1.75, h_cyl, 12, "gunmetal", "plain_metal", (0, 0.5 * (y_cyl0 + y_cyl1), 0), (0, 0, 0), 0.004, M_parent=M, group=group)
+        self.cyl(f"{prefix}_seal", r * 2.05, r * 2.05, h_seal, 12, "brass", "gear_collar", (0, 0.5 * (y_seal0 + y_seal1), 0), (0, 0, 0), 0.003, M_parent=M, group=group)
+        self.cyl(f"{prefix}_boot", r * 1.92, r * 1.85, y_boot1 - y_boot0, 12, "rubber", "dust_boot", (0, 0.5 * (y_boot0 + y_boot1), 0), (0, 0, 0), 0.003, M_parent=M, u_rep=2.0, group=group)
+        self.cyl(f"{prefix}_rod", r * 0.92, r * 0.92, L * 0.84, 10, "chrome", "plain_metal", (0, 0.0, 0), (0, 0, 0), 0.002, M_parent=M, group=group)
         for si, e in enumerate([-1.0, 1.0]):
             self.box(f"{prefix}_cl{si}", (r * 3.1, r * 2.5, r * 2.5), "dark", "bolt_flange", (0, e * L * 0.48, 0), (0, 0, 0), 0.004, 1, M_parent=M, group=group)
-            self.cyl(f"{prefix}_pn{si}", r * 0.65, r * 0.65, r * 3.5, 8, "chrome", "plain_metal", (0, e * L * 0.48, 0), (0, 0, 90), 0.002, M_parent=M, group=group)
+            self.cyl(f"{prefix}_pn{si}", r * 0.65, r * 0.65, r * 3.8, 8, "chrome", "plain_metal", (0, e * L * 0.48, 0), (0, 0, 90), 0.002, M_parent=M, group=group)
 
     def actuator_drum(self, prefix, pos, r, w, M_parent=None, group=None):
-        """Heavy joint drum along X axis: ribbed housing + twin flanges + chrome axle cap + 8 bolts."""
+        """Heavy joint drum along X axis: ribbed housing + stepped flanges + chrome axle cap + 8 bolts."""
         M = g2b_mat(pos, (0, 0, 0))
         if M_parent is not None:
             M = M_parent @ M
         segs = 18 if r >= 0.16 else 14
         self.cyl(f"{prefix}_body", r, r, w, segs, "dark", "frame_cnc", (0, 0, 0), (0, 0, 90), 0.008, M_parent=M, group=group)
-        self.cyl(f"{prefix}_rib", r * 1.06, r * 1.06, w * 0.34, segs, "gunmetal", "gear_collar", (0, 0, 0), (0, 0, 90), 0.005, M_parent=M, u_rep=2.0, group=group)
+        self.cyl(f"{prefix}_rib", r * 1.06, r * 1.06, w * 0.32, segs, "gunmetal", "gear_collar", (0, 0, 0), (0, 0, 90), 0.005, M_parent=M, u_rep=2.0, group=group)
         for si, sx in enumerate([-1.0, 1.0]):
-            self.cyl(f"{prefix}_fl{si}", r * 1.10, r * 1.10, w * 0.14, segs, "gunmetal", "bolt_flange", (sx * w * 0.47, 0, 0), (0, 0, 90), 0.005, M_parent=M, u_rep=2.0, group=group)
+            self.cyl(f"{prefix}_fl{si}", r * 1.10, r * 1.10, w * 0.12, segs, "gunmetal", "bolt_flange", (sx * w * 0.37, 0, 0), (0, 0, 90), 0.005, M_parent=M, u_rep=2.0, group=group)
             self.cyl(f"{prefix}_ax{si}", r * 0.46, r * 0.42, w * 0.14, 12, "chrome", "plain_metal", (sx * (w * 0.50 + 0.025), 0, 0), (0, 0, 90), 0.004, M_parent=M, group=group)
             for bi in range(8):
                 a = math.tau * bi / 8.0
                 self.cyl(f"{prefix}_b{si}_{bi}", 0.013, 0.015, 0.024, 6, "chrome", "plain_metal",
-                         (sx * (w * 0.52 + 0.012), math.cos(a) * r * 0.78, math.sin(a) * r * 0.78), (0, 0, 90), 0.002, M_parent=M, group=group)
+                         (sx * (w * 0.50 + 0.006), math.cos(a) * r * 0.78, math.sin(a) * r * 0.78), (0, 0, 90), 0.002, M_parent=M, group=group)
 
     def bolt_ring(self, prefix, r, n_bolts, bolt_r=0.012, pos=(0, 0, 0), rot_deg=(90, 0, 0), M_parent=None, group=None):
         M = g2b_mat(pos, rot_deg)
@@ -537,11 +593,13 @@ class KitbashScene:
             self.cyl(f"{prefix}_cp{si}", 0.032, 0.032, 0.022, 12, "brass", "plain_metal", (sx + math.copysign(0.018, sx), -0.025, 0), (0, 0, 90), 0.003, M_parent=M, group=group)
         self.box(f"{prefix}_hd", (0.195, 0.135, 0.155), "armor_dark", "armor_pocket", (0, -0.025, -0.01), (0, 0, 0), 0.020, 1, M_parent=M, group=group)
         self.box(f"{prefix}_hood", (0.190, 0.018, 0.065), "gunmetal", "plain_metal", (0, 0.036, -0.092), (10, 0, 0), 0.004, 1, M_parent=M, group=group)
-        for onm, ox, oy, orad, omat in [("flir", -0.044, -0.022, 0.038, "emit_cyan"),
+        for onm, ox, oy, orad, opip in [("flir", -0.044, -0.022, 0.038, "emit_cyan"),
                                         ("las",   0.044, -0.010, 0.025, "emit_amber"),
-                                        ("tv",    0.044, -0.052, 0.017, "glass")]:
-            self.cyl(f"{prefix}_bz_{onm}", orad + 0.009, orad + 0.011, 0.024, 14, "gunmetal", "gear_collar", (ox, oy, -0.088), (90, 0, 0), 0.003, hollow_r=orad * 0.85, M_parent=M, group=group)
-            self.cyl(f"{prefix}_ln_{onm}", orad * 0.84, orad * 0.84, 0.016, 14, omat, "plain_metal", (ox, oy, -0.084), (90, 0, 0), 0.002, M_parent=M, group=group)
+                                        ("tv",    0.044, -0.052, 0.017, None)]:
+            self.cyl(f"{prefix}_bz_{onm}", orad + 0.009, orad + 0.011, 0.026, 16, "gunmetal", "plain_metal", (ox, oy, -0.088), (90, 0, 0), 0.003, hollow_r=orad * 0.85, M_parent=M, group=group)
+            self.cyl(f"{prefix}_ln_{onm}", orad * 0.84, orad * 0.84, 0.010, 16, "glass", "plain_metal", (ox, oy, -0.093), (90, 0, 0), 0.002, M_parent=M, group=group)
+            if opip:
+                self.cyl(f"{prefix}_pp_{onm}", orad * 0.22, orad * 0.22, 0.008, 10, opip, "plain_metal", (ox, oy, -0.100), (90, 0, 0), 0.001, M_parent=M, group=group)
 
     def smoke_pod(self, prefix, pos, rot_deg, M_parent=None, group=None):
         M = g2b_mat(pos, rot_deg)
@@ -581,9 +639,9 @@ class KitbashScene:
         self.box(f"{prefix}_rad", (0.20, 0.135, 0.068), "armor_sub", "armor_panel", (0, 0.21, 0.02), (-8, -18, 0), 0.009, 1, M_parent=M, group=group)
         self.box(f"{prefix}_rdf", (0.165, 0.105, 0.014), "armor_dark", "vent_mesh", (0, 0.21, -0.018), (-8, -18, 0), 0.003, 1, M_parent=M, group=group)
         self.cyl(f"{prefix}_ab1", 0.028, 0.036, 0.075, 12, "brass", "dust_boot", (0.11, 0.04, 0.10), (0, 0, 0), 0.004, M_parent=M, group=group)
-        self.cyl(f"{prefix}_aw1", 0.005, 0.010, 0.96, 8, "dark", "plain_metal", (0.11, 0.53, 0.10), (-6, 0, 0), 0.002, M_parent=M, group=group)
+        self.cyl(f"{prefix}_aw1", 0.005, 0.010, 0.96, 8, "dark", "plain_metal", (0.11, 0.51, 0.05), (-6, 0, 0), 0.002, M_parent=M, group=group)
         self.cyl(f"{prefix}_ab2", 0.022, 0.028, 0.055, 12, "brass", "dust_boot", (0.16, 0.03, 0.16), (0, 0, 0), 0.003, M_parent=M, group=group)
-        self.cyl(f"{prefix}_aw2", 0.004, 0.008, 0.60, 8, "dark", "plain_metal", (0.16, 0.34, 0.16), (-12, 0, -6), 0.002, M_parent=M, group=group)
+        self.cyl(f"{prefix}_aw2", 0.004, 0.008, 0.60, 8, "dark", "plain_metal", (0.16, 0.31, 0.10), (-12, 0, -4), 0.002, M_parent=M, group=group)
 
     def stowage_rack(self, prefix, pos, rot_deg=(0, 0, 0), M_parent=None, group=None):
         M = g2b_mat(pos, rot_deg)
@@ -597,90 +655,106 @@ class KitbashScene:
             self.box(f"{prefix}_bk{si}", (0.032, 0.028, 0.024), "brass", "plain_metal", (sx, 0.035, -0.068), (0, 0, 0), 0.003, 1, M_parent=M, group=group)
         self.box(f"{prefix}_hz", (0.32, 0.036, 0.018), "hazard", "hazard", (0, -0.085, -0.072), (0, 0, 0), 0.003, 1, M_parent=M, group=group)
 
-    def waist_collar_core(self, prefix="HP_C1_Core", y_top=0.14, group=None):
-        """Standardized unified HP-C1 core bottom slewing ring (r_bot=0.360m, y_bot=-0.005m)."""
+    def waist_collar_core(self, prefix="HP_C1_Core", y_top=0.12, group=None):
+        """Compact low-profile unified HP-C1 core slewing bearing collar (r=0.285m, flush y_bot=0.000m)."""
         r = HP_C1_RADIUS
         yb = HP_C1_CORE_Y_BOT
+        y_top_eff = max(yb + 0.056, y_top)
         self.lathe(f"{prefix}_base", [
-            (0.0, yb), (r - 0.006, yb), (r, yb + 0.008), (r, 0.032),
-            (r + 0.010, 0.038), (r + 0.010, 0.056), (r - 0.012, 0.064), (r - 0.012, y_top), (0.0, y_top)
+            (0.0, yb), (r - 0.005, yb), (r, yb + 0.006), (r, yb + 0.024),
+            (r + 0.006, yb + 0.028), (r + 0.006, yb + 0.042),
+            (r - 0.012, yb + 0.048), (r - 0.014, y_top_eff), (0.0, y_top_eff),
         ], 28, "dark", "bolt_flange", u_rep=3.0, group=group)
-        self.cyl(f"{prefix}_gear", r + 0.016, r + 0.016, 0.026, 28, "gunmetal", "gear_collar", (0, 0.046, 0), (0, 0, 0), 0.004, u_rep=3.0, group=group)
+        self.cyl(f"{prefix}_gear", r + 0.010, r + 0.010, 0.016, 28, "gunmetal", "gear_collar",
+                 (0, yb + 0.028, 0), (0, 0, 0), 0.003, u_rep=3.0, group=group)
         for wi in range(6):
             wa = math.tau * wi / 6.0 + math.pi / 6.0
-            self.box(f"{prefix}_lug{wi}", (0.115, 0.072, 0.048), "armor_sub" if wi % 2 == 0 else "gunmetal", "armor_pocket",
-                     (math.cos(wa) * (r - 0.004), 0.038, math.sin(wa) * (r - 0.004)), (0, -math.degrees(wa) + 90.0, 0), 0.007, 1, group=group)
-        for bi in range(12):
-            ba = math.tau * bi / 12.0
-            self.cyl(f"{prefix}_blt{bi}", 0.009, 0.011, 0.020, 6, "chrome", "plain_metal",
-                     (math.cos(ba) * (r + 0.004), 0.090, math.sin(ba) * (r + 0.004)), (0, -math.degrees(ba), 90), 0.002, group=group)
+            self.box(f"{prefix}_lug{wi}", (0.056, 0.030, 0.020), "dark" if wi % 2 == 0 else "gunmetal", "bolt_flange",
+                     (math.cos(wa) * (r - 0.004), yb + 0.022, math.sin(wa) * (r - 0.004)),
+                     (0, -math.degrees(wa) + 90.0, 0), 0.004, 1, group=group)
+
+    def seat_core_low(self, drop_y: float, new_y_top: float = 0.12, prefix: str = "HP_C1_Core"):
+        """Lower sculpted core hull + markers by drop_y so torso sits flush over compact HP-C1 slewing ring."""
+        if drop_y <= 0.0:
+            return
+        keep = []
+        for obj, slot in self.groups["Body"]["parts"]:
+            nm = obj.name
+            if nm.startswith(prefix) or "Stab" in nm or "WaistHyd" in nm or "WaistPiston" in nm:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            else:
+                obj.matrix_world.translation.z -= drop_y
+                keep.append((obj, slot))
+        self.groups["Body"]["parts"] = keep
+        for obj in bpy.data.objects:
+            if obj.name.startswith("SOCKET_"):
+                obj.location.z -= drop_y
+        self.waist_collar_core(prefix, y_top=new_y_top)
 
     def waist_collar_legs(self, prefix, socket_y, ped_bot_y, group=None):
-        """Standardized unified HP-C1 legs waist pedestal + gear ring strictly clearing socket_y - 0.015m."""
+        """Compact low-profile lathe HP-C1 legs slewing ring strictly clearing socket_y - 0.010m."""
         r = HP_C1_RADIUS
-        top_y = socket_y - 0.018
-        col_h = max(0.08, top_y - ped_bot_y - 0.085)
-        self.cyl(f"{prefix}_col", r * 0.78, r * 0.84, col_h, 24, "dark", "frame_cnc",
-                 (0, ped_bot_y + col_h * 0.5, 0), (0, 0, 0), 0.008, u_rep=2.0, group=group)
-        ring_y = top_y - 0.044
-        self.cyl(f"{prefix}_ring", r * 0.88, r, 0.088, 28, "dark", "bolt_flange",
-                 (0, ring_y, 0), (0, 0, 0), 0.008, u_rep=3.0, group=group)
-        self.cyl(f"{prefix}_gear", r + 0.008, r + 0.008, 0.024, 28, "gunmetal", "gear_collar",
-                 (0, ring_y - 0.010, 0), (0, 0, 0), 0.003, u_rep=3.0, group=group)
-        self.bolt_ring(f"{prefix}_blt", r * 0.84, 12, 0.010, (0, top_y - 0.002, 0), (0, 0, 0), group=group)
+        top_y = socket_y - 0.010
+        ring_bot = max(ped_bot_y + 0.012, top_y - 0.044)
+        self.lathe(f"{prefix}_ped", [
+            (0.0, ped_bot_y), (r * 0.94, ped_bot_y), (r * 0.88, ring_bot - 0.004),
+            (r, ring_bot), (r, top_y - 0.006), (r * 0.90, top_y), (0.0, top_y),
+        ], 28, "dark", "bolt_flange", u_rep=3.0, group=group)
+        self.cyl(f"{prefix}_gear", r + 0.006, r + 0.006, 0.016, 28, "gunmetal", "gear_collar",
+                 (0, top_y - 0.024, 0), (0, 0, 0), 0.002, u_rep=3.0, group=group)
+        self.bolt_ring(f"{prefix}_blt", r * 0.80, 12, 0.008, (0, top_y + 0.002, 0), (0, 0, 0), group=group)
 
     def arm_bulkhead(self, prefix, x_abs, y, z=0.0, group=None):
-        """Symmetrical left/right HP-A1 armored slewing shoulder bulkheads on core."""
+        """Symmetrical left/right HP-A1 armored slewing shoulder bulkheads on core (stepped axial faces)."""
         for si, sx in enumerate([-1.0, 1.0]):
-            self.cyl(f"{prefix}_bh{si}", 0.235, 0.255, 0.100, 24, "dark", "gear_collar", (sx * (x_abs - 0.06), y, z), (0, 0, 90), 0.009, u_rep=2.0, group=group)
-            self.cyl(f"{prefix}_fl{si}", 0.195, 0.195, 0.038, 24, "gunmetal", "bolt_flange", (sx * (x_abs - 0.012), y, z), (0, 0, 90), 0.005, u_rep=2.0, group=group)
+            self.cyl(f"{prefix}_bh{si}", 0.235, 0.255, 0.088, 24, "dark", "gear_collar", (sx * (x_abs - 0.068), y, z), (0, 0, 90), 0.009, u_rep=2.0, group=group)
+            self.cyl(f"{prefix}_fl{si}", 0.195, 0.195, 0.032, 24, "gunmetal", "bolt_flange", (sx * (x_abs - 0.016), y, z), (0, 0, 90), 0.005, u_rep=2.0, group=group)
             for bi in range(8):
                 ba = math.tau * bi / 8.0
-                self.cyl(f"{prefix}_bt{si}_{bi}", 0.010, 0.012, 0.016, 6, "chrome", "plain_metal",
-                         (sx * (x_abs - 0.005), y + math.cos(ba) * 0.215, z + math.sin(ba) * 0.215), (0, 0, 90), 0.002, group=group)
+                self.cyl(f"{prefix}_bt{si}_{bi}", 0.010, 0.012, 0.022, 6, "chrome", "plain_metal",
+                         (sx * (x_abs - 0.004), y + math.cos(ba) * 0.168, z + math.sin(ba) * 0.168), (0, 0, 90), 0.002, group=group)
 
     def a1_shoulder_mount(self, prefix="A1Mount", heavy=False, group=None):
         """
         Standard HP-A1 weapon arm adapter (canonical RIGHT arm, side=+1.0, root origin = plug mating face).
-        Body origin is at x = +0.25m, yoke pivot at x = +0.37m (matching kit.gd a1_mount + heavy_gussets!).
+        Zero-coplanar stepped axial bearing rings & non-duplicated heavy flange/mast!
         """
-        # Flange at x = 0.065 (seam at x = 0.0)
-        self.box(f"{prefix}_flg", (0.11, 0.44, 0.44), "gunmetal", "bolt_flange", (0.065, 0, 0), (0, 0, 0), 0.014, 1, group=group)
+        flg_yz = 0.50 if heavy else 0.44
+        self.box(f"{prefix}_flg", (0.11, flg_yz, flg_yz), "gunmetal", "bolt_flange", (0.065, 0, 0), (0, 0, 0), 0.014, 1, group=group)
         for ci, (cy, cz) in enumerate([(-0.16, -0.16), (0.16, -0.16), (-0.16, 0.16), (0.16, 0.16)]):
-            self.cyl(f"{prefix}_fb{ci}", 0.022, 0.025, 0.032, 6, "chrome", "plain_metal", (0.130, cy, cz), (0, 0, 90), 0.003, group=group)
-        # Slewing bearing race (outer + chrome track + geared inner)
-        self.cyl(f"{prefix}_brg0", 0.22, 0.22, 0.10, 22, "dark", "gear_collar", (0.16, 0, 0), (0, 0, 90), 0.007, u_rep=2.0, group=group)
-        self.cyl(f"{prefix}_race", 0.226, 0.226, 0.020, 22, "chrome", "plain_metal", (0.20, 0, 0), (0, 0, 90), 0.003, group=group)
-        self.cyl(f"{prefix}_brg1", 0.19, 0.19, 0.10, 20, "gunmetal", "bolt_flange", (0.24, 0, 0), (0, 0, 90), 0.006, u_rep=2.0, group=group)
+            self.cyl(f"{prefix}_fb{ci}", 0.022, 0.025, 0.028, 6, "chrome", "plain_metal", (0.126, cy, cz), (0, 0, 90), 0.003, group=group)
+        # Slewing bearing race with >= 6mm axial clearance between dark / chrome / gunmetal rings!
+        self.cyl(f"{prefix}_brg0", 0.22, 0.22, 0.062, 22, "dark", "gear_collar", (0.157, 0, 0), (0, 0, 90), 0.006, u_rep=2.0, group=group)
+        self.cyl(f"{prefix}_race", 0.228, 0.228, 0.014, 22, "chrome", "plain_metal", (0.201, 0, 0), (0, 0, 90), 0.003, group=group)
+        self.cyl(f"{prefix}_brg1", 0.19, 0.19, 0.072, 20, "gunmetal", "bolt_flange", (0.250, 0, 0), (0, 0, 90), 0.006, u_rep=2.0, group=group)
         # Pitch yoke + vertical pivot pin + upper pauldron mast
         self.box(f"{prefix}_yk", (0.32, 0.26, 0.34), "armor", "armor_pocket", (0.37, 0, 0), (0, 0, 0), 0.016, 1, group=group)
-        self.box(f"{prefix}_mst", (0.26, 0.34, 0.30), "dark", "frame_cnc", (0.41, 0.26, 0.02), (0, 0, -8.0), 0.014, 1, group=group)
-        for syi, sy in enumerate([-1.0, 1.0]):
-            self.box(f"{prefix}_ykf{syi}", (0.36, 0.06, 0.36), "armor_sub", "armor_ribs", (0.41, sy * 0.20, 0), (0, 0, 0), 0.010, 1, group=group)
-            self.cyl(f"{prefix}_ypc{syi}", 0.09, 0.09, 0.032, 14, "chrome", "plain_metal", (0.38, sy * 0.245, 0), (0, 0, 0), 0.004, group=group)
-        self.cyl(f"{prefix}_ypin", 0.08, 0.08, 0.50, 14, "dark", "plain_metal", (0.38, 0, 0), (0, 0, 0), 0.006, group=group)
         if heavy:
-            self.box(f"{prefix}_hflg", (0.055, 0.50, 0.50), "gunmetal", "bolt_flange", (0.09, 0, 0), (0, 0, 0), 0.012, 1, group=group)
-            self.box(f"{prefix}_hmst", (0.34, 0.44, 0.36), "dark", "frame_cnc", (0.49, 0.38, 0.04), (0, 0, -10.0), 0.014, 1, group=group)
+            self.box(f"{prefix}_hmst", (0.32, 0.42, 0.34), "dark", "frame_cnc", (0.46, 0.34, 0.03), (0, 0, -10.0), 0.014, 1, group=group)
             for bi in range(8):
                 a = math.tau * bi / 8.0
-                self.cyl(f"{prefix}_hb{bi}", 0.018, 0.020, 0.028, 6, "chrome", "plain_metal", (0.17, math.sin(a) * 0.21, math.cos(a) * 0.21), (0, 0, 90), 0.002, group=group)
+                self.cyl(f"{prefix}_hb{bi}", 0.016, 0.018, 0.028, 6, "chrome", "plain_metal", (0.126, math.sin(a) * 0.215, math.cos(a) * 0.215), (0, 0, 90), 0.002, group=group)
             for syi, sy in enumerate([-1.0, 1.0]):
                 for szi, sz in enumerate([-0.13, 0.13]):
-                    self.box(f"{prefix}_hg{syi}_{szi}", (0.30, 0.080, 0.040), "armor_sub", "armor_ribs",
-                             (0.26, sy * 0.215, sz), (0, 0, sy * -22.0), 0.008, 1, group=group)
+                    self.box(f"{prefix}_hg{syi}_{szi}", (0.28, 0.076, 0.040), "armor_sub", "armor_ribs",
+                             (0.26, sy * 0.220, sz), (0, 0, sy * -22.0), 0.008, 1, group=group)
+        else:
+            self.box(f"{prefix}_mst", (0.26, 0.34, 0.30), "dark", "frame_cnc", (0.41, 0.26, 0.02), (0, 0, -8.0), 0.014, 1, group=group)
+        for syi, sy in enumerate([-1.0, 1.0]):
+            self.box(f"{prefix}_ykf{syi}", (0.36, 0.06, 0.36), "armor_sub", "armor_ribs", (0.41, sy * 0.20, 0), (0, 0, 0), 0.010, 1, group=group)
+            self.cyl(f"{prefix}_ypc{syi}", 0.09, 0.09, 0.032, 14, "chrome", "plain_metal", (0.38, sy * 0.252, 0), (0, 0, 0), 0.004, group=group)
+        self.cyl(f"{prefix}_ypin", 0.08, 0.08, 0.436, 14, "dark", "plain_metal", (0.38, 0, 0), (0, 0, 0), 0.006, group=group)
 
     def barrel_bore(self, prefix, r_outer, r_inner, pos, depth=0.07, rot_deg=(90, 0, 0), segs=16, M_parent=None, group=None):
-        """Machined hollow muzzle crown + deep recessed black bore interior (local +Y = Godot -Z forward)."""
+        """Machined hollow muzzle crown + deep recessed black bore interior (>= 12mm clear of solid barrel cap for both +/-90 rot_x)."""
         M = g2b_mat(pos, rot_deg)
         if M_parent is not None:
             M = M_parent @ M
-        # Hollow muzzle collar extending forward cleanly beyond the solid barrel end
-        self.cyl(f"{prefix}_crn", r_outer * 1.05, r_outer * 1.05, depth * 0.90, segs, "gunmetal", "gear_collar",
-                 (0, depth * 0.25, 0), (0, 0, 0), 0.003, hollow_r=r_inner, M_parent=M, group=group)
-        # Pitch-black deep bore backplate recessed inside the hollow crown
-        self.cyl(f"{prefix}_br", r_inner * 0.99, r_inner * 0.99, depth * 0.30, max(10, segs - 4), "bore", "plain_metal",
-                 (0, -depth * 0.05, 0), (0, 0, 0), 0.001, M_parent=M, group=group)
+        fwd = -1.0 if rot_deg[0] > 0 else 1.0
+        self.cyl(f"{prefix}_crn", r_outer * 1.05, r_outer * 1.05, depth * 0.80, segs, "gunmetal", "plain_metal",
+                 (0, fwd * depth * 0.30, 0), (0, 0, 0), 0.003, hollow_r=r_inner, M_parent=M, group=group)
+        self.cyl(f"{prefix}_br", r_inner * 0.98, r_inner * 0.98, depth * 0.18, max(10, segs - 4), "bore", "plain_metal",
+                 (0, fwd * depth * 0.28, 0), (0, 0, 0), 0.001, M_parent=M, group=group)
 
     def era_block(self, prefix, size, mat_slot, pos, rot_deg=(0, 0, 0), M_parent=None, group=None):
         M = g2b_mat(pos, rot_deg)
@@ -700,6 +774,91 @@ class KitbashScene:
                  (0, 0, 0), (0, 0, 0), 0.004 * scale, hollow_r=0.022 * scale, M_parent=M, group=group)
         self.cyl(f"{prefix}_pin", 0.012 * scale, 0.012 * scale, 0.046 * scale, 8, "chrome", "plain_metal",
                  (0, 0, 0.022 * scale), (0, 0, 0), 0.002 * scale, M_parent=M, group=group)
+
+    def decal(self, name, cell_key, size_xy, pos=(0, 0, 0), rot_deg=(0, 0, 0), M_parent=None, group=None):
+        """
+        Place an outward-facing (-Z in local Godot space) tactical stencil / warning / soot decal quad.
+        Zero volume, zero bevel, excluded from BVH AO occlusion so it never darkens underlying armor!
+        """
+        assert cell_key in DECAL_CELLS, f"Unknown decal cell_key: {cell_key}"
+        gkey = group or self.active_group
+        ginfo = self.groups[gkey]
+        u0, v0, u1, v1 = DECAL_CELLS[cell_key]
+        hw, hh = size_xy[0] * 0.5, size_xy[1] * 0.5
+        # Local Godot XY quad facing -Z -> in Blender coords g2b(gx, gy, 0) = (gx, 0, gy), outward normal = (0, +1, 0)
+        bm = bmesh.new()
+        v_bl = bm.verts.new((-hw, 0.0, -hh))
+        v_br = bm.verts.new(( hw, 0.0, -hh))
+        v_tr = bm.verts.new(( hw, 0.0,  hh))
+        v_tl = bm.verts.new((-hw, 0.0,  hh))
+        # Winding so Blender normal = (v_tl - v_bl) x (v_br - v_bl) = (0,0,2hh) x (2hw,0,0) = (0, +4hw*hh, 0) = Godot -Z!
+        f = bm.faces.new((v_bl, v_tl, v_tr, v_br))
+        uv_layer = bm.loops.layers.uv.verify()
+        # Facing -Z: viewer's left is +X (v_tr/v_br) and viewer's right is -X (v_tl/v_bl)
+        uvs = [(u1, 1.0 - v1), (u1, 1.0 - v0), (u0, 1.0 - v0), (u0, 1.0 - v1)]
+        for lp, uv in zip(f.loops, uvs):
+            lp[uv_layer].uv = uv
+        mesh = bpy.data.meshes.new(self._next_name(name))
+        bm.to_mesh(mesh)
+        bm.free()
+        obj = bpy.data.objects.new(mesh.name, mesh)
+        self.col.objects.link(obj)
+        M = g2b_mat(pos, rot_deg)
+        if M_parent is not None:
+            M = M_parent @ M
+        obj.matrix_world = ginfo["M_world"] @ M
+        obj.data.materials.append(self.mats["decal"])
+        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
+        ginfo["parts"].append((obj, "decal"))
+        return obj
+
+    def coil_shock(self, prefix, p_from, p_to, r=0.028, M_parent=None, group=None):
+        """B.o.T heavy exposed shock absorber: copper-banded gas reservoir + chrome piston rod + coil rings."""
+        a, b = Vector(p_from), Vector(p_to)
+        mid = (a + b) * 0.5
+        d = b - a
+        L = max(d.length, 0.06)
+        up_g = d.normalized()
+        ref = Vector((0, 0, 1)) if abs(up_g.z) < 0.9 else Vector((1, 0, 0))
+        xg = up_g.cross(ref).normalized()
+        zg = xg.cross(up_g).normalized()
+        M = C_G2B @ Matrix((
+            (xg.x, up_g.x, zg.x, mid.x),
+            (xg.y, up_g.y, zg.y, mid.y),
+            (xg.z, up_g.z, zg.z, mid.z),
+            (0.0, 0.0, 0.0, 1.0),
+        )) @ C_B2G
+        if M_parent is not None:
+            M = M_parent @ M
+        self.cyl(f"{prefix}_body", r * 1.65, r * 1.65, L * 0.48, 14, "dark", "plain_metal", (0, L * 0.18, 0), (0, 0, 0), 0.004, M_parent=M, group=group)
+        for ci, cy in enumerate([L * 0.02, L * 0.34]):
+            self.cyl(f"{prefix}_cop{ci}", r * 1.78, r * 1.78, 0.026, 14, "copper", "gear_collar", (0, cy, 0), (0, 0, 0), 0.003, M_parent=M, group=group)
+        self.cyl(f"{prefix}_rod", r * 0.88, r * 0.88, L * 0.92, 10, "chrome", "plain_metal", (0, 0.0, 0), (0, 0, 0), 0.002, M_parent=M, group=group)
+        for ri in range(3):
+            ry = -L * 0.30 + ri * (L * 0.10)
+            self.cyl(f"{prefix}_sp{ri}", r * 1.48, r * 1.48, 0.020, 10, "gunmetal", "plain_metal", (0, ry, 0), (6, 0, 0), 0.003, hollow_r=r * 1.04, M_parent=M, group=group)
+        for si, e in enumerate([-1.0, 1.0]):
+            self.box(f"{prefix}_cl{si}", (r * 3.0, r * 2.4, r * 2.4), "gunmetal", "bolt_flange", (0, e * L * 0.47, 0), (0, 0, 0), 0.004, 1, M_parent=M, group=group)
+            self.cyl(f"{prefix}_pn{si}", r * 0.65, r * 0.65, r * 3.4, 8, "chrome", "plain_metal", (0, e * L * 0.47, 0), (0, 0, 90), 0.002, M_parent=M, group=group)
+
+    def glow_radiator_arc(self, prefix, pos, rot_deg=(0, 0, 0), r_outer=0.26, r_inner=0.13, depth=0.07,
+                          arc_deg=150.0, blades=9, emit_slot="emit_green", M_parent=None, group=None):
+        """B.o.T signature recessed curved glowing heat-sink louver fan (seen on dorsal/rear reactor bays!)."""
+        M = g2b_mat(pos, rot_deg)
+        if M_parent is not None:
+            M = M_parent @ M
+        # Outer dark armored bezel shroud + deep bore cavity
+        span_rad = math.radians(arc_deg)
+        for bi in range(blades):
+            t = (bi + 0.5) / blades - 0.5
+            ang = t * span_rad
+            ca, sa = math.cos(ang), math.sin(ang)
+            rmid = (r_outer + r_inner) * 0.5
+            rlen = r_outer - r_inner
+            M_bl = M @ g2b_mat((math.sin(ang) * rmid, -math.cos(ang) * rmid, 0.0), (0, 0, math.degrees(ang)))
+            self.box(f"{prefix}_fin{bi}", (0.016, rlen, depth * 0.84), "dark", "plain_metal", (0, 0, 0), (0, 18, 0), 0.002, 1, M_parent=M_bl, group=group)
+            self.box(f"{prefix}_glw{bi}", (0.012, rlen * 0.78, depth * 0.38), emit_slot, "plain_metal", (0.022, 0, -depth * 0.14), (0, 0, 0), 0.001, 1, M_parent=M_bl, group=group)
+        self.cyl(f"{prefix}_hub", r_inner * 0.96, r_inner * 1.04, depth * 1.05, 16, "gunmetal", "gear_collar", (0, 0, 0), (90, 0, 0), 0.005, M_parent=M, group=group)
 
     # --------------------------------------------------------------------------
     # BAKE 24-RAY BVH VERTEX AO + CONVEX EDGE WEAR & EXPORT STANDARD GLB
@@ -724,19 +883,34 @@ class KitbashScene:
                 obj.data = nm
                 bpy.data.meshes.remove(om)
 
-        # 2. Build full-module world-space BVHTree (so articulated legs & pelvis cast true cross-AO!)
+        # 2. Build full-module world-space BVHTree (excluding flat decal quads so decals never cast fake AO!)
         bvh_verts, bvh_polys = [], []
         v_off = 0
+        z_min_b, z_max_b = 1e9, -1e9
+        decal_set = set()
+        for ginfo in self.groups.values():
+            for obj, slot in ginfo["parts"]:
+                if slot == "decal":
+                    decal_set.add(obj)
         for obj in all_part_objs:
             m = obj.data
             mw = obj.matrix_world
+            for v in m.vertices:
+                wp = mw @ v.co
+                if wp.z < z_min_b:
+                    z_min_b = wp.z
+                if wp.z > z_max_b:
+                    z_max_b = wp.z
+            if obj in decal_set:
+                continue
             m.calc_loop_triangles()
+            base_v = len(bvh_verts)
             for v in m.vertices:
                 bvh_verts.append(mw @ v.co)
             for tri in m.loop_triangles:
-                bvh_polys.append((tri.vertices[0] + v_off, tri.vertices[1] + v_off, tri.vertices[2] + v_off))
-            v_off += len(m.vertices)
-        bvh = BVHTree.FromPolygons(bvh_verts, bvh_polys)
+                bvh_polys.append((tri.vertices[0] + base_v, tri.vertices[1] + base_v, tri.vertices[2] + base_v))
+        z_span_b = max(z_max_b - z_min_b, 0.25)
+        bvh = BVHTree.FromPolygons(bvh_verts, bvh_polys) if bvh_polys else None
 
         # Cosine-weighted Fibonacci hemisphere ray directions
         n_rays = self.ao_rays
@@ -749,30 +923,33 @@ class KitbashScene:
             th = golden * i
             hemi_dirs.append(Vector((r_xy * math.cos(th), r_xy * math.sin(th), z)))
 
-        # 3. Bake Convex Edge (R = 1 - edge) + 24-ray Raytraced AO (G) per loop corner
+        # 3. Bake 4-Channel Vertex Color:
+        #    R = 1 - convex_edge, G = 24-ray BVH AO, B = anatomical vertical/sky gradient, A = per-plate hash
         t_ao = time.perf_counter()
         ao_dist = self.ao_dist
-        for obj in all_part_objs:
+        for obj_idx, obj in enumerate(all_part_objs):
             m = obj.data
             mw = obj.matrix_world
             mn3 = mw.to_3x3().inverted_safe().transposed()
+            part_hash = 0.05 + 0.90 * (((obj_idx * 2654435761 + 1013904223) & 0xFFFF) / 65535.0)
 
             bm = bmesh.new()
             bm.from_mesh(m)
             bm.verts.ensure_lookup_table()
             vconv = [0.0] * len(bm.verts)
-            for v in bm.verts:
-                mc = 0.0
-                for e in v.link_edges:
-                    if len(e.link_faces) == 2:
-                        f0, f1 = e.link_faces[0], e.link_faces[1]
-                        ang = f0.normal.angle(f1.normal, 0.0)
-                        if ang > 0.26:
-                            if (f1.calc_center_median() - f0.calc_center_median()).dot(f0.normal) < -1e-5:
-                                cv = min(1.0, max(0.0, (ang - 0.30) / 0.55))
-                                if cv > mc:
-                                    mc = cv
-                vconv[v.index] = mc
+            if obj not in decal_set:
+                for v in bm.verts:
+                    mc = 0.0
+                    for e in v.link_edges:
+                        if len(e.link_faces) == 2:
+                            f0, f1 = e.link_faces[0], e.link_faces[1]
+                            ang = f0.normal.angle(f1.normal, 0.0)
+                            if ang > 0.55:
+                                if (f1.calc_center_median() - f0.calc_center_median()).dot(f0.normal) < -1e-5:
+                                    cv = min(1.0, max(0.0, (ang - 0.55) / 0.30))
+                                    if cv > mc:
+                                        mc = cv
+                    vconv[v.index] = mc
             bm.free()
 
             cnorms = m.corner_normals
@@ -782,27 +959,32 @@ class KitbashScene:
                 for li in poly.loop_indices:
                     vi = m.loops[li].vertex_index
                     ln = cnorms[li].vector
-                    qk = (vi, int(round(ln.x * 8)), int(round(ln.y * 8)), int(round(ln.z * 8)))
-                    ao_val = ao_cache.get(qk)
-                    if ao_val is None:
-                        wpos = mw @ m.vertices[vi].co
-                        wnrm = (mn3 @ ln).normalized()
-                        if wnrm.length_squared < 1e-6:
-                            ao_val = 1.0
-                        else:
-                            ref = Vector((0, 0, 1)) if abs(wnrm.z) < 0.9 else Vector((1, 0, 0))
-                            tx = wnrm.cross(ref).normalized()
-                            ty = wnrm.cross(tx)
-                            orig = wpos + wnrm * 0.006
-                            occ = 0.0
-                            for hd in hemi_dirs:
-                                rdir = tx * hd.x + ty * hd.y + wnrm * hd.z
-                                hl, _, _, hdist = bvh.ray_cast(orig, rdir, ao_dist)
-                                if hl is not None and hdist > 0.002:
-                                    occ += (1.0 - hdist / ao_dist) ** 0.90
-                            ao_val = max(0.22, 1.0 - (occ / n_rays) * 1.05)
-                        ao_cache[qk] = ao_val
-                    ca.data[li].color = (max(0.0, min(1.0, 1.0 - vconv[vi] * 0.90)), ao_val, 1.0, 1.0)
+                    wpos = mw @ m.vertices[vi].co
+                    wnrm = (mn3 @ ln).normalized()
+                    h_norm = max(0.0, min(1.0, (wpos.z - z_min_b) / z_span_b))
+                    v_grad = max(0.14, min(0.96, 0.62 * h_norm + 0.38 * (wnrm.z * 0.5 + 0.5)))
+                    if obj in decal_set or bvh is None:
+                        ao_val = 1.0
+                    else:
+                        qk = (vi, int(round(ln.x * 8)), int(round(ln.y * 8)), int(round(ln.z * 8)))
+                        ao_val = ao_cache.get(qk)
+                        if ao_val is None:
+                            if wnrm.length_squared < 1e-6:
+                                ao_val = 1.0
+                            else:
+                                ref = Vector((0, 0, 1)) if abs(wnrm.z) < 0.9 else Vector((1, 0, 0))
+                                tx = wnrm.cross(ref).normalized()
+                                ty = wnrm.cross(tx)
+                                orig = wpos + wnrm * 0.006
+                                occ = 0.0
+                                for hd in hemi_dirs:
+                                    rdir = tx * hd.x + ty * hd.y + wnrm * hd.z
+                                    hl, _, _, hdist = bvh.ray_cast(orig, rdir, ao_dist)
+                                    if hl is not None and hdist > 0.002:
+                                        occ += (1.0 - hdist / ao_dist) ** 0.88
+                                ao_val = max(0.16, 1.0 - (occ / n_rays) * 1.12)
+                            ao_cache[qk] = ao_val
+                    ca.data[li].color = (max(0.0, min(1.0, 1.0 - vconv[vi] * 0.95)), ao_val, v_grad, part_hash)
             m.color_attributes.active_color = ca
 
         t_ao_end = time.perf_counter()

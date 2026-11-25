@@ -30,9 +30,9 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(legs, K.crect(0.92, 0.24, [0.08, 0.08, 0.04, 0.04]), 0.08, M_LEG2, Vector3(sx, hip + 0.02, 0.0), Vector3(0, 90, 0), 0.02)
 		K.plate(legs, K.crect(0.42, 0.05), 0.09, M_ACC, Vector3(sx + side_s * 0.01, hip + 0.08, -0.18), Vector3(0, 90, 0), 0.005)
 		A.vent(legs, Vector3(0.46, 0.14, 0.03), Vector3(sx + side_s * 0.04, hip + 0.0, 0.16), Vector3(0, side_s * -90.0, 0), 4)
-	# 中央鞍座回转柱
-	K.cy(legs, 0.48, 0.30, M_LEG2, Vector3(0, hip + 0.32, 0.0), Vector3.ZERO, 0.56, 24)
-	K.cy(legs, 0.50, 0.10, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.52, 24)
+	# 中央鞍座回转柱（收进 0.76m 窄车体宽度内，顶接 HP-C1）
+	K.cy(legs, 0.34, 0.26, M_LEG2, Vector3(0, hip + 0.34, 0.0), Vector3.ZERO, 0.38, 24)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.37, 24)
 
 	# 前探式立体双目光学/激光雷达犬首传感器舱 + 钢管防撞护笼
 	var head := K.node(legs, Vector3(0, hip + 0.04, -0.98), Vector3(8, 0, 0))

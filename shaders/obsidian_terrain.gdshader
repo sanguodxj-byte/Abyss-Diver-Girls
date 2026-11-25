@@ -3,7 +3,7 @@ shader_type spatial;
 // - 近景保留 1024px 真实贝壳状玻璃断口与柱状玄武岩肌理；
 // - 远景/高空鸟瞰自动引入距离法线 LOD 柔化（彻底消除远景细碎白反光噪点）+ 高处黑曜岩脊冷灰蓝轮廓层次，
 //   确保大俯视与实战近景下火山口环壁体块均清晰震撼。
-render_mode diffuse_burley, specular_schlick_ggx;
+render_mode diffuse_lambert, specular_schlick_ggx;
 
 uniform sampler2D obs_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D obs_n : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -35,13 +35,24 @@ void fragment() {
 	vec3 an = abs(N);
 	vec3 w = pow(an, vec3(6.0));
 	w /= max(w.x + w.y + w.z, 1e-4);
+	// 限制三平面最多采样 2 个主轴（忽略 <0.15 弱轴，极端三轴均分时剔除最弱轴）
+	if (w.x <= w.y && w.x <= w.z) {
+		w.x = 0.0;
+	} else if (w.y <= w.z) {
+		w.y = 0.0;
+	} else {
+		w.z = 0.0;
+	}
+	w = mix(vec3(0.0), w, greaterThan(w, vec3(0.15)));
+	w /= max(w.x + w.y + w.z, 1e-4);
 	float sx = N.x >= 0.0 ? 1.0 : -1.0;
 	float sy_sgn = N.y >= 0.0 ? 1.0 : -1.0;
 	float sz = N.z >= 0.0 ? 1.0 : -1.0;
 
 	vec2 gxz = wp.xz + world_offset;
 	float dist_cam = length(CAMERA_POSITION_WORLD - wp);
-	float lod_far = smoothstep(65.0, 210.0, dist_cam);
+	float lod_far = smoothstep(35.0, 95.0, dist_cam);
+	bool skip_r = dist_cam > 60.0;
 
 	float n_mac = texture(n_low, gxz * 0.0095).r;
 	float n_mid = texture(n_low, gxz * 0.032 + vec2(0.31, 0.57)).r;
@@ -50,41 +61,67 @@ void fragment() {
 	float sc_det = 0.056;
 	float sc_mac = 0.025;
 	vec3 o_alb = vec3(0.0);
-	vec3 o_rm = vec3(0.0);
+	vec3 o_rm = skip_r ? vec3(0.76, 0.78, 0.25) : vec3(0.0);
 	vec3 o_npert = vec3(0.0);
 
-	if (w.x > 0.03) {
+	float omix = clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88);
+	bool far_only = lod_far > 0.72;
+	float on1_w = mix(0.72, 0.22, lod_far);
+	float on2_w = mix(0.44, 0.36, lod_far);
+
+	if (w.x > 0.15) {
 		vec2 p = vec2(gxz.y, wp.y * 0.92);
-		vec2 u1 = p * sc_det;
 		vec2 u2 = p * sc_mac + vec2(0.37, 0.59);
-		o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.x;
-		o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.x;
-		vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
-		vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
-		vec2 tn = n1 * mix(0.72, 0.22, lod_far) + n2 * mix(0.44, 0.36, lod_far);
-		o_npert += vec3(0.0, tn.y * sx, tn.x * sx) * w.x;
+		if (far_only) {
+			o_alb += texture(obs_a, u2).rgb * w.x;
+			if (!skip_r) o_rm += texture(obs_r, u2).rgb * w.x;
+			vec2 tn = (texture(obs_n, u2).rg * 2.0 - 1.0) * 0.48;
+			o_npert += vec3(0.0, tn.y * sx, tn.x * sx) * w.x;
+		} else {
+			vec2 u1 = p * sc_det;
+			o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, omix) * w.x;
+			if (!skip_r) o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, omix) * w.x;
+			vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
+			vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
+			vec2 tn = n1 * on1_w + n2 * on2_w;
+			o_npert += vec3(0.0, tn.y * sx, tn.x * sx) * w.x;
+		}
 	}
-	if (w.y > 0.03) {
+	if (w.y > 0.15) {
 		vec2 p = gxz;
-		vec2 u1 = p * sc_det;
 		vec2 u2 = p * sc_mac + vec2(0.19, 0.71);
-		o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.y;
-		o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.y;
-		vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
-		vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
-		vec2 tn = n1 * mix(0.66, 0.20, lod_far) + n2 * mix(0.40, 0.32, lod_far);
-		o_npert += vec3(tn.x * sy_sgn, 0.0, tn.y * sy_sgn) * w.y;
+		if (far_only) {
+			o_alb += texture(obs_a, u2).rgb * w.y;
+			if (!skip_r) o_rm += texture(obs_r, u2).rgb * w.y;
+			vec2 tn = (texture(obs_n, u2).rg * 2.0 - 1.0) * 0.44;
+			o_npert += vec3(tn.x * sy_sgn, 0.0, tn.y * sy_sgn) * w.y;
+		} else {
+			vec2 u1 = p * sc_det;
+			o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, omix) * w.y;
+			if (!skip_r) o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, omix) * w.y;
+			vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
+			vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
+			vec2 tn = n1 * mix(0.66, 0.20, lod_far) + n2 * mix(0.40, 0.32, lod_far);
+			o_npert += vec3(tn.x * sy_sgn, 0.0, tn.y * sy_sgn) * w.y;
+		}
 	}
-	if (w.z > 0.03) {
+	if (w.z > 0.15) {
 		vec2 p = vec2(gxz.x, wp.y * 0.92);
-		vec2 u1 = p * sc_det;
 		vec2 u2 = p * sc_mac + vec2(0.61, 0.27);
-		o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.z;
-		o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.35, 0.0, 0.88)) * w.z;
-		vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
-		vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
-		vec2 tn = n1 * mix(0.72, 0.22, lod_far) + n2 * mix(0.44, 0.36, lod_far);
-		o_npert += vec3(tn.x * sz, tn.y * sz, 0.0) * w.z;
+		if (far_only) {
+			o_alb += texture(obs_a, u2).rgb * w.z;
+			if (!skip_r) o_rm += texture(obs_r, u2).rgb * w.z;
+			vec2 tn = (texture(obs_n, u2).rg * 2.0 - 1.0) * 0.48;
+			o_npert += vec3(tn.x * sz, tn.y * sz, 0.0) * w.z;
+		} else {
+			vec2 u1 = p * sc_det;
+			o_alb += mix(texture(obs_a, u1).rgb, texture(obs_a, u2).rgb, omix) * w.z;
+			if (!skip_r) o_rm += mix(texture(obs_r, u1).rgb, texture(obs_r, u2).rgb, omix) * w.z;
+			vec2 n1 = texture(obs_n, u1).rg * 2.0 - 1.0;
+			vec2 n2 = texture(obs_n, u2).rg * 2.0 - 1.0;
+			vec2 tn = n1 * on1_w + n2 * on2_w;
+			o_npert += vec3(tn.x * sz, tn.y * sz, 0.0) * w.z;
+		}
 	}
 
 	float slope_up = clamp(N.y, 0.0, 1.0);
@@ -105,10 +142,17 @@ void fragment() {
 	vec3 n_pert = o_npert;
 	float rough = rough_tex;
 	if (dust_m > 0.02) {
-		vec2 suv1 = gxz * 0.140;
 		vec2 suv2 = gxz * 0.058 + vec2(0.43, 0.29);
-		vec3 sa = mix(texture(scree_a, suv1).rgb, texture(scree_a, suv2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.28, 0.0, 0.85));
-		vec2 sn = (texture(scree_n, suv1).rg * 2.0 - 1.0) * mix(0.70, 0.34, lod_far) + (texture(scree_n, suv2).rg * 2.0 - 1.0) * 0.36;
+		vec3 sa;
+		vec2 sn;
+		if (far_only) {
+			sa = texture(scree_a, suv2).rgb;
+			sn = (texture(scree_n, suv2).rg * 2.0 - 1.0) * 0.58;
+		} else {
+			vec2 suv1 = gxz * 0.140;
+			sa = mix(texture(scree_a, suv1).rgb, texture(scree_a, suv2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.28, 0.0, 0.85));
+			sn = (texture(scree_n, suv1).rg * 2.0 - 1.0) * mix(0.70, 0.34, lod_far) + (texture(scree_n, suv2).rg * 2.0 - 1.0) * 0.36;
+		}
 		vec3 c_d = sa * scree_tint * mix(0.90, 1.10, n_mid);
 		col = mix(col, c_d, dust_m);
 		n_pert = mix(n_pert, vec3(sn.x, 0.0, sn.y), dust_m * 0.82);
@@ -128,16 +172,15 @@ void fragment() {
 	col *= mix(0.70, 1.0, ao_v);
 
 	float wet = clamp(weather_wet, 0.0, 1.0);
-	// 远距柔和略升粗糙度，彻底消除大俯视下细碎白点，近景保留真实黑曜玻璃丝滑镜光
-	float eff_rough = clamp(rough + 0.05 + lod_far * 0.14 - wet * 0.10, 0.30, 0.95);
+	// 写实暗哑火山玄武岩基调 + 仅在陡峭新鲜玻璃断口处保留克制微光（彻底消除塑料乳胶油光）
+	float scar = smoothstep(0.56, 0.92, glass_m);
+	float eff_rough = clamp(rough * 0.78 + 0.30 + lod_far * 0.14 - wet * 0.08 - scar * 0.10, 0.54, 0.96);
 	NORMAL = normalize((VIEW_MATRIX * vec4(w_nrm, 0.0)).xyz);
 	ALBEDO = col;
-	METALLIC = glass_m * mix(0.12, 0.04, lod_far);
+	METALLIC = scar * mix(0.05, 0.01, lod_far);
 	ROUGHNESS = eff_rough;
-	SPECULAR = mix(0.36, mix(0.68, 0.46, lod_far), glass_m);
-	CLEARCOAT = glass_m * mix(0.24, 0.06, lod_far);
-	CLEARCOAT_ROUGHNESS = mix(0.24, 0.42, lod_far);
-	EMISSION = (sheen_col * fres * glass_m * 0.055 + ridge_rim_col * crest_elev * fres * 0.10) * ao_v;
+	SPECULAR = mix(0.24, mix(0.46, 0.30, lod_far), scar);
+	EMISSION = (sheen_col * fres * scar * 0.022 + ridge_rim_col * crest_elev * fres * 0.045) * ao_v;
 	AO = clamp(ao_v * mix(0.45, 1.0, cav_ao), 0.28, 1.0);
 	AO_LIGHT_AFFECT = 0.48;
 }

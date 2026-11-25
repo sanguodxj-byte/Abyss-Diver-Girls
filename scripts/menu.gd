@@ -14,6 +14,9 @@ var cam: Camera3D
 var airship: Node3D
 var toon: Node
 var menu_env: Environment
+var _menu_sun: DirectionalLight3D
+var _cloudsea_mat: ShaderMaterial
+var _dof_attr: CameraAttributesPractical
 var t := 0.0
 var refs := {}
 var settings_panel: PanelContainer
@@ -66,7 +69,7 @@ func _build_scene(sv: SubViewport) -> void:
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.05
 	env.tonemap_white = 8.0
-	env.ssao_enabled = not mob_perf
+	env.ssao_enabled = (not mob_perf) and GameData.quality >= 1
 	env.ssao_radius = 0.8
 	env.ssao_intensity = 1.6
 	env.glow_enabled = (not mob_perf) or GameData.quality >= 2
@@ -74,8 +77,8 @@ func _build_scene(sv: SubViewport) -> void:
 	env.glow_bloom = 0.12
 	env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-	# 舱内体积雾：只在近处，阳光穿窗形成光柱（天空不受影响）
-	env.volumetric_fog_enabled = not mob_perf
+	# 舱内体积雾：仅极致档开启近距光柱（流畅/高档关闭以节省全屏体积雾 froxel 开销）
+	env.volumetric_fog_enabled = (not mob_perf) and GameData.quality >= 2
 	env.volumetric_fog_density = 0.012
 	env.volumetric_fog_albedo = Color(1.0, 0.85, 0.7)
 	env.volumetric_fog_anisotropy = 0.75
@@ -94,16 +97,23 @@ func _build_scene(sv: SubViewport) -> void:
 	sun.light_energy = 2.4
 	sun.shadow_enabled = (not mob_perf) or GameData.quality >= 1
 	sun.shadow_blur = 0.0 if mob_perf else 1.5
-	sun.light_angular_distance = 0.0 if mob_perf else 0.6
+	sun.light_angular_distance = 0.0 if (mob_perf or GameData.quality < 2) else 0.4
 	sun.light_volumetric_fog_energy = 4.0
 	sun.directional_shadow_max_distance = 30.0
 	root.add_child(sun)
+	_menu_sun = sun
 	sun.basis = Basis.looking_at(-L, Vector3.UP)
 	# 云下城市（真实 3D 楼体 + 3D 云海层；移动端流畅档仅用天空盒云下层以大幅减轻片元开销）
 	if not mob_perf or GameData.quality >= 1:
 		var city := preload("res://scripts/menu_city.gd").new()
 		root.add_child(city)
 		city.setup(sky.sky_material, L)
+		for ch in city.get_children():
+			if ch is MeshInstance3D and ch.material_override is ShaderMaterial:
+				var csm := ch.material_override as ShaderMaterial
+				if csm.shader != null and csm.shader.resource_path.ends_with("menu_cloudsea.gdshader"):
+					_cloudsea_mat = csm
+					break
 	# 装配完整 87.2m 信天翁号，将既有主菜单 OBS-2 观景舱精确置于左舷 OBS-2 舱位（世界坐标保持 0,0,0 与旧镜头 100% 重合）
 	if OS.has_feature("web"):
 		# 窗内镜头只构建观景舱，跳过不可见的整艇与机库。
@@ -128,15 +138,14 @@ func _build_scene(sv: SubViewport) -> void:
 	cam.fov = 62
 	cam.near = 0.22
 	cam.far = 16000.0
-	if not OS.has_feature("mobile") or GameData.quality >= 2:
-		var ca := CameraAttributesPractical.new()
-		ca.dof_blur_near_enabled = true
-		ca.dof_blur_near_distance = 0.35
-		ca.dof_blur_near_transition = 0.4
-		ca.dof_blur_amount = 0.04
-		cam.attributes = ca
+	_dof_attr = CameraAttributesPractical.new()
+	_dof_attr.dof_blur_near_enabled = true
+	_dof_attr.dof_blur_near_distance = 0.35
+	_dof_attr.dof_blur_near_transition = 0.4
+	_dof_attr.dof_blur_amount = 0.04
 	root.add_child(cam)
 	cam.current = true
+	_apply_menu_quality()
 	# 舱内浮尘（被阳光照亮）
 	A.emitter(root, Vector3(1.0, 1.8, 1.4), {"amount": 90, "life": 9.0, "size": 0.012, "box": Vector3(4.5, 2.2, 1.8), "dir": Vector3(-1, 0.1, 0.2),
 		"spread": 60.0, "vmin": 0.03, "vmax": 0.08, "gravity": Vector3(0, -0.005, 0), "c0": Color(1.0, 0.85, 0.65, 0.0), "cmid": Color(1.0, 0.88, 0.7, 0.7),
@@ -144,20 +153,31 @@ func _build_scene(sv: SubViewport) -> void:
 	toon = preload("res://scripts/toon.gd").attach(root, menu_env, cam, GameData.render_style == 1)
 
 
+func _apply_menu_quality() -> void:
+	var mob_perf := OS.has_feature("mobile") or OS.has_feature("web") or RenderingServer.get_current_rendering_method() == "mobile"
+	if menu_env != null:
+		menu_env.volumetric_fog_enabled = (not mob_perf) and GameData.quality >= 2
+		menu_env.ssao_enabled = (not mob_perf) and GameData.quality >= 1
+		menu_env.glow_enabled = (not mob_perf) or GameData.quality >= 2
+	if _menu_sun != null and is_instance_valid(_menu_sun):
+		_menu_sun.light_angular_distance = 0.0 if (mob_perf or GameData.quality < 2) else 0.4
+	if cam != null and is_instance_valid(cam):
+		var want_dof := (not OS.has_feature("mobile")) and (not OS.has_feature("web")) and GameData.quality >= 2
+		cam.attributes = _dof_attr if want_dof else null
+	if _cloudsea_mat != null:
+		var c_steps := 6 if GameData.quality == 0 else (8 if GameData.quality == 1 else 10)
+		_cloudsea_mat.set_shader_parameter("steps", c_steps)
+
+
 const POST := """
 shader_type canvas_item;
-uniform float t = 0.0;
 varying float page_alpha;
 void vertex(){ page_alpha = COLOR.a; }
-float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void fragment(){
 	vec2 uv = UV - 0.5;
 	float vig = smoothstep(0.35, 0.95, length(uv * vec2(1.25, 1.0)));
-	float grain = (h(UV * 900.0 + t) - 0.5) * 0.05;
 	float bars = step(0.5 - 0.045, abs(uv.y));
-	COLOR = vec4(vec3(grain * 0.5), clamp(vig * 0.65 + abs(grain), 0.0, 1.0));
-	COLOR = mix(COLOR, vec4(0.0, 0.0, 0.0, 1.0), bars);
-	COLOR.a *= page_alpha;
+	COLOR = vec4(0.0, 0.0, 0.0, max(vig * 0.65, bars) * page_alpha);
 }
 """
 
@@ -735,6 +755,9 @@ func _pick_slot(i: int) -> void:
 	if slots_mode == "load":
 		GameData.set_slot(i)
 		if GameData.load_game():
+			GameData.apply_quality(get_viewport())
+			if is_instance_valid(_sv):
+				GameData.apply_quality(_sv)
 			slots_panel.visible = false
 			shade.visible = false
 			Audio.play_ui("ui_confirm")
@@ -822,7 +845,8 @@ func _build_settings(initial_tab := "video") -> void:
 	var fs := CheckButton.new()
 	fs.text = Loc.t("全屏", "Fullscreen")
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-	fs.toggled.connect(func(on): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED))
+	fs.toggled.connect(func(on):
+		GameData.set_fullscreen(on))
 	pg.add_child(fs)
 	var vs := CheckButton.new()
 	vs.text = Loc.t("垂直同步", "VSync")
@@ -845,8 +869,7 @@ func _build_settings(initial_tab := "video") -> void:
 		GameData.apply_quality(get_viewport())
 		if _sv and is_instance_valid(_sv):
 			GameData.apply_quality(_sv)
-		if menu_env and OS.has_feature("mobile"):
-			menu_env.glow_enabled = GameData.quality >= 2
+		_apply_menu_quality()
 		GameData.save_game())
 	pg.add_child(q)
 	if not OS.has_feature("mobile"):
@@ -903,9 +926,10 @@ func _build_settings(initial_tab := "video") -> void:
 
 	pg.add_child(_field_label(Loc.t("视角模式", "Camera Mode")))
 	var vopt := OptionButton.new()
-	vopt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	vopt.add_item(Loc.t("斜俯视", "Top-Down"), 0)
 	vopt.add_item(Loc.t("第一人称", "First-Person"), 1)
-	vopt.selected = GameData.view_mode
+	vopt.add_item(Loc.t("第三人称越肩", "Over-the-Shoulder"), 2)
+	vopt.selected = clampi(GameData.view_mode, 0, 2)
 	vopt.item_selected.connect(func(i):
 		GameData.view_mode = i
 		GameData.save_game())
@@ -947,8 +971,6 @@ func _process(delta: float) -> void:
 	if readout_t <= 0.0:
 		readout_t = randf_range(1.0, 2.2)
 		_tick_readout()
-	if post_mat:
-		post_mat.set_shader_parameter("t", fmod(t, 10.0))
 	var sway := sin(t * 0.35) * 0.6 + sin(t * 0.13) * 0.4
 	# 贴窗视角：镜头几乎贴着玻璃，窗框和仪表台只占画面边缘
 	cam.position = Vector3(0.75 + sin(t * 0.07) * 0.04, 1.82 + sin(t * 0.4) * 0.02, 1.1)

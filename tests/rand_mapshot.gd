@@ -9,8 +9,8 @@ extends "res://tests/lib/test_base.gd"
 ##   --map=<id[,id]>       指定战区 id（默认从全部战区随机抽取）
 ##   --maps=<数量|all>     随机抽取战区数量（默认 1）
 ##   --count=<数量>        每个战区拍摄点位数（默认 6：首张为真实空投落点，其余为全图分散随机点）
-##   --view=tps|fps|both   玩家视角模式（默认 tps，即 GameData 默认第三人称斜俯视）
-## 输出：review\rand_mapshot_<战区>_<序号>_<区块>[_fps].png
+##   --view=tps|fps|ots|both|all  玩家视角模式（默认 tps；ots = 第三人称越肩 B.o.T 视角）
+## 输出：review\rand_mapshot_<战区>_<序号>_<区块>[_fps|_ots].png
 
 const TIMEOUT := 600.0
 const MIN_SPOT_DIST := 55.0
@@ -235,6 +235,44 @@ func _settle_fps(raid: Node, spot: Dictionary, look_dir: Vector3) -> bool:
 	return false
 
 
+func _settle_ots(raid: Node, spot: Dictionary, look_dir: Vector3) -> bool:
+	if raid.view_mode != 2:
+		raid.set_view_mode(2, false)
+	var m = raid.mech
+	var p: Vector3 = spot.pos
+	var yaw := atan2(-look_dir.x, -look_dir.z)
+	if not bool(spot.get("is_drop", false)):
+		m.global_position = Vector3(p.x, p.y + 0.15, p.z)
+		m.velocity = Vector3.ZERO
+		if m.has_method("_vis_sync"):
+			m._vis_sync()
+		if m.torso != null:
+			m.torso.global_rotation = Vector3(0.0, yaw, 0.0)
+		if m.legs != null:
+			m.legs.global_rotation = Vector3(0.0, yaw, 0.0)
+	raid.aim_override = null
+	raid.fp_yaw = yaw
+	raid.fp_pitch = deg_to_rad(-6.5)
+	raid.ots_zoom = 1.0
+	raid.ots_shoulder_side = 1.0
+	raid.sync_ots_camera(0.0, true)
+	var stable := 0
+	var t := 0.0
+	var rb = raid._rb()
+	while t < 5.0:
+		_keep_player_healthy(raid)
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		var stream_ok: bool = (rb == null or not rb._pending)
+		if stream_ok:
+			stable += 1
+			if stable >= 12:
+				return true
+		else:
+			stable = 0
+	return false
+
+
 func _verify_player_perspective(raid: Node, mode: int, label: String) -> bool:
 	var cam: Camera3D = raid.camera
 	if not check(cam != null and cam.current, "%s: 玩家主相机未激活" % label):
@@ -251,7 +289,7 @@ func _verify_player_perspective(raid: Node, mode: int, label: String) -> bool:
 	if not check(rb != null and not rb._all_shown, "%s: 流式裁剪应保持玩家实机状态（未调用 show_all）" % label):
 		return false
 	if mode == 0:
-		if not check(absf(cam.fov - 40.0) < 0.1, "%s: 第三人称 FOV 偏离玩家默认值（got=%.2f）" % [label, cam.fov]):
+		if not check(absf(cam.fov - raid.TPS_FOV) < 0.1, "%s: 第三人称 FOV 偏离玩家默认值（got=%.2f want=%.2f）" % [label, cam.fov, raid.TPS_FOV]):
 			return false
 		if not check(absf(raid.cam_zoom - raid.ZOOM_MAX) < 0.002, "%s: 第三人称缩放偏离玩家默认值（got=%.4f want=%.4f）" % [label, raid.cam_zoom, raid.ZOOM_MAX]):
 			return false
@@ -262,6 +300,15 @@ func _verify_player_perspective(raid: Node, mode: int, label: String) -> bool:
 		var want_cam: Vector3 = raid.cam_focus + raid.CAM_OFFSET * raid._eff_zoom
 		var err_m := cam.global_position.distance_to(want_cam)
 		if not check(err_m < 0.5, "%s: 相机尚未收敛到玩家跟随位（err=%.2fm）" % [label, err_m]):
+			return false
+	elif mode == 2:
+		if not check(absf(cam.fov - raid.OTS_FOV_STD) < 0.25, "%s: 越肩第三人称 FOV 偏离默认值（got=%.2f want=%.2f）" % [label, cam.fov, raid.OTS_FOV_STD]):
+			return false
+		if not check(absf(cam.near - 0.14) < 0.02, "%s: 越肩第三人称近裁剪面偏离默认值（got=%.3f）" % [label, cam.near]):
+			return false
+		if not check(not raid.mech._fp_passthrough, "%s: 越肩第三人称不应隐藏自身机体" % label):
+			return false
+		if not check(cam.global_position.y >= raid.mech.global_position.y + 0.65, "%s: 越肩相机低于地面安全高度（cam_y=%.2f mech_y=%.2f）" % [label, cam.global_position.y, raid.mech.global_position.y]):
 			return false
 	else:
 		if not check(absf(cam.fov - raid.FP_FOV_STD) < 0.15, "%s: 第一人称 FOV 偏离玩家默认值（got=%.2f）" % [label, cam.fov]):
@@ -295,7 +342,7 @@ func run() -> void:
 
 	var count := clampi(int(_arg("count", "COUNT", "6")), 1, 20)
 	var view_arg := _arg("view", "VIEW", "tps").strip_edges().to_lower()
-	if not check(view_arg in ["tps", "fps", "both"], "无效的 --view 参数：%s（可选 tps / fps / both）" % view_arg):
+	if not check(view_arg in ["tps", "fps", "ots", "both", "all"], "无效的 --view 参数：%s（可选 tps / fps / ots / both / all）" % view_arg):
 		return
 
 	var maps := _pick_maps()
@@ -307,7 +354,7 @@ func run() -> void:
 	var keep_lo := GameData.loadout.duplicate()
 	if keep_lo.is_empty():
 		keep_lo = GameData.STARTER.duplicate()
-	GameData.view_mode = 1 if view_arg == "fps" else 0
+	GameData.view_mode = 2 if view_arg in ["ots", "all"] else (1 if view_arg == "fps" else 0)
 	log_line("seed=%d maps=%s count=%d view=%s headless=%s" % [_seed_used, str(maps), count, view_arg, str(headless())])
 
 	var total_shots := 0
@@ -333,7 +380,7 @@ func run() -> void:
 			var look_dir := _best_open_dir(raid, spot.pos)
 			var tag := str(spot.tag)
 			var zname := str(MapsData.ZONE_NAMES.get(str(spot.zone), str(spot.zone)))
-			if view_arg == "tps" or view_arg == "both":
+			if view_arg in ["tps", "both", "all"]:
 				var ok_tps := await _settle_tps(raid, spot, look_dir)
 				if not check(ok_tps, "%s#%02d 第三人称相机或流式分块未收敛" % [mid, s_idx + 1]):
 					return
@@ -348,7 +395,7 @@ func run() -> void:
 					fname, raid.mech.global_position.x, raid.mech.global_position.z, zname,
 					raid.camera.global_position.x, raid.camera.global_position.y, raid.camera.global_position.z,
 					Engine.get_frames_per_second()])
-			if view_arg == "fps" or view_arg == "both":
+			if view_arg in ["fps", "both", "all"]:
 				var ok_fps := await _settle_fps(raid, spot, look_dir)
 				if not check(ok_fps, "%s#%02d 第一人称流式分块未收敛" % [mid, s_idx + 1]):
 					return
@@ -362,6 +409,21 @@ func run() -> void:
 				log_line("shot %s pos=(%.1f, %.1f) zone=%s yaw=%.1fdeg fps=%d" % [
 					fname_fp, raid.mech.global_position.x, raid.mech.global_position.z, zname,
 					rad_to_deg(raid.fp_yaw), Engine.get_frames_per_second()])
+			if view_arg in ["ots", "all"]:
+				var ok_ots := await _settle_ots(raid, spot, look_dir)
+				if not check(ok_ots, "%s#%02d 越肩第三人称流式分块未收敛" % [mid, s_idx + 1]):
+					return
+				var label_ots := "%s#%02d(ots)" % [mid, s_idx + 1]
+				if not _verify_player_perspective(raid, 2, label_ots):
+					return
+				var fname_ots := "rand_mapshot_%s_%02d_%s_ots.png" % [mid, s_idx + 1, tag]
+				if not await _capture_and_verify(fname_ots):
+					return
+				total_shots += 1
+				log_line("shot %s pos=(%.1f, %.1f) zone=%s yaw=%.1fdeg dist=%.2fm cam_y=%.2fm fps=%d" % [
+					fname_ots, raid.mech.global_position.x, raid.mech.global_position.z, zname,
+					rad_to_deg(raid.fp_yaw), float(raid._ots_cur_dist), raid.camera.global_position.y,
+					Engine.get_frames_per_second()])
 
 		raid.aim_override = null
 

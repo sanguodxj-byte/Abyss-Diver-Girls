@@ -3,25 +3,27 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://7q3nb3jxuuvk"
-path="res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.ctex"
+path.bptc="res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.bptc.ctex"
+path.astc="res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/world/skybox_clouds_pano.png"
-dest_files=["res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.ctex"]
+dest_files=["res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.bptc.ctex", "res://.godot/imported/skybox_clouds_pano.png-987237f1d0c112ddcf4ced844f06beb3.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

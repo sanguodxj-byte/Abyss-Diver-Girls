@@ -72,23 +72,21 @@ static func _add_pillar_block(raid, p: Vector3, local_pos: Vector3, size: Vector
 	raid.blocks.append(raid._rect_for(wp, Vector3(fp.x, 1.0, fp.z)))
 
 
+static func _place_world_prefab(raid, p: Vector3, rot: float, id: String, local_pos: Vector3, local_yaw: float, sz: Vector3) -> void:
+	var wp := p + local_pos.rotated(Vector3.UP, deg_to_rad(rot))
+	PrefabLib.place_at_ground(raid, raid.world, id, wp, rot + local_yaw, sz, false, null, false)
+
+
 # ---------------------------------------------------------------- 1. 灰港市：中央穹顶总站 (central_terminus)
 static func _central_terminus(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
-	# 炮击重创的中央枢纽穹顶站台（bld_central_terminus，高精多段钢肋拱顶 + 塌陷天窗 + 歪斜车站大钟 + 站台售票亭）
-	var sz := Vector3(22.0, 13.5, 25.0)
-	PrefabLib.place_at_ground(raid, n, "bld_central_terminus", Vector3(0.0, -0.04, 0.0), 0.0, sz, false, null, false)
-	var sx_sc := sz.x / 11.6
-	var sz_sc := sz.z / 13.2
-	# 两侧 5 榀拱肋立柱墩碰撞（保留中央 14m×22m 贯通首领战竞技空间与南北进出口）
-	for z_base: float in [-5.4, -2.7, 0.0, 2.7, 5.4]:
-		for sgn: float in [-1.0, 1.0]:
-			_add_pillar_block(raid, p, Vector3(sgn * 4.85 * sx_sc, 0.0, z_base * sz_sc), Vector3(1.5, 8.0, 1.5), rot)
-	# 左侧站台售票亭碰撞
-	_add_pillar_block(raid, p, Vector3(-3.45 * sx_sc, 0.0, 0.6 * sz_sc), Vector3(2.8, 5.0, 4.2), rot)
+	# Wave5 重制：塌顶拱形站厅 + 崩角西主站房 + 歪斜钟楼（lm_central_terminus_remake 23×13.8×17）
+	# 保留中央轨道与站台贯通走廊供 arena_pos (0,0,1.5) 首领决战，碰撞体仅包覆西主站房与南北外侧拱廊墙
+	var sz := Vector3(23.0, 13.8, 17.0)
+	_place_world_prefab(raid, p, rot, "lm_central_terminus_remake", Vector3(0.0, -0.04, 0.0), 0.0, sz)
+	_add_pillar_block(raid, p, Vector3(-7.6, 0.0, 0.0), Vector3(5.4, 12.0, 14.2), rot)
+	_add_pillar_block(raid, p, Vector3(2.5, 0.0, -7.2), Vector3(14.6, 6.2, 1.0), rot)
+	_add_pillar_block(raid, p, Vector3(2.5, 0.0, 7.2), Vector3(14.6, 6.2, 1.0), rot)
+	raid.blocks.append(raid._rect_for(p, Vector3(23.2, 1.0, 17.2)))
 
 
 # ---------------------------------------------------------------- 2. 铁锈工业带：二号转炉钢厂 (converter_foundry)
@@ -107,7 +105,7 @@ static func _converter_foundry(raid, p: Vector3, rot: float) -> void:
 	# 后场主体重型转炉铸造车间残骸（bld_converter_foundry，倾翻铁水包 + 断缆天车 + 36 段洗涤烟囱）
 	var sz := Vector3(17.8, 15.5, 15.2)
 	var fz := -7.2
-	PrefabLib.place_at_ground(raid, n, "bld_converter_foundry", Vector3(0.0, -0.05, fz), 0.0, sz, false, null, false)
+	_place_world_prefab(raid, p, rot, "bld_converter_foundry", Vector3(0.0, -0.05, fz), 0.0, sz)
 	var sx_sc := sz.x / 10.8
 	var sz_sc := sz.z / 9.2
 	# 转炉双耳轴巨墩与四根天车排架柱碰撞（全部位于 z <= 0，不侵占前方首领战场地）
@@ -133,49 +131,26 @@ static func _missile_silo(raid, p: Vector3, rot: float) -> void:
 	n.rotation_degrees.y = rot
 	var M_CON := A.concrete(Color(0.49, 0.46, 0.40), true)
 	var M_CDK := A.concrete(Color(0.34, 0.32, 0.29), false)
-	var M_ST := A.paint(Color(0.27, 0.29, 0.26), 0.58, 0.52, {"rust": 0.55, "wear": 0.52, "panel_scale": 1.35})
-	var M_RST := A.paint(Color(0.38, 0.25, 0.16), 0.50, 0.65, {"rust": 0.85, "wear": 0.6, "panel_scale": 1.2})
 	var M_HAZ := A.hazard()
-	var M_CHR := A.chrome()
-	var M_PIT := A.metal(Color(0.05, 0.05, 0.06))
-	# 硬化抗核爆钢筋混凝土发射坪 + 柏油抗烧蚀导流区
-	A.add(n, A.bevel_box(Vector3(24.4, 0.16, 25.6), 0.05), M_CON, Vector3(0, 0.08, 0.4), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(16.8, 0.05, 14.0), 0.02), A.asphalt(Color(0.22, 0.22, 0.23)), Vector3(0, 0.17, 4.4), Vector3.ZERO, Vector3.ONE, false)
-	# 发射井口圆环装甲座圈（置于 z = -7.4m，前场 z = -1..+12m 完全敞开）
-	var sc := Vector3(0, 0.0, -7.4)
-	A.add(n, A.cyl(5.2, 0.56, 5.8, 16), M_CDK, sc + Vector3(0, 0.28, 0))
-	A.add(n, A.torus(4.35, 5.05, 24), M_HAZ, sc + Vector3(0, 0.54, 0), Vector3.ZERO, Vector3(1, 0.42, 1), false)
-	A.add(n, A.cyl(4.15, 0.24, 4.15, 24), M_PIT, sc + Vector3(0, 0.48, 0), Vector3.ZERO, Vector3.ONE, false)
-	# 井口半露出的重型洲际弹道导弹整流罩尖端与冷发射适配器环
-	A.add(n, A.cyl(1.48, 1.6, 1.56, 24), M_ST, sc + Vector3(0, 0.95, 0))
-	A.add(n, A.cyl(0.18, 2.2, 1.48, 24), A.paint(Color(0.22, 0.24, 0.22), 0.45, 0.50, {"wear": 0.45}), sc + Vector3(0, 2.85, 0))
-	A.add(n, A.torus(1.52, 1.68, 24), M_HAZ, sc + Vector3(0, 1.55, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
-	_add_pillar_block(raid, p, sc, Vector3(8.6, 3.8, 8.6), rot, true)
-	# 左右两扇 90 吨级厚重楔形装甲发射井盖（液压油缸顶起呈 62° 敞开）
+	# 前场硬化发射坪（z ∈ [+0.2..+12.0] 完全敞开，与 arena_pos (0,0,4.2) 对齐作首领竞技台）
+	A.add(n, A.bevel_box(Vector3(21.0, 0.14, 13.2), 0.04), M_CON, Vector3(0, 0.07, 5.8), Vector3.ZERO, Vector3.ONE, false)
+	for ix in 3:
+		var bx := -5.4 + float(ix) * 5.4
+		A.add(n, A.bevel_box(Vector3(5.0, 0.04, 8.6), 0.02), M_CDK, Vector3(bx, 0.15, 5.8), Vector3.ZERO, Vector3.ONE, false)
 	for sx: float in [-1.0, 1.0]:
-		var door := Node3D.new()
-		n.add_child(door)
-		door.position = sc + Vector3(sx * 4.7, 0.55, 0)
-		door.rotation_degrees.z = sx * -62.0
-		A.add(door, A.bevel_box(Vector3(4.6, 0.92, 8.2), 0.08), M_ST, Vector3(-sx * 2.1, 0.46, 0))
-		A.add(door, A.bevel_box(Vector3(4.2, 0.24, 7.6), 0.04), M_RST, Vector3(-sx * 2.1, 0.98, 0))
-		for ri in 3:
-			var rz := -2.6 + ri * 2.6
-			A.add(door, A.bevel_box(Vector3(4.3, 0.34, 0.42), 0.03), M_CDK, Vector3(-sx * 2.1, 1.06, rz))
-		A.add(door, A.bevel_box(Vector3(0.45, 0.96, 8.0), 0.03), M_HAZ, Vector3(-sx * 4.15, 0.48, 0))
-		# 双联巨型镀铬液压作动筒
-		for hz: float in [-2.4, 2.4]:
-			A.add(n, A.cyl(0.26, 2.8, 0.30, 12), M_RST, sc + Vector3(sx * 6.4, 1.35, hz), Vector3(0, 0, sx * 24.0))
-			A.add(n, A.cyl(0.16, 2.6, 0.16, 12), M_CHR, sc + Vector3(sx * 5.6, 3.10, hz), Vector3(0, 0, sx * 24.0))
-		_add_pillar_block(raid, p, sc + Vector3(sx * 6.0, 0, 0), Vector3(2.8, 5.5, 7.8), rot)
-	# 勤务脐带塔架（立于左后角 x = -8.6, z = -10.8）与防雷避雷塔针 + 地下指挥排风碉堡（右后角）
-	K.lattice(raid, p + Vector3(-8.6, 0, -10.8).rotated(Vector3.UP, deg_to_rad(rot)), 16.5, 3.0)
-	A.add(n, A.bevel_box(Vector3(5.2, 0.65, 0.72), 0.03), M_RST, Vector3(-5.6, 11.4, -9.2), Vector3(0, -22, 0))
-	var bnk := Vector3(8.4, 0.0, -10.2)
-	A.add(n, A.bevel_box(Vector3(5.6, 3.4, 4.8), 0.10), M_CDK, bnk + Vector3(0, 1.7, 0))
-	A.add(n, A.bevel_box(Vector3(6.0, 0.55, 5.2), 0.06), M_CON, bnk + Vector3(0, 3.55, 0))
-	A.add(n, A.cyl(0.65, 2.4, 0.78, 16), M_ST, bnk + Vector3(0.8, 4.8, 0))
-	_add_pillar_block(raid, p, bnk, Vector3(5.8, 4.2, 5.0), rot)
+		A.add(n, A.bevel_box(Vector3(0.42, 0.03, 11.2), 0.015), M_HAZ, Vector3(sx * 8.4, 0.155, 5.8), Vector3.ZERO, Vector3.ONE, false)
+	var blast_decal := A.ground_decal(n, A.scorch_tex(), Color(0.18, 0.16, 0.15, 0.65), 10.8, Vector3(0.0, 0.18, 2.2))
+	blast_decal.rotation.y = 0.45
+	# Wave5 重制：战略地下导弹发射井爆裂井口 + 半掀双扇防爆巨门 + 崩角发控地堡（lm_missile_silo_remake 19×11.4×19）
+	# 后置并旋转 180° 使排焰导流槽居后、井口与控堡位于 z <= -0.5，前场首领竞技台零遮挡
+	var sz := Vector3(17.5, 11.2, 16.5)
+	var silo_z := -7.8
+	_place_world_prefab(raid, p, rot, "lm_missile_silo_remake", Vector3(0.0, -0.04, silo_z), 180.0, sz)
+	var sx_sc := sz.x / 19.0
+	var sz_sc := sz.z / 19.0
+	_add_pillar_block(raid, p, Vector3(-1.4 * sx_sc, 0.0, silo_z + 0.6 * sz_sc), Vector3(8.2, 4.4, 8.2), rot, true)
+	_add_pillar_block(raid, p, Vector3(6.35 * sx_sc, 0.0, silo_z + 5.25 * sz_sc), Vector3(4.8, 4.5, 5.2), rot)
+	raid.blocks.append(raid._rect_for(p + Vector3(0.0, 0.0, silo_z).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(17.8, 1.0, 16.8)))
 
 
 # ---------------------------------------------------------------- 4. 赤湖新区：赤湖溢洪闸枢 (spillway_dam)
@@ -337,57 +312,35 @@ static func _geothermal_vault(raid, p: Vector3, rot: float) -> void:
 	n.rotation_degrees.y = rot
 	var M_CON := A.concrete(Color(0.38, 0.37, 0.40), true)
 	var M_ST := A.paint(Color(0.28, 0.31, 0.36), 0.72, 0.42, {"rust": 0.58, "wear": 0.54, "panel_scale": 1.45})
-	var M_COP := A.paint(Color(0.68, 0.42, 0.22), 0.85, 0.30, {"wear": 0.35, "panel_scale": 1.1})
 	var M_DARK := A.metal(Color(0.11, 0.12, 0.14))
 	var M_DECK := A.concrete(Color(0.27, 0.28, 0.32), false)
 	var M_HAZ := A.hazard()
-	var M_CORE := A.emit(Color(0.95, 0.38, 0.14), 1.9)
-	# 深井防辐射重型六角钢格栅前场平台（前场 z = -1..+12m 敞开）
-	A.add(n, A.bevel_box(Vector3(23.6, 0.16, 25.0), 0.05), M_CON, Vector3(0, 0.08, 0.6), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.cyl(9.2, 0.08, 9.6, 12), M_DECK, Vector3(0, 0.16, 4.4), Vector3.ZERO, Vector3.ONE, false)
+	# 深井防辐射重型前场平台（z ∈ [0..+12m] 敞开，与 arena_pos (0,0,4.2) 对齐作首领战场地）
+	A.add(n, A.bevel_box(Vector3(21.6, 0.14, 13.6), 0.04), M_CON, Vector3(0, 0.07, 5.6), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.cyl(7.6, 0.08, 8.0, 24), M_DECK, Vector3(0, 0.15, 5.2), Vector3.ZERO, Vector3.ONE, false)
 	for ri in 6:
-		A.add(n, A.bevel_box(Vector3(0.32, 0.03, 17.6), 0.01), M_ST, Vector3(0, 0.205 + ri * 0.004, 4.4), Vector3(0, ri * 30.0, 0), Vector3.ONE, false)
-	A.add(n, A.cyl(0.85, 0.05, 0.92, 12), M_DARK, Vector3(0, 0.235, 4.4), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.torus(8.6, 9.1, 24), M_HAZ, Vector3(0, 0.19, 4.4), Vector3.ZERO, Vector3(1, 0.35, 1), false)
-	# 后部主反应堆压力安全壳多面体截角穹顶 + 深渊封印钻井塔台（置于 z = -8.0m，前场完全敞开供首领决战）
-	var vc := Vector3(0, 0, -8.0)
-	A.add(n, A.cyl(5.6, 6.8, 6.2, 16), M_CON, vc + Vector3(0, 3.4, 0))
-	A.add(n, A.cyl(4.35, 2.4, 5.55, 12), M_ST, vc + Vector3(0, 8.0, 0))
-	A.add(n, A.cyl(2.45, 2.1, 4.35, 12), M_ST, vc + Vector3(0, 10.25, 0))
-	PrefabLib.place_at_ground(raid, n, "poi_abyss_gate_rig", vc + Vector3(0, 0.02, 0), 0.0, Vector3(12.2, 14.8, 12.2), true, null, false)
-	# 磁约束超导铜线圈环箍 + 8 道外露重型钢肋扶壁 + 窄缝耐压泄温窗
-	for k in 3:
-		var ry := 2.2 + k * 2.1
-		var rr := 5.95 - k * 0.18
-		A.add(n, A.torus(rr - 0.16, rr + 0.24, 28), M_COP if k == 1 else M_ST, vc + Vector3(0, ry, 0), Vector3.ZERO, Vector3(1, 0.65, 1))
-	for i in 8:
-		var a := TAU * float(i) / 8.0
-		var dir := Vector3(sin(a), 0, cos(a))
-		A.add(n, A.bevel_box(Vector3(0.68, 9.6, 1.35), 0.04), M_DARK, vc + dir * 5.8 + Vector3(0, 4.8, 0), Vector3(-10, rad_to_deg(a), 0))
-		if i in [0, 1, 7]:
-			A.add(n, A.bevel_box(Vector3(0.95, 0.22, 0.18), 0.02), M_CORE, vc + dir * 5.62 + Vector3(0, 5.4, 0), Vector3(0, rad_to_deg(a), 0), Vector3.ONE, false)
-	# 穹顶顶部高压主蒸汽集箱冠环
-	A.add(n, A.cyl(1.85, 2.2, 2.35, 16), M_DARK, vc + Vector3(0, 12.2, 0))
-	A.add(n, A.torus(1.9, 2.25, 20), M_HAZ, vc + Vector3(0, 13.1, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
-	_add_pillar_block(raid, p, vc, Vector3(11.8, 13.5, 11.8), rot, true)
+		A.add(n, A.bevel_box(Vector3(0.28, 0.03, 14.6), 0.01), M_ST, Vector3(0, 0.195 + ri * 0.004, 5.2), Vector3(0, ri * 30.0, 0), Vector3.ONE, false)
+	A.add(n, A.cyl(0.80, 0.05, 0.88, 16), M_DARK, Vector3(0, 0.22, 5.2), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.torus(7.1, 7.55, 28), M_HAZ, Vector3(0, 0.18, 5.2), Vector3.ZERO, Vector3(1, 0.35, 1), false)
+	# Wave5 重制：安全壳正面三瓣炸穿露紫铜线圈 + 歪斜蒸汽集箱 + 东侧折断高压蒸汽巨管（lm_geothermal_vault_remake 22×15.6×20）
+	# 后置于 z = -8.4m，前场首领竞技台 100% 畅通
+	var sz := Vector3(19.0, 14.2, 16.5)
+	var vz := -8.4
+	_place_world_prefab(raid, p, rot, "lm_geothermal_vault_remake", Vector3(0.0, -0.04, vz), 0.0, sz)
+	var sx_sc := sz.x / 22.0
+	var sz_sc := sz.z / 20.0
+	_add_pillar_block(raid, p, Vector3(0.0, 0.0, vz - 0.8 * sz_sc), Vector3(8.6, 13.5, 8.6), rot, true)
+	_add_pillar_block(raid, p, Vector3(0.0, 0.0, vz + 6.45 * sz_sc), Vector3(4.6, 3.2, 2.8), rot)
+	for sx: float in [-1.0, 1.0]:
+		_add_pillar_block(raid, p, Vector3(sx * 7.6 * sx_sc, 0.0, vz - 0.8 * sz_sc), Vector3(2.2, 10.0, 2.2), rot)
+	raid.blocks.append(raid._rect_for(p + Vector3(0.0, 0.0, vz).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(19.2, 1.0, 16.8)))
 	var gl := OmniLight3D.new()
 	gl.light_color = Color(0.98, 0.44, 0.16)
 	gl.light_energy = 4.2
 	gl.omni_range = 20.0
 	gl.shadow_enabled = false
-	gl.position = vc + Vector3(0, 5.2, 6.4)
+	gl.position = Vector3(0, 5.2, vz + 5.6)
 	n.add_child(gl)
-	# 左右两侧双联地热冷凝换热高塔（x = ±9.6m, z = -4.6m）与跨顶高压蒸汽弯管拱廊
-	for sx: float in [-1.0, 1.0]:
-		var tc := Vector3(sx * 9.6, 0, -4.6)
-		K.tower(raid, p + tc.rotated(Vector3.UP, deg_to_rad(rot)), 2.1, 14.2, 1.65, Color(0.36, 0.35, 0.38))
-		var pipe_pts := [
-			vc + Vector3(sx * 2.0, 12.6, 0.6),
-			vc + Vector3(sx * 5.8, 14.2, 1.8),
-			tc + Vector3(0, 11.8, 0),
-		]
-		A.add(n, A.pipe(pipe_pts, 0.48, 12, 4), M_ST, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-		A.add(n, A.torus(0.52, 0.68, 14), M_COP, vc + Vector3(sx * 4.2, 13.6, 1.3), Vector3(0, 0, sx * 72.0), Vector3.ONE, false)
 
 
 # ---------------------------------------------------------------- 7. 东湾船坞港：巨型潜艇干船坞 (submarine_drydock)
@@ -397,73 +350,23 @@ static func _submarine_drydock(raid, p: Vector3, rot: float) -> void:
 	n.position = p
 	n.rotation_degrees.y = rot
 	var M_CON := A.concrete(CONCRETE, true)
-	var M_CDK := A.concrete(CONC_DARK, false)
-	var M_HULL := A.paint(Color(0.16, 0.19, 0.22), 0.56, 0.48, {"rust": 0.45, "wear": 0.52, "panel_scale": 1.3})
-	var M_KEEL := A.paint(Color(0.38, 0.16, 0.14), 0.46, 0.58, {"rust": 0.72, "wear": 0.60, "panel_scale": 1.2})
-	var M_ORG := A.paint(Color(0.68, 0.34, 0.14), 0.58, 0.52, {"rust": 0.75, "wear": 0.62, "panel_scale": 1.4})
 	var M_ST := A.paint(Color(0.28, 0.31, 0.34), 0.68, 0.46, {"rust": 0.58, "wear": 0.50})
 	var M_DARK := A.metal(Color(0.11, 0.12, 0.14))
-	var M_RST := A.corrugated(Color(0.34, 0.22, 0.16), 0.72, 0.36)
-	var M_GL := A.glass(Color(0.24, 0.34, 0.40))
 	var M_HAZ := A.hazard()
-	var M_LAMP := A.emit(Color(1.0, 0.80, 0.46), 1.85)
-	var M_WELD := A.emit(Color(0.34, 0.86, 1.0), 1.75)
-
-	# 1. 干船坞重型钢筋混凝土坞底坪与前场龙门轨道道床（平齐地面不阻挡走位，z ∈ [-0.5, 11.5] 为敞开首领竞技台）
-	A.add(n, A.bevel_box(Vector3(24.8, 0.12, 26.8), 0.04), M_CON, Vector3(0, 0.06, 0.2), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(16.8, 0.05, 16.0), 0.02), M_CDK, Vector3(0, 0.125, -4.4), Vector3.ZERO, Vector3.ONE, false)
-	for sx: float in [-10.4, 10.4]:
-		A.add(n, A.bevel_box(Vector3(1.15, 0.07, 25.2), 0.02), M_DARK, Vector3(sx, 0.13, 0.2), Vector3.ZERO, Vector3.ONE, false)
-		A.add(n, A.bevel_box(Vector3(0.24, 0.06, 25.0), 0.01), M_ST, Vector3(sx - 0.24, 0.175, 0.2), Vector3.ZERO, Vector3.ONE, false)
-		A.add(n, A.bevel_box(Vector3(0.24, 0.06, 25.0), 0.01), M_ST, Vector3(sx + 0.24, 0.175, 0.2), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(13.6, 0.03, 0.42), 0.01), M_HAZ, Vector3(0, 0.135, 9.6), Vector3.ZERO, Vector3.ONE, false)
-
-	# 2. 坐墩龙骨上的未完工重型潜艇耐压壳体（高精 48 段耐压壳 + 指挥塔围壳 + 七叶青铜导管桨，置于后场 z = -6.8m 沿 X 轴横陈）
-	var sub_c := Vector3(0, 0, -6.8)
-	PrefabLib.place_at_ground(raid, n, "veh_submarine_hull", sub_c + Vector3(0.0, 0.12, 0.0), 90.0, Vector3(4.4, 6.6, 13.6))
-	# 船台脚手架施工栈桥
-	for sz: float in [-2.6, 2.6]:
-		A.add(n, A.bevel_box(Vector3(10.8, 0.24, 1.1), 0.02), M_RST, sub_c + Vector3(0, 2.9, sz))
-		for px in [-4.8, 0.0, 4.8]:
-			A.add(n, A.bevel_box(Vector3(0.26, 3.1, 0.26), 0.02), M_ST, sub_c + Vector3(px, 1.55, sz))
-	_add_pillar_block(raid, p, sub_c + Vector3(0, 0, 0), Vector3(13.2, 7.2, 5.8), rot, false)
-
-	# 3. 双侧造船厂泵房压载机库（后隅两侧，不侵占前场竞技台）
-	for sx: float in [-1.0, 1.0]:
-		var ph := Vector3(sx * 8.6, 0, -10.8)
-		A.add(n, A.bevel_box(Vector3(4.2, 4.4, 3.6), 0.06), M_RST, ph + Vector3(0, 2.2, 0))
-		A.add(n, A.bevel_box(Vector3(4.5, 0.42, 3.9), 0.04), M_CON, ph + Vector3(0, 4.45, 0))
-		A.add(n, A.bevel_box(Vector3(1.5, 1.6, 0.18), 0.02), M_DARK, ph + Vector3(0, 1.8, 1.82))
-		_add_pillar_block(raid, p, ph, Vector3(4.4, 4.8, 3.8), rot, false)
-
-	# 4. 跨度 22.8 米、高 19.6 米重型造船龙门起重机（Goliath Gantry Crane）
-	for sx: float in [-1.0, 1.0]:
-		var gx := sx * 10.4
-		for gz: float in [-7.6, 3.6]:
-			A.add(n, A.bevel_box(Vector3(1.55, 1.35, 1.85), 0.05), M_DARK, Vector3(gx, 0.72, gz))
-			A.add(n, A.bevel_box(Vector3(1.62, 0.26, 1.92), 0.02), M_HAZ, Vector3(gx, 0.95, gz))
-			var leg_tilt := -8.5 if gz < 0.0 else 8.5
-			A.add(n, A.bevel_box(Vector3(0.95, 16.4, 1.05), 0.04), M_ORG, Vector3(gx, 9.2, gz + (-1.0 if gz > 0.0 else 1.0)), Vector3(leg_tilt, 0, 0))
-			_add_pillar_block(raid, p, Vector3(gx, 0, gz), Vector3(1.85, 16.0, 2.05), rot, false)
-		# 侧框联系纵梁 + 梯道平台
-		A.add(n, A.bevel_box(Vector3(0.75, 1.15, 11.4), 0.04), M_ORG, Vector3(gx, 16.8, -2.0))
-		A.add(n, A.bevel_box(Vector3(0.65, 0.70, 12.0), 0.03), M_ST, Vector3(gx, 1.9, -2.0))
-	# 顶部双箱梁主桥架（y = 17.8m，横跨干船坞全宽）+ 行走起重天车 + 下垂钢索吊钩
-	for bz in [-3.4, -0.6]:
-		A.add(n, A.bevel_box(Vector3(23.2, 2.1, 1.25), 0.05), M_ORG, Vector3(0, 17.9, bz))
-		A.add(n, A.bevel_box(Vector3(23.4, 0.26, 1.32), 0.02), M_HAZ, Vector3(0, 16.95, bz))
-	var trolley := Vector3(1.6, 19.2, -2.0)
-	A.add(n, A.bevel_box(Vector3(4.2, 1.6, 4.4), 0.06), M_ST, trolley)
-	A.add(n, A.bevel_box(Vector3(1.9, 1.35, 1.8), 0.04), M_GL, trolley + Vector3(-1.4, -1.2, 2.1), Vector3.ZERO, Vector3.ONE, false)
-	for cx in [-0.7, 0.7]:
-		A.add(n, A.tube([trolley + Vector3(cx, -1.0, -0.6), Vector3(1.6 + cx, 8.8, -6.2)], 0.08, 6, 3), M_DARK, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	# 起重横吊梁与双钢钩
-	A.add(n, A.bevel_box(Vector3(2.8, 0.55, 0.95), 0.04), M_HAZ, Vector3(1.6, 8.8, -6.2), Vector3.ZERO, Vector3.ONE, false)
-
-	# 5. 坞壁探照灯塔与前场照明（柔和补光不遮挡 Boss 战）
-	for sx: float in [-1.0, 1.0]:
-		A.add(n, A.bevel_box(Vector3(0.42, 0.85, 0.42), 0.03), M_LAMP, Vector3(sx * 9.8, 16.2, 1.4), Vector3(0, 0, sx * 18.0), Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(2.6, 0.22, 0.22), 0.02), M_WELD, sub_c + Vector3(0.4, 3.1, 2.7), Vector3.ZERO, Vector3.ONE, false)
+	# 前场钢筋混凝土坞坪与龙门轨道道床（z ∈ [+0.5..+12.0] 敞开，与 arena_pos (0,0,4.8) 对齐作首领战场地）
+	A.add(n, A.bevel_box(Vector3(22.8, 0.12, 12.6), 0.04), M_CON, Vector3(0, 0.06, 6.2), Vector3.ZERO, Vector3.ONE, false)
+	for sx: float in [-9.6, 9.6]:
+		A.add(n, A.bevel_box(Vector3(1.1, 0.06, 11.8), 0.02), M_DARK, Vector3(sx, 0.125, 6.2), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.22, 0.05, 11.6), 0.01), M_ST, Vector3(sx - 0.22, 0.165, 6.2), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(0.22, 0.05, 11.6), 0.01), M_ST, Vector3(sx + 0.22, 0.165, 6.2), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(13.6, 0.03, 0.42), 0.01), M_HAZ, Vector3(0, 0.135, 10.6), Vector3.ZERO, Vector3.ONE, false)
+	# Wave5 重制：潜艇耐压壳体 + 歪斜指挥塔围壳 + 跨坞龙门吊 + 坍塌阶梯坞壁（lm_submarine_drydock_remake 24×14.2×16）
+	# 后置于 z = -7.2m（覆盖 z ∈ [-14.6..+0.2]），前场竞技台 100% 无阻挡
+	var sz := Vector3(22.0, 13.8, 14.8)
+	var dz := -7.2
+	_place_world_prefab(raid, p, rot, "lm_submarine_drydock_remake", Vector3(0.0, -0.04, dz), 0.0, sz)
+	_add_pillar_block(raid, p, Vector3(0.0, 0.0, dz), Vector3(21.2, 12.0, 13.6), rot, false)
+	raid.blocks.append(raid._rect_for(p + Vector3(0.0, 0.0, dz).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(22.4, 1.0, 15.2)))
 	var gl := OmniLight3D.new()
 	gl.light_color = Color(0.96, 0.82, 0.58)
 	gl.light_energy = 3.8

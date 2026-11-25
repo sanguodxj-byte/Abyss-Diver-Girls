@@ -33,11 +33,11 @@ static func build(ctx: Dictionary) -> Node3D:
 		var side_m: float = sign(sx)
 		K.grab_iron(legs, 0.72, 0.07, Vector3(sx, hip + 0.26, 0.0), Vector3(0, side_m * -90.0, 0), 0.016)
 		K.plate(legs, K.crect(0.84, 0.07), 0.06, M_ACC, Vector3(sx, hip + 0.06, 0.0), Vector3(0, 90, 0), 0.006)
-	K.cy(legs, 0.64, 0.28, M_LEG2, Vector3(0, hip + 0.38, 0.0), Vector3.ZERO, 0.76, 28)
-	K.cy(legs, 0.60, 0.10, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.62, 28)
+	K.cy(legs, 0.42, 0.24, M_LEG2, Vector3(0, hip + 0.39, 0.0), Vector3.ZERO, 0.58, 28)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.44, 28)
 	for i in 8:
 		var ga := TAU * i / 8.0
-		K.bb(legs, Vector3(0.06, 0.24, 0.20), M_GUN, Vector3(cos(ga) * 0.66, hip + 0.36, sin(ga) * 0.66), Vector3(0, -rad_to_deg(ga), 0), 0.01)
+		K.bb(legs, Vector3(0.055, 0.20, 0.16), M_GUN, Vector3(cos(ga) * 0.50, hip + 0.38, sin(ga) * 0.50), Vector3(0, -rad_to_deg(ga), 0), 0.01)
 
 	# 车首重工探照灯组 + 牵引耳座 + 车尾大型散热风机格栅
 	for sx in [-0.42, 0.42]:

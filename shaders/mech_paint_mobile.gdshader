@@ -1,6 +1,5 @@
 shader_type spatial;
-// 移动端专用轻量写实工业与机甲 PBR 着色器（与 mech_paint.gdshader 参数完全兼容）：
-// 使用主轴单平面映射替代三平面 3 倍采样、使用 Lambert 漫反射并省略 Clearcoat 分支，大幅降低移动 GPU 带宽与着色开销。
+// 移动端专用轻量写实工业与机甲 PBR 着色器（纯不透明默认版：无 discard，保留 Early-Z 与纯深度阴影）。
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert, specular_schlick_ggx;
 
 uniform vec4 base_color : source_color = vec4(0.5, 0.5, 0.5, 1.0);
@@ -20,7 +19,6 @@ uniform float metal_wear : hint_range(0.0, 1.0) = 1.0;
 uniform float roof_uv = 0.0;
 global uniform float mech_damage;
 global uniform float weather_wet;
-#include "res://shaders/occ_fade.gdshaderinc"
 uniform float occ_exempt = 0.0;
 uniform float occ_self_fade = 0.0;
 uniform vec4 bare_metal : source_color = vec4(0.66, 0.67, 0.69, 1.0);
@@ -34,6 +32,9 @@ uniform float albedo_tex_scale = 0.24;
 uniform float albedo_tex_strength : hint_range(0.0, 1.0) = 0.78;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float normal_strength : hint_range(0.0, 2.0) = 0.55;
+uniform sampler2D rough_tex : filter_linear_mipmap, repeat_enable;
+uniform float use_rough_tex = 0.0;
+uniform float rough_tex_strength : hint_range(0.0, 1.0) = 0.65;
 
 varying highp vec3 lpos;
 varying vec3 lnrm;
@@ -60,15 +61,16 @@ void vertex() {
 	vec3 sz = MODEL_MATRIX[2].xyz;
 	vec3 scale = max(vec3(length(sx), length(sy), length(sz)), vec3(1e-3));
 	mat3 rot_m = mat3(sx / scale.x, sy / scale.y, sz / scale.z);
-	if (tint_mode == 2 && dot(CUSTOM0.xyz, CUSTOM0.xyz) > 0.01 && CUSTOM0.w > 0.5) {
+	if (tint_mode == 2 && dot(CUSTOM0.xyz, CUSTOM0.xyz) > 0.01 && abs(CUSTOM0.w) > 0.5) {
 		lpos = vec3(UV.x, UV.y, UV2.x);
 		lnrm = normalize(CUSTOM0.xyz);
 		wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		wnrm = normalize(rot_m * NORMAL);
-		float flip_s = CUSTOM0.w > 1.5 ? -1.0 : 1.0;
-		rot_x = rot_m * q_rot(CUSTOM1, vec3(1.0, 0.0, 0.0));
-		rot_y = rot_m * q_rot(CUSTOM1, vec3(0.0, 1.0, 0.0));
-		rot_z = rot_m * (q_rot(CUSTOM1, vec3(0.0, 0.0, 1.0)) * flip_s);
+		float flip_s = (CUSTOM0.w < 0.0 || CUSTOM0.w > 1.5) ? -1.0 : 1.0;
+		vec4 cq = normalize(CUSTOM1);
+		rot_x = rot_m * q_rot(cq, vec3(1.0, 0.0, 0.0));
+		rot_y = rot_m * q_rot(cq, vec3(0.0, 1.0, 0.0));
+		rot_z = rot_m * (q_rot(cq, vec3(0.0, 0.0, 1.0)) * flip_s);
 	} else {
 		lpos = VERTEX * scale;
 		vec3 n_sc = NORMAL / scale;
@@ -84,42 +86,24 @@ void vertex() {
 }
 
 void fragment() {
-	float occ_fade = 0.0;
-	if (occ_self_fade > 0.005) {
-		highp vec3 dc_s = INV_VIEW_MATRIX[3].xyz - occ_cam_pos;
-		if (dot(dc_s, dc_s) <= 0.25) {
-			occ_fade = clamp(occ_self_fade, 0.0, 0.92);
-			if (occ_ign(FRAGCOORD.xy) < occ_fade) {
-				discard;
-			}
-		}
-	} else if (occ_exempt < 0.5) {
-		if (occ_clip_whole_bldg(wpos, INV_VIEW_MATRIX[3].xyz)) {
-			discard;
-		}
-		if (occ_params.x > 0.005) {
-			occ_fade = occ_calc_fade(wpos, INV_VIEW_MATRIX[3].xyz, occ_params.x, 0.40);
-			if (occ_fade > 0.005 && occ_ign(FRAGCOORD.xy) < clamp(occ_fade * 1.06, 0.0, 1.0)) {
-				discard;
-			}
-		}
-	}
 	vec3 n_loc = normalize(lnrm);
 	vec3 an = abs(n_loc);
 	highp vec3 p = lpos * detail_scale;
 
 	bool dom_x = an.x >= an.y && an.x >= an.z;
 	bool dom_y = !dom_x && an.y >= an.z;
-	highp vec2 uv_p = dom_x ? vec2(p.z, -p.y) : (dom_y ? (roof_uv > 0.5 ? vec2(p.z, p.x) : vec2(p.x, p.z)) : vec2(p.x, -p.y));
+	bool use_wuv = metal_wear < 0.5 && takes_damage < 0.5;
+	highp vec3 p_tex = use_wuv ? vec3(dot(wpos, rot_x), dot(wpos, rot_y), dot(wpos, rot_z)) * detail_scale : p;
+	highp vec2 uv_p = dom_x ? vec2(p_tex.z, -p_tex.y) : (dom_y ? (roof_uv > 0.5 ? vec2(p_tex.z, p_tex.x) : vec2(p_tex.x, p_tex.z)) : vec2(p_tex.x, -p_tex.y));
 
 	float n_lo = texture(noise_lo, uv_p * 0.42 + wpos.xz * 0.015).r;
 	float n_hi = texture(noise_hi, uv_p * 2.1).r;
 
 	vec3 base_c = base_color.rgb * tint;
 	if (metal_wear > 0.5) {
-		vec3 min_m = mix(vec3(0.042, 0.045, 0.052), vec3(0.135, 0.142, 0.155), metal_base);
+		vec3 min_m = mix(vec3(0.036, 0.039, 0.045), vec3(0.115, 0.122, 0.135), metal_base);
 		base_c = max(base_c, min_m);
-		base_c = mix(base_c, sqrt(base_c) * 0.62, metal_base * 0.40);
+		base_c = mix(base_c, sqrt(base_c) * 0.58, metal_base * 0.22);
 	}
 	vec3 col = base_c * (0.97 + 0.06 * n_lo) * (0.985 + 0.03 * n_hi);
 	float tex_luma = 0.7;
@@ -131,6 +115,10 @@ void fragment() {
 	}
 	float met = metal_base;
 	float rough = rough_base * (0.93 + 0.12 * n_hi + (0.66 - tex_luma) * 0.10 * use_albedo_tex);
+	if (use_rough_tex > 0.5) {
+		float rt = texture(rough_tex, uv_p * (albedo_tex_scale * 1.6)).r;
+		rough = mix(rough, clamp(mix(rough_base, rt, rough_tex_strength), 0.16, 0.98), 0.82);
+	}
 
 	if (stripes > 0.5) {
 		float s = fract((p.x + p.y + p.z) * 2.2);
@@ -201,7 +189,6 @@ void fragment() {
 		float porous = 1.0 - metal_wear;
 		float near_g = smoothstep(1.65, 0.25, wpos.y);
 		float flat_up = smoothstep(0.80, 0.95, wnrm.y) * porous;
-		// 用低频世界坐标采样潮湿斑块，避免移动端沥青路面出现高频豹纹小黑点
 		float wb = texture(noise_lo, wpos.xz * 0.026 + vec2(0.31, 0.73)).r;
 		float pf = 0.50 + (wb - 0.5) * 1.12 + (n_lo - 0.5) * 0.22;
 		puddle_m = wet_g * flat_up * near_g * smoothstep(0.71, 0.80, pf);
@@ -216,16 +203,17 @@ void fragment() {
 		float ns = use_albedo_tex > 0.5 ? (albedo_tex_scale * 1.6) : 1.25;
 		float uv_fw = length(fwidth(uv_p * ns));
 		float nfade = clamp(1.0 - uv_fw * 2.05, 0.0, 1.0);
-		vec2 nm = (texture(normal_tex, uv_p * ns).rg * 2.0 - 1.0) * clamp(normal_strength, 0.0, 0.92) * nfade * (1.0 - puddle_m * 0.78);
-		vec3 dp_loc = dom_x ? vec3(0.0, nm.y, nm.x) : (dom_y ? (roof_uv > 0.5 ? vec3(-nm.y, 0.0, nm.x) : vec3(nm.x, 0.0, -nm.y)) : vec3(nm.x, nm.y, 0.0));
-		mat3 v_rot = mat3(rot_x, rot_y, rot_z);
-		vec3 w_sum = wnrm + v_rot * dp_loc;
-		vec3 w_pert = length(w_sum) > 1e-4 ? normalize(w_sum) : wnrm;
-		vec3 v_n = (VIEW_MATRIX * vec4(w_pert, 0.0)).xyz;
-		NORMAL = length(v_n) > 1e-4 ? normalize(v_n) : NORMAL;
+		if (nfade > 0.04) {
+			vec2 nm = (texture(normal_tex, uv_p * ns).rg * 2.0 - 1.0) * clamp(normal_strength, 0.0, 0.92) * nfade * (1.0 - puddle_m * 0.78);
+			vec3 dp_loc = dom_x ? vec3(0.0, nm.y, nm.x) : (dom_y ? (roof_uv > 0.5 ? vec3(-nm.y, 0.0, nm.x) : vec3(nm.x, 0.0, -nm.y)) : vec3(nm.x, nm.y, 0.0));
+			mat3 v_rot = mat3(rot_x, rot_y, rot_z);
+			vec3 w_sum = wnrm + v_rot * dp_loc;
+			vec3 w_pert = length(w_sum) > 1e-4 ? normalize(w_sum) : wnrm;
+			vec3 v_n = (VIEW_MATRIX * vec4(w_pert, 0.0)).xyz;
+			NORMAL = length(v_n) > 1e-4 ? normalize(v_n) : NORMAL;
+		}
 	}
 
-	// 法线方差抗高光闪烁 + 烘焙接缝/接地 AO（关闭 SSAO 的低画质下依然保持建筑扎根立体感）
 	vec3 dn = fwidth(NORMAL);
 	float var_n = dot(dn, dn) * (1.0 - puddle_m * 0.80);
 	float tex_ao = use_albedo_tex > 0.5 ? clamp((0.62 - tex_luma) * 0.42, 0.0, 0.20) : 0.0;
@@ -235,9 +223,4 @@ void fragment() {
 	SPECULAR = mix(mix(0.46, 0.80, worn * metal_wear), 0.56, puddle_m);
 	AO = clamp(1.0 - tex_ao - seam * mix(0.16, 0.36, metal_wear) - low * grime * 0.28 - under * 0.16, 0.42, 1.0);
 	AO_LIGHT_AFFECT = 0.42;
-	if (occ_fade > 0.01) {
-		ALBEDO = occ_soft_mist(ALBEDO, occ_fade);
-		ROUGHNESS = mix(ROUGHNESS, 0.96, occ_fade * 0.65);
-		SPECULAR *= 1.0 - occ_fade * 0.72;
-	}
 }

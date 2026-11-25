@@ -24,11 +24,11 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.bb(legs, Vector3(1.08, 0.44, 2.18), M_FRAME, Vector3(0, hip, 0.0), Vector3.ZERO, 0.055)
 	K.plate(legs, K.crect(1.26, 2.28, [0.30, 0.30, 0.28, 0.28]), 0.24, M_LEG, Vector3(0, hip + 0.16, 0.0), Vector3(90, 0, 0), 0.042)
 	K.plate(legs, K.crect(0.98, 1.96, [0.24, 0.24, 0.24, 0.24]), 0.20, M_LEG2, Vector3(0, hip - 0.15, 0.0), Vector3(90, 0, 0), 0.035)
-	K.cy(legs, 0.54, 0.30, M_LEG2, Vector3(0, hip + 0.36, 0.0), Vector3.ZERO, 0.68, 26)
-	K.cy(legs, 0.52, 0.10, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.55, 26)
+	K.cy(legs, 0.38, 0.28, M_LEG2, Vector3(0, hip + 0.37, 0.0), Vector3.ZERO, 0.50, 26)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.40, 26)
 	for i in 8:
 		var ga := TAU * i / 8.0
-		K.bb(legs, Vector3(0.05, 0.20, 0.16), M_GUN, Vector3(cos(ga) * 0.58, hip + 0.34, sin(ga) * 0.58), Vector3(0, -rad_to_deg(ga), 0), 0.008)
+		K.bb(legs, Vector3(0.045, 0.18, 0.14), M_GUN, Vector3(cos(ga) * 0.44, hip + 0.35, sin(ga) * 0.44), Vector3(0, -rad_to_deg(ga), 0), 0.008)
 
 	# 车首楔形装甲防弹板（+36° 斜坡）+ 潜望窗 + 双内嵌战术车灯 + 车尾双散热百叶窗
 	var prow := K.node(legs, Vector3(0, hip + 0.06, -1.14), Vector3(36, 0, 0))
@@ -110,7 +110,7 @@ static func build(ctx: Dictionary) -> Node3D:
 
 	for i in 4:
 		var a := TAU * i / 4.0 + 0.4
-		A.hose(legs, Vector3(cos(a) * 0.48, hip + 0.24, sin(a) * 0.48), Vector3(cos(a) * 0.42, hip + 0.48, sin(a) * 0.42), Vector3(cos(a) * 0.07, 0, sin(a) * 0.07), 0.020)
+		A.hose(legs, Vector3(cos(a) * 0.52, hip + 0.28, sin(a) * 0.52), Vector3(cos(a) * 0.39, hip + 0.50, sin(a) * 0.39), Vector3(cos(a) * 0.055, 0, sin(a) * 0.055), 0.020)
 	K.socket(root, "core", Vector3(0, hip + 0.56, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "hex")

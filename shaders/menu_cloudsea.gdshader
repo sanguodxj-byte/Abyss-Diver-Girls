@@ -3,8 +3,8 @@ shader_type spatial;
 // 每一步向太阳再步进几次求自阴影（Beer-Lambert + powder），云团有真正的厚度、背光面和透光边。
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 #include "res://shaders/menu_common.gdshaderinc"
-uniform int steps = 22;
-uniform int shadow_steps = 3;
+uniform int steps = 10;
+uniform int shadow_steps = 2;
 uniform float sigma = 0.045;      // 消光系数（每米，密度 1 时）
 uniform float far_fade = 5200.0;  // 远处交给天空盒的云海
 varying highp vec3 wp;

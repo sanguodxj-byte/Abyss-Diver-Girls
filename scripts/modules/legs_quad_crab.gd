@@ -24,9 +24,9 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.bb(legs, Vector3(1.52, 0.46, 1.44), M_FRAME, Vector3(0, hip, 0.0), Vector3.ZERO, 0.06)
 	K.plate(legs, K.crect(1.78, 1.66, [0.44, 0.44, 0.40, 0.40]), 0.28, M_LEG, Vector3(0, hip + 0.16, 0.0), Vector3(90, 0, 0), 0.048)
 	K.plate(legs, K.crect(1.42, 1.34, [0.32, 0.32, 0.32, 0.32]), 0.22, M_LEG2, Vector3(0, hip - 0.15, 0.0), Vector3(90, 0, 0), 0.04)
-	K.cy(legs, 0.60, 0.26, M_LEG2, Vector3(0, hip + 0.34, 0.0), Vector3.ZERO, 0.72, 26)
-	K.cy(legs, 0.56, 0.10, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.58, 28)
-	K.bolt_ring(legs, 0.64, 14, 0.016, Vector3(0, hip + 0.31, 0.0), Vector3.ZERO)
+	K.cy(legs, 0.40, 0.24, M_LEG2, Vector3(0, hip + 0.36, 0.0), Vector3.ZERO, 0.54, 26)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.48, 0.0), Vector3.ZERO, 0.42, 28)
+	K.bolt_ring(legs, 0.56, 14, 0.015, Vector3(0, hip + 0.30, 0.0), Vector3.ZERO)
 
 	# 车首重型液压钢缆绞盘鼓 + 潜望观察缝 + 左右斜颊 ERA 反应装甲砖
 	K.bb(legs, Vector3(0.62, 0.26, 0.22), M_DARK, Vector3(0, hip - 0.02, -0.84), Vector3.ZERO, 0.02)

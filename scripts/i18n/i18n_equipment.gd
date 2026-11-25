@@ -82,16 +82,6 @@ const MODULES_EN := {
 		"name": "M2A4-BK Bradley Urban ERA Frame",
 		"desc": "Bradley BUSK III-derived urban frame with full BRAT box ERA coverage, ballast plating and ISU sight box.",
 	},
-	"core_ka52_alligator": {
-		"name": "KA-52M Alligator Coaxial Gunship Frame",
-		"tags": ["Recon"],
-		"desc": "Ka-52M-derived gunship frame with radar nose, side-by-side ejection cockpit and coaxial rotor hub.",
-	},
-	"core_mi24_hind": {
-		"name": "MI-24P Hind Twin-Step Gunship Frame",
-		"tags": ["Recon"],
-		"desc": "Mi-24P-derived armored gunship frame with tandem stepped cockpit and twin dust-filtered turboshaft intakes.",
-	},
 	"core_fennek_recon": {
 		"name": "FNK-4 Fennek Low-Profile Recon Frame",
 		"tags": ["Recon"],
@@ -111,10 +101,6 @@ const MODULES_EN := {
 		"name": "1RL257 Krasukha Heavy EW Cabin Frame",
 		"tags": ["Recon"],
 		"desc": "Krasukha-4-derived wideband electronic-warfare cabin with heavy jamming arrays and generator housing.",
-	},
-	"core_trieste_bathy": {
-		"name": "DSV-11K Trieste Abyssal Pressure Hull",
-		"desc": "Trieste / Limiting Factor-derived deep-sea pressure hull with conical viewport and syntactic buoyancy blocks.",
 	},
 	"core_abv_shredder": {
 		"name": "M1150-B Assault Breacher Plow Frame",
@@ -254,24 +240,16 @@ const MODULES_EN := {
 		"desc": "MTU MB 873 Ka-501-derived 47.6L twin-turbo V12 diesel powerpack.",
 	},
 	"gen_twin_apu_gtcp": {
-		"name": "GTCP-85 Twin-Rotor APU Turbogenerator",
-		"desc": "Twin redundant Garrett GTCP85 auxiliary power turbine generators.",
-	},
-	"gen_naval_pwr_s9g": {
-		"name": "S9G-PWR Submarine Pressurized Reactor",
-		"desc": "GE S9G-derived natural-circulation pressurized water reactor primary loop.",
+		"name": "GTCP-85 Twin-Rotor Micro-Turbogenerator",
+		"desc": "Twin redundant compact auxiliary power turbine generators.",
 	},
 	"gen_lfr_lead_bismuth": {
 		"name": "SVBR-10 Lead-Bismuth Fast Reactor",
 		"desc": "SVBR / BM-40A-derived lead-bismuth eutectic cooled fast reactor.",
 	},
-	"gen_stirling_aip": {
-		"name": "MK3-AIP Stirling Air-Independent Generator",
-		"desc": "Kockums V4-275R Stirling Mk.3-derived air-independent propulsion generator.",
-	},
 	"gen_pem_fuelcell": {
 		"name": "PEM-600 Hydrogen Fuel-Cell Stack",
-		"desc": "Siemens BZM / SINAVY 212A-derived solid-hydrogen PEM fuel-cell system.",
+		"desc": "Compact solid-hydrogen PEM fuel-cell stack with zero thermal and acoustic signature.",
 	},
 	"gen_homopolar_pulse": {
 		"name": "HPG-90 Homopolar Pulse Capacitor Plant",

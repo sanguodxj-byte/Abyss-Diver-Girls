@@ -1,0 +1,248 @@
+{
+  "pack_id": "abyss_diver_girls_poi_buildings_wave6_ruined",
+  "name": "潜渊少女 · 审计清单新批（海防要塞与废土基建 10 项 · 全部残破）",
+  "condition": "ruined",
+  "condition_label": "残破废墟",
+  "uv_mapping": "metric_local_box_and_seamless_cylindrical_uv1_uv2",
+  "pbr_texture_channels": [
+    "albedo_srgb",
+    "tangent_normal_linear",
+    "roughness_linear"
+  ],
+  "pbr_surfaces": [
+    "concrete_formwork",
+    "concrete_bunker",
+    "plaster_stucco",
+    "stone_ashlar",
+    "rubble_aggregate",
+    "brick_masonry",
+    "brick_refractory",
+    "steel_riveted",
+    "steel_galvanized",
+    "steel_oxidized",
+    "corrugated_metal",
+    "painted_metal",
+    "brushed_alloy",
+    "asphalt_road",
+    "tar_membrane",
+    "timber_plank",
+    "woven_canvas",
+    "ceramic_tile"
+  ],
+  "upstream_repo": "sanguodxj-byte/Abyss-Diver-Girls",
+  "total_buildings": 10,
+  "total_meshes": 3503,
+  "total_triangles": 234300,
+  "buildings": [
+    {
+      "id": "poi_coastal_artillery",
+      "code": "DEF-01",
+      "audit_tag": "P2-DEF-01",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "双曲装甲炮塔穹顶正面三瓣炸穿暴露炮闩；右舷重炮身管中段爆断下垂；西侧弹药堡整角掀顶崩墙。",
+      "name": "海岸双联重炮要塞（残破）",
+      "en_name": "Ruined Coastal Twin-Gun Battery",
+      "upstream_source": "scripts/map_ext/poi/coastal_artillery.gd",
+      "gd_output_path": "scripts/map_ext/poi/coastal_artillery_remake.gd",
+      "footprint_m": [
+        18,
+        10.6,
+        15
+      ],
+      "meshes": 372,
+      "triangles": 24712,
+      "old_defects": "旧版炮台围墙为多段直方拼接、炮塔顶盖为扁圆柱叠加、炮管仅 10 边且缺少炮闩内构。",
+      "remake_highlights": "【残破废墟版】真实圆弧混凝土防爆炮座胸墙 + 36段旋转装甲炮塔与双曲放样穹顶炸穿露双炮闩 + 28段双联重炮管（右管爆断） + 弹药提弹室。"
+    },
+    {
+      "id": "poi_abyss_lighthouse",
+      "code": "DEF-02",
+      "audit_tag": "P2-DEF-02",
+      "condition": "ruined",
+      "condition_badge": "断顶残破",
+      "ruin_notes": "灯室双曲铜铁穹顶正面三瓣炸穿、立柱震弯、内部黄铜菲涅尔透镜倾斜；值班室屋顶雾号震斜且转角崩墙。",
+      "name": "断顶海湾灯塔与雾号站（残破）",
+      "en_name": "Ruined Coastal Lighthouse & Foghorn",
+      "upstream_source": "scripts/map_ext/poi/abyss_lighthouse.gd",
+      "gd_output_path": "scripts/map_ext/poi/abyss_lighthouse_remake.gd",
+      "footprint_m": [
+        14,
+        16.8,
+        12
+      ],
+      "meshes": 273,
+      "triangles": 21364,
+      "old_defects": "旧版塔身为 12 边棱柱、观景平台护栏缺失、灯室顶盖使用低段圆锥且内部无光学透镜。",
+      "remake_highlights": "【残破废墟版】48段分段收分砖石灯塔身 + 48段环形悬挑观景廊 + 双曲灯室穹顶正面崩开露28段歪斜黄铜菲涅尔透镜 + 守塔值班室与双联雾号。"
+    },
+    {
+      "id": "poi_radar_array_tower",
+      "code": "DEF-03",
+      "audit_tag": "P2-DEF-03",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "顶部巨型抛物面相控阵受创大幅歪斜、两层反射弧板剥脱露弯曲钢肋；西侧信号处理机房整角屋顶坍塌。",
+      "name": "远程预警相控阵雷达站（残破）",
+      "en_name": "Ruined Early-Warning Radar Tower",
+      "upstream_source": "scripts/map_ext/poi/radar_array_tower.gd",
+      "gd_output_path": "scripts/map_ext/poi/radar_array_tower_remake.gd",
+      "footprint_m": [
+        14.6,
+        15.4,
+        12.4
+      ],
+      "meshes": 350,
+      "triangles": 19440,
+      "old_defects": "旧版巨型雷达反射面由 5 块平板直方块拼折而成，桁架塔缺少登塔钢梯与地面信号机房内构。",
+      "remake_highlights": "【残破废墟版】真实连续抛物面弯曲雷达反射阵与5道连续弯曲钢肋（剥离两道反射板露骨架） + 四腿斜撑钢桁塔与外挂检修钢梯 + 信号机房。"
+    },
+    {
+      "id": "poi_airship_mooring_mast",
+      "code": "DEF-04",
+      "audit_tag": "P2-DEF-04",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "塔顶真实圆弧悬挑登艇栈台与系留锥头猛烈折弯并崩缺前弧挡墙；三根粗缆垂地；北侧高压氦气罐震斜移位。",
+      "name": "飞空艇系泊塔与补给栈台（残破）",
+      "en_name": "Ruined Airship Mooring Mast",
+      "upstream_source": "scripts/map_ext/poi/airship_mooring_mast.gd",
+      "gd_output_path": "scripts/map_ext/poi/airship_mooring_mast_remake.gd",
+      "footprint_m": [
+        16,
+        17.2,
+        14
+      ],
+      "meshes": 318,
+      "triangles": 23260,
+      "old_defects": "旧版系泊广场仅 10 边形、塔顶系泊栈台为八角平板、高压储气罐仅 12 段且无垂落断缆。",
+      "remake_highlights": "【残破废墟版】48段圆形系泊广场 + 4腿收分钢桁架主塔与32段氦气升管 + 折弯圆弧登艇栈台与32段系留锥头 + 3根垂地断缆 + 双卧式氦气罐。"
+    },
+    {
+      "id": "poi_checkpoint_fortress",
+      "code": "DEF-05",
+      "audit_tag": "P2-DEF-05",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "跨路连续弧形雨棚两跨掀空暴露光滑弯曲钢拱；拦车栏杆臂撞弯下垂；屋顶圆弧装甲碉堡顶盖掀歪，岗亭角墙崩塌。",
+      "name": "跨道装甲防线检查站（残破）",
+      "en_name": "Ruined Armored Highway Checkpoint",
+      "upstream_source": "scripts/map_ext/poi/checkpoint_fortress.gd",
+      "gd_output_path": "scripts/map_ext/poi/checkpoint_fortress_remake.gd",
+      "footprint_m": [
+        20,
+        9.6,
+        12
+      ],
+      "meshes": 416,
+      "triangles": 25196,
+      "old_defects": "旧版跨路顶棚为平板方盒、屋顶机枪堡为八边方块堆叠，拦车杆与双侧岗亭缺少细部结构。",
+      "remake_highlights": "【残破废墟版】双侧重装混凝土岗亭 + 跨道连续平滑贝塞尔钢拱雨棚（中段掀空露5道连续弧肋） + 东顶圆弧装甲机枪碉堡 + 撞弯拦车杆与防撞墩。"
+    },
+    {
+      "id": "bldg_water_tower_pump",
+      "code": "INF-01",
+      "audit_tag": "P2-INF-01",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "高架水塔双曲球冠顶盖正面三瓣炸穿暴露内部十字钢拉梁、罐体微倾；红砖加压泵房整角掀顶崩墙且屋顶空调倾斜。",
+      "name": "高架球冠水塔与加压泵站（残破）",
+      "en_name": "Ruined Elevated Water Tower & Pump",
+      "upstream_source": "scripts/buildings/bldg_water_tower_pump.gd",
+      "gd_output_path": "scripts/buildings/bldg_water_tower_pump_remake.gd",
+      "footprint_m": [
+        14.8,
+        15.8,
+        12.4
+      ],
+      "meshes": 348,
+      "triangles": 25488,
+      "old_defects": "旧版储水罐仅 14 边且顶盖为低段圆锥，支架缺少环形检修走道与底部红砖加压泵房。",
+      "remake_highlights": "【残破废墟版】6腿斜撑钢构高架塔 + 48段铆接钢水罐与48段环形走道 + 双曲球冠顶盖正面三瓣炸穿露内部钢拉梁 + 西侧红砖加压泵房。"
+    },
+    {
+      "id": "bldg_hangar_quonset",
+      "code": "INF-02",
+      "audit_tag": "P2-INF-02",
+      "condition": "ruined",
+      "condition_badge": "塌顶残破",
+      "ruin_notes": "半圆筒拱机库中后段三跨弧形波纹钢板彻底掀空暴露6道连续钢拱；左侧重型推拉大门脱轨歪斜；西侧维修间屋顶坍塌。",
+      "name": "半埋式弧形机库与维修坞（残破）",
+      "en_name": "Ruined Curved Quonset Hangar",
+      "upstream_source": "scripts/buildings/bldg_hangar_quonset.gd",
+      "gd_output_path": "scripts/buildings/bldg_hangar_quonset_remake.gd",
+      "footprint_m": [
+        19.6,
+        9.4,
+        15.4
+      ],
+      "meshes": 239,
+      "triangles": 20012,
+      "old_defects": "旧版半圆机库顶棚为 6 段扁平折板拼接，拱肋与纵向檩条穿模严重且缺少侧翼维修间。",
+      "remake_highlights": "【残破废墟版】12.2m跨度真实连续平滑半圆筒拱机库（6道32段弯曲钢拱 + 掀空60%弧壳露骨架与机库维护架） + 脱轨推拉防爆大门 + 西侧维修附楼。"
+    },
+    {
+      "id": "bldg_cooling_tower_unit",
+      "code": "INF-03",
+      "audit_tag": "P2-INF-03",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "双曲面混凝土塔壳正面及右侧四片扇区呈阶梯式崩塌缺口，露出内部立管与喷淋环；西侧循环水泵房整角屋顶破损。",
+      "name": "双曲面热电冷却塔单元（残破）",
+      "en_name": "Ruined Hyperboloid Cooling Tower",
+      "upstream_source": "scripts/buildings/bldg_cooling_tower_unit.gd",
+      "gd_output_path": "scripts/buildings/bldg_cooling_tower_unit_remake.gd",
+      "footprint_m": [
+        17.6,
+        16.4,
+        16
+      ],
+      "meshes": 245,
+      "triangles": 18696,
+      "old_defects": "旧版冷却塔用 3 节 12 边直筒硬接模拟收腰轮廓，底部进风人字柱与循环水泵房完全缺失。",
+      "remake_highlights": "【残破废墟版】解析双曲函数放样48段真双曲面混凝土冷却塔（正面四瓣阶梯崩塌露36段喷淋管环） + 16根混凝土人字斜柱 + 圆弧集水池 + 循泵房。"
+    },
+    {
+      "id": "bldg_grain_silo_elevator",
+      "code": "INF-04",
+      "audit_tag": "P2-INF-04",
+      "condition": "ruined",
+      "condition_badge": "断仓残破",
+      "ruin_notes": "东南主粮仓在56%高度拦腰崩断暴露锯齿混凝土断口与弯折钢筋；顶部钢构输粮廊桥悬空下垂；提升塔顶部转角崩毁。",
+      "name": "联体混凝土粮仓与提升塔（残破）",
+      "en_name": "Ruined Concrete Grain Silo Complex",
+      "upstream_source": "scripts/buildings/bldg_grain_silo_elevator.gd",
+      "gd_output_path": "scripts/buildings/bldg_grain_silo_elevator_remake.gd",
+      "footprint_m": [
+        18,
+        15.6,
+        12.6
+      ],
+      "meshes": 419,
+      "triangles": 33476,
+      "old_defects": "旧版四联筒仓仅 12 边且平顶无盖，缺少斗式提升塔楼、顶部输粮钢廊桥与装卸月台钢梯。",
+      "remake_highlights": "【残破废墟版】4座48段滑模混凝土联体筒仓（双曲穹顶盖 + 前右仓拦腰崩断露锯齿断口与歪斜钢箍） + 11.4m砖混提升主塔 + 下垂顶部输粮廊桥。"
+    },
+    {
+      "id": "bldg_dockside_gantry",
+      "code": "INF-05",
+      "audit_tag": "P2-INF-05",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "集装箱龙门吊海侧悬臂主梁受创弯折下垂、吊具小车与抓具歪斜悬停；顶层集装箱震移错位；西侧货栈屋顶整角坍塌。",
+      "name": "港口集装箱龙门吊与货栈（残破）",
+      "en_name": "Ruined Port Gantry Crane & Depot",
+      "upstream_source": "scripts/buildings/bldg_dockside_gantry.gd",
+      "gd_output_path": "scripts/buildings/bldg_dockside_gantry_remake.gd",
+      "footprint_m": [
+        21,
+        15.2,
+        13.6
+      ],
+      "meshes": 523,
+      "triangles": 22656,
+      "old_defects": "旧版门吊仅由粗方柱拼成，无轨道台车、24段滑轮组、司控室与吊具，货栈缺少室内货架。",
+      "remake_highlights": "【残破废墟版】双轨A字门座集装箱岸桥（海侧悬臂弯折下垂 + 24段滑轮组 + 歪斜司控室与集装箱吊具） + 错位堆叠集装箱 + 波纹钢转运货栈。"
+    }
+  ]
+}

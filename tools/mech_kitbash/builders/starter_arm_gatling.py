@@ -8,14 +8,15 @@ def build_arm_gatling(kb: KitbashScene):
     # 1. Unified Heavy HP-A1 Shoulder Adapter (flange + geared slewing race + yoke + heavy gussets)
     kb.a1_shoulder_mount("A1Heavy", heavy=True)
 
-    # 2. Multi-Layer Spaced Heavy Shoulder Pauldron (at arm x=0.25 + 0.22 = 0.47)
-    M_sh = g2b_mat((0.47, 0.48, 0.04), (0, 0, -12.0))
-    kb.plate("PauldronMain", trap_2d(0.96, 0.66, 0.30, 0.08), 0.74, "armor", "armor_panel", (0, 0, 0), (0, 90, 0), 0.018, 1, M_parent=M_sh)
-    kb.plate("PauldronSub", trap_2d(0.76, 0.50, 0.20, 0.05), 0.12, "armor_sub", "armor_ribs", (0.37, -0.02, 0), (0, 90, 0), 0.010, 1, M_parent=M_sh)
-    kb.box("PauldronHazard", (0.045, 0.24, 0.72), "hazard", "hazard", (0.16, 0.01, 0), (0, 0, 0), 0.004, 1, M_parent=M_sh)
-    kb.grab_rail("PauldronGrab", 0.24, 0.042, (0.0, 0.165, 0.0), (-90, 90, 0), 0.011, M_parent=M_sh)
-    for bi, bz in enumerate([-0.26, 0.0, 0.26]):
-        kb.cyl(f"PauldronBolt_{bi}", 0.014, 0.016, 0.024, 6, "chrome", "plain_metal", (0.435, 0.03, bz), (0, 0, 90), 0.002, M_parent=M_sh)
+    # 2. Multi-Layer Spaced Heavy Shoulder Pauldron (strictly outboard x>=0.16 -> 0mm clash with core_scout!)
+    M_sh = g2b_mat((0.54, 0.50, 0.04), (0, 0, -10.0))
+    kb.plate("PauldronMain", trap_2d(0.92, 0.64, 0.28, 0.07), 0.64, "armor", "armor_panel", (0, 0, 0), (0, 90, 0), 0.016, 1, M_parent=M_sh)
+    kb.plate("PauldronSub", trap_2d(0.74, 0.48, 0.19, 0.05), 0.10, "armor_sub", "armor_ribs", (0.34, -0.02, 0), (0, 90, 0), 0.010, 1, M_parent=M_sh)
+    # Proud exterior hazard stripe + properly outward-facing top grab rail (ZERO burial inside PauldronMain!)
+    kb.box("PauldronHazard", (0.016, 0.20, 0.62), "hazard", "hazard", (0.398, -0.02, 0), (0, 0, 0), 0.003, 1, M_parent=M_sh)
+    kb.grab_rail("PauldronGrab", 0.24, 0.040, (0.0, 0.138, 0.0), (90, 0, 0), 0.010, M_parent=M_sh)
+    for bi, bz in enumerate([-0.24, 0.0, 0.24]):
+        kb.cyl(f"PauldronBolt_{bi}", 0.014, 0.016, 0.022, 6, "chrome", "plain_metal", (0.395, 0.04, bz), (0, 0, 90), 0.002, M_parent=M_sh)
 
     # 3. Heavy Rotary Receiver Block (center at x=0.75, y=-0.04, z=0.0)
     M_g = g2b_mat((0.75, -0.04, 0.0), (0, 0, 0))
@@ -31,7 +32,7 @@ def build_arm_gatling(kb: KitbashScene):
     kb.cyl("DriveBrassRing", 0.158, 0.158, 0.042, 18, "brass", "bolt_flange", (0, 0.38, 0.37), (90, 0, 0), 0.005, M_parent=M_g)
     kb.cyl("DriveFrontCap", 0.125, 0.135, 0.045, 16, "gunmetal", "plain_metal", (0, 0.38, -0.06), (90, 0, 0), 0.005, M_parent=M_g)
     kb.tube_path("DriveHydLoop", [(0.0, 0.38, 0.38), (-0.18, 0.34, 0.44), (-0.24, 0.16, 0.34)], 0.022, 8, "gunmetal", "braid_hose", M_parent=M_g)
-    kb.grab_rail("RecTopGrab", 0.24, 0.036, (0.0, 0.33, -0.26), (-90, 0, 0), 0.010, M_parent=M_g)
+    kb.grab_rail("RecTopGrab", 0.24, 0.036, (0.0, 0.325, -0.26), (90, 0, 0), 0.010, M_parent=M_g)
 
     # 4. Outer Heavy Linkless Ammo Drum Magazine + Articulated Feed Chute
     dx, dy, dz = 0.56, -0.10, 0.18

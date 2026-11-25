@@ -39,7 +39,7 @@ func setup(k: String, r, tgt) -> void:
 
 
 func _batch_static() -> void:
-	if has_meta("glb_rig") or has_meta("modular_glb"):
+	if has_meta("glb_rig") or has_meta("modular_glb") or has_meta("meshy_boss"):
 		return
 	super._batch_static()
 
@@ -113,12 +113,15 @@ func take_damage(dmg: float, from := Vector3.ZERO, ap := 0.0) -> void:
 
 ## 苏醒前的伏击姿态：只有呼吸般起伏，不追不打（进入玩家视距内或受击时才苏醒，不会在画面外先手轰炸）
 func _idle_wait(delta: float) -> void:
-	anim_t += delta * 0.5
-	_animate(delta, 0.0)
 	if raid == null or not is_instance_valid(raid.mech):
 		return
+	var d := global_position.distance_to(raid.mech.global_position)
+	if d > 45.0:
+		return
+	anim_t += delta * 0.5
+	_animate(delta, 0.0)
 	var wake_d: float = minf(activation, raid.vision_toward_player(global_position)) if raid.has_method("vision_toward_player") else activation
-	if global_position.distance_to(raid.mech.global_position) < wake_d:
+	if d < wake_d:
 		_awaken()
 
 
@@ -457,7 +460,7 @@ func _spawn_boss_extra_drop(p: Vector3) -> void:
 
 
 func _die() -> void:
-	# 比普通虫更慢的塌陷：底座砸进土里、身上的发光件一个个熄灭
+	# 巨型首领三段式力学坍塌：清场解绑 → 精确探测地面高度与坡度 → 肢体失压外张 + PMRT 零浮空贴地砸落 → 殉爆尘浪与熄火炭化
 	dying = true
 	remove_from_group("bugs")
 	remove_from_group("boss")
@@ -468,40 +471,171 @@ func _die() -> void:
 		if c is CollisionShape3D:
 			c.queue_free()
 	_set_flash(false)
-	var body: Node3D = visual.get_node_or_null("Body")
-	if body == null:
+	if get("underground") == true:
+		set("underground", false)
+	if visual != null and is_instance_valid(visual):
+		visual.visible = true
+	set_occ_fade(0.0)
+	var sh_now = get_meta("shield_fx") if has_meta("shield_fx") else null
+	if sh_now != null and is_instance_valid(sh_now):
+		sh_now.queue_free()
+		remove_meta("shield_fx")
+	if telegraph != null and is_instance_valid(telegraph):
+		telegraph.queue_free()
+		telegraph = null
+
+	var body: Node3D = visual.get_node_or_null("Body") if visual != null and is_instance_valid(visual) else null
+	if body == null or not is_inside_tree():
 		queue_free()
 		return
 	if BossGlb.on_die(self, body):
 		return
 	if BossModularGlb.on_die(self, body):
 		return
-	var sc := float(data.scale)
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(body, "position:y", -0.9 * sc, 1.4).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
-	tw.tween_property(body, "rotation:z", randf_range(-0.35, 0.35), 1.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(body, "rotation:x", randf_range(-0.2, 0.3), 1.6)
+
+	var sc := maxf(float(data.get("scale", 2.4)), 1.5)
+	var side := 1.0 if randf() < 0.5 else -1.0
+	var start_pos := global_position
+	var g_info := DA.sample_ground(self, start_pos, 5.5, 60.0)
+	var gy: float = float(g_info.get("y", start_pos.y))
+	var gnrm: Vector3 = g_info.get("normal", Vector3.UP)
+	var end_pos := Vector3(start_pos.x, gy, start_pos.z)
+
+	var start_vis_pos := visual.position
+	var start_vis_rot := visual.rotation
+	var start_body_pos := body.position
+	var start_body_rot := body.rotation
+	var end_vis_rot: Vector3 = DA.slope_basis(gnrm, start_vis_rot.y + side * randf_range(-0.12, 0.12), 0.0, 0.0, 0.82).get_euler()
+	var end_body_rot := Vector3(randf_range(0.06, 0.18), randf_range(-0.08, 0.08), side * randf_range(0.18, 0.30))
+
+	var limb_tracks: Array = []
 	for hip in legs:
+		if not is_instance_valid(hip):
+			continue
 		var sd: float = float(hip.get_meta("side", 1.0))
-		tw.tween_property(hip, "rotation:z", -sd * randf_range(0.4, 0.8), randf_range(0.6, 1.2)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw.tween_property(hip, "rotation:y", float(hip.get_meta("base_y", hip.rotation.y)) + randf_range(-0.5, 0.5), 1.0)
+		var by0: float = float(hip.get_meta("base_y", hip.rotation.y))
+		var ground_side: bool = (sd * side) < 0.0
+		var hz: float = _solve_dead_hip_z(hip, sd, end_body_rot.z, ground_side) + sd * randf_range(-0.05, 0.08)
+		var hy: float = by0 + randf_range(-0.32, 0.32)
+		var u_fin := randf_range(0.55, 0.88)
+		limb_tracks.append([hip, hip.rotation, Vector3(hip.rotation.x, hy, hz), u_fin])
 		if hip.has_meta("knee"):
 			var kj: Node3D = hip.get_meta("knee")
 			if is_instance_valid(kj):
-				tw.tween_property(kj, "rotation:z", sd * randf_range(0.35, 0.72), randf_range(0.6, 1.2)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				var kz: float = -sd * randf_range(0.08, 0.20) if ground_side else -sd * randf_range(0.36, 0.64)
+				limb_tracks.append([kj, kj.rotation, Vector3(kj.rotation.x, kj.rotation.y, kz), u_fin])
 	for w in wings:
 		if is_instance_valid(w):
-			tw.tween_property(w, "rotation:z", float(w.get_meta("side", 1.0)) * 1.2, 1.2)
+			var w_sd: float = float(w.get_meta("side", 1.0))
+			limb_tracks.append([w, w.rotation, Vector3(0.28, w.rotation.y, w_sd * 1.08), 0.78])
 	for j in jaws:
-		tw.tween_property(j, "rotation:y", float(sign(j.position.x)) * 1.1, 1.0)
+		if is_instance_valid(j):
+			var j_sd := float(sign(j.position.x))
+			if j_sd == 0.0:
+				j_sd = 1.0
+			limb_tracks.append([j, j.rotation, Vector3(j.rotation.x, j_sd * 1.05, j.rotation.z), 0.62])
 	for s2 in scythes:
-		tw.tween_property(s2, "rotation:x", -0.6, 1.2)
-	for m in find_children("*", "MeshInstance3D", true, false):
-		var mat = m.material_override
-		if mat is StandardMaterial3D and mat.emission_enabled:
-			var dm: StandardMaterial3D = mat.duplicate()
-			m.material_override = dm
-			tw.tween_property(dm, "emission_energy_multiplier", 0.0, 2.4)
+		if is_instance_valid(s2):
+			limb_tracks.append([s2, s2.rotation, Vector3(-0.56, s2.rotation.y, s2.rotation.z), 0.68])
+	if abdomen != null and is_instance_valid(abdomen):
+		limb_tracks.append([abdomen, abdomen.rotation, Vector3(0.24, abdomen.rotation.y, side * 0.14), 0.75])
+	if turret != null and is_instance_valid(turret):
+		limb_tracks.append([turret, turret.rotation, Vector3(0.26, turret.rotation.y + side * 0.28, side * 0.16), 0.72])
+	if crown != null and is_instance_valid(crown):
+		limb_tracks.append([crown, crown.rotation, Vector3(0.30, crown.rotation.y, side * 0.20), 0.70])
+	for pl in plates:
+		if is_instance_valid(pl):
+			var psd: float = float(pl.get_meta("side", 1.0))
+			limb_tracks.append([pl, pl.rotation, Vector3(pl.rotation.x, pl.rotation.y, psd * 0.30), 0.65])
+
+	# PMRT：测量终态姿态最低世界网格坐标，逆解 target_body_y
+	global_position = end_pos
+	_vis_sync()
+	visual.position = Vector3.ZERO
+	visual.rotation = end_vis_rot
+	body.position = Vector3.ZERO
+	body.rotation = end_body_rot
+	for trk in limb_tracks:
+		(trk[0] as Node3D).rotation = trk[2]
+
+	var min_clr: float = DA.lowest_slope_clearance(visual, end_pos, gnrm)
+	var up_cos: float = maxf(visual.global_transform.basis.y.y, 0.5)
+	var target_body_y := (-0.032 - min_clr) / up_cos
+
+	global_position = start_pos
+	_vis_sync()
+	visual.position = start_vis_pos
+	visual.rotation = start_vis_rot
+	body.position = start_body_pos
+	body.rotation = start_body_rot
+	for trk in limb_tracks:
+		(trk[0] as Node3D).rotation = trk[1]
+
+	var total_t := 1.55
+	var hit_u := 0.68
+	var tw := create_tween().set_parallel(true)
+	tw.tween_method(func(u: float) -> void:
+		if not is_instance_valid(self) or not is_instance_valid(visual) or not is_instance_valid(body):
+			return
+		var k_mv := clampf(u / hit_u, 0.0, 1.0)
+		global_position = start_pos.lerp(end_pos, k_mv)
+		visual.position = start_vis_pos.lerp(Vector3.ZERO, k_mv)
+		visual.rotation = Vector3(
+			lerp_angle(start_vis_rot.x, end_vis_rot.x, k_mv),
+			lerp_angle(start_vis_rot.y, end_vis_rot.y, k_mv),
+			lerp_angle(start_vis_rot.z, end_vis_rot.z, k_mv)
+		)
+		var jolt_y := start_body_pos.y + 0.10 * sc
+		if u <= 0.12:
+			var kj := u / 0.12
+			body.position = Vector3(lerpf(start_body_pos.x, 0.0, kj), lerpf(start_body_pos.y, jolt_y, sin(kj * PI * 0.5)), lerpf(start_body_pos.z, 0.0, kj))
+			body.rotation = start_body_rot + Vector3(-0.14 * kj, 0.0, side * 0.08 * kj)
+		elif u <= hit_u:
+			var kf := (u - 0.12) / (hit_u - 0.12)
+			var rot0 := start_body_rot + Vector3(-0.14, 0.0, side * 0.08)
+			body.position = Vector3(0.0, lerpf(jolt_y, target_body_y, kf * kf), 0.0)
+			body.rotation = Vector3(
+				lerp_angle(rot0.x, end_body_rot.x, kf),
+				lerp_angle(rot0.y, end_body_rot.y, kf),
+				lerp_angle(rot0.z, end_body_rot.z, kf)
+			)
+		else:
+			var kb := (u - hit_u) / (1.0 - hit_u)
+			var bounce := sin(kb * PI) * (1.0 - kb * 0.55) * 0.045 * sc
+			body.position = Vector3(0.0, target_body_y + bounce, 0.0)
+			body.rotation = end_body_rot + Vector3(0.0, 0.0, -side * bounce * 0.25)
+		_vis_sync()
+		for trk in limb_tracks:
+			var nd: Node3D = trk[0]
+			if not is_instance_valid(nd):
+				continue
+			var r0: Vector3 = trk[1]
+			var r1: Vector3 = trk[2]
+			var u_fin: float = float(trk[3])
+			var tl := clampf(u / u_fin, 0.0, 1.0)
+			var w_k := 1.0 - (1.0 - tl) * (1.0 - tl)
+			nd.rotation = Vector3(lerp_angle(r0.x, r1.x, w_k), lerp_angle(r0.y, r1.y, w_k), lerp_angle(r0.z, r1.z, w_k))
+	, 0.0, 1.0, total_t)
+
+	DA.power_down_wreck(visual, tw, 1.45, 0.58)
+	if core_mi != null and is_instance_valid(core_mi):
+		tw.tween_property(core_mi, "scale", Vector3.ZERO, 1.35)
+
+	if raid != null and is_instance_valid(raid.fx):
+		var fx_root: Node = raid.fx
+		tw.tween_callback(func() -> void:
+			if not is_instance_valid(fx_root):
+				return
+			var gp := end_pos + Vector3(0.0, 0.14, 0.0)
+			if raid != null and raid.has_method("explode_fx"):
+				raid.explode_fx(gp + Vector3(0.0, 0.6 * sc, 0.0), 4.2, Color(1.0, 0.52, 0.18))
+				raid.shake = maxf(raid.shake, 0.65)
+			ART.burst(fx_root, gp, {"amount": 26, "life": 0.95, "size": 1.35 * sc, "tex": ART.dust_tex(), "additive": false, "flat": 0.88,
+				"dir": Vector3(1, 0, 0), "spread": 180.0, "vmin": 3.0, "vmax": 8.5, "gravity": Vector3(0, 0.3, 0), "damp": 4.2,
+				"c0": Color(0.58, 0.50, 0.38, 0.0), "cmid": Color(0.56, 0.48, 0.36, 0.56), "cmid_pos": 0.18,
+				"c1": Color(0.44, 0.38, 0.30, 0.0), "grow0": 0.55, "grow1": 2.15})
+		).set_delay(total_t * hit_u)
+
 	tw.finished.connect(func():
 		for m in find_children("*", "MeshInstance3D", true, false):
 			if m is MeshInstance3D and not (m.mesh is PlaneMesh):

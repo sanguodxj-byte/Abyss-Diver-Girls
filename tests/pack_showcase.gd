@@ -6,11 +6,11 @@ const TIMEOUT := 150.0
 
 const IDS := [
 	"core_m1a2_sepv3", "core_t90m_proryv", "core_merkava_mk4m", "core_puma_spz",
-	"core_bmpt_terminator", "core_bradley_busk", "core_ka52_alligator", "core_mi24_hind",
+	"core_bmpt_terminator", "core_bradley_busk",
 	"core_fennek_recon", "core_pantsir_s1", "core_patriot_mpq65", "core_krasukha_ew",
-	"core_trieste_bathy", "core_abv_shredder", "core_pionier_dach",
-	"gen_agt1500_turbine", "gen_mtu_mb873_v12", "gen_twin_apu_gtcp", "gen_naval_pwr_s9g",
-	"gen_lfr_lead_bismuth", "gen_stirling_aip", "gen_pem_fuelcell", "gen_homopolar_pulse",
+	"core_abv_shredder", "core_pionier_dach",
+	"gen_agt1500_turbine", "gen_mtu_mb873_v12", "gen_twin_apu_gtcp",
+	"gen_lfr_lead_bismuth", "gen_pem_fuelcell", "gen_homopolar_pulse",
 	"gen_mhd_plasma_gen", "gen_hydrothermal_hx",
 ]
 
@@ -21,7 +21,7 @@ func run() -> void:
 	GameData.loadout = {
 		"core": "core_m1a2_sepv3", "legs": "legs_tread_heavy",
 		"arm_l": "arm_ac30", "arm_r": "arm_gau8",
-		"back": "back_vls", "gen": "gen_naval_pwr_s9g",
+		"back": "back_vls", "gen": "gen_lfr_lead_bismuth",
 	}
 	for id: String in IDS:
 		if not GameData.stash.has(id):

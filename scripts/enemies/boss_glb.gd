@@ -3,6 +3,7 @@ extends RefCounted
 ## 自动修正蒙皮网格临界倒置法线、统一缩放与贴地对齐，并将状态机映射到 9 条骨骼动画轨道。
 
 const ART = preload("res://scripts/art.gd")
+const DA = preload("res://scripts/death_anim.gd")
 
 const MODELS := {
 	"excavator_titan": {
@@ -205,7 +206,7 @@ static func _sanitize_mesh_normals(mesh: ArrayMesh) -> ArrayMesh:
 			if gn.length_squared() < 1e-12:
 				continue
 			var front := -gn.normalized()
-			if norms[ia].dot(front) < 0.0 or norms[ib].dot(front) < 0.0 or norms[ic].dot(front) < 0.0:
+			if norms[ia].dot(front) < 0.03 or norms[ib].dot(front) < 0.03 or norms[ic].dot(front) < 0.03:
 				needs_fix = true
 				break
 		if needs_fix:
@@ -244,7 +245,7 @@ static func _sanitize_mesh_normals(mesh: ArrayMesh) -> ArrayMesh:
 			var corners := [ia, ib, ic]
 			for c_i in 3:
 				var vi: int = corners[c_i]
-				if norms[vi].dot(front) < 0.0:
+				if norms[vi].dot(front) < 0.03:
 					if idx.size() > 0:
 						var new_vi := verts.size()
 						verts.append(verts[vi])
@@ -403,33 +404,62 @@ static func on_die(h, body: Node3D) -> bool:
 	var rig = _rig(h)
 	if rig == null:
 		return false
+	var start_pos: Vector3 = h.global_position
+	var g_info := DA.sample_ground(h, start_pos, 5.5, 60.0)
+	var gy: float = float(g_info.get("y", start_pos.y))
+	var end_pos := Vector3(start_pos.x, gy, start_pos.z)
 	body.position = Vector3.ZERO
 	body.rotation = Vector3.ZERO
+	if is_instance_valid(h.visual):
+		h.visual.position = Vector3.ZERO
 	rig["cur"] = "dead"
 	var ap: AnimationPlayer = rig.get("ap")
-	var dead_len := 2.9
+	var root: Node3D = rig.get("root")
+	var dead_len := 2.6
 	if is_instance_valid(ap) and ap.has_animation("dead"):
 		dead_len = maxf(ap.get_animation("dead").length, 0.5)
 		ap.speed_scale = 1.0
 		ap.play("dead", 0.12)
 	var tw: Tween = (h as Node).create_tween().set_parallel(true)
-	for m in h.find_children("*", "MeshInstance3D", true, false):
-		var mat = m.material_override
-		if mat is StandardMaterial3D and mat.emission_enabled:
-			var dm: StandardMaterial3D = mat.duplicate()
-			m.material_override = dm
-			tw.tween_property(dm, "emission_energy_multiplier", 0.0, 1.6)
-			tw.tween_property(dm, "albedo_color", Color(0.05, 0.06, 0.08, 1.0), 1.6)
+	tw.tween_method(func(u: float) -> void:
+		if not is_instance_valid(h):
+			return
+		h.global_position = start_pos.lerp(end_pos, u * u)
+		h._vis_sync()
+	, 0.0, 1.0, 0.55)
+	DA.power_down_wreck(h.visual, tw, 1.5, 0.62)
 	if h.core_mi and is_instance_valid(h.core_mi):
-		tw.tween_property(h.core_mi, "scale", Vector3.ZERO, 1.6)
-	var finish_t := maxf(dead_len, 2.4)
+		tw.tween_property(h.core_mi, "scale", Vector3.ZERO, 1.5)
+	if h.raid != null and is_instance_valid(h.raid.fx):
+		var fx_root: Node = h.raid.fx
+		var sc := maxf(float(h.data.get("scale", 2.9)), 1.5)
+		tw.tween_callback(func() -> void:
+			if not is_instance_valid(fx_root):
+				return
+			var gp := end_pos + Vector3(0.0, 0.15, 0.0)
+			if h.raid != null and h.raid.has_method("explode_fx"):
+				h.raid.explode_fx(gp + Vector3(0.0, 0.8 * sc, 0.0), 4.8, Color(1.0, 0.54, 0.18))
+				h.raid.shake = maxf(h.raid.shake, 0.75)
+			ART.burst(fx_root, gp, {"amount": 28, "life": 1.0, "size": 1.45 * sc, "tex": ART.dust_tex(), "additive": false, "flat": 0.88,
+				"dir": Vector3(1, 0, 0), "spread": 180.0, "vmin": 3.2, "vmax": 9.0, "gravity": Vector3(0, 0.3, 0), "damp": 4.2,
+				"c0": Color(0.58, 0.50, 0.38, 0.0), "cmid": Color(0.56, 0.48, 0.36, 0.58), "cmid_pos": 0.18,
+				"c1": Color(0.44, 0.38, 0.30, 0.0), "grow0": 0.55, "grow1": 2.2})
+		).set_delay(minf(dead_len * 0.58, 1.35))
+	var finish_t := maxf(dead_len, 2.2)
 	var fin_tw: Tween = (h as Node).create_tween()
 	fin_tw.tween_interval(finish_t)
 	fin_tw.tween_callback(func():
 		if not is_instance_valid(h):
 			return
+		h.global_position = end_pos
+		h._vis_sync()
 		if is_instance_valid(ap):
+			ap.advance(0.0)
 			ap.active = false
+		if is_instance_valid(root) and is_instance_valid(h.visual):
+			var min_wy: float = DA.lowest_world_y(h.visual)
+			if min_wy < 1e8:
+				root.position.y += (gy - 0.03 - min_wy)
 		for m in h.find_children("*", "MeshInstance3D", true, false):
 			if m is MeshInstance3D and not (m.mesh is PlaneMesh):
 				m.visibility_range_end = 90.0

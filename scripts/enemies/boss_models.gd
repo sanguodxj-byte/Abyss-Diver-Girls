@@ -10,6 +10,7 @@ const Models = preload("res://scripts/enemies/models.gd")
 const Ext = preload("res://scripts/enemies/boss_models_ext.gd")
 const NewLM = preload("res://scripts/enemies/boss_models_new.gd")
 const ModularGlb = preload("res://scripts/enemies/boss_modular_glb.gd")
+const MeshyRig = preload("res://scripts/enemies/boss_meshy_rig.gd")
 const BONE := Color(0.66, 0.68, 0.71)
 
 
@@ -40,6 +41,8 @@ static func decal_size(kind: String) -> float:
 
 
 static func build(h, body: Node3D, kind: String, s: float) -> void:
+	if MeshyRig.supports(kind) and MeshyRig.build(h, body, kind, s):
+		return
 	match kind:
 		"broodmother": _brood(h, body, s)
 		"grey_brood": _grey_brood(h, body, s)

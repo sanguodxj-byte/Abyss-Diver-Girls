@@ -13,6 +13,7 @@ uniform float sway_amp : hint_range(0.0, 0.25) = 0.045;
 uniform float backlight_str : hint_range(0.0, 1.0) = 0.36;
 uniform float albedo_gain : hint_range(0.4, 5.0) = 1.0;
 uniform float up_normal_blend : hint_range(0.0, 0.9) = 0.0;
+uniform vec3 far_ground_col : source_color = vec3(0.35, 0.31, 0.25);
 #include "res://shaders/occ_fade.gdshaderinc"
 
 varying float v_ao;
@@ -42,19 +43,24 @@ void fragment() {
 		}
 	}
 	vec4 tx = texture(albedo_tex, UV);
-	// 轻量 Mipmap 覆盖率补偿，防止低画质远景树冠稀疏碎裂
-	float uv_fw = max(fwidth(UV.x), fwidth(UV.y));
-	float mip_boost = clamp(uv_fw * 2.8, 0.0, 0.22);
-	ALPHA = tx.a;
-	ALPHA_SCISSOR_THRESHOLD = max(0.11, alpha_cut - mip_boost);
+	float dist_cam = length(v_wpos - INV_VIEW_MATRIX[3].xyz);
+	float far_fol = smoothstep(45.0, 95.0, dist_cam);
+	float far_low = smoothstep(52.0, 102.0, dist_cam);
 	float is_tree = 1.0 - smoothstep(0.35, 0.72, up_normal_blend);
 	float low_fol = smoothstep(0.50, 0.85, up_normal_blend);
+	// 轻量 Mipmap 覆盖率补偿 + 远距矮草/灌木柔和淡化，防止低画质远景树冠碎裂或地面暗黑胡椒点
+	float uv_fw = max(fwidth(UV.x), fwidth(UV.y));
+	float mip_boost = clamp(uv_fw * mix(2.8, 1.05, low_fol), 0.0, mix(0.22, 0.06, low_fol));
+	float low_fade_cut = far_low * low_fol * 0.16;
+	ALPHA = tx.a;
+	ALPHA_SCISSOR_THRESHOLD = clamp(alpha_cut - mip_boost + low_fade_cut, 0.11, 0.62);
 	vec3 tint = mix(tint_a.rgb, tint_b.rgb, clamp(v_tree_h * 0.60 + v_var * 0.26 + v_height * 0.16 * is_tree, 0.0, 1.0));
-	float ao_src = mix(v_ao * 0.74 + v_height * 0.26, v_ao, low_fol);
-	float ao_t = mix(smoothstep(0.20, 0.95, ao_src), smoothstep(0.05, 0.85, v_ao), up_normal_blend);
+	float ao_src = mix(v_ao * 0.72 + v_height * 0.28, v_ao, low_fol);
+	float ao_t = mix(smoothstep(0.16, 0.94, ao_src), smoothstep(0.05, 0.85, v_ao), up_normal_blend);
+	ao_t = mix(ao_t, max(ao_t, mix(0.68, 0.82, low_fol)), far_fol * mix(0.42, 0.68, low_fol));
 	vec3 tx_rgb = max(tx.rgb, vec3(0.042, 0.044, 0.032) * low_fol);
-	vec3 low_shade = mix(vec3(0.66, 0.74, 0.69), vec3(0.94, 0.92, 0.85), low_fol);
-	vec3 hi_shade = mix(vec3(1.20, 1.16, 0.99), vec3(1.16, 1.13, 1.00), low_fol);
+	vec3 low_shade = mix(vec3(0.72, 0.78, 0.74), vec3(0.94, 0.92, 0.86), low_fol);
+	vec3 hi_shade = mix(vec3(1.16, 1.14, 0.98), vec3(1.14, 1.12, 0.98), low_fol);
 	vec3 shade_mul = mix(low_shade, hi_shade, ao_t);
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
@@ -63,21 +69,25 @@ void fragment() {
 		vec3 v_up = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 		NORMAL = normalize(mix(NORMAL, v_up, up_normal_blend));
 	}
-	vec3 col = clamp(tx_rgb * tint * shade_mul * albedo_gain, vec3(0.0), vec3(0.96));
+	vec3 col = clamp(tx_rgb * tint * shade_mul * albedo_gain, vec3(0.0), vec3(0.90));
+	float lum_c = dot(col, vec3(0.299, 0.587, 0.114));
+	col = mix(vec3(lum_c), col, mix(0.84, 0.90, low_fol));
+	col = mix(col, far_ground_col, far_fol * low_fol * 0.44);
 	ALBEDO = occ_fade > 0.01 ? occ_soft_mist(col, occ_fade) : col;
-	ROUGHNESS = clamp(rough_val, 0.42, 0.96);
-	SPECULAR = 0.14;
+	ROUGHNESS = clamp(rough_val, 0.52, 0.96);
+	SPECULAR = 0.11;
 	METALLIC = 0.0;
-	BACKLIGHT = col * vec3(0.82, 0.90, 0.44) * backlight_str * 0.92;
-	AO = clamp(mix(mix(0.64, 0.94, up_normal_blend), 1.0, v_ao), 0.62, 1.0);
+	BACKLIGHT = col * vec3(0.88, 0.92, 0.48) * backlight_str * 0.92;
+	float ao_base = clamp(mix(mix(0.68, 0.94, up_normal_blend), 1.0, v_ao), 0.66, 1.0);
+	AO = mix(ao_base, 1.0, far_fol * mix(0.42, 0.68, low_fol));
 	AO_LIGHT_AFFECT = mix(0.26, 0.06, up_normal_blend);
 }
 
 void light() {
 	// 4 指令半球包裹漫反射 + 逆光透射，彻底消除低画质/移动端树冠背光死黑
 	float ndl = dot(NORMAL, LIGHT);
-	float wrap = clamp(ndl * 0.56 + 0.44, 0.0, 1.0);
-	float sh = LIGHT_IS_DIRECTIONAL ? mix(0.58, 1.0, ATTENUATION) : ATTENUATION;
-	float trans = clamp(dot(-NORMAL, LIGHT) * 0.50 + 0.50, 0.0, 1.0) * 0.44;
-	DIFFUSE_LIGHT += (ALBEDO * wrap * sh + BACKLIGHT * trans * sh) * LIGHT_COLOR * 0.44;
+	float wrap = clamp(ndl * 0.54 + 0.46, 0.0, 1.0);
+	float sh = LIGHT_IS_DIRECTIONAL ? mix(0.66, 1.0, ATTENUATION) : ATTENUATION;
+	float trans = clamp(dot(-NORMAL, LIGHT) * 0.50 + 0.50, 0.0, 1.0) * 0.54;
+	DIFFUSE_LIGHT += (ALBEDO * wrap * sh + BACKLIGHT * trans * sh) * LIGHT_COLOR * 0.48;
 }

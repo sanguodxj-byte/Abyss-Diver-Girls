@@ -40,21 +40,26 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.cy(arm, 0.08, 0.27, K.gunmetal(), Vector3(side * 0.38, -0.12, 0.02), Vector3(0, 0, 90), -1.0, 12)
 	K.bolt_ring(arm, 0.15, 6, 0.013, Vector3(side * 0.505, -0.12, 0.02), Vector3(0, 0, -side * 90.0))
 	K.bb(arm, Vector3(0.14, 0.12, 0.36), K.gunmetal(), Vector3(side * 0.27, -0.20, -0.28), Vector3(0, side * 20.0, 0), 0.02)
-	# 长转管：机匣前轴承座 + 打孔隔热套筒 + 6根独立枪管 + 多道蜘蛛管箍 + 真实深黑膛口
+	# 长转管：机匣前轴承座 + 纵肋穿孔隔热套筒 + 6根独立枪管 + 多道蜘蛛管箍 + 真实深黑膛口
 	K.cy(arm, 0.17, 0.20, M_DARK, Vector3(0, 0, -0.78), Vector3(90, 0, 0), -1.0, 20)
 	K.cy(arm, 0.135, 0.92, K.gunmetal(), Vector3(0, 0, -1.32), Vector3(90, 0, 0), -1.0, 20)
+	# 齐平贴面深黑散热孔（外缘距套筒仅 1mm，杜绝第一人称视角下圆点凸起如铆钉疙瘩）
 	for k in 6:
 		for i in 6:
 			var a := TAU * (i + 0.5 * (k % 2)) / 6.0
-			A.add(arm, A.cyl(0.022, 0.025, 0.022, 8), K.bore_mat(), Vector3(cos(a) * 0.132, sin(a) * 0.132, -0.96 - k * 0.13), Vector3(0, 0, rad_to_deg(a) - 90.0), Vector3.ONE, false)
+			A.add(arm, A.cyl(0.017, 0.012, 0.017, 10), K.bore_mat(), Vector3(cos(a) * 0.130, sin(a) * 0.130, -0.96 - k * 0.13), Vector3(0, 0, rad_to_deg(a) - 90.0), Vector3.ONE, false)
+	# 4 条纵向铣削防烫散热筋 + 前中后管箍，提升第一人称近景机械质感
+	for ri in 4:
+		var ra := TAU * (float(ri) + 0.5) / 4.0
+		K.bb(arm, Vector3(0.018, 0.014, 0.86), M_DARK, Vector3(cos(ra) * 0.138, sin(ra) * 0.138, -1.32), Vector3(0, 0, rad_to_deg(ra) - 90.0), 0.004)
 	for i in 6:
 		var a := TAU * i / 6.0
 		var bx := cos(a) * 0.076
 		var by := sin(a) * 0.076
 		K.cy(arm, 0.030, 0.44, M_DARK, Vector3(bx, by, -1.98), Vector3(90, 0, 0), -1.0, 10)
 		K.barrel_bore(arm, 0.030, 0.021, Vector3(bx, by, -2.20), 0.05)
-	for zz in [-0.90, -1.80, -2.12]:
-		K.cy(arm, 0.145 if zz > -1.9 else 0.122, 0.05, M_DARK, Vector3(0, 0, zz), Vector3(90, 0, 0), -1.0, 20)
+	for zz in [-0.90, -1.34, -1.78, -2.12]:
+		K.cy(arm, 0.146 if zz > -1.9 else 0.122, 0.048, M_DARK, Vector3(0, 0, zz), Vector3(90, 0, 0), -1.0, 20)
 	K.cy(arm, 0.038, 0.44, K.gunmetal(), Vector3(0, 0, -1.98), Vector3(90, 0, 0), -1.0, 10)
 	muzzle.position = Vector3(0, 0, -2.26)
 	root.set_meta("muzzle", muzzle)

@@ -152,25 +152,48 @@ static func _build_boss_lair(raid, center: Vector3, boss_id: String) -> void:
 		A.add(lair, A.quad(14.0, 14.0), A.extract_pad_mat(Color(glow_c.r, glow_c.g, glow_c.b, 0.30), 0.44, 3), Vector3(0, 0.114, 0), Vector3.ZERO, Vector3.ONE, false)
 		var mat_st: Material = A.paint(Color(0.24, 0.25, 0.27), 0.65, 0.50, {"rust": 0.68, "wear": 0.55})
 		var mat_hz: Material = A.hazard()
-		var mat_lamp: Material = A.emit(glow_c, 1.8)
+		var mat_lamp: Material = A.emit(glow_c, 1.55)
 		for k in 4:
 			var ang_b: float = PI * 0.25 + TAU * float(k) / 4.0
 			var sp_b := Vector3(cos(ang_b) * 8.6, 0.0, sin(ang_b) * 8.6)
+			var wp_b := center + sp_b
+			if raid.in_wet(Vector2(wp_b.x, wp_b.z), 1.0) or raid._blocked(wp_b, 0.8, false):
+				continue
 			A.add(lair, A.bevel_box(Vector3(0.48, 1.45, 0.48), 0.04), mat_st, sp_b + Vector3(0, 0.72, 0), Vector3(0, -rad_to_deg(ang_b), 0), Vector3.ONE, false)
 			A.add(lair, A.bevel_box(Vector3(0.52, 0.24, 0.52), 0.02), mat_hz, sp_b + Vector3(0, 1.15, 0), Vector3(0, -rad_to_deg(ang_b), 0), Vector3.ONE, false)
-			A.add(lair, A.cyl(0.12, 0.18, 0.15, 10), mat_lamp, sp_b + Vector3(0, 1.52, 0), Vector3.ZERO, Vector3.ONE, false)
+			A.add(lair, A.cyl(0.12, 0.18, 0.15, 16), mat_lamp, sp_b + Vector3(0, 1.52, 0), Vector3.ZERO, Vector3.ONE, false)
 	else:
-		var mat_chitin: Material = A.chitin(Color(0.2, 0.14, 0.18))
-		var mat_glow: Material = A.emit(glow_c, 2.2)
+		# 首领巢穴周界矿渣尖晶簇：避开河湖水面、硬化车道与建筑内墙，用玄武碎岩基座+多簇风化金属甲壳尖刺+克制内嵌能量晶芯取代原先低模六棱锥与刺眼亮块
+		var mat_rock: Material = A.rock_mat(Color(0.22, 0.20, 0.19))
+		var mat_chitin: Material = A.paint(Color(0.18, 0.19, 0.21), 0.52, 0.62, {"rust": 0.58, "wear": 0.65, "grime": 0.82})
+		var mat_glow: Material = A.emit(glow_c, 1.35)
 		for k in 6:
 			var ang: float = TAU * float(k) / 6.0 + raid.rng.randf_range(-0.18, 0.18)
 			var dist: float = raid.rng.randf_range(8.5, 11.2)
 			var sp := Vector3(cos(ang) * dist, 0.0, sin(ang) * dist)
-			var h: float = raid.rng.randf_range(1.8, 3.1)
-			var r: float = raid.rng.randf_range(0.32, 0.52)
-			var tilt := Vector3(sin(ang) * 16.0, raid.rng.randf_range(0.0, 360.0), -cos(ang) * 16.0)
-			A.add(lair, A.cyl(r * 0.18, h, r, 6, true), mat_chitin, sp + Vector3(0, h * 0.45, 0), tilt)
-			A.add(lair, A.rock_mesh(0.28, 70 + k * 13), mat_glow, sp + Vector3(0, 0.36, 0), tilt * 0.5, Vector3(r * 1.4, r * 1.8, r * 1.4), false)
+			var wp := center + sp
+			if raid.in_wet(Vector2(wp.x, wp.z), 1.2) or raid.on_road(Vector2(wp.x, wp.z), 0.8) or raid._blocked(wp, 0.9, false):
+				continue
+			var h: float = raid.rng.randf_range(1.6, 2.7)
+			var r: float = raid.rng.randf_range(0.28, 0.44)
+			var yaw_d: float = rad_to_deg(-ang) + raid.rng.randf_range(-20.0, 20.0)
+			# 3 块翻起玄武碎岩基座
+			for ri in 3:
+				var ra: float = TAU * float(ri) / 3.0 + float(k) * 0.7
+				var rsc: float = r * float(raid.rng.randf_range(0.85, 1.25))
+				A.add(lair, A.rock_mesh(k * 5 + ri + 11), mat_rock,
+					sp + Vector3(cos(ra) * r * 0.95, rsc * 0.24, sin(ra) * r * 0.95),
+					Vector3(raid.rng.randf_range(-16, 16), yaw_d + ri * 95.0, raid.rng.randf_range(-16, 16)),
+					Vector3(rsc * 1.35, rsc * 0.68, rsc * 1.10), false)
+			# 主甲壳斜桩 + 侧面副刺 + 根部紧贴内嵌的细长能量晶条（不再是巨大的白色发光石块）
+			var tilt := Vector3(sin(ang) * 16.0, yaw_d, -cos(ang) * 16.0)
+			A.add(lair, A.cyl(r * 0.14, h, r * 0.78, 12), mat_chitin, sp + Vector3(0, h * 0.44, 0), tilt)
+			A.add(lair, A.cyl(r * 0.10, h * 0.62, r * 0.48, 10), mat_chitin,
+				sp + Vector3(cos(ang + 0.9) * r * 0.55, h * 0.26, sin(ang + 0.9) * r * 0.55),
+				Vector3(sin(ang + 0.9) * 28.0, yaw_d + 40.0, -cos(ang + 0.9) * 28.0), Vector3.ONE, false)
+			A.add(lair, A.cyl(r * 0.08, h * 0.42, r * 0.26, 8), mat_glow,
+				sp + Vector3(cos(ang - 0.8) * r * 0.34, h * 0.22, sin(ang - 0.8) * r * 0.34),
+				Vector3(sin(ang - 0.8) * 20.0, yaw_d - 30.0, -cos(ang - 0.8) * 20.0), Vector3.ONE, false)
 	var light := OmniLight3D.new()
 	light.light_color = glow_c
 	light.light_energy = 1.6

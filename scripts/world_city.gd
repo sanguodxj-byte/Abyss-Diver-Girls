@@ -3532,8 +3532,8 @@ static func _marsh_pools(t: Vector2i) -> Array:
 # ---------------------------------------------------------------- 建筑
 ## 各区块的地块切分与建筑：lot 目标地块面积范围，m 建筑离地块边的间距，h 高度档，empty 空地块概率，court 内院地块留空概率
 const BLD_SPEC := {
-	"D": {"lot": [90.0, 210.0], "m": [0.25, 0.55], "kind": "bld", "h": [8.0, 22.0], "empty": 0.05, "court": 0.35},
-	"R": {"lot": [110.0, 190.0], "m": [0.8, 1.3], "kind": "house", "h": [3.2, 6.4], "empty": 0.1, "court": 0.6},
+	"D": {"lot": [150.0, 360.0], "m": [0.20, 0.45], "kind": "bld", "h": [16.0, 38.0], "empty": 0.03, "court": 0.24},
+	"R": {"lot": [160.0, 320.0], "m": [0.45, 0.90], "kind": "tenement", "h": [10.5, 26.0], "empty": 0.05, "court": 0.38},
 	"H": {"lot": [380.0, 800.0], "m": [1.8, 3.0], "kind": "wh", "h": [6.5, 8.5], "empty": 0.18, "court": 0.3},
 	"I": {"lot": [450.0, 1100.0], "m": [2.0, 3.5], "kind": "wh", "h": [7.0, 10.0], "empty": 0.1, "court": 0.12},
 	"Y": {"lot": [700.0, 1200.0], "m": [3.0, 3.0], "kind": "shed", "h": [3.0, 3.6], "empty": 0.6, "court": 0.9},
@@ -3603,29 +3603,29 @@ static func _lot_buildings(blk: Dictionary, rng: RandomNumberGenerator) -> Array
 				kind = picked[0]
 				hgt = picked[1]
 			"R":
-				if rng.randf() < 0.24 and sx > 10.0 and sz > 7.8:
-					sx = minf(sx, rng.randf_range(11.0, 17.5))
-					sz = minf(sz, rng.randf_range(8.5, 12.0))
-					var picked_r := _pick_style("R", sx, sz, rng.randf_range(8.0, 14.0), rng)
+				if sx > 13.5 and sz > 8.6:
+					sx = minf(sx, rng.randf_range(15.5, 24.5))
+					sz = minf(sz, rng.randf_range(9.5, 13.8))
+					var picked_r := _pick_style("R", sx, sz, rng.randf_range(12.0, 26.0), rng)
 					kind = picked_r[0]
 					hgt = picked_r[1]
 				else:
-					sx = minf(sx, rng.randf_range(6.5, 13.5))
-					sz = minf(sz, rng.randf_range(6.2, 9.0))
+					sx = minf(sx, rng.randf_range(10.5, 17.5))
+					sz = minf(sz, rng.randf_range(7.8, 11.5))
 					var picked_r2 := _pick_style("R", sx, sz, hgt, rng)
 					kind = picked_r2[0]
 					hgt = picked_r2[1]
 				var vz := Vector2(-sin(ba), cos(ba))
-				c = fit.c + vz * maxf(0.0, (float(fit.sz) - sz) * 0.5 - 0.5)
+				c = fit.c + vz * maxf(0.0, (float(fit.sz) - sz) * 0.5 - 0.35)
 			"Y":
-				sx = minf(sx, rng.randf_range(8.0, 15.0))
-				sz = minf(sz, rng.randf_range(5.2, 7.6))
+				sx = minf(sx, rng.randf_range(8.5, 18.5))
+				sz = minf(sz, rng.randf_range(5.5, 11.5))
 				var picked_y := _pick_style("Y", sx, sz, hgt, rng)
 				kind = picked_y[0]
 				hgt = picked_y[1]
 			"M":
-				sx = minf(sx, rng.randf_range(12.0, 20.0))
-				sz = minf(sz, rng.randf_range(6.2, 8.2))
+				sx = minf(sx, rng.randf_range(8.5, 20.0))
+				sz = minf(sz, rng.randf_range(6.2, 12.5))
 				var picked_m := _pick_style("M", sx, sz, hgt, rng)
 				kind = picked_m[0]
 				hgt = picked_m[1]
@@ -3652,82 +3652,224 @@ static func _lot_buildings(blk: Dictionary, rng: RandomNumberGenerator) -> Array
 	return out
 
 
-## 根据街区属性与地块尺度分配多样化写实工业 / 城区建筑样式（共 23 种，严控高宽比防非等比拉伸畸变）
+## 根据街区属性与地块尺度分配多样化写实工业 / 城区建筑样式（严控高宽比防非等比拉伸畸变）
 static func _pick_style(ch: String, w: float, d: float, base_h: float, rng: RandomNumberGenerator) -> Array:
 	var r := rng.randf()
 	match ch:
 		"D":
-			if w >= 17.5 and d >= 11.5:
-				if r < 0.38:
-					return ["civic_block", rng.randf_range(13.0, 17.5)]
-				if r < 0.74:
-					return ["midrise_office", rng.randf_range(16.0, 22.0)]
-				if r < 0.88:
-					return ["rowblock", rng.randf_range(9.6, 12.0)]
-				return ["courtyard_blk", rng.randf_range(9.0, 11.6)]
-			if w >= 14.5 and d >= 8.8:
-				if r < 0.44:
-					return ["rowblock", rng.randf_range(9.6, 12.0)]
-				if r < 0.72:
-					return ["midrise_office", rng.randf_range(15.2, 19.6)]
-				if r < 0.88:
-					return ["arcade_shop", rng.randf_range(8.4, 11.0)]
-				return ["tenement", rng.randf_range(10.0, 13.2)]
-			if w >= 11.5 and d >= 8.5:
-				if r < 0.28:
-					return ["stepped_tower", rng.randf_range(13.2, 18.0)]
-				if r < 0.60:
-					return ["tenement", rng.randf_range(9.8, 13.0)]
-				if r < 0.84:
-					return ["arcade_shop", rng.randf_range(8.2, 10.6)]
-				return ["apt", rng.randf_range(9.2, 12.2)]
-			if w <= 10.5 and d <= 9.5 and r > 0.90:
-				return ["substation", rng.randf_range(5.2, 6.8)]
-			return ["bld", rng.randf_range(7.8, 11.2)]
-		"R":
-			if w >= 15.0 and d >= 8.2:
-				return ["rowblock", rng.randf_range(9.2, 11.6)] if r < 0.68 else ["terrace", rng.randf_range(6.4, 8.4)]
-			if w >= 11.0 and d >= 6.8:
-				if r < 0.46:
-					return ["terrace", rng.randf_range(6.2, 8.2)]
+			if w >= 16.5 and d >= 10.8:
+				if r < 0.36:
+					return ["highrise_office", rng.randf_range(28.5, 39.5)]
+				if r < 0.62:
+					return ["brutalist_slab", rng.randf_range(22.5, 30.5)]
 				if r < 0.78:
-					return ["tenement", rng.randf_range(9.5, 12.6)]
-				return ["apt", rng.randf_range(8.6, 11.2)]
-			if w >= 8.4 and d >= 6.8:
+					return ["midrise_office", rng.randf_range(18.5, 24.5)]
+				if r < 0.87:
+					return ["civic_block", rng.randf_range(15.0, 19.2)]
+				if r < 0.93:
+					return ["police_precinct", rng.randf_range(11.0, 13.8)]
+				return ["fire_station", rng.randf_range(12.0, 14.8)]
+			if w >= 13.5 and d >= 8.6:
+				if r < 0.28:
+					return ["highrise_office", rng.randf_range(26.0, 34.5)]
 				if r < 0.54:
-					return ["apt", rng.randf_range(8.4, 11.2)]
-				if r < 0.82:
-					return ["tenement", rng.randf_range(9.2, 12.0)]
-				return ["duplex", rng.randf_range(5.4, 7.2)]
-			if w >= 7.0 and r < 0.72:
-				return ["duplex", rng.randf_range(5.2, 7.0)]
-			return ["house", rng.randf_range(3.8, 5.2)]
+					return ["brutalist_slab", rng.randf_range(20.5, 27.5)]
+				if r < 0.74:
+					return ["midrise_office", rng.randf_range(17.5, 22.8)]
+				if r < 0.86:
+					return ["stepped_tower", rng.randf_range(15.5, 20.2)]
+				if r < 0.94:
+					return ["arcade_shop", rng.randf_range(8.8, 11.4)]
+				return ["rowblock", rng.randf_range(10.2, 12.6)]
+			if w >= 10.5 and d >= 7.4:
+				if r < 0.42:
+					return ["stepped_tower", rng.randf_range(15.2, 19.8)]
+				if r < 0.72:
+					return ["tenement", rng.randf_range(11.8, 15.2)]
+				if r < 0.88:
+					return ["arcade_shop", rng.randf_range(8.6, 11.0)]
+				return ["apt", rng.randf_range(10.8, 13.8)]
+			if w <= 10.5 and d <= 9.5 and r > 0.90:
+				return ["substation", rng.randf_range(5.4, 7.0)]
+			return ["bld", rng.randf_range(12.0, 18.5)]
+		"R":
+			if w >= 14.5 and d >= 8.2:
+				if d >= 10.0 and r >= 0.90:
+					if r < 0.95:
+						return ["water_tower", rng.randf_range(17.5, 21.5)]
+					return ["b6_gas_station", rng.randf_range(5.6, 6.8)]
+				if r < 0.38:
+					return ["brutalist_slab", rng.randf_range(21.5, 28.5)]
+				if r < 0.62:
+					return ["midrise_office", rng.randf_range(17.5, 23.0)]
+				if r < 0.84:
+					return ["rowblock", rng.randf_range(10.2, 12.8)]
+				return ["courtyard_blk", rng.randf_range(10.0, 12.4)]
+			if w >= 10.8 and d >= 6.8:
+				if r < 0.34:
+					return ["stepped_tower", rng.randf_range(15.0, 19.5)]
+				if r < 0.66:
+					return ["tenement", rng.randf_range(11.5, 14.8)]
+				if r < 0.86:
+					return ["apt", rng.randf_range(10.5, 13.6)]
+				return ["arcade_shop", rng.randf_range(8.2, 10.4)]
+			if w >= 8.2 and d >= 6.5:
+				if r < 0.56:
+					return ["tenement", rng.randf_range(10.8, 13.8)]
+				if r < 0.84:
+					return ["apt", rng.randf_range(9.8, 12.6)]
+				return ["duplex", rng.randf_range(6.2, 7.8)]
+			if w >= 6.8 and r < 0.72:
+				return ["duplex", rng.randf_range(5.8, 7.4)]
+			return ["house", rng.randf_range(4.4, 5.8)]
 		"I":
 			if w * d < 95.0:
-				return ["substation", rng.randf_range(4.6, 6.6)] if r < 0.55 else ["shed", rng.randf_range(3.6, 4.8)]
-			if w >= 12.5 and d >= 9.5 and r < 0.36:
-				return ["foundry", rng.randf_range(8.0, 12.2)]
-			if w >= 10.0 and d >= 8.2 and r < 0.66:
-				return ["chem_plant", rng.randf_range(6.8, 10.2)]
-			if r < 0.88:
+				if r < 0.42:
+					return ["substation", rng.randf_range(4.6, 6.6)]
+				if r < 0.64 and w >= 8.0 and d >= 6.5:
+					return ["bldg_water_tower", rng.randf_range(8.6, 10.6)]
+				if r < 0.80 and w >= 9.0 and d >= 7.0:
+					return ["b6_foundry_kiln", rng.randf_range(8.2, 10.2)]
+				return ["shed", rng.randf_range(3.6, 4.8)]
+			if w >= 14.5 and d >= 10.5:
+				if r < 0.18:
+					return ["foundry", rng.randf_range(8.0, 12.2)]
+				if r < 0.34:
+					return ["chem_plant", rng.randf_range(7.2, 10.8)]
+				if r < 0.46:
+					return ["wh", base_h]
+				if r < 0.57:
+					return ["cooling_tower", rng.randf_range(13.8, 17.0)]
+				if r < 0.68:
+					return ["fuel_tank_farm", rng.randf_range(10.0, 12.2)]
+				if r < 0.79:
+					return ["salvage_foundry", rng.randf_range(12.2, 14.8)]
+				if r < 0.90:
+					if w >= 15.5 and d >= 11.2:
+						return ["factory_smelter", rng.randf_range(14.0, 17.2)]
+					return ["salvage_foundry", rng.randf_range(12.2, 14.8)]
+				return ["water_tower_pump", rng.randf_range(13.4, 16.2)]
+			if w >= 10.0 and d >= 8.0:
+				if r < 0.24:
+					if w >= 12.0 and d >= 9.0:
+						return ["foundry", rng.randf_range(8.0, 12.2)]
+					return ["b6_foundry_kiln", rng.randf_range(8.4, 10.4)]
+				if r < 0.46:
+					return ["chem_plant", rng.randf_range(6.8, 10.2)]
+				if r < 0.64:
+					return ["wh", base_h]
+				if r < 0.76:
+					return ["b6_foundry_kiln", rng.randf_range(8.4, 10.4)]
+				if r < 0.86:
+					if w >= 12.0 and d >= 9.2:
+						return ["water_tower_pump", rng.randf_range(13.0, 15.8)]
+					return ["bldg_water_tower", rng.randf_range(8.8, 10.8)]
+				if r < 0.94:
+					return ["bldg_water_tower", rng.randf_range(8.8, 10.8)]
+				return ["substation", rng.randf_range(5.0, 7.0)]
+			if r < 0.85:
 				return ["wh", base_h]
 			return ["substation", rng.randf_range(5.0, 7.0)]
 		"H":
 			if w * d < 95.0:
+				if r < 0.25 and w >= 8.8 and d >= 6.8:
+					return ["b6_lighthouse", rng.randf_range(9.4, 11.4)]
+				if r < 0.55 and w >= 9.0 and d >= 7.0:
+					return ["b6_drydock_yard", rng.randf_range(6.4, 8.0)]
 				return ["shed", rng.randf_range(3.5, 4.8)]
-			if w >= 10.5 and d >= 8.0 and r < 0.44:
-				return ["cold_store", rng.randf_range(7.0, 9.8)]
+			if w >= 14.5 and d >= 9.8:
+				if r < 0.20:
+					return ["wh", base_h]
+				if r < 0.32:
+					return ["cold_store", rng.randf_range(7.0, 9.8)]
+				if r < 0.44:
+					return ["port_warehouse", rng.randf_range(9.2, 11.4)]
+				if r < 0.56:
+					return ["cold_storage", rng.randf_range(9.0, 11.0)]
+				if r < 0.67:
+					return ["ferry_terminal", rng.randf_range(9.8, 12.0)]
+				if r < 0.79:
+					return ["dockside_gantry", rng.randf_range(12.8, 15.6)]
+				if r < 0.90:
+					return ["drydock_crane", rng.randf_range(13.6, 16.8)]
+				return ["drawbridge_gatehouse", rng.randf_range(11.2, 13.6)]
+			if w >= 9.5 and d >= 7.2:
+				if r < 0.34:
+					return ["wh", base_h]
+				if r < 0.58:
+					return ["cold_store", rng.randf_range(7.0, 9.8)]
+				if r < 0.86:
+					return ["b6_drydock_yard", rng.randf_range(6.4, 8.0)]
+				return ["b6_lighthouse", rng.randf_range(9.4, 11.4)]
 			return ["wh", base_h]
 		"Y":
-			if w >= 9.5 and d >= 5.5 and r < 0.52:
-				return ["loco_shed", rng.randf_range(5.2, 7.0)]
-			if r > 0.86 and w >= 6.5 and d >= 5.5:
+			if w >= 13.5 and d >= 8.8:
+				if r < 0.26:
+					return ["loco_shed", rng.randf_range(5.4, 7.2)]
+				if r < 0.48:
+					return ["locomotive_roundhouse", rng.randf_range(10.2, 12.4)]
+				if r < 0.68:
+					return ["train_depot", rng.randf_range(9.4, 11.4)]
+				if r < 0.88:
+					return ["ore_crusher_tipple", rng.randf_range(12.2, 14.8)]
+				return ["b6_rail_depot", rng.randf_range(6.2, 7.6)]
+			if w >= 9.0 and d >= 5.5:
+				if r < 0.38:
+					return ["loco_shed", rng.randf_range(5.2, 7.0)]
+				if r < 0.72:
+					return ["b6_rail_depot", rng.randf_range(6.0, 7.6)]
+				if r < 0.86:
+					return ["substation", rng.randf_range(4.6, 6.2)]
+				return ["shed", base_h]
+			if r > 0.78 and w >= 6.5 and d >= 5.5:
 				return ["substation", rng.randf_range(4.4, 6.0)]
 			return ["shed", base_h]
 		"M":
-			if w >= 11.0 and d >= 6.0 and r < 0.42:
-				return ["command_bunker", rng.randf_range(4.4, 6.2)]
+			if w >= 13.5 and d >= 9.2:
+				if r < 0.24:
+					return ["command_bunker", rng.randf_range(5.4, 8.0)]
+				if r < 0.42:
+					return ["barrack", rng.randf_range(3.8, 4.6)]
+				if r < 0.68:
+					return ["hangar_quonset", rng.randf_range(8.2, 10.2)]
+				if r < 0.88:
+					return ["radar_array", rng.randf_range(13.2, 16.2)]
+				return ["b6_helipad", rng.randf_range(5.6, 7.0)]
+			if w >= 9.5 and d >= 6.5:
+				if r < 0.28:
+					return ["barrack", base_h]
+				if r < 0.48:
+					return ["command_bunker", rng.randf_range(4.8, 6.8)]
+				if r < 0.68:
+					return ["b6_helipad", rng.randf_range(5.6, 7.0)]
+				if r < 0.86:
+					return ["b6_artillery_nest", rng.randf_range(4.4, 5.6)]
+				return ["fort_pillbox_bunker_ruined", rng.randf_range(3.8, 4.8)]
+			if r < 0.45:
+				return ["fort_pillbox_bunker_ruined", rng.randf_range(3.8, 4.8)]
+			if r < 0.75 and w >= 8.0 and d >= 6.0:
+				return ["b6_artillery_nest", rng.randf_range(4.4, 5.4)]
 			return ["barrack", base_h]
+		"F":
+			if w >= 14.5 and d >= 10.0:
+				if r < 0.24:
+					return ["grain_silo_elevator", rng.randf_range(13.2, 16.0)]
+				if r < 0.46:
+					return ["grain_silo", rng.randf_range(14.8, 18.0)]
+				if r < 0.66:
+					return ["fuel_depot", rng.randf_range(7.4, 9.0)]
+				if r < 0.84:
+					return ["water_tower", rng.randf_range(16.5, 20.5)]
+				return ["silo_barn", rng.randf_range(7.2, 9.2)]
+			if w >= 9.5 and d >= 7.0:
+				if r < 0.28:
+					return ["bldg_grain_silo", rng.randf_range(8.6, 10.4)]
+				if r < 0.50:
+					return ["b6_gas_station", rng.randf_range(5.4, 6.6)]
+				if r < 0.76:
+					return ["silo_barn", rng.randf_range(6.8, 8.2)]
+				return ["barn", rng.randf_range(5.8, 7.2)]
+			return ["farm", rng.randf_range(4.2, 5.2)]
 	return ["bld", base_h]
 
 
@@ -3735,12 +3877,12 @@ static func _pick_style(ch: String, w: float, d: float, base_h: float, rng: Rand
 ## 任意两栋独立 OBB 之间严格保持 >= ALLEY（4.3 米）通行巷道，兼顾纽约/华盛顿级高街块占空比与 4m 机甲流畅机动。
 const ALLEY := 4.3
 const FRONT_SPEC := {
-	"D": {"w": [13.5, 27.5], "d": [10.0, 17.0], "set": [0.4, 1.1], "empty": 0.02, "inner": 0.78, "h": [10.5, 21.0], "kind": "bld"},
-	"R": {"w": [12.0, 24.5], "d": [8.0, 12.2], "set": [0.6, 1.4], "empty": 0.03, "inner": 0.62, "h": [7.5, 13.0], "kind": "rowblock"},
+	"D": {"w": [15.5, 29.5], "d": [10.8, 17.5], "set": [0.3, 0.8], "empty": 0.01, "inner": 0.84, "h": [18.0, 38.0], "kind": "highrise_office"},
+	"R": {"w": [14.0, 26.5], "d": [8.8, 13.6], "set": [0.4, 1.0], "empty": 0.02, "inner": 0.72, "h": [12.5, 27.5], "kind": "brutalist_slab"},
 	"I": {"w": [9.0, 21.0], "d": [8.5, 16.0], "set": [1.4, 3.0], "empty": 0.06, "inner": 0.85, "h": [6.5, 10.5], "kind": "wh"},
 	"H": {"w": [8.5, 19.0], "d": [7.5, 14.0], "set": [1.4, 2.6], "empty": 0.06, "inner": 0.68, "h": [6.2, 8.8], "kind": "wh"},
-	"Y": {"w": [7.0, 14.5], "d": [5.0, 7.6], "set": [1.6, 3.0], "empty": 0.30, "inner": 0.30, "h": [3.2, 4.2], "kind": "shed"},
-	"M": {"w": [11.5, 20.0], "d": [6.0, 7.8], "set": [2.0, 3.5], "empty": 0.14, "inner": 0.58, "h": [3.6, 4.4], "kind": "barrack"},
+	"Y": {"w": [8.0, 18.5], "d": [5.5, 11.5], "set": [1.6, 3.0], "empty": 0.30, "inner": 0.30, "h": [3.2, 4.2], "kind": "shed"},
+	"M": {"w": [8.5, 20.0], "d": [6.2, 13.0], "set": [2.0, 3.5], "empty": 0.14, "inner": 0.58, "h": [3.6, 4.4], "kind": "barrack"},
 }
 
 
@@ -4146,25 +4288,92 @@ static func _round_convex(poly: PackedVector2Array, r := 5.0) -> PackedVector2Ar
 	return out
 
 
-## 农场：农舍 + 谷仓 / 筒仓粮库，两栋之间留够 >= 6.5m 院坝间距
+## 农场：农舍 + 谷仓 / 筒仓粮库 / 油库 / 加油站 / 水塔，两栋之间留够 >= 6.5m 院坝间距
 static func _farm_buildings(fd: Dictionary) -> Array:
-	if int(fd.get("sub", 0)) > 0:
+	var sub_idx := int(fd.get("sub", 0))
+	if sub_idx > 1:
 		return []
 	var rng := RandomNumberGenerator.new()
-	rng.seed = int(h2(fd.k.x, fd.k.y, 88) * 2147483647.0) + 3
+	rng.seed = int(h2(fd.k.x, fd.k.y, 88 + sub_idx * 17) * 2147483647.0) + 3
 	var out: Array = []
-	if rng.randf() < 0.25:
+	if rng.randf() < (0.22 if sub_idx == 0 else 0.52):
 		return out
-	var c := centroid(fd.poly) + Vector2(rng.randf_range(-12, 12), rng.randf_range(-12, 12))
+	var fc := centroid(fd.poly)
+	var c := fc + Vector2(rng.randf_range(-5.0, 5.0), rng.randf_range(-5.0, 5.0))
 	var a: float = fd.ang
 	var u := Vector2(cos(a), sin(a))
 	var v := Vector2(-sin(a), cos(a))
-	var bkind := "silo_barn" if rng.randf() < 0.48 else "barn"
 	var h := {"c": c, "ang": a, "sx": 8.0, "sz": 7.0, "h": 4.6, "kind": "farm", "ch": "F"}
-	var bn := {"c": c + u * 16.8 + v * 2.5, "ang": a, "sx": 12.0, "sz": 9.0, "h": 7.2 if bkind == "silo_barn" else 6.5, "kind": bkind, "ch": "F"}
-	for b: Dictionary in [h, bn]:
-		if _all_in(fd.poly, obb_corners(b.c, b.ang, b.sx, b.sz), 2.2):
-			out.append(b)
+	var has_h := _all_in(fd.poly, obb_corners(h.c, h.ang, h.sx, h.sz), 2.0)
+	if has_h:
+		out.append(h)
+	var fr := rng.randf()
+	var bn_sx := 12.0
+	var bn_sz := 9.0
+	var bn_h := 6.5
+	var bkind := "barn"
+	if fr < 0.16:
+		bkind = "grain_silo_elevator"
+		bn_sx = 16.5
+		bn_sz = 11.8
+		bn_h = 14.5
+	elif fr < 0.30:
+		bkind = "grain_silo"
+		bn_sx = 17.0
+		bn_sz = 12.8
+		bn_h = 15.8
+	elif fr < 0.42:
+		bkind = "fuel_depot"
+		bn_sx = 17.5
+		bn_sz = 12.8
+		bn_h = 7.8
+	elif fr < 0.52:
+		bkind = "water_tower"
+		bn_sx = 14.0
+		bn_sz = 13.6
+		bn_h = 18.4
+	elif fr < 0.66:
+		bkind = "bldg_grain_silo"
+		bn_sx = 11.8
+		bn_sz = 8.4
+		bn_h = 9.6
+	elif fr < 0.78:
+		bkind = "b6_gas_station"
+		bn_sx = 12.0
+		bn_sz = 8.6
+		bn_h = 5.8
+	elif fr < 0.90:
+		bkind = "silo_barn"
+		bn_sx = 12.0
+		bn_sz = 9.0
+		bn_h = 7.2
+	else:
+		bkind = "barn"
+		bn_sx = 12.0
+		bn_sz = 9.0
+		bn_h = 6.5
+	var gap_u := 4.0 + bn_sx * 0.5 + 6.8
+	var placed_bn := false
+	for dir_s: float in [1.0, -1.0]:
+		var bn_c: Vector2 = (c + u * (dir_s * gap_u) + v * 2.0) if has_h else fc
+		var bn := {"c": bn_c, "ang": a, "sx": bn_sx, "sz": bn_sz, "h": bn_h, "kind": bkind, "ch": "F"}
+		if _all_in(fd.poly, obb_corners(bn.c, bn.ang, bn.sx, bn.sz), 2.0):
+			out.append(bn)
+			placed_bn = true
+			break
+		if not has_h:
+			break
+	if not placed_bn and bn_sx > 12.5:
+		var fb_kind := "bldg_grain_silo" if rng.randf() < 0.55 else "b6_gas_station"
+		var fb_h := 9.6 if fb_kind == "bldg_grain_silo" else 5.8
+		for dir_s: float in [1.0, -1.0]:
+			var fb_c: Vector2 = (c + u * (dir_s * 16.8) + v * 2.0) if has_h else fc
+			var fb := {"c": fb_c, "ang": a, "sx": 12.0, "sz": 8.6, "h": fb_h, "kind": fb_kind, "ch": "F"}
+			if _all_in(fd.poly, obb_corners(fb.c, fb.ang, fb.sx, fb.sz), 2.0):
+				out.append(fb)
+				break
+			if not has_h:
+				break
 	return out
 
 

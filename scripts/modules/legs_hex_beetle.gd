@@ -30,8 +30,8 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(legs, K.trap(2.06, 1.78, 0.26, 0.06), 0.14, M_LEG2, Vector3(sx, hip + 0.14, 0.0), Vector3(0, side_b * 90.0, side_b * -24.0), 0.03)
 		for ez in [-0.56, 0.0, 0.56]:
 			K.era_block(legs, Vector3(0.42, 0.18, 0.07), M_LEG, Vector3(sx + side_b * 0.06, hip + 0.22, ez), Vector3(0, side_b * -90.0, -side_b * 24.0))
-	K.cy(legs, 0.58, 0.28, M_LEG2, Vector3(0, hip + 0.36, 0.0), Vector3.ZERO, 0.72, 26)
-	K.cy(legs, 0.55, 0.10, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.58, 28)
+	K.cy(legs, 0.40, 0.26, M_LEG2, Vector3(0, hip + 0.38, 0.0), Vector3.ZERO, 0.54, 26)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.50, 0.0), Vector3.ZERO, 0.42, 28)
 
 	# 标志性前置双分叉破障撞角（独角仙/锹甲重工撞铲 + 铸钢铰接耳座）+ 防酸密封潜望窗
 	var prow := K.node(legs, Vector3(0, hip + 0.08, -1.18), Vector3(38, 0, 0))

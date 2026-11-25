@@ -5,6 +5,7 @@ extends RefCounted
 ##   同时按需懒提取该栋建筑的单壳双通道半透明代理（occ_bldg_depth + occ_bldg_ghost），
 ##   以零噪点、零内部重影的均匀半透明玻璃质感整栋平滑虚化（Forward+ 与 Forward Mobile 完全一致）。
 
+const A = preload("res://scripts/art.gd")
 const SH_DEPTH := preload("res://shaders/occ_bldg_depth.gdshader")
 const SH_GHOST := preload("res://shaders/occ_bldg_ghost.gdshader")
 const GRID_CELL := 24.0
@@ -23,6 +24,8 @@ var _slot_pos: Array = [Vector4(-1, -1, -1, -1), Vector4(-1, -1, -1, -1)]
 var _slot_ext: Array = [Vector4(-1, -1, -1, -1), Vector4(-1, -1, -1, -1)]
 var _ghost_busy := false
 var _ghost_slice_start := 0
+var _clip_refs: Dictionary = {}     ## gi_iid -> [GeometryInstance3D, orig_opaque_mat, ref_count]
+var _fb_nodes: Array = []           ## 当前处于非盒体兜底溶解中的节点列表（共享 _clip_refs 引用计数）
 
 
 func _set_slot_uniforms(slot: int, pv: Vector4, ev: Vector4) -> void:
@@ -47,9 +50,154 @@ func clear() -> void:
 	_chunk_surf_cache.clear()
 
 
-## 地图静态合批结束后立即调用：在加载阶段完成未合批自发光节点采集，避免实战首次建筑遮挡时触发全树扫描卡顿
+## 地图静态合批结束后立即调用：在加载阶段完成未合批自发光节点采集、遮挡着色器预热与建筑所在分块网格的 CPU 端数组缓存，
+## 彻底消除实战首次建筑遮挡时触发 Vulkan GPU->CPU surface_get_arrays 同步回读导致的 18–20ms 尖刺。
 func prepare(raid: Node3D) -> void:
+	A._ensure_occ_shader_maps()
 	_ensure_emissive_cache(raid)
+	_precache_chunk_surfaces(raid)
+
+
+static func _compact_mesh_surfs(mesh: Mesh) -> Array:
+	var out: Array = []
+	for si in mesh.get_surface_count():
+		var arr := mesh.surface_get_arrays(si)
+		if arr.is_empty() or arr[Mesh.ARRAY_VERTEX] == null:
+			continue
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		if verts.is_empty():
+			continue
+		var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL] if arr[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+		var cols: PackedColorArray = arr[Mesh.ARRAY_COLOR] if arr[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		out.append([verts, norms, cols, idx])
+	return out
+
+
+func _precache_chunk_surfaces(raid: Node3D) -> void:
+	if raid == null or _buildings.is_empty():
+		return
+	var rb = raid._rb() if raid.has_method("_rb") else null
+	if rb == null:
+		return
+	var chunks: Dictionary = rb.get("_chunks") if rb.get("_chunks") is Dictionary else {}
+	var ch_sz: float = float(rb.CHUNK)
+	var bldg_chunks := {}
+	for b: Dictionary in _buildings:
+		var wab: AABB = b["world_aabb"]
+		var cx0 := floori(wab.position.x / ch_sz)
+		var cx1 := floori(wab.end.x / ch_sz)
+		var cz0 := floori(wab.position.z / ch_sz)
+		var cz1 := floori(wab.end.z / ch_sz)
+		for cz in range(cz0, cz1 + 1):
+			for cx in range(cx0, cx1 + 1):
+				bldg_chunks[Vector2i(cx, cz)] = true
+	for ckey in bldg_chunks:
+		var ch = chunks.get(ckey)
+		if ch == null:
+			continue
+		var ch_node: Node = ch.get("node")
+		if ch_node == null or not is_instance_valid(ch_node):
+			continue
+		for ch_item in ch_node.get_children():
+			if not (ch_item is MeshInstance3D):
+				continue
+			var mi := ch_item as MeshInstance3D
+			if mi.mesh == null or _is_foliage_mat(mi.material_override):
+				continue
+			var mesh_rid := mi.mesh.get_rid().get_id()
+			if not _chunk_surf_cache.has(mesh_rid):
+				_chunk_surf_cache[mesh_rid] = _compact_mesh_surfs(mi.mesh)
+
+
+func _acquire_clip_mat(gi: GeometryInstance3D) -> void:
+	if gi == null or not is_instance_valid(gi):
+		return
+	var iid := gi.get_instance_id()
+	var rec = _clip_refs.get(iid)
+	if rec != null:
+		rec[2] = int(rec[2]) + 1
+		return
+	var orig: Material = gi.material_override
+	if orig == null:
+		return
+	var occ_m: Material = A.occ_material(orig)
+	if occ_m == orig:
+		return
+	_clip_refs[iid] = [gi, orig, 1]
+	gi.material_override = occ_m
+
+
+func _release_clip_mat(gi: GeometryInstance3D) -> void:
+	if gi == null:
+		return
+	var iid := gi.get_instance_id()
+	var rec = _clip_refs.get(iid)
+	if rec == null:
+		return
+	var cnt := int(rec[2]) - 1
+	if cnt > 0:
+		rec[2] = cnt
+		return
+	_clip_refs.erase(iid)
+	if is_instance_valid(gi):
+		gi.material_override = rec[1]
+
+
+func _release_all_clips() -> void:
+	for iid in _clip_refs:
+		var rec: Array = _clip_refs[iid]
+		if is_instance_valid(rec[0]):
+			(rec[0] as GeometryInstance3D).material_override = rec[1]
+	_clip_refs.clear()
+	_fb_nodes.clear()
+
+
+## 非盒体兜底遮挡（大型桥梁/岩崖）按需启用/恢复 occ 溶解材质，平时 100% 保持纯不透明 Early-Z
+func set_fallback_occ(raid: Node3D, active: bool, cam_p: Vector3, mp: Vector3) -> void:
+	if not active:
+		if not _fb_nodes.is_empty():
+			for gi in _fb_nodes:
+				_release_clip_mat(gi)
+			_fb_nodes.clear()
+		return
+	if not _fb_nodes.is_empty() or raid == null or raid.world == null:
+		return
+	var mn := Vector3(minf(cam_p.x, mp.x) - 4.5, 0.2, minf(cam_p.z, mp.z) - 4.5)
+	var mx := Vector3(maxf(cam_p.x, mp.x) + 4.5, maxf(cam_p.y, mp.y) + 16.0, maxf(cam_p.z, mp.z) + 4.5)
+	var seg_ab := AABB(mn, mx - mn)
+	var rb = raid._rb() if raid.has_method("_rb") else null
+	if rb != null:
+		var chunks: Dictionary = rb.get("_chunks") if rb.get("_chunks") is Dictionary else {}
+		var ch_sz: float = float(rb.CHUNK)
+		var cx0 := floori(seg_ab.position.x / ch_sz)
+		var cx1 := floori(seg_ab.end.x / ch_sz)
+		var cz0 := floori(seg_ab.position.z / ch_sz)
+		var cz1 := floori(seg_ab.end.z / ch_sz)
+		for cz in range(cz0, cz1 + 1):
+			for cx in range(cx0, cx1 + 1):
+				var ch = chunks.get(Vector2i(cx, cz))
+				if ch == null:
+					continue
+				var ch_node: Node = ch.get("node")
+				if ch_node == null or not is_instance_valid(ch_node):
+					continue
+				for gi in ch_node.get_children():
+					if gi is GeometryInstance3D and gi.material_override != null:
+						var g3 := gi as GeometryInstance3D
+						if A.occ_material(g3.material_override) != g3.material_override:
+							var gab: AABB = g3.global_transform * (g3.custom_aabb if (g3 is MultiMeshInstance3D and g3.custom_aabb.size != Vector3.ZERO) else g3.get_aabb())
+							if gab.intersects(seg_ab):
+								_acquire_clip_mat(g3)
+								_fb_nodes.append(g3)
+	# 也覆盖 world 下未合批的超大静态桥梁网格
+	for ch in raid.world.get_children():
+		if ch is MeshInstance3D and ch.visible and ch.material_override != null:
+			var mi := ch as MeshInstance3D
+			if A.occ_material(mi.material_override) != mi.material_override:
+				if (mi.global_transform * mi.get_aabb()).intersects(seg_ab):
+					_acquire_clip_mat(mi)
+					_fb_nodes.append(mi)
 
 
 func reset() -> void:
@@ -59,6 +207,7 @@ func reset() -> void:
 		if idx >= 0 and idx < _buildings.size():
 			_set_bldg_visual(_buildings[idx], 0.0)
 	_active.clear()
+	_release_all_clips()
 
 
 func active_count() -> int:
@@ -176,6 +325,8 @@ func _try_register_body(sb: StaticBody3D) -> void:
 		"ghost_root": null,
 		"ghost_mats": [],
 		"extra_emits": [],
+		"clip_nodes": [],
+		"clip_on": false,
 	}
 	_buildings.append(rec)
 
@@ -360,6 +511,15 @@ func update(raid: Node3D, delta: float, cam_p: Vector3, mp: Vector3, probes: Arr
 func _set_bldg_visual(b: Dictionary, fade: float) -> void:
 	var gr = b.get("ghost_root")
 	var show := fade > 0.005
+	var was_clip: bool = bool(b.get("clip_on", false))
+	if show and not was_clip:
+		b["clip_on"] = true
+		for cn in (b.get("clip_nodes", []) as Array):
+			_acquire_clip_mat(cn)
+	elif not show and was_clip:
+		b["clip_on"] = false
+		for cn in (b.get("clip_nodes", []) as Array):
+			_release_clip_mat(cn)
 	if gr is Node3D and is_instance_valid(gr):
 		(gr as Node3D).visible = show
 	if show:
@@ -533,6 +693,7 @@ func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node
 	var gxf := mmi.global_transform
 	var use_cd := mm.use_custom_data
 	var use_col := mm.use_colors
+	var matched := false
 	for i in mm.instance_count:
 		if tree != null and i % 32 == 0 and Time.get_ticks_usec() - _ghost_slice_start >= 1200:
 			await tree.process_frame
@@ -542,6 +703,7 @@ func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node
 		var ac := (ixf * ma).get_center()
 		if ac.y <= 0.22 or not _point_in_obb(ac, b):
 			continue
+		matched = true
 		var inst_col := Color.WHITE
 		var has_tint := false
 		if use_cd:
@@ -557,6 +719,10 @@ func _extract_from_multimesh(mmi: MultiMeshInstance3D, b: Dictionary, root: Node
 		gmi.material_override = _get_ghost_mat(b, mat_cache, cm[0] as Color, int(cm[1]))
 		gmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(gmi)
+	if matched and mat != null:
+		if not b.has("clip_nodes"):
+			b["clip_nodes"] = []
+		(b["clip_nodes"] as Array).append(mmi)
 
 
 func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, mat_cache: Dictionary, tree: SceneTree = null) -> void:
@@ -588,24 +754,20 @@ func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, m
 	var mesh_rid := mi.mesh.get_rid().get_id()
 	var cached_surfs = _chunk_surf_cache.get(mesh_rid)
 	if cached_surfs == null:
-		cached_surfs = []
-		for si in mi.mesh.get_surface_count():
-			cached_surfs.append(mi.mesh.surface_get_arrays(si))
+		cached_surfs = _compact_mesh_surfs(mi.mesh)
 		_chunk_surf_cache[mesh_rid] = cached_surfs
 
-	for arr: Array in cached_surfs:
-		if arr.is_empty() or arr[Mesh.ARRAY_VERTEX] == null:
-			continue
-		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-		var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL] if arr[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
-		var cols: PackedColorArray = arr[Mesh.ARRAY_COLOR] if arr[Mesh.ARRAY_COLOR] != null else PackedColorArray()
-		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	for surf: Array in cached_surfs:
+		var verts: PackedVector3Array = surf[0]
+		var norms: PackedVector3Array = surf[1]
+		var cols: PackedColorArray = surf[2]
+		var idx: PackedInt32Array = surf[3]
 		var has_n := norms.size() == verts.size()
 		var has_c := cols.size() == verts.size()
 		var use_idx := idx.size() > 0
 		var tri_cnt := (idx.size() / 3) if use_idx else (verts.size() / 3)
 		for t in tri_cnt:
-			if tree != null and t % 128 == 0 and Time.get_ticks_usec() - _ghost_slice_start >= 1200:
+			if tree != null and (t & 63) == 0 and Time.get_ticks_usec() - _ghost_slice_start >= 800:
 				await tree.process_frame
 				if not is_instance_valid(root): return
 				_ghost_slice_start = Time.get_ticks_usec()
@@ -654,6 +816,10 @@ func _extract_from_chunk_mesh(mi: MeshInstance3D, b: Dictionary, root: Node3D, m
 
 	if out_v.is_empty():
 		return
+	if mat != null:
+		if not b.has("clip_nodes"):
+			b["clip_nodes"] = []
+		(b["clip_nodes"] as Array).append(mi)
 	var surf_arr := []
 	surf_arr.resize(Mesh.ARRAY_MAX)
 	surf_arr[Mesh.ARRAY_VERTEX] = out_v

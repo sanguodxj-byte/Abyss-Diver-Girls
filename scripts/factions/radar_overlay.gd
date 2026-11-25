@@ -5,19 +5,27 @@ extends Control
 ##   地图边缘转场口：超出雷达范围时贴在圆边上的青色箭头
 
 var raid
+var _redraw_acc := 0.05
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func _process(_d: float) -> void:
+func _process(d: float) -> void:
+	if not is_visible_in_tree():
+		return
 	# 雷达挂在容器里、尺寸由布局决定：锚点预设在加进去的那一刻拿到的是 0 尺寸，每帧对齐父节点
 	var par := get_parent() as Control
+	var resized_now := false
 	if par and (size != par.size or position != Vector2.ZERO):
 		position = Vector2.ZERO
 		size = par.size
-	queue_redraw()
+		resized_now = true
+	_redraw_acc += d
+	if resized_now or _redraw_acc >= 0.05:
+		_redraw_acc = 0.0
+		queue_redraw()
 
 
 func _draw() -> void:

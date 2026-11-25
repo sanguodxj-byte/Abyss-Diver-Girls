@@ -20,10 +20,10 @@ def build_gen_cell(kb: KitbashScene):
     for sxi, sx in enumerate([-1.0, 1.0]):
         kb.plate(f"SideShield_{sxi}", crect_2d(0.38, 0.60, (0.0, 0.08, 0.08, 0.0)), 0.055, "armor", "armor_panel",
                  (sx * 0.395, 0, 0.19), (0, 90, 0), 0.010, 1, M_parent=M_b)
-        kb.grab_rail(f"SideGrab_{sxi}", 0.22, 0.040, (sx * 0.425, 0.16, 0.19), (0, -sx * 90.0, 0), 0.010, M_parent=M_b)
+        kb.grab_rail(f"SideGrab_{sxi}", 0.22, 0.040, (sx * 0.415, 0.16, 0.19), (0, -sx * 90.0, 0), 0.010, M_parent=M_b)
         for bi, by in enumerate([-0.20, 0.0, 0.20]):
             kb.cyl(f"SideBolt_{sxi}_{bi}", 0.010, 0.012, 0.016, 6, "chrome", "plain_metal",
-                   (sx * 0.428, by, 0.32), (0, 0, 90), 0.002, M_parent=M_b)
+                   (sx * 0.422, by, 0.32), (0, 0, 90), 0.002, M_parent=M_b)
 
     # 3. 6 Heavy Cylindrical LiFePO4 Cell Modules + Machined Collar Rings + Positive/Negative Terminals
     for i in range(3):

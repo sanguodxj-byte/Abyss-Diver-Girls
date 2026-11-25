@@ -11,13 +11,13 @@ static func build(target_sz := Vector3(22.0, 18.5, 14.0)) -> Node3D:
 	var base_sz := Vector3(22.0, 18.5, 14.0)
 	root.scale = Vector3(target_sz.x / base_sz.x, target_sz.y / base_sz.y, target_sz.z / base_sz.z)
 
-	# 暖砂岩/浅砖主墙（主墙支持外部换色：暖砂岩/红砖/灰石）、深铁灰底层商铺、浅石灰岩腰线与窗台、浅灰平屋面
-	var M_WALL := A.paint(Color("#8c7c69"), 0.04, 0.86, {"wear": 0.40, "panel_scale": 0.0})
-	var M_BASE := A.paint(Color("#47494b"), 0.08, 0.84, {"wear": 0.42, "panel_scale": 0.0})
-	var M_STONE := A.paint(Color("#7f776a"), 0.04, 0.88, {"wear": 0.36, "panel_scale": 0.0})
-	var M_ROOF := A.paint(Color("#777570"), 0.04, 0.90, {"wear": 0.46, "panel_scale": 0.0})
-	var M_WOOD := A.paint(Color("#6b523b"), 0.04, 0.90, {"wear": 0.48, "panel_scale": 0.0})
-	var M_GLASS := K.canopy(Color("#1c262e"), 0.05)
+	# 实拍石灰岩/清水混凝土/沥青油毡屋面 PBR（替换旧版无贴图纯色块）
+	var M_WALL := A.limestone(Color("#67645d"), 0.19)
+	var M_BASE := A.concrete(Color("#383a3c"), true)
+	var M_STONE := A.limestone(Color("#737067"), 0.20)
+	var M_ROOF := A.tar_roof(Color("#2d2f31"), 0.26)
+	var M_WOOD := A.wood_mat(Color("#544334"), 0.36)
+	var M_GLASS := A.window_mat(0.16, Vector2(1.08, 1.35), Color("#0d151c"), Color("#cb914e"), 0.42)
 	var M_FRAME := K.dark()
 	var M_STEEL := K.gunmetal()
 	var M_EQUIP := A.paint(Color("#666c70"), 0.36, 0.60, {"wear": 0.38, "panel_scale": 0.0})

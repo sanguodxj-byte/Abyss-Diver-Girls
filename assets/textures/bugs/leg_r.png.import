@@ -3,25 +3,27 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dn40wslb0jpsq"
-path="res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.ctex"
+path.bptc="res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.bptc.ctex"
+path.astc="res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/bugs/leg_r.png"
-dest_files=["res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.ctex"]
+dest_files=["res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.bptc.ctex", "res://.godot/imported/leg_r.png-79501b806f95b369740bbf15dccc6b07.astc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

@@ -7,25 +7,34 @@ extends RefCounted
 ##  shell   —— 弧形覆甲壳：截面是一段有厚度的拱，沿长度改变宽 / 高 / 拱度，做背甲、护盾、腹甲
 ## 全部平面着色（每个面独立法线），保证硬朗切面感。
 
+const A = preload("res://scripts/art.gd")
 static var _cache := {}
 
 
-static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, edge_r := 1.0) -> void:
 	var n := (b - a).cross(c - a)
 	if n.length_squared() < 1e-14:
 		return
 	n = n.normalized()
-	# Godot 正面为顺时针：按 a、c、b 顺序写入，使外侧（法线方向）为正面
-	st.set_normal(n)
-	st.add_vertex(a)
-	st.set_normal(n)
-	st.add_vertex(c)
-	st.set_normal(n)
-	st.add_vertex(b)
+	var an := n.abs()
+	var vcol := Color(edge_r, 1.0, 1.0, 1.0)
+	# Godot 正面为顺时针：按 a、c、b 顺序写入，使外侧（法线方向）为正面；附加盒式投影 UV 供切线生成
+	for v: Vector3 in [a, c, b]:
+		var uv: Vector2
+		if an.x >= an.y and an.x >= an.z:
+			uv = Vector2(v.z * signf(n.x), -v.y)
+		elif an.y >= an.z:
+			uv = Vector2(v.x, v.z * signf(n.y))
+		else:
+			uv = Vector2(-v.x * signf(n.z), -v.y)
+		st.set_color(vcol)
+		st.set_normal(n)
+		st.set_uv(uv)
+		st.add_vertex(v)
 
 
 ## 凸多边形：按绕 out 方向的角度排序后扇形三角化，保证朝外
-static func _convex(st: SurfaceTool, pts: Array, out: Vector3) -> void:
+static func _convex(st: SurfaceTool, pts: Array, out: Vector3, edge_r := 1.0) -> void:
 	var c := Vector3.ZERO
 	for p in pts:
 		c += p
@@ -39,18 +48,18 @@ static func _convex(st: SurfaceTool, pts: Array, out: Vector3) -> void:
 		var b: Vector3 = arr[i]
 		var d: Vector3 = arr[i + 1]
 		if (b - a).cross(d - a).dot(out) < 0.0:
-			_tri(st, a, d, b)
+			_tri(st, a, d, b, edge_r)
 		else:
-			_tri(st, a, b, d)
+			_tri(st, a, b, d, edge_r)
 
 
-## 倒角方块
+## 倒角方块（主平面 COLOR.r=1.0，12 条倒角棱与 8 个角点 COLOR.r=0.0 驱动 B.o.T 三层冷钢掉漆棱线）
 static func cbox(size: Vector3, bev := -1.0) -> ArrayMesh:
 	var h := size * 0.5
 	if bev < 0.0:
 		bev = minf(minf(size.x, size.y), size.z) * 0.16
 	bev = minf(bev, minf(minf(h.x, h.y), h.z) * 0.9)
-	var key := "cb%s|%.4f" % [size, bev]
+	var key := "cb2%s|%.4f" % [size, bev]
 	if _cache.has(key):
 		return _cache[key]
 	var st := SurfaceTool.new()
@@ -73,7 +82,7 @@ static func cbox(size: Vector3, bev := -1.0) -> ArrayMesh:
 					pts.append(P.call(sv[0], sv[1], sv[2], ax))
 			var o := Vector3.ZERO
 			o[ax] = sg
-			_convex(st, pts, o)
+			_convex(st, pts, o, 1.0)
 	# 12 条倒角边
 	for ax in 3:
 		var a1 := (ax + 1) % 3
@@ -91,12 +100,14 @@ static func cbox(size: Vector3, bev := -1.0) -> ArrayMesh:
 				var o := Vector3.ZERO
 				o[a1] = s1
 				o[a2] = s2
-				_convex(st, pts, o)
+				_convex(st, pts, o, 0.0)
 	# 8 个角
 	for sx: float in S:
 		for sy: float in S:
 			for sz: float in S:
-				_convex(st, [P.call(sx, sy, sz, 0), P.call(sx, sy, sz, 1), P.call(sx, sy, sz, 2)], Vector3(sx, sy, sz))
+				_convex(st, [P.call(sx, sy, sz, 0), P.call(sx, sy, sz, 1), P.call(sx, sy, sz, 2)], Vector3(sx, sy, sz), 0.0)
+	st.generate_tangents()
+	st.index()
 	var m := st.commit()
 	_cache[key] = m
 	return m
@@ -131,9 +142,9 @@ static func keel(w: float, h: float, top := 0.6, keel_d := 0.25) -> Array:
 
 ## 放样：secs = [[z, Vector2 scale, Vector2 offset], ...]，base 为截面点（所有截面同一拓扑），或者每节给自己的 pts（第 4 项）
 static func loft(base: Array, secs: Array, cap0 := true, cap1 := true) -> ArrayMesh:
-	var key := "lf|%s|%s|%d|%d" % [str(base), str(secs), int(cap0), int(cap1)]
-	if _cache.has(key):
-		return _cache[key]
+	var key := "hs_lf2|%s|%s|%d|%d" % [str(base), str(secs), int(cap0), int(cap1)]
+	if A._mesh_cache.has(key):
+		return A._mesh_cache[key]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var rings: Array = []
@@ -156,17 +167,19 @@ static func loft(base: Array, secs: Array, cap0 := true, cap1 := true) -> ArrayM
 	var dz: float = secs[-1][0] - secs[0][0]
 	if dz < 0.0:
 		flip = not flip
-	for k in rings.size() - 1:
+	var n_seg := rings.size() - 1
+	for k in n_seg:
 		var r0: Array = rings[k]
 		var r1: Array = rings[k + 1]
+		var er := 0.22 if (n_seg >= 3 and (k == 0 or k == n_seg - 1)) else 1.0
 		for i in n:
 			var j := (i + 1) % n
 			if flip:
-				_tri(st, r0[i], r1[i], r1[j])
-				_tri(st, r0[i], r1[j], r0[j])
+				_tri(st, r0[i], r1[i], r1[j], er)
+				_tri(st, r0[i], r1[j], r0[j], er)
 			else:
-				_tri(st, r0[i], r0[j], r1[j])
-				_tri(st, r0[i], r1[j], r1[i])
+				_tri(st, r0[i], r0[j], r1[j], er)
+				_tri(st, r0[i], r1[j], r1[i], er)
 	var sgn := 1.0 if dz >= 0.0 else -1.0
 	for e in [[0, cap0, -sgn], [rings.size() - 1, cap1, sgn]]:
 		if not e[1]:
@@ -185,8 +198,10 @@ static func loft(base: Array, secs: Array, cap0 := true, cap1 := true) -> ArrayM
 				_tri(st, A0, C0, B0)
 			else:
 				_tri(st, A0, B0, C0)
+	st.generate_tangents()
+	st.index()
 	var mesh := st.commit()
-	_cache[key] = mesh
+	A._mesh_cache[key] = mesh
 	return mesh
 
 

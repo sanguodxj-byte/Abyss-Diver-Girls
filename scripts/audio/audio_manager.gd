@@ -34,6 +34,7 @@ var _deck_tw: Array = [null, null]
 var _deck := 0
 var _music_streams := {}
 var _music_pos := {}
+var _voice_streams := {}
 var music_slot := ""
 var _voice: AudioStreamPlayer
 var voice_id := ""
@@ -514,8 +515,9 @@ func _set_gain(i: int, g: float) -> void:
 
 
 # ====================================================================== 配音
-## 播放一句配音（打断上一句）。返回时长（秒），没有文件时返回 0 且不发声。
-func play_voice(id: String) -> float:
+func _resolve_voice(id: String) -> AudioStream:
+	if _voice_streams.has(id):
+		return _voice_streams[id]
 	var st: AudioStream = null
 	for ext: String in VOICE_EXT:
 		var p := "%s/%s%s" % [VOICE_DIR, id, ext]
@@ -523,6 +525,13 @@ func play_voice(id: String) -> float:
 			st = load(p)
 			if st:
 				break
+	_voice_streams[id] = st
+	return st
+
+
+## 播放一句配音（打断上一句）。返回时长（秒），没有文件时返回 0 且不发声。
+func play_voice(id: String) -> float:
+	var st: AudioStream = _resolve_voice(id)
 	if st == null:
 		return 0.0
 	_set_loop(st, false)
@@ -534,10 +543,7 @@ func play_voice(id: String) -> float:
 
 
 func has_voice(id: String) -> bool:
-	for ext: String in VOICE_EXT:
-		if ResourceLoader.exists("%s/%s%s" % [VOICE_DIR, id, ext]):
-			return true
-	return false
+	return _resolve_voice(id) != null
 
 
 func stop_voice() -> void:
@@ -595,6 +601,8 @@ func _ensure_buses() -> void:
 
 # ====================================================================== 界面自动接线
 func _on_node_added(n: Node) -> void:
+	if not (n is Control) and not (n is PopupMenu):
+		return
 	if n is BaseButton:
 		if n.has_meta("_sfx_hooked"):
 			return

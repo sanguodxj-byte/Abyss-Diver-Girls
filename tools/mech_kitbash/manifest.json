@@ -1,8 +1,8 @@
 {
   "standard_version": "MECH_MODELING_STANDARD v1.0",
   "total_modules": 101,
-  "done_count": 25,
-  "todo_count": 76,
+  "done_count": 51,
+  "todo_count": 50,
   "batches": [
     {
       "id": "batch_01_starter",
@@ -29,7 +29,6 @@
         "core_fennek_recon",
         "core_fortress",
         "core_heavy",
-        "core_ka52_alligator",
         "core_krasukha_ew"
       ]
     },
@@ -40,14 +39,12 @@
       "modules": [
         "core_m1a2_sepv3",
         "core_merkava_mk4m",
-        "core_mi24_hind",
         "core_pantsir_s1",
         "core_patriot_mpq65",
         "core_pionier_dach",
         "core_puma_spz",
         "core_std",
-        "core_t90m_proryv",
-        "core_trieste_bathy"
+        "core_t90m_proryv"
       ]
     },
     {
@@ -167,10 +164,8 @@
         "gen_lfr_lead_bismuth",
         "gen_mhd_plasma_gen",
         "gen_mtu_mb873_v12",
-        "gen_naval_pwr_s9g",
         "gen_pem_fuelcell",
         "gen_reactor",
-        "gen_stirling_aip",
         "gen_turbine",
         "gen_twin_apu_gtcp"
       ]
@@ -189,23 +184,23 @@
       "sockets": {
         "SOCKET_arm_l": [
           -1.16,
-          0.82,
-          0.02
+          0.44,
+          0.04
         ],
         "SOCKET_arm_r": [
           1.16,
-          0.82,
-          0.02
+          0.44,
+          0.04
         ],
         "SOCKET_back": [
-          0.0,
-          1.56,
-          0.54
+          0,
+          0.9,
+          0.5
         ],
         "SOCKET_gen": [
-          0.0,
-          0.72,
-          0.96
+          0,
+          0.4,
+          0.94
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -221,24 +216,24 @@
       "brief": "突击躯干 AS-3：楔形倾斜首上装甲、两侧挂臂短舱、潜望镜组、顶部舱盖、后倾发动机甲板 接口：插头 HP-C1（向下，经回转座圈接底盘）；插座 HP-A1×2（短舱外侧）、HP-B1（后倾甲板）、HP-G1（尾部动力舱框）",
       "sockets": {
         "SOCKET_arm_l": [
-          -0.8,
-          0.45,
-          0.0
+          -0.82,
+          0.54,
+          0
         ],
         "SOCKET_arm_r": [
-          0.8,
-          0.45,
-          0.0
+          0.82,
+          0.54,
+          0
         ],
         "SOCKET_back": [
-          0.0,
-          1.06,
+          0,
+          0.94,
           0.4
         ],
         "SOCKET_gen": [
-          0.0,
-          0.55,
-          0.68
+          0,
+          0.48,
+          0.66
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -255,23 +250,23 @@
       "sockets": {
         "SOCKET_arm_l": [
           -1.14,
-          0.8,
-          0.04
+          0.42,
+          0.06
         ],
         "SOCKET_arm_r": [
           1.14,
-          0.8,
-          0.04
+          0.42,
+          0.06
         ],
         "SOCKET_back": [
-          0.0,
-          1.52,
-          0.54
+          0,
+          0.82,
+          0.48
         ],
         "SOCKET_gen": [
-          0.0,
-          0.68,
-          0.96
+          0,
+          0.38,
+          0.92
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -287,24 +282,24 @@
       "brief": "M2A4-BK 布雷德利巷战反应甲框架（M2A4-BK）：美军城市生存套件构型：高耸折角车首与双侧满铺厚重箱式 BRAT 爆炸反应装甲砖，右前动力甲板百叶与左前防弹透明装甲护盾笼。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.12,
-          0.8,
+          -1.08,
+          0.5,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.12,
-          0.8,
+          1.08,
+          0.5,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.54,
-          0.54
+          0,
+          1.24,
+          0.46
         ],
         "SOCKET_gen": [
-          0.0,
-          0.7,
-          0.94
+          0,
+          0.3,
+          0.9
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -320,24 +315,24 @@
       "brief": "指挥躯干 CM-7：高车体、宽幅观察窗、肩部通信箱、前置传感桅杆（相控阵面板 + 鞭状天线）、烟幕弹发射器 接口：插头 HP-C1（向下）；插座 HP-A1×2（肩块外侧）、HP-B1（后倾甲板）、HP-G1（尾部动力舱框）",
       "sockets": {
         "SOCKET_arm_l": [
-          -0.75,
-          0.42,
-          0.0
+          -0.86,
+          0.49,
+          0
         ],
         "SOCKET_arm_r": [
-          0.75,
-          0.42,
-          0.0
+          0.86,
+          0.49,
+          0
         ],
         "SOCKET_back": [
-          0.0,
-          1.22,
-          0.3
+          0,
+          1.17,
+          0.44
         ],
         "SOCKET_gen": [
-          0.0,
-          0.6,
-          0.6
+          0,
+          0.45,
+          0.76
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -353,24 +348,24 @@
       "brief": "FNK-4 大耳狐低矮隐身侦察框架（FNK-4）：全目录最低矮紧凑的雷达隐身多面折角侦察车体，正面三向防激光倾斜观察窗，左后竖立可升降 BAA 三合一热像激光侦察桅杆。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -0.94,
-          0.64,
+          -0.88,
+          0.35,
           0.02
         ],
         "SOCKET_arm_r": [
-          0.94,
-          0.64,
+          0.88,
+          0.35,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.28,
-          0.48
+          0,
+          0.73,
+          0.44
         ],
         "SOCKET_gen": [
-          0.0,
-          0.58,
-          0.86
+          0,
+          0.33,
+          0.8
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -387,23 +382,23 @@
       "sockets": {
         "SOCKET_arm_l": [
           -1.1,
-          0.85,
-          0.0
+          0.52,
+          0
         ],
         "SOCKET_arm_r": [
           1.1,
-          0.85,
-          0.0
+          0.52,
+          0
         ],
         "SOCKET_back": [
-          0.0,
-          1.72,
-          0.56
+          0,
+          1.16,
+          0.46
         ],
         "SOCKET_gen": [
-          0.0,
-          0.75,
-          1.08
+          0,
+          0.5,
+          0.98
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -421,55 +416,22 @@
         "SOCKET_arm_l": [
           -1.01,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_arm_r": [
           1.01,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_back": [
-          0.0,
+          0,
           1.06,
           0.535
         ],
         "SOCKET_gen": [
-          0.0,
+          0,
           0.12,
           0.835
-        ]
-      },
-      "batch": "batch_02a_cores_tactical"
-    },
-    {
-      "id": "core_ka52_alligator",
-      "category": "core",
-      "name": "core_ka52_alligator",
-      "name_en": "",
-      "rarity": 0,
-      "status": "DONE",
-      "gd_source": "scripts/modules/core_ka52_alligator.gd",
-      "brief": "KA-52M 短吻鳄并列武直突击框架（KA-52M）：多段龙骨放样宽扁“鸭嘴”有源相控阵机鼻，并列双座防弹平板风挡配顶置 K-37 弹射火箭导槽，颌下挂载 GOES-451 八棱光电球转塔。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
-      "sockets": {
-        "SOCKET_arm_l": [
-          -0.96,
-          0.68,
-          0.04
-        ],
-        "SOCKET_arm_r": [
-          0.96,
-          0.68,
-          0.04
-        ],
-        "SOCKET_back": [
-          0.0,
-          1.34,
-          0.5
-        ],
-        "SOCKET_gen": [
-          0.0,
-          0.62,
-          0.9
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -485,24 +447,24 @@
       "brief": "1RL257 克拉苏哈重型电战方舱框架（1RL257）：瓦楞加强筋法拉第电磁屏蔽方舱胸体，正面排布 2×3 具金字塔形微波阻塞干扰波导喇叭，顶置十二棱折面干扰碟与六向测向天线冠。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.1,
-          0.78,
+          -1.06,
+          0.44,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.1,
-          0.78,
+          1.06,
+          0.44,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.52,
-          0.54
+          0,
+          0.98,
+          0.5
         ],
         "SOCKET_gen": [
-          0.0,
-          0.68,
-          0.94
+          0,
+          0.4,
+          0.9
         ]
       },
       "batch": "batch_02a_cores_tactical"
@@ -518,23 +480,23 @@
       "brief": "SEP-V3 贫铀复合楔甲框架（SEP-V3）：复刻 M1A2 SEPv3 标志性非对称大倾角贫铀复合颊甲、正面牵引配重挂耳、双侧 TUSK ARAT-2 瓦状反应装甲裙与尾舱泄压板。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.14,
-          0.82,
+          -1.12,
+          0.47,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.14,
-          0.82,
+          1.12,
+          0.47,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.56,
-          0.54
+          0,
+          0.93,
+          0.48
         ],
         "SOCKET_gen": [
-          0.0,
-          0.72,
+          0,
+          0.45,
           0.96
         ]
       },
@@ -551,57 +513,24 @@
       "brief": "MRK-4M 战利品主动防御重框架（MRK-4M）：前置动力舱长刀锋铸造楔形首上（左置散热百叶凸台+右置潜望鼓），双肩集成四面 Trophy 相控阵雷达平板与后悬防弹铁锤链帘。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.16,
-          0.84,
+          -1.14,
+          0.48,
           0.04
         ],
         "SOCKET_arm_r": [
-          1.16,
-          0.84,
+          1.14,
+          0.48,
           0.04
         ],
         "SOCKET_back": [
-          0.0,
-          1.58,
-          0.56
+          0,
+          1.04,
+          0.5
         ],
         "SOCKET_gen": [
-          0.0,
-          0.72,
-          0.98
-        ]
-      },
-      "batch": "batch_02b_cores_heavy"
-    },
-    {
-      "id": "core_mi24_hind",
-      "category": "core",
-      "name": "core_mi24_hind",
-      "name_en": "",
-      "rarity": 0,
-      "status": "DONE",
-      "gd_source": "scripts/modules/core_mi24_hind.gd",
-      "brief": "MI-24P 雌鹿双阶重武直框架（MI-24P）：飞行步兵战车经典剪影：前后高低错位串联双层平板防弹风挡座舱、顶置双联 TV3-117 防沙尘进气分离鼓与侧挂箱式红外抑制排烟罩。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
-      "sockets": {
-        "SOCKET_arm_l": [
-          -0.98,
-          0.72,
-          0.04
-        ],
-        "SOCKET_arm_r": [
-          0.98,
-          0.72,
-          0.04
-        ],
-        "SOCKET_back": [
-          0.0,
-          1.42,
-          0.54
-        ],
-        "SOCKET_gen": [
-          0.0,
-          0.64,
-          0.92
+          0,
+          0.42,
+          0.96
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -617,24 +546,24 @@
       "brief": "96K6-M 铠甲双面相控阵防空框架（96K6-M）：前胸斜置大尺寸八边形 1RS2-1E 毫米波制导相控阵雷达板，顶置左 10ES1 红外光电跟踪柱与右 2RL80 搜索相控阵横梁。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.08,
-          0.78,
+          -1.06,
+          0.42,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.08,
-          0.78,
+          1.06,
+          0.42,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.5,
-          0.52
+          0,
+          0.92,
+          0.56
         ],
         "SOCKET_gen": [
-          0.0,
-          0.68,
-          0.92
+          0,
+          0.38,
+          0.9
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -650,24 +579,24 @@
       "brief": "MPQ-65 爱国者相控阵制导核心框架（MPQ-65）：正面整块 26° 大倾角 AN/MPQ-65 相控阵雷达装甲板，集成主八角 C波段阵面、副制导阵面、敌我识别横阵与双侧液冷热交换机组。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.12,
-          0.8,
+          -1.1,
+          0.48,
           0.04
         ],
         "SOCKET_arm_r": [
-          1.12,
-          0.8,
+          1.1,
+          0.48,
           0.04
         ],
         "SOCKET_back": [
-          0.0,
-          1.54,
-          0.54
+          0,
+          0.92,
+          0.52
         ],
         "SOCKET_gen": [
-          0.0,
-          0.7,
-          0.94
+          0,
+          0.4,
+          0.92
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -683,24 +612,24 @@
       "brief": "PIO-2A 獾式装甲工程起重框架（PIO-2A）：前线重型战损抢修工程躯干：车首内嵌 35 吨铜缆滚轴导缆主绞盘与大吊钩，左舷收拢固定伸缩式箱梁工程起重臂，右舷外挂双联气割钢瓶笼。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.12,
-          0.78,
-          0.02
+          -1.1,
+          0.48,
+          0.04
         ],
         "SOCKET_arm_r": [
-          1.12,
-          0.78,
-          0.02
+          1.1,
+          0.48,
+          0.04
         ],
         "SOCKET_back": [
-          0.0,
-          1.52,
-          0.54
+          0,
+          1.05,
+          0.5
         ],
         "SOCKET_gen": [
-          0.0,
-          0.7,
-          0.94
+          0,
+          0.42,
+          0.92
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -716,24 +645,24 @@
       "brief": "SPZ-30 美洲狮刺猬间隙甲框架（SPZ-30）：德系 C 级重装步战车构型：首上铺设防顶攻橡胶刺猬针垫条，两侧外挂超厚螺栓锁紧 AMAP 模块化复合间隙装甲箱与 MUSS 软杀伤告警头。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.08,
-          0.76,
+          -1.02,
+          0.46,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.08,
-          0.76,
+          1.02,
+          0.46,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.46,
-          0.52
+          0,
+          0.9,
+          0.48
         ],
         "SOCKET_gen": [
-          0.0,
-          0.68,
-          0.92
+          0,
+          0.4,
+          0.9
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -751,20 +680,20 @@
         "SOCKET_arm_l": [
           -0.66,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_arm_r": [
           0.66,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_back": [
-          0.0,
+          0,
           0.56,
           0.405
         ],
         "SOCKET_gen": [
-          0.0,
+          0,
           0.12,
           0.725
         ]
@@ -784,20 +713,20 @@
         "SOCKET_arm_l": [
           -0.78,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_arm_r": [
           0.78,
           0.3,
-          0.0
+          0
         ],
         "SOCKET_back": [
-          0.0,
+          0,
           0.68,
           0.36
         ],
         "SOCKET_gen": [
-          0.0,
+          0,
           0.12,
           0.66
         ]
@@ -815,57 +744,24 @@
       "brief": "PRV-90 突破型飞碟楔甲框架（PRV-90）：俄系低矮八角焊接胸塔排布 6 组蚌式 Relikt“化石”双层楔形反应装甲，配双侧窗式红宝石光电干扰灯与侧后防破甲格栅网。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {
         "SOCKET_arm_l": [
-          -1.1,
-          0.76,
+          -1.08,
+          0.44,
           0.02
         ],
         "SOCKET_arm_r": [
-          1.1,
-          0.76,
+          1.08,
+          0.44,
           0.02
         ],
         "SOCKET_back": [
-          0.0,
-          1.44,
-          0.52
+          0,
+          0.88,
+          0.44
         ],
         "SOCKET_gen": [
-          0.0,
-          0.66,
-          0.94
-        ]
-      },
-      "batch": "batch_02b_cores_heavy"
-    },
-    {
-      "id": "core_trieste_bathy",
-      "category": "core",
-      "name": "core_trieste_bathy",
-      "name_en": "",
-      "rarity": 0,
-      "status": "DONE",
-      "gd_source": "scripts/modules/core_trieste_bathy.gd",
-      "brief": "DSV-11K 万米深潜锻钢耐压框架（DSV-11K）：呼应《潜渊少女》世界观的万米级深海耐压核心：16棱马氏体锻钢耐压筒配中腰 16 螺栓主对接法兰、超厚截锥观察窗、四联深海探照灯与固体浮力护甲。 标准接口：HP-C1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
-      "sockets": {
-        "SOCKET_arm_l": [
-          -1.12,
-          0.8,
-          0.02
-        ],
-        "SOCKET_arm_r": [
-          1.12,
-          0.8,
-          0.02
-        ],
-        "SOCKET_back": [
-          0.0,
-          1.52,
-          0.54
-        ],
-        "SOCKET_gen": [
-          0.0,
-          0.7,
-          0.94
+          0,
+          0.42,
+          0.92
         ]
       },
       "batch": "batch_02b_cores_heavy"
@@ -881,9 +777,9 @@
       "brief": "双足底盘 Stride（B.o.T 式泰坦腿）：反关节（鸟足式）结构， 多面切角大腿甲 / 尖形护膝 / 长胫甲、外露液压骨架、三趾爪足 + 后跟距 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          2.17,
-          0.0
+          0,
+          2.03,
+          0
         ]
       },
       "leg_type": "biped",
@@ -907,14 +803,14 @@
       "name": "VK-5 中重 突击双足底盘",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/legs_biped_assault.gd",
       "brief": "中重突击双足底盘 VK-5：正关节人形战术重甲腿、铰接防弹腰裙甲、高耸反应装甲撞膝盾、小腿喷口与重型平底战靴 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          2.21,
-          0.0
+          0,
+          2.1,
+          0
         ]
       },
       "leg_type": "biped",
@@ -943,9 +839,9 @@
       "brief": "轻型侦察双足底盘 LN-3：铬钼钢管桁架骨盆、双侧斜置固体火箭推进荚舱、外露氮气减震筒、高速双趾猛禽爪足 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          2.08,
-          0.0
+          0,
+          1.95,
+          0
         ]
       },
       "leg_type": "biped",
@@ -969,14 +865,14 @@
       "name": "HX-6 中重 巡航六足底盘",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/legs_hex.gd",
       "brief": "中重巡航六足底盘 HX-6：流线折面装甲巡航车体、八肋炮塔领座、六条军规双箱梁液压步行肢与三爪驻锄足垫 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.84,
-          0.0
+          0,
+          1.69,
+          0
         ]
       },
       "leg_type": "hex",
@@ -1004,9 +900,9 @@
       "brief": "轻型工兵六足底盘 AT-6：敞露钢管桁架长车体、前置工兵电动绞盘与探照灯、尾部物资备件架、六条双管液压工兵步进肢 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.72,
-          0.0
+          0,
+          1.58,
+          0
         ]
       },
       "leg_type": "hex",
@@ -1030,9 +926,9 @@
       "brief": "重型甲虫六足底盘 BT-9：宽体大倾角防化重装甲背壳、前置双分叉破障撞角、侧悬耳轴护裙与ERA反应砖、六扇弧面重盾步足 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.82,
-          0.0
+          0,
+          1.66,
+          0
         ]
       },
       "leg_type": "hex",
@@ -1056,9 +952,9 @@
       "brief": "巨像攻城六足底盘 CL-12：三段式超重型攻城铆接堡垒船体、前置攻城破城锤铲、双立式防烫柴油烟囱、六根双缸液压打桩重足 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.96,
-          0.0
+          0,
+          1.8,
+          0
         ]
       },
       "leg_type": "hex",
@@ -1077,14 +973,14 @@
       "name": "AR-4 制式 多地形四足底盘",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/legs_quad.gd",
       "brief": "四足底盘 Arachne：骨架 + 装甲 + 活塞的蜘蛛腿 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.95,
-          0.0
+          0,
+          1.81,
+          0
         ]
       },
       "leg_type": "quad",
@@ -1112,9 +1008,9 @@
       "brief": "重甲堡垒四足底盘 CR-6：低矮宽体六边形暗堡车壳、前置钢缆绞盘、四扇弧面重型防爆盾甲蟹足（带ERA反应装甲块） 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.78,
-          0.0
+          0,
+          1.64,
+          0
         ]
       },
       "leg_type": "quad",
@@ -1142,9 +1038,9 @@
       "brief": "轻型猎犬四足底盘 HD-4：仿生军用机械犬窄体纵梁脊柱、前置激光雷达观瞄头与防撞笼、内收式高速液压奔袭四肢 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.86,
-          0.0
+          0,
+          1.69,
+          0
         ]
       },
       "leg_type": "quad",
@@ -1168,9 +1064,9 @@
       "brief": "巨象支腿四足底盘 MM-10：重工龙门桁架承重平台、四角防撞警示块、四根垂直双缸液压打桩立柱腿与八角调平驻锄巨足 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          2.08,
-          0.0
+          0,
+          1.92,
+          0
         ]
       },
       "leg_type": "quad",
@@ -1189,14 +1085,14 @@
       "name": "TT-8 泰坦 重装双足底盘",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/legs_titan.gd",
       "brief": "重型双足 Titan：比 Stride 高约 0.4m、粗约 1.4 倍的反关节泰坦腿。 箱形骨盆 + 双层裙甲、三液压大腿、厚胫甲、象足式平底大足（四趾垫 + 后跟） 接口：提供插座 HP-C1（躯干，粗壮腰柱顶端）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          2.27,
-          0.0
+          0,
+          2.19,
+          0
         ]
       },
       "leg_type": "biped",
@@ -1220,14 +1116,14 @@
       "name": "SAXX-1 中重 装甲履带底盘",
       "name_en": "",
       "rarity": 1,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/legs_tread.gd",
       "brief": "履带底盘 Mole：分节履带板、负重轮、侧裙甲、斜装甲车体 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.6,
-          0.0
+          0,
+          1.37,
+          0
         ]
       },
       "leg_type": "tread",
@@ -1245,9 +1141,9 @@
       "brief": "重型攻坚履带底盘 KV-6：前置V型液压破障推土铲、全车体ERA爆炸反应装甲砖、六负重轮宽履带、立式装甲排烟囱 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.68,
-          0.0
+          0,
+          1.34,
+          0
         ]
       },
       "leg_type": "tread",
@@ -1265,9 +1161,9 @@
       "brief": "轻型高速履带底盘 MT-2：克里斯蒂大负重轮悬挂、楔形侦察车体、冲孔轻量化挡泥板、双置消音排气管 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.5,
-          0.0
+          0,
+          1.21,
+          0
         ]
       },
       "leg_type": "tread",
@@ -1285,9 +1181,9 @@
       "brief": "超重四履带铰接底盘 DT-9：中央飞碟式防核爆斜切底壳 + 四组独立摆臂式重型铰接履带舱（Obj-279 / 巨型工程履带风） 接口：提供插座 HP-C1（躯干）；自身是装配树的根，无插头",
       "sockets": {
         "SOCKET_core": [
-          0.0,
-          1.74,
-          0.0
+          0,
+          1.42,
+          0
         ]
       },
       "leg_type": "tread",
@@ -1354,7 +1250,7 @@
       "name": "AC-30 机炮",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_ac30.gd",
       "brief": "30mm 链式炮 AC-30：链传动机匣 + 侧置电机、装甲防盾、后坐套筒、长身管与双室制退器、腹下弹舱双供弹 接口：插头 HP-A1（朝向躯干）→ a1_mount → 机匣；导出 muzzle",
       "sockets": {},
@@ -1462,7 +1358,7 @@
       "name": "CN-105 短管炮",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_cannon.gd",
       "brief": "105mm 臂载加农炮 HC-105：加粗双层法兰 + 三角加强筋、厚炮盾、双后坐筒、长身管 + 抽烟装置、双室制退器、侧挂炮弹架 接口：插头 HP-A1 → a1_mount（加强）→ 炮尾；导出 muzzle",
       "sockets": {},
@@ -1534,7 +1430,7 @@
       "name": "FT-20 燃烧弹投射器",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_flamer.gd",
       "brief": "火焰喷射器：双燃料罐、输油软管、引燃火 接口：插头 HP-A1（朝向躯干）；导出 muzzle",
       "sockets": {},
@@ -1598,7 +1494,7 @@
       "name": "GAU-8/30 复仇者七管 30mm 液压加特林机炮",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_gau8.gd",
       "brief": "GAU-8/30 复仇者七管 30mm 液压加特林机炮（GAU-8/30）：将A-10攻击机传奇七管30mm贫铀穿甲转管炮完整浓缩于机械臂，含后置横置无链大弹鼓、双闭环输退弹道与双液压驱动马达。 接口：插头 HP-A1 → a1_mount → 炮体；导出 muzzle",
       "sockets": {},
@@ -1706,7 +1602,7 @@
       "name": "LZ-42 电磁线圈步枪",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_laser.gd",
       "brief": "聚焦激光：散热片阵列、聚焦线圈、冷却管 接口：插头 HP-A1（朝向躯干）；导出 muzzle",
       "sockets": {},
@@ -1878,7 +1774,7 @@
       "name": "G-36 转管机炮",
       "name_en": "",
       "rarity": 0,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_mg.gd",
       "brief": "速射机炮（B.o.T 式）：长冷却套转管、侧挂橙色大弹鼓、切角机匣 接口：插头 HP-A1（朝向躯干）；导出 muzzle",
       "sockets": {},
@@ -1996,7 +1892,7 @@
       "name": "RG-9 轨道炮",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_rail.gd",
       "brief": "电磁轨道炮 RG-2：双导轨 + 绝缘夹箍、炮尾电容组、动力电缆、散热片；两轨之间透出电弧光 接口：插头 HP-A1（朝向躯干）→ a1_mount → 炮尾；导出 muzzle",
       "sockets": {},
@@ -2050,7 +1946,7 @@
       "name": "L55-120 莱茵金属 120mm 长管滑膛坦克炮",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_rh120.gd",
       "brief": "L55-120 莱茵金属 120mm 长管滑膛坦克炮（L55-120）：机甲化豹2A7主炮总成，还原楔形间隙复合炮盾、三段玻纤隔热护套、偏心抽烟器、MRS炮口基准镜与外挂MG3同轴机枪箱。 接口：插头 HP-A1 → a1_mount → 炮体；导出 muzzle",
       "sockets": {},
@@ -2086,7 +1982,7 @@
       "name": "SG-7 重型霰弹枪",
       "name_en": "",
       "rarity": 1,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_shotgun.gd",
       "brief": "霰弹臂：双管散热护套、侧格栅 接口：插头 HP-A1（朝向躯干）；导出 muzzle",
       "sockets": {},
@@ -2150,7 +2046,7 @@
       "name": "M99 精确狙击步枪",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_sniper.gd",
       "brief": "M99 精确狙击步枪：肩部稳压护盾、长机匣与直插五发弹匣、高架长焦光学瞄准镜（发光物镜/目镜）、重型浮置精密枪管、双室平板制退器与折叠两脚架 接口：插头 HP-A1 → a1_mount → 狙击步枪机匣；导出 muzzle",
       "sockets": {},
@@ -2222,7 +2118,7 @@
       "name": "TOW-2B 陶式双联装重型攻顶反坦克导弹箱",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/arm_tow2b.gd",
       "brief": "TOW-2B 陶式双联装重型攻顶反坦克导弹箱（TOW-2B）：布雷德利战车侧面双联陶式反坦克导弹箱机甲化重构，呈现前上方掀开式防爆护盖与双侧液压撑杆、前后贯通肋纹发射筒、攻顶探杆导弹锥头与TAS-4热像舱。 接口：插头 HP-A1 → a1_mount → 炮体；导出 muzzle",
       "sockets": {},
@@ -2252,7 +2148,7 @@
       "name": "MS-6 中型 导弹挂架",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/back_missile.gd",
       "brief": "蜂巢导弹：双联装 6 发发射巢，带挂架与装填门 接口：插头 HP-B1（朝下，贴躯干顶部后方导轨）；局部 +Y 向上，+Z 向后",
       "sockets": {},
@@ -2264,7 +2160,7 @@
       "name": "RK-4 外挂 货架",
       "name_en": "",
       "rarity": 0,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/back_rack.gd",
       "brief": "外挂货架 R-14：管焊框架 + 网格底板，捆着弹药木箱、两只油桶、帆布卷，橙色棘轮绑带 接口：插头 HP-B1 → b1_mount → 货架；局部 +Y 远离躯干",
       "sockets": {},
@@ -2276,7 +2172,7 @@
       "name": "RP-7 火箭 巢",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/back_rocket.gd",
       "brief": "双联火箭巢 RK-4：两只 2×2 箱式发射巢，耳轴 + 俯仰液压缸，前盖露出弹头，后部易碎封盖 接口：插头 HP-B1 → b1_mount（导轨卡箍 + 横梁）→ 发射巢；局部 +Y 远离躯干",
       "sockets": {},
@@ -2288,7 +2184,7 @@
       "name": "SH-3 中型 力场护盾",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/back_shield.gd",
       "brief": "相位护盾：发生器箱、桅杆、环形发射器 接口：插头 HP-B1（朝下，贴躯干顶部后方导轨）；局部 +Y 向上，+Z 向后",
       "sockets": {},
@@ -2300,7 +2196,7 @@
       "name": "VLS-12 垂发 单元",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/back_vls.gd",
       "brief": "垂直发射箱 VLS-8：2×4 垂直发射单元，铰链舱盖、侧面加强肋、尾部燃气排导口 接口：插头 HP-B1 → b1_mount（加宽横梁）→ 发射箱；局部 +Y 远离躯干",
       "sockets": {},
@@ -2336,7 +2232,7 @@
       "name": "CR-8 试作中型 反应炉",
       "name_en": "",
       "rarity": 3,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/gen_crystal.gd",
       "brief": "虫晶反应炉：约束笼 + 悬浮虫晶 + 抑制线圈 接口：插头 HP-G1（朝前，插入躯干背面动力舱）；局部 +Z 向后",
       "sockets": {},
@@ -2348,7 +2244,7 @@
       "name": "DS-6 柴油 机组",
       "name_en": "",
       "rarity": 1,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/gen_diesel.gd",
       "brief": "柴油发电机组 DG-130：直列缸体 + 带肋缸盖、排气歧管接竖置消音筒（防雨帽）、尾部散热器 + 风扇护罩、燃油滤清器 接口：插头 HP-G1（朝前插入动力舱）→ g1_mount（背板 + 四角锁销）→ 机组；局部 +Z 向后",
       "sockets": {},
@@ -2360,7 +2256,7 @@
       "name": "HFC-3 氢燃料 堆",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/gen_hfc.gd",
       "brief": "氢燃料电池堆 HFC-180：两只卧式高压储氢罐（箍带 + 阀门）、层叠电堆（端板 + 拉杆）、冷却液管 接口：插头 HP-G1（朝前插入动力舱）→ g1_mount → 罐组与电堆；局部 +Z 向后",
       "sockets": {},
@@ -2427,18 +2323,6 @@
       "batch": "batch_05b_gens_all"
     },
     {
-      "id": "gen_naval_pwr_s9g",
-      "category": "gen",
-      "name": "gen_naval_pwr_s9g",
-      "name_en": "",
-      "rarity": 0,
-      "status": "TODO",
-      "gd_source": "scripts/modules/gen_naval_pwr_s9g.gd",
-      "brief": "S9G-PWR 潜艇级压水微堆动力舱（S9G-PWR）：重装舰载级核动力核心：中央立式 12 螺栓锻钢反应堆压力壳与 4 组控制棒套管，左右对称双立式蒸汽发生器圆筒与主冷却剂刚性横管。 标准接口：HP-G1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
-      "sockets": {},
-      "batch": "batch_05b_gens_all"
-    },
-    {
       "id": "gen_pem_fuelcell",
       "category": "gen",
       "name": "gen_pem_fuelcell",
@@ -2456,21 +2340,9 @@
       "name": "RT-1 试作中型 动力炉",
       "name_en": "",
       "rarity": 1,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/gen_reactor.gd",
       "brief": "微型反应堆：圆柱压力容器、径向散热片、冷却回路 接口：插头 HP-G1（朝前，插入躯干背面动力舱）；局部 +Z 向后",
-      "sockets": {},
-      "batch": "batch_05b_gens_all"
-    },
-    {
-      "id": "gen_stirling_aip",
-      "category": "gen",
-      "name": "gen_stirling_aip",
-      "name_en": "",
-      "rarity": 0,
-      "status": "TODO",
-      "gd_source": "scripts/modules/gen_stirling_aip.gd",
-      "brief": "MK3-AIP 斯特林闭式绝气动力炉（MK3-AIP）：深海潜航闭式外燃机：上部四缸斯特林再生加热器套筒与紫铜燃烧钟罩，下部双联台锥封头低温液氧杜瓦钢瓶，水下无气泡超静音运行。 标准接口：HP-G1 | 自动对齐 res://scripts/mech_visual.gd 装配协议",
       "sockets": {},
       "batch": "batch_05b_gens_all"
     },
@@ -2480,7 +2352,7 @@
       "name": "TB-5 涡轮 机组",
       "name_en": "",
       "rarity": 2,
-      "status": "TODO",
+      "status": "DONE",
       "gd_source": "scripts/modules/gen_turbine.gd",
       "brief": "燃气轮机组 GT-260：加强安装背板、减速齿轮箱、粗壮涡轮机匣（法兰环 + 燃烧室凸台）、顶部进气罩、双排气管 + 打孔隔热罩、下挂发电机 接口：插头 HP-G1 → g1_mount → 齿轮箱 → 涡轮；局部 +Z 向后",
       "sockets": {},

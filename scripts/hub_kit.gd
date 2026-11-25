@@ -17,29 +17,29 @@ const TOP_H := 36      ## 顶部细状态栏
 const BOT_H := 48      ## 底部主导航栏
 const CELL := 48       ## 物品格边长（图标 16px ×2）
 
-## Semi-sci-fi wasteland industrial hub palette: industrial grey-black + darker weathered ochre
-const BG0 := Color(0.056, 0.060, 0.066, 0.97)
-const BG1 := Color(0.082, 0.088, 0.094, 0.97)
-const BG2 := Color(0.118, 0.126, 0.134, 0.97)
-const BG3 := Color(0.165, 0.176, 0.186, 0.99)
-const LINE := Color(0.22, 0.24, 0.26)
-const LINE2 := Color(0.40, 0.43, 0.46)
-const STEEL := Color(0.38, 0.41, 0.44)
-const INK := Color(0.08, 0.09, 0.10)
-const CREAM := Color(0.88, 0.88, 0.85)
-const CREAM_DIM := Color(0.56, 0.58, 0.58)
-const OLIVE := Color(0.20, 0.22, 0.24)
-const CELL_EMPTY := Color(0.055, 0.060, 0.066, 0.94)
-const CELL_LINE := Color(0.20, 0.22, 0.24)
-const CELL_RAR := [Color(0.115, 0.124, 0.132), Color(0.105, 0.140, 0.112), Color(0.098, 0.130, 0.165), Color(0.175, 0.125, 0.072)]
-const OK_C := Color(0.46, 0.76, 0.50)
-const NG_C := Color(0.84, 0.33, 0.25)
+## AC6 Optical Fire-Control Hub Palette
+const BG0 := Color(0.014, 0.018, 0.024, 0.90)
+const BG1 := Color(0.018, 0.024, 0.032, 0.88)
+const BG2 := Color(0.026, 0.034, 0.044, 0.88)
+const BG3 := Color(0.042, 0.054, 0.068, 0.92)
+const LINE := Color(0.46, 0.54, 0.62, 0.40)
+const LINE2 := Color(0.64, 0.76, 0.84, 0.72)
+const STEEL := Color(0.58, 0.74, 0.84)
+const INK := Color(0.06, 0.05, 0.03)
+const CREAM := Color(0.92, 0.94, 0.96)
+const CREAM_DIM := Color(0.56, 0.63, 0.69)
+const OLIVE := Color(0.18, 0.22, 0.26)
+const CELL_EMPTY := Color(0.012, 0.016, 0.022, 0.80)
+const CELL_LINE := Color(0.42, 0.50, 0.58, 0.30)
+const CELL_RAR := [Color(0.09, 0.10, 0.12), Color(0.08, 0.14, 0.10), Color(0.08, 0.12, 0.17), Color(0.16, 0.11, 0.05)]
+const OK_C := Color(0.46, 0.86, 0.62)
+const NG_C := Color(0.94, 0.36, 0.30)
 
-const AMBER := Color(0.78, 0.48, 0.16)
-const AMBER_HI := Color(0.87, 0.59, 0.25)
-const AMBER_DK := Color(0.52, 0.31, 0.10)
-const RULE := Color(0.42, 0.45, 0.48, 0.22)
-const DIM := Color(0.54, 0.56, 0.57)
+const AMBER := Color(0.96, 0.63, 0.20)
+const AMBER_HI := Color(1.00, 0.74, 0.34)
+const AMBER_DK := Color(0.66, 0.41, 0.12)
+const RULE := Color(0.52, 0.64, 0.74, 0.28)
+const DIM := Color(0.54, 0.60, 0.66)
 
 ## 主角团（顶栏阵列顺序）与黑市商人
 const CREW := ["nao", "rei", "kurumi", "lina", "mia"]
@@ -272,32 +272,21 @@ static func frame(pad := 8) -> PanelContainer:
 	return p
 
 
-## 铆钉工业印记：做旧橙黄锁块 + 工业灰黑斜切角片与铆钉
+## 光学火控标尺印记：琥珀竖刃 + 青灰准星点
 class HeaderStamp extends Control:
 	var compact := false
 
 	func _init(is_compact := false) -> void:
 		compact = is_compact
-		custom_minimum_size = Vector2(9, 11) if compact else Vector2(12, 14)
+		custom_minimum_size = Vector2(7, 11) if compact else Vector2(9, 14)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	func _draw() -> void:
 		var h := size.y
-		var w := size.x
-		var bw := 3.0 if compact else 4.0
+		var bw := 2.5 if compact else 3.0
 		draw_rect(Rect2(0.0, 1.0, bw, h - 2.0), AMBER)
-		var gx := bw + 2.0
-		var gw := w - gx
-		var pts := PackedVector2Array([
-			Vector2(gx, 1.0),
-			Vector2(gx + gw, 1.0),
-			Vector2(gx + gw, h - 4.0),
-			Vector2(gx + gw - 3.0, h - 1.0),
-			Vector2(gx, h - 1.0),
-		])
-		draw_colored_polygon(pts, Color(0.18, 0.20, 0.22) if not compact else Color(0.22, 0.24, 0.26))
-		draw_circle(Vector2(gx + gw * 0.5, h * 0.5), 1.1, Color(0.54, 0.57, 0.59) if not compact else Color(0.84, 0.86, 0.85))
+		draw_rect(Rect2(bw + 2.0, h * 0.5 - 1.5, 2.0, 3.0), STEEL)
 
 
 ## 带标题条的面板：返回 [面板, 内容 VBox, 标题条右侧 Label]
@@ -317,13 +306,13 @@ static func tpanel(title: String, en := "", right := "", pad := 8) -> Array:
 	var tl := UI.label(title, 12, CREAM)
 	hh.add_child(tl)
 	var el := UI.label(en.to_upper(), 12, CREAM_DIM)
-	el.visible = (not UI._is_en()) and en != "" and en.to_upper() != title.to_upper()
+	el.visible = false
 	hh.add_child(el)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hh.add_child(sp)
-	var rl := UI.label(right, 12, Color(0.76, 0.77, 0.74))
+	var rl := UI.label(right, 12, CREAM_DIM)
 	hh.add_child(rl)
 	var m := MarginContainer.new()
 	m.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -351,25 +340,23 @@ static func card(on := false, pad := 8) -> PanelContainer:
 ## 小标签：amber = 做旧橙黄警戒牌，false = 工业灰黑金属铭牌
 static func tag(text: String, amber := true) -> PanelContainer:
 	var p := PanelContainer.new()
-	var sb := flat(AMBER if amber else Color(0.18, 0.20, 0.22, 0.98), Color(0.36, 0.39, 0.42) if not amber else AMBER_DK, 1, 5)
+	var sb := flat(AMBER if amber else Color(0.06, 0.08, 0.11, 0.90), LINE2 if not amber else AMBER_DK, 1, 5)
 	sb.content_margin_top = 0
 	sb.content_margin_bottom = 1
 	p.add_theme_stylebox_override("panel", sb)
-	var l := UI.label(text, 12, INK if amber else Color(0.84, 0.85, 0.83))
+	var l := UI.label(text, 12, INK if amber else CREAM)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	p.add_child(l)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return p
 
 
-## 分区小标题：工业印记 + 标题 + 大写英文副标 + 细线，右侧可放计数文字（返回 [行, 右侧 Label]）
-static func section(title: String, en := "", right := "") -> Array:
+## 分区小标题：光学印记 + 标题 + 细刻度线，右侧可放计数文字（返回 [行, 右侧 Label]）
+static func section(title: String, _en := "", right := "") -> Array:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
 	h.add_child(HeaderStamp.new(true))
 	h.add_child(UI.label(title, 12, CREAM))
-	if en != "" and (not UI._is_en()) and en.to_upper() != title.to_upper():
-		h.add_child(UI.label(en.to_upper(), 12, CREAM_DIM))
 	var r := Rule.new()
 	r.solid = true
 	r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -662,7 +649,7 @@ class Pips extends Control:
 				draw_rect(r.grow(-2), Color(0.32, 0.35, 0.37, 0.22))
 
 
-## 工业机械仪表进度条
+## 光学火控分段仪表进度条
 class PixBar extends Control:
 	var frac := 0.0
 	var color := AMBER
@@ -677,17 +664,13 @@ class PixBar extends Control:
 		queue_redraw()
 
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.075, 0.082, 0.088, 0.95))
-		var inner := Rect2(Vector2(1.5, 1.5), size - Vector2(3, 3))
-		draw_rect(inner, Color(0.78, 0.80, 0.81, 0.07))
-		var w: float = inner.size.x * frac
-		if w > 0.5:
-			draw_rect(Rect2(inner.position, Vector2(w, inner.size.y)), color)
-			draw_rect(Rect2(inner.position, Vector2(w, 1.2)), Color(0.92, 0.93, 0.92, 0.30))
-		for q in [0.25, 0.5, 0.75]:
-			var tx: float = inner.position.x + inner.size.x * q
-			draw_line(Vector2(tx, 1.0), Vector2(tx, size.y - 1.0), Color(0.05, 0.055, 0.06, 0.65), 1.0)
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.42, 0.45, 0.47, 0.92), false, 1.0)
+		var segs := clampi(int(size.x / 9.0), 8, 20)
+		var gap := 1.5
+		var sw := (size.x - gap * float(segs - 1)) / float(segs)
+		var lit := int(round(frac * float(segs)))
+		for i in segs:
+			var sr := Rect2(float(i) * (sw + gap), 0.5, sw, maxf(2.0, size.y - 1.0))
+			draw_rect(sr, color if i < lit else Color(0.75, 0.84, 0.92, 0.11))
 
 
 ## 角色头像框：保持像素头像 TEXTURE_FILTER_NEAREST，外框采用废土工业灰白边框与做旧橙黄角标
@@ -1082,7 +1065,7 @@ class IconCell extends Control:
 
 
 ## 底部主导航按钮：等宽，像素图标 + 中文标题 / 小号大写英文；四态贴图 nav9_n（常态）/ nav9_h（悬停）/ nav9_p（按下瞬间）/ nav9_on（当前页）
-## 底部居中的大圆钮：与其他页签同一套像素材质与文字层级，只是外框为圆形
+## 底部右侧 AC6 斜切琥珀出击主按钮
 class DeployButton extends Button:
 	var cn_lbl: Label
 	var en_lbl: Label
@@ -1093,122 +1076,65 @@ class DeployButton extends Button:
 	func _init(cn := "出击", en_text := "SORTIE", icon_key := "nav_deploy") -> void:
 		toggle_mode = true
 		focus_mode = Control.FOCUS_NONE
-		custom_minimum_size = Vector2(112, 112)
+		custom_minimum_size = Vector2(176, 34)
+		size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
 			add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 2)
-		v.alignment = BoxContainer.ALIGNMENT_CENTER
-		v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(v)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 8)
+		h.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		h.offset_left = 18.0
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(h)
 		var K = load("res://scripts/hub_kit.gd")
 		var tex: Texture2D = load("res://scripts/item_icons.gd").ui_icon(icon_key) if icon_key != "" else null
 		if tex:
-			icon_rect = K.icon_rect(tex, 42)
-			icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			v.add_child(icon_rect)
+			icon_rect = K.icon_rect(tex, 22)
+			h.add_child(icon_rect)
 		var is_e: bool = UI._is_en()
 		cn_lbl = Label.new()
 		cn_lbl.text = en_text if (is_e and en_text != "") else cn
 		cn_lbl.add_theme_font_size_override("font_size", 14)
-		cn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.add_child(cn_lbl)
+		h.add_child(cn_lbl)
 		en_lbl = Label.new()
 		en_lbl.text = en_text
 		en_lbl.visible = false
-		en_lbl.add_theme_font_size_override("font_size", 12)
-		en_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		en_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.add_child(en_lbl)
-		resized.connect(func(): pivot_offset = size * 0.5)
-		mouse_entered.connect(func(): _hot = true; _spring(1.04))
-		mouse_exited.connect(func(): _hot = false; _spring(1.0))
-		button_down.connect(func(): _spring(0.96); queue_redraw())
-		button_up.connect(func(): _spring(1.04 if _hot else 1.0); queue_redraw())
+		h.add_child(en_lbl)
+		mouse_entered.connect(func(): _hot = true; queue_redraw())
+		mouse_exited.connect(func(): _hot = false; queue_redraw())
+		button_down.connect(func(): queue_redraw())
+		button_up.connect(func(): queue_redraw())
 		toggled.connect(func(_on): _tint())
 		_tint()
-		pivot_offset = custom_minimum_size * 0.5
-		_spring(1.0, true)
-
-	func _spring(to: float, instant := false) -> void:
-		if _tw and _tw.is_valid():
-			_tw.kill()
-		if instant:
-			scale = Vector2.ONE * to
-			return
-		_tw = create_tween()
-		_tw.tween_property(self, "scale", Vector2.ONE * to, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-	func _disc(c: Vector2, r: float, col: Color) -> void:
-		var y := -r
-		while y < r:
-			var w: float = floor(sqrt(maxf(r * r - y * y, 0.0)) / 2.0) * 2.0
-			draw_rect(Rect2(c.x - w, c.y + y, w * 2.0, 2.0), col)
-			y += 2.0
-
-	func _dashed_ring(c: Vector2, r: float, col: Color) -> void:
-		var n := 36
-		for i in range(0, n, 2):
-			draw_arc(c, r - 1.0, TAU * i / n, TAU * (i + 1) / n, 4, col, 2.0, true)
 
 	func _draw() -> void:
-		var c := size * 0.5
-		var r: float = minf(size.x, size.y) * 0.5 - 3.0
-		var on := button_pressed
-		# 1. 重型工业灰黑机加工外法兰盘 + 8 颗沉头铆钉
-		var bezel := PackedVector2Array()
-		var n_oct := 16
-		for i in n_oct:
-			var ang := TAU * float(i) / float(n_oct) + PI / 16.0
-			bezel.append(c + Vector2(cos(ang), sin(ang)) * r)
-		var bezel_col := Color(0.20, 0.22, 0.24, 0.98) if not (_hot or on) else Color(0.28, 0.30, 0.33, 0.99)
-		draw_colored_polygon(bezel, bezel_col)
-		bezel.append(bezel[0])
-		draw_polyline(bezel, Color(0.08, 0.09, 0.10, 0.96), 2.0, true)
-		# 2. 中环：做旧橙黄/炭黑径向警示刻度环
-		var mid_r := r - 4.5
-		draw_circle(c, mid_r, Color(0.09, 0.10, 0.11, 0.98))
-		var segs := 24
-		for i in segs:
-			var a0 := TAU * float(i) / float(segs)
-			var a1 := TAU * float(i + 0.58) / float(segs)
-			var wc := AMBER_HI if (on or _hot) else AMBER
-			if i % 3 == 0:
-				wc = wc.darkened(0.14)
-			draw_arc(c, mid_r - 2.6, a0, a1, 4, wc, 4.0, true)
-		# 3. 中心机械舱门内盘
-		var core_r := r - 10.5
-		var fill: Color = Color(0.095, 0.102, 0.110, 0.98)
-		if button_down:
-			fill = Color(0.10, 0.105, 0.11, 0.98)
-		elif _hot:
-			fill = Color(0.24, 0.18, 0.11, 0.98)
-		elif on:
-			fill = Color(0.26, 0.19, 0.105, 0.98)
-		draw_circle(c, core_r, fill)
-		draw_arc(c, core_r, 0, TAU, 48, AMBER_HI if (on or _hot) else STEEL, 2.0, true)
-		draw_arc(c, core_r - 3.5, PI * 0.15, PI * 0.85, 16, Color(STEEL.r, STEEL.g, STEEL.b, 0.25), 1.0, true)
-		draw_arc(c, core_r - 3.5, -PI * 0.85, -PI * 0.15, 16, Color(STEEL.r, STEEL.g, STEEL.b, 0.40), 1.0, true)
-		# 4. 法兰盘四向锁定槽口与 8 颗铆钉
-		for k in 8:
-			var a := TAU * float(k) / 8.0 + PI / 8.0
-			var rp := c + Vector2(cos(a), sin(a)) * (r - 2.4)
-			draw_circle(rp, 2.0, Color(0.08, 0.09, 0.10, 0.96))
-			draw_circle(rp, 1.1, Color(0.52, 0.55, 0.58, 0.92))
-		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
-			var d := Vector2(cos(a), sin(a))
-			draw_line(c + d * (core_r - 2.0), c + d * (r + 1.5), AMBER_HI if (on or _hot) else STEEL, 3.0, true)
+		var r := Rect2(Vector2.ZERO, size)
+		var ch := 9.0
+		var poly := PackedVector2Array([
+			Vector2(ch, 0.0),
+			Vector2(r.size.x, 0.0),
+			Vector2(r.size.x, r.size.y),
+			Vector2(0.0, r.size.y),
+			Vector2(0.0, ch),
+		])
+		var fill := AMBER_HI if (_hot or button_pressed) else AMBER
+		draw_colored_polygon(poly, fill)
+		for hi in 4:
+			var hx := 12.0 + float(hi) * 7.0
+			draw_line(Vector2(hx, r.size.y - 3.0), Vector2(hx + 6.0, 3.0), Color(0.07, 0.04, 0.01, 0.35), 2.2, true)
+		var close_poly := poly.duplicate()
+		close_poly.append(poly[0])
+		draw_polyline(close_poly, Color(1.0, 0.88, 0.56, 0.92), 1.2, true)
 
 	func _tint() -> void:
-		var on := button_pressed
-		cn_lbl.add_theme_color_override("font_color", AMBER_HI if on else CREAM)
-		en_lbl.add_theme_color_override("font_color", AMBER if on else CREAM_DIM)
+		cn_lbl.add_theme_color_override("font_color", Color(0.06, 0.04, 0.01))
 		if icon_rect:
-			icon_rect.modulate = Color(1, 1, 1) if on else Color(0.88, 0.90, 0.89)
+			icon_rect.modulate = Color(0.07, 0.04, 0.01, 0.96)
 		queue_redraw()
 
 

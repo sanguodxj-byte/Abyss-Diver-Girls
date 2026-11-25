@@ -32,6 +32,7 @@ var _text: Label
 var _bar: ProgressBar
 var _bars: SignalBars
 var _last_rect := Rect2()
+var _fade_tw: Tween
 
 
 func _init() -> void:
@@ -41,6 +42,7 @@ func _init() -> void:
 	custom_minimum_size = Vector2(WIDTH, 0)
 	add_theme_stylebox_override("panel", UI.px9("panel9", 14, 14, 10, 8, Color(1, 1, 1, 0.72)))
 	modulate.a = 0.0
+	visible = false
 
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
@@ -148,11 +150,15 @@ func clear() -> void:
 			Audio.stop_voice()
 		_cur = {}
 	_avatar.stop_clip()
+	_bars.active = false
 	_name.text = ""
 	_text.text = ""
 	if _tag != null:
 		_tag.text = ""
+	if _fade_tw != null and _fade_tw.is_valid():
+		_fade_tw.kill()
 	modulate.a = 0.0
+	visible = false
 	_bar.value = 0.0
 
 
@@ -173,6 +179,7 @@ func refresh_lang() -> void:
 		if _tag != null:
 			_tag.text = ""
 		modulate.a = 0.0
+		visible = false
 		return
 	var sp := str(_cur.get("speaker", ""))
 	var em := AP.resolve_emotion(_cur)
@@ -250,8 +257,11 @@ func _show(entry: Dictionary) -> void:
 	_bars.speed_mult = 1.65 if motion == "urgent" else (1.25 if motion in ["happy", "surprised"] else 0.9)
 	_bars.active = true
 	_bars.reset()
-	var tw := create_tween()
-	tw.tween_property(self, "modulate:a", 1.0, 0.18)
+	if _fade_tw != null and _fade_tw.is_valid():
+		_fade_tw.kill()
+	visible = true
+	_fade_tw = create_tween()
+	_fade_tw.tween_property(self, "modulate:a", 1.0, 0.18)
 	entry_started.emit(str(entry.get("id", "")))
 
 
@@ -263,10 +273,16 @@ func _next() -> void:
 	if _queue.is_empty():
 		_avatar.stop_clip()
 		_bars.active = false
-		var tw := create_tween()
-		tw.tween_property(self, "modulate:a", 0.0, 0.24)
+		if _fade_tw != null and _fade_tw.is_valid():
+			_fade_tw.kill()
+		_fade_tw = create_tween()
+		_fade_tw.tween_property(self, "modulate:a", 0.0, 0.24)
+		_fade_tw.tween_callback(func():
+			if _cur.is_empty() and _queue.is_empty():
+				visible = false)
 		return
 	if had_prev:
+		_avatar.stop_clip()
 		_gap_t = GAP_TIME
 		_bars.active = false
 		return
@@ -312,6 +328,7 @@ func window_rect() -> Rect2:
 
 ## 无线电头像：优先播放立绘动画（去黑底），没有片段时退回静态头像，缺文件画剪影占位
 class AvatarMark extends Control:
+	static var _vid_cache := {}
 	var tex: Texture2D
 	var accent := Color(0.72, 0.5, 0.09)
 	var _view: SubViewport
@@ -329,14 +346,14 @@ class AvatarMark extends Control:
 			set_process(false)
 			return
 		_view = SubViewport.new()
-		_view.size = Vector2i(384, 384)
+		_view.size = Vector2i(160, 160)
 		_view.transparent_bg = true
 		_view.disable_3d = true
 		_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
 		add_child(_view)
 		_vid = VideoStreamPlayer.new()
 		_vid.expand = true
-		_vid.size = Vector2(384, 384)
+		_vid.size = Vector2(160, 160)
 		_view.add_child(_vid)
 		_rect = TextureRect.new()
 		_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -361,7 +378,13 @@ class AvatarMark extends Control:
 			_rect.size = size
 
 	func _process(_delta: float) -> void:
-		if _talking and _clip != "" and _vid != null and _vid.stream != null:
+		if not is_visible_in_tree() or not _talking or _clip == "":
+			if _view != null and _view.render_target_update_mode != SubViewport.UPDATE_DISABLED:
+				_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			if _vid != null and _vid.is_playing():
+				_vid.stop()
+			return
+		if _vid != null and _vid.stream != null:
 			if not _vid.is_playing():
 				_vid.play()
 		if _rect != null and _rect.visible:
@@ -372,6 +395,10 @@ class AvatarMark extends Control:
 		_talking = true
 		accent = col
 		tex = AP.avatar(cid, expr) if cid != "" else null
+		if GameData.quality == 0:
+			stop_clip()
+			queue_redraw()
+			return
 		var clip := AP.radio_clip(cid, expr, tag)
 		if clip == "" and cid != "":
 			clip = AP.portrait_clip(cid, expr, true, tag)
@@ -382,9 +409,19 @@ class AvatarMark extends Control:
 		queue_redraw()
 
 	func _play(path: String) -> void:
-		if path == _clip and _vid != null and _vid.is_playing() and _rect != null and _rect.visible:
+		if _view == null or _vid == null or _rect == null:
+			stop_clip()
 			return
-		var st: VideoStream = load(path)
+		if path == _clip and _vid.is_playing() and _rect.visible:
+			if _view.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+				_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+			return
+		var st: VideoStream
+		if _vid_cache.has(path):
+			st = _vid_cache[path]
+		else:
+			st = load(path)
+			_vid_cache[path] = st
 		if st == null:
 			stop_clip()
 			return
@@ -454,16 +491,30 @@ class AvatarMark extends Control:
 ## 信号强度条：条目播放期间起伏，空转时压平
 class SignalBars extends Control:
 	var t := 0.0
-	var active := true
+	var active := false
 	var speed_mult := 1.0
 	var accent := Color(0.78, 0.48, 0.16)
+	var _redraw_acc := 0.05
+	var _was_active := false
 
 	func reset() -> void:
 		t = 0.0
+		_redraw_acc = 0.05
 
 	func _process(d: float) -> void:
+		if not is_visible_in_tree():
+			return
+		if not active:
+			if _was_active:
+				_was_active = false
+				queue_redraw()
+			return
+		_was_active = true
 		t += d * speed_mult
-		queue_redraw()
+		_redraw_acc += d
+		if _redraw_acc >= 0.05:
+			_redraw_acc = 0.0
+			queue_redraw()
 
 	func _draw() -> void:
 		var n := 5

@@ -10,6 +10,7 @@ const HL = preload("res://scripts/hud_l.gd")
 const RadioWindow = preload("res://scripts/story/radio_window.gd")
 const RaidInv = preload("res://scripts/raid_inv.gd")
 const EnemyHpBars = preload("res://scripts/hud_enemy_bars.gd")
+const FcsSpotter = preload("res://scripts/hud_fcs_spotter.gd")
 
 var raid
 var root: Control
@@ -56,6 +57,7 @@ var coop_lbl: Label
 var vignette: TextureRect
 var markers := {}
 var enemy_bars
+var fcs_spotter
 var crosshair
 var bigmap
 # 局内战术整备与搜刮面板
@@ -139,6 +141,7 @@ func setup(r) -> void:
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vignette.modulate.a = 0.0
+	vignette.visible = false
 	# 常驻战地摄影机炭灰光学暗角（收束四角，强化写实工业废土胶片纵深），放在受伤暗角之下
 	var g2 := Gradient.new()
 	g2.offsets = PackedFloat32Array([0.0, 0.52, 0.82, 1.0])
@@ -181,7 +184,9 @@ void fragment(){
 """
 	sm.shader = sh
 	sm.set_shader_parameter("noise_tex", A.noise_tex("grime_raw"))
+	sm.set_shader_parameter("strength", 0.005)
 	smoke_rect.material = sm
+	smoke_rect.visible = false
 	root.add_child(smoke_rect)
 	root.add_child(vignette)
 	scope_rect = ColorRect.new()
@@ -257,6 +262,10 @@ void fragment(){
 	enemy_bars.raid = raid
 	enemy_bars.hud = self
 	root.add_child(enemy_bars)
+	fcs_spotter = FcsSpotter.new()
+	fcs_spotter.raid = raid
+	fcs_spotter.hud = self
+	root.add_child(fcs_spotter)
 
 	_touch_revealed = OS.has_feature("mobile") or "--mobile" in OS.get_cmdline_user_args() or "--mobile" in OS.get_cmdline_args()
 	_build_status()
@@ -1132,7 +1141,8 @@ func _build_settings_panel(initial_tab := "video") -> void:
 	var fs := CheckButton.new()
 	fs.text = Loc.t("全屏", "Fullscreen")
 	fs.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-	fs.toggled.connect(func(on): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED))
+	fs.toggled.connect(func(on):
+		GameData.set_fullscreen(on))
 	pgv.add_child(fs)
 	var vs := CheckButton.new()
 	vs.text = Loc.t("垂直同步", "VSync")
@@ -1204,9 +1214,10 @@ func _build_settings_panel(initial_tab := "video") -> void:
 
 	pgv3.add_child(UI.label(Loc.t("视角模式", "Camera Mode"), 14, UI.MUTED))
 	_view_opt = OptionButton.new()
-	_view_opt.add_item(Loc.t("第三人称", "Third-Person"), 0)
+	_view_opt.add_item(Loc.t("斜俯视", "Top-Down"), 0)
 	_view_opt.add_item(Loc.t("第一人称", "First-Person"), 1)
-	_view_opt.selected = raid.view_mode if (raid != null and "view_mode" in raid) else GameData.view_mode
+	_view_opt.add_item(Loc.t("第三人称越肩", "Over-the-Shoulder"), 2)
+	_view_opt.selected = clampi(raid.view_mode if (raid != null and "view_mode" in raid) else GameData.view_mode, 0, 2)
 	_view_opt.item_selected.connect(func(i):
 		if raid != null and raid.has_method("set_view_mode"):
 			raid.set_view_mode(i, true)
@@ -1308,7 +1319,8 @@ func show_zone_banner(zone_name: String, delay := 0.08, sub_text := "") -> void:
 	zone_sub_lbl.text = sub_text if sub_text != "" else Loc.t("进入战区", "ENTERING SECTOR")
 	zone_title_lbl.text = zone_name
 	_zone_active = true
-	var base_y := 92.0 if (boss_panel != null and boss_panel.visible) else 22.0
+	# 地区横幅固定占顶部首位，首领血条与撤离条统一顺延到其下方，杜绝二者互斥错位重叠
+	var base_y := 20.0
 	var h := 58.0
 	zone_banner.visible = true
 	zone_banner.modulate.a = 0.0
@@ -1356,10 +1368,18 @@ func toggle_map() -> void:
 	_update_cursor()
 
 
+func _is_free_look() -> bool:
+	if raid == null:
+		return false
+	if raid.has_method("is_free_look_view"):
+		return raid.is_free_look_view()
+	return raid.has_method("is_first_person") and raid.is_first_person()
+
+
 func sync_view_mode_ui() -> void:
 	if _view_opt != null and is_instance_valid(_view_opt) and raid != null and "view_mode" in raid:
-		_view_opt.select(clampi(int(raid.view_mode), 0, 1))
-	var fp_on: bool = raid != null and raid.has_method("is_first_person") and raid.is_first_person()
+		_view_opt.select(clampi(int(raid.view_mode), 0, 2))
+	var fp_on := _is_free_look()
 	if joy_right != null and is_instance_valid(joy_right):
 		joy_right.fp_mode = fp_on
 		joy_right.queue_redraw()
@@ -1384,7 +1404,7 @@ func _update_cursor() -> void:
 	crosshair.visible = not ui_open and _scope_alpha < 0.35
 	if touch_layer != null:
 		touch_layer.visible = _touch_revealed and not ui_open
-		var fp_on: bool = raid != null and raid.has_method("is_first_person") and raid.is_first_person()
+		var fp_on := _is_free_look()
 		if joy_right != null and is_instance_valid(joy_right):
 			joy_right.fp_mode = fp_on
 		if joy_fire != null and is_instance_valid(joy_fire):
@@ -1407,6 +1427,12 @@ func _input(event: InputEvent) -> void:
 		var menu_open: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible)
 		if not menu_open and raid != null and not raid.ended and raid.has_method("toggle_view_mode"):
 			raid.toggle_view_mode()
+			get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("swap_shoulder") and not event.is_echo():
+		var story_open: bool = Story.get("flow") != null and Story.flow.is_playing()
+		var ui_open: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible) or loot_panel.visible or map_open() or story_open
+		if not ui_open and raid != null and not raid.ended and raid.has_method("toggle_ots_shoulder") and raid.has_method("is_over_shoulder") and raid.is_over_shoulder():
+			raid.toggle_ots_shoulder()
 			get_viewport().set_input_as_handled()
 
 
@@ -1567,6 +1593,11 @@ func _refresh_text(m) -> void:
 		c.panel.modulate.a = 1.0 if n > 0 else 0.42
 
 
+var _last_boss_txt := ""
+var _last_boss_hp_txt := ""
+var _last_extract_txt := ""
+
+
 func _refresh_fast(m) -> void:
 	# 首领血条（仅显示已苏醒且在玩家交战/感知范围内的最近首领）
 	var boss_node = null
@@ -1584,39 +1615,69 @@ func _refresh_fast(m) -> void:
 			best_score = d
 			boss_node = bn
 	if boss_node != null:
-		boss_panel.visible = true
-		boss_panel.offset_top = 88 if _zone_active else 24
+		if not boss_panel.visible:
+			boss_panel.visible = true
+		var want_btop := 88.0 if _zone_active else 24.0
+		if not is_equal_approx(boss_panel.offset_top, want_btop):
+			boss_panel.offset_top = want_btop
 		var ph_roman := "I" if int(boss_node.phase) <= 1 else ("II" if int(boss_node.phase) == 2 else "III")
 		var btitle: String = str(GameData.ENEMIES.get(str(boss_node.boss_id), {}).get("name", boss_node.title)) if "boss_id" in boss_node else str(boss_node.title)
 		var weak_tag := Loc.t("  [★ 晶核暴露]", "  [★ CORE EXPOSED]") if float(boss_node.core_open) > 0.0 else ""
-		boss_lbl.text = Loc.t("▲ 战区首领 · %s   阶段 %s%s", "▲ Sector Boss · %s   Phase %s%s") % [btitle, ph_roman, weak_tag]
-		boss_hp_lbl.text = "%d / %d" % [ceili(maxf(float(boss_node.hp), 0.0)), int(boss_node.data.get("hp", 1000.0))]
-		boss_bar.max_value = 1.0
-		boss_bar.value = float(boss_node.hp_ratio())
-	elif boss_panel != null:
+		var new_boss_txt: String = Loc.t("▲ 战区首领 · %s   阶段 %s%s", "▲ Sector Boss · %s   Phase %s%s") % [btitle, ph_roman, weak_tag]
+		if new_boss_txt != _last_boss_txt:
+			_last_boss_txt = new_boss_txt
+			boss_lbl.text = new_boss_txt
+		var new_hp_txt: String = "%d / %d" % [ceili(maxf(float(boss_node.hp), 0.0)), int(boss_node.data.get("hp", 1000.0))]
+		if new_hp_txt != _last_boss_hp_txt:
+			_last_boss_hp_txt = new_hp_txt
+			boss_hp_lbl.text = new_hp_txt
+		if boss_bar.max_value != 1.0:
+			boss_bar.max_value = 1.0
+		var br: float = float(boss_node.hp_ratio())
+		if absf(boss_bar.value - br) > 0.0005:
+			boss_bar.value = br
+	elif boss_panel != null and boss_panel.visible:
 		boss_panel.visible = false
 
-	# 撤离读条
+	# 撤离读条（顺延排在地区横幅与首领血条之下，避免三者同屏重叠）
 	if raid.extract_target and not raid.ended:
-		extract_panel.visible = true
-		extract_panel.offset_top = 90 if _zone_active else 32
-		extract_lbl.text = Loc.t("正在撤离 · %s", "Extracting · %s") % raid.extract_target.title
+		if not extract_panel.visible:
+			extract_panel.visible = true
+		var boss_on := boss_panel != null and boss_panel.visible
+		var want_etop := (154.0 if boss_on else 90.0) if _zone_active else (92.0 if boss_on else 32.0)
+		if not is_equal_approx(extract_panel.offset_top, want_etop):
+			extract_panel.offset_top = want_etop
+		var new_ext_txt: String = Loc.t("正在撤离 · %s", "Extracting · %s") % raid.extract_target.title
+		if new_ext_txt != _last_extract_txt:
+			_last_extract_txt = new_ext_txt
+			extract_lbl.text = new_ext_txt
 		extract_bar.max_value = raid.extract_target.need
 		extract_bar.value = raid.extract_progress
-	else:
+	elif extract_panel.visible:
 		extract_panel.visible = false
 
 	var danger := 0.0
 	if m.emergency > 0.0:
 		danger = 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.01)
 	hurt_t = max(0.0, hurt_t - get_process_delta_time())
-	vignette.modulate.a = max(danger * 0.45, hurt_t * 1.2)
+	var vig_a := maxf(danger * 0.45, hurt_t * 1.2)
+	var want_vig := vig_a > 0.005
+	if vignette.visible != want_vig:
+		vignette.visible = want_vig
+	if want_vig:
+		vignette.modulate.a = vig_a
 	if smoke_rect and raid.camera:
-		var cp: Vector3 = raid.camera.global_position
-		var cam_off := Vector2(cp.x, cp.z) * 0.045
-		if raid.has_method("is_first_person") and raid.is_first_person():
-			cam_off += Vector2(-raid.fp_yaw * 0.35, raid.fp_pitch * 0.25)
-		(smoke_rect.material as ShaderMaterial).set_shader_parameter("cam_off", cam_off)
+		var sm := smoke_rect.material as ShaderMaterial
+		var sv = sm.get_shader_parameter("strength") if sm != null else null
+		var want_smk := sv != null and float(sv) > 0.01
+		if smoke_rect.visible != want_smk:
+			smoke_rect.visible = want_smk
+		if want_smk:
+			var cp: Vector3 = raid.camera.global_position
+			var cam_off := Vector2(cp.x, cp.z) * 0.045
+			if _is_free_look():
+				cam_off += Vector2(-raid.fp_yaw * 0.35, raid.fp_pitch * 0.25)
+			sm.set_shader_parameter("cam_off", cam_off)
 	if scope_rect != null:
 		var story_sc: bool = Story.get("flow") != null and Story.flow.is_playing()
 		var ui_open_sc: bool = pause_panel.visible or (settings_panel != null and settings_panel.visible) or loot_panel.visible or raid.ended or map_open() or story_sc
@@ -1626,7 +1687,7 @@ func _refresh_fast(m) -> void:
 		if scope_rect.visible:
 			var vp_sz := get_viewport().get_visible_rect().size
 			var cpx := vp_sz * 0.5
-			var fp_on: bool = raid.has_method("is_first_person") and raid.is_first_person()
+			var fp_on := _is_free_look()
 			if fp_on:
 				if raid.aim_override != null and raid.camera != null and not raid.camera.is_position_behind(m.aim_point):
 					cpx = raid.camera.unproject_position(m.aim_point).clamp(Vector2.ZERO, vp_sz)
@@ -1657,7 +1718,6 @@ func _refresh_fast(m) -> void:
 			sys_clip.offset_top = min_top
 			_trim_log_box()
 	_update_markers()
-	_update_cursor()
 
 
 func _update_markers() -> void:

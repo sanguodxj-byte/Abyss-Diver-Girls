@@ -28,14 +28,16 @@ const WORLD_RANGES := [
 	[[Vector2(616.0, 220.0), Vector2(624.0, 348.0), Vector2(612.0, 492.0), Vector2(568.0, 610.0)], 48.0, 1.16],
 	# 5. 裂谷南缘荒漠大断崖（地平线南界连绵山岭，消除方形地图南边界）
 	[[Vector2(236.0, 598.0), Vector2(335.0, 618.0), Vector2(455.0, 610.0), Vector2(552.0, 578.0)], 44.0, 1.04],
-	# 6. 尘原南麓风蚀残山（宽体非对称荒漠岩脊，取代原细长毛毛虫折线）
-	[[Vector2(-235.0, 514.0), Vector2(-168.0, 504.0), Vector2(-108.0, 536.0)], 27.0, 0.88],
+	# 6. 尘原南麓风蚀残山（宽体非对称荒漠岩脊，向东柔延补齐裂谷西南方向远景轮廓，避开尘原南缘、外环高速与南北大道）
+	[[Vector2(-235.0, 514.0), Vector2(-168.0, 504.0), Vector2(-108.0, 536.0), Vector2(-58.0, 566.0)], 27.0, 0.88],
 	# 7. 尘原远西荒漠山脉（外环高速以西远景群峰，消除尘原西侧平板地平线）
 	[[Vector2(-425.0, 215.0), Vector2(-396.0, 360.0), Vector2(-412.0, 515.0), Vector2(-355.0, 645.0)], 56.0, 1.10],
-	# 8. 尘原远南荒漠山岭（外环高速以南远景群峰）
-	[[Vector2(-335.0, 695.0), Vector2(-190.0, 718.0), Vector2(-50.0, 712.0), Vector2(115.0, 692.0)], 50.0, 1.04],
+	# 8. 尘原-裂谷远南荒漠山岭（外环高速以南连续远景群峰，向东衔接裂谷南缘大断崖，消除西南/正南地平线缺口）
+	[[Vector2(-335.0, 695.0), Vector2(-190.0, 718.0), Vector2(-50.0, 712.0), Vector2(115.0, 692.0), Vector2(220.0, 686.0), Vector2(335.0, 692.0)], 50.0, 1.06],
 	# 9. 灰港/赤湖远西丘陵山脉（西部地平线连绵远山）
 	[[Vector2(-435.0, -340.0), Vector2(-415.0, -140.0), Vector2(-430.0, 60.0)], 54.0, 1.06],
+	# 10. 赤湖/湾港远北地平线山脊（位于外环高速与北郊林带以北，在 far=850m 内自然收束北部远景）
+	[[Vector2(-265.0, -768.0), Vector2(-135.0, -786.0), Vector2(20.0, -794.0), Vector2(195.0, -780.0), Vector2(395.0, -756.0)], 46.0, 1.04],
 ]
 
 static var _mtn_shader: Shader
@@ -139,30 +141,30 @@ static func _profile(map_id: String, is_surface: bool) -> Dictionary:
 	match map_id:
 		"canyon":
 			return {
-				"max_h": 28.0, "outer_boost": 1.32, "strata_str": 0.56, "strata_h": 4.4,
-				"crag_w": 0.36, "normal_str": 1.08,
-				"rock_tint": Color(1.02, 0.87, 0.71), "strata_tint": Color(0.81, 0.68, 0.56),
-				"scree_tint": Color(0.84, 0.74, 0.60), "moss_col": Color(0.27, 0.30, 0.18),
-				"moss_amt": 0.11, "strata_freq": 0.48, "dip_vec": Vector2(0.032, 0.020),
-				"add_veg": true, "veg_density": 0.020,
+				"max_h": 28.0, "outer_boost": 1.32, "strata_str": 0.62, "strata_h": 4.2,
+				"crag_w": 0.42, "normal_str": 1.20,
+				"rock_tint": Color(1.04, 0.92, 0.78), "strata_tint": Color(0.62, 0.49, 0.39),
+				"scree_tint": Color(0.82, 0.73, 0.62), "moss_col": Color(0.29, 0.33, 0.21),
+				"moss_amt": 0.11, "strata_freq": 0.56, "dip_vec": Vector2(0.032, 0.020),
+				"add_veg": true, "veg_density": 0.022,
 			}
 		"dustfield":
 			return {
-				"max_h": 25.0, "outer_boost": 1.30, "strata_str": 0.60, "strata_h": 4.1,
-				"crag_w": 0.34, "normal_str": 1.06,
-				"rock_tint": Color(1.12, 0.95, 0.74), "strata_tint": Color(0.90, 0.74, 0.57),
-				"scree_tint": Color(0.94, 0.81, 0.63), "moss_col": Color(0.32, 0.31, 0.19),
-				"moss_amt": 0.07, "strata_freq": 0.54, "dip_vec": Vector2(0.036, -0.016),
-				"add_veg": true, "veg_density": 0.016,
+				"max_h": 25.0, "outer_boost": 1.30, "strata_str": 0.64, "strata_h": 3.9,
+				"crag_w": 0.40, "normal_str": 1.18,
+				"rock_tint": Color(1.06, 0.95, 0.80), "strata_tint": Color(0.66, 0.54, 0.42),
+				"scree_tint": Color(0.86, 0.77, 0.65), "moss_col": Color(0.31, 0.33, 0.21),
+				"moss_amt": 0.08, "strata_freq": 0.60, "dip_vec": Vector2(0.036, -0.016),
+				"add_veg": true, "veg_density": 0.018,
 			}
 		_:
 			return {
-				"max_h": 24.0, "outer_boost": 1.28, "strata_str": 0.28, "strata_h": 4.6,
-				"crag_w": 0.38, "normal_str": 1.06,
-				"rock_tint": Color(0.84, 0.88, 0.94), "strata_tint": Color(0.70, 0.74, 0.80),
-				"scree_tint": Color(0.76, 0.78, 0.78), "moss_col": Color(0.23, 0.30, 0.17),
-				"moss_amt": 0.30, "strata_freq": 0.44, "dip_vec": Vector2(0.026, 0.018),
-				"add_veg": true, "veg_density": 0.044,
+				"max_h": 25.5, "outer_boost": 1.32, "strata_str": 0.48, "strata_h": 4.2,
+				"crag_w": 0.44, "normal_str": 1.24,
+				"rock_tint": Color(0.76, 0.79, 0.84), "strata_tint": Color(0.42, 0.41, 0.39),
+				"scree_tint": Color(0.58, 0.56, 0.51), "moss_col": Color(0.17, 0.24, 0.13),
+				"moss_amt": 0.44, "strata_freq": 0.62, "dip_vec": Vector2(0.028, 0.019),
+				"add_veg": true, "veg_density": 0.048,
 			}
 
 
@@ -492,8 +494,8 @@ static func build(raid) -> void:
 	var is_surf: bool = raid.is_surface_map
 	var mid_str := str(raid.map_id)
 	var orig: Vector2 = WC.origin(mid_str)
-	# 地表战区外延至 EXT_HALF + 160m（900m 连续视野），直接衔接固定大世界远景群山
-	var ext: float = (raid.EXT_HALF + 160.0) if is_surf else 315.0
+	# 地表战区外延至 EXT_HALF + 185m（950m 连续视野），直接衔接固定大世界远景群山（含尘原-裂谷远西南群峰）
+	var ext: float = (raid.EXT_HALF + 185.0) if is_surf else 315.0
 	var cell: float = 2.5
 	var n: int = int(floor((ext * 2.0) / cell)) + 1
 	var min_c: float = -ext
@@ -868,6 +870,19 @@ static func build(raid) -> void:
 		var mat := _make_mat(prof, is_surf, orig)
 		var csz := 32
 		var nc := ceili(float(n - 1) / float(csz))
+		# 完全位于距地图中心 250m 之外的远景山体分块采用 stride-2（5.0m 单元）降采样，远山三角面削减 4 倍，并在 250m 交界边做无缝缝合
+		var chunk_outer := PackedByteArray()
+		chunk_outer.resize(nc * nc)
+		for cz in nc:
+			var ch_z0_o := min_c + float(cz * csz) * cell
+			var ch_z1_o := min_c + float(mini(cz * csz + csz, n - 1)) * cell
+			var near_z := maxf(0.0, maxf(-ch_z1_o, ch_z0_o))
+			for cx in nc:
+				var ch_x0_o := min_c + float(cx * csz) * cell
+				var ch_x1_o := min_c + float(mini(cx * csz + csz, n - 1)) * cell
+				var near_x := maxf(0.0, maxf(-ch_x1_o, ch_x0_o))
+				if is_surf and (near_x * near_x + near_z * near_z > 250.0 * 250.0):
+					chunk_outer[cz * nc + cx] = 1
 		for cz in nc:
 			var z0 := cz * csz
 			var z1 := mini(z0 + csz, n - 1)
@@ -885,6 +900,7 @@ static func build(raid) -> void:
 						break
 				if not has_geo:
 					continue
+				var is_outer := chunk_outer[cz * nc + cx] == 1
 				var verts := PackedVector3Array()
 				var nrms := PackedVector3Array()
 				var cols := PackedColorArray()
@@ -895,38 +911,101 @@ static func build(raid) -> void:
 				var vx_map := PackedInt32Array()
 				vx_map.resize(w_sub * h_sub)
 				vx_map.fill(-1)
-				for iz in range(z0, z1):
-					var r0 := iz * n
-					var r1 := r0 + n
-					for ix in range(x0, x1):
-						var i00 := r0 + ix
-						var i10 := i00 + 1
-						var i01 := r1 + ix
-						var i11 := i01 + 1
-						if H[i00] <= 0.0 and H[i10] <= 0.0 and H[i01] <= 0.0 and H[i11] <= 0.0:
-							continue
-						var corners := [[ix, iz, i00], [ix + 1, iz, i10], [ix + 1, iz + 1, i11], [ix, iz + 1, i01]]
-						var ci := [0, 0, 0, 0]
-						for k in 4:
-							var lx: int = corners[k][0] - x0
-							var lz: int = corners[k][1] - z0
-							var slot := lz * w_sub + lx
-							var vid := vx_map[slot]
-							if vid < 0:
-								vid = verts.size()
-								vx_map[slot] = vid
-								var gidx: int = corners[k][2]
-								var wx := min_c + float(corners[k][0]) * cell
-								var wz := min_c + float(corners[k][1]) * cell
-								verts.append(Vector3(wx, H[gidx], wz))
-								nrms.append(norms[gidx])
-								cols.append(vcols[gidx])
-								uvs.append(Vector2(wx * 0.1, wz * 0.1))
-							ci[k] = vid
-						if absf(H[i00] - H[i11]) <= absf(H[i10] - H[i01]):
-							indices.append_array([ci[0], ci[1], ci[2], ci[0], ci[2], ci[3]])
-						else:
-							indices.append_array([ci[0], ci[1], ci[3], ci[1], ci[2], ci[3]])
+				var get_vid := func(gx: int, gz: int) -> int:
+					var slot := (gz - z0) * w_sub + (gx - x0)
+					var vid := vx_map[slot]
+					if vid < 0:
+						vid = verts.size()
+						vx_map[slot] = vid
+						var gidx := gz * n + gx
+						var wx := min_c + float(gx) * cell
+						var wz := min_c + float(gz) * cell
+						verts.append(Vector3(wx, H[gidx], wz))
+						nrms.append(norms[gidx])
+						cols.append(vcols[gidx])
+						uvs.append(Vector2(wx * 0.1, wz * 0.1))
+					return vid
+				if not is_outer:
+					for iz in range(z0, z1):
+						var r0 := iz * n
+						var r1 := r0 + n
+						for ix in range(x0, x1):
+							var i00 := r0 + ix
+							var i10 := i00 + 1
+							var i01 := r1 + ix
+							var i11 := i01 + 1
+							if H[i00] <= 0.0 and H[i10] <= 0.0 and H[i01] <= 0.0 and H[i11] <= 0.0:
+								continue
+							var v00: int = get_vid.call(ix, iz)
+							var v10: int = get_vid.call(ix + 1, iz)
+							var v11: int = get_vid.call(ix + 1, iz + 1)
+							var v01: int = get_vid.call(ix, iz + 1)
+							if absf(H[i00] - H[i11]) <= absf(H[i10] - H[i01]):
+								indices.append_array([v00, v10, v11, v00, v11, v01])
+							else:
+								indices.append_array([v00, v10, v01, v10, v11, v01])
+				else:
+					var st_l: bool = (cx > 0 and chunk_outer[cz * nc + (cx - 1)] == 0)
+					var st_r: bool = (cx + 1 < nc and chunk_outer[cz * nc + (cx + 1)] == 0)
+					var st_t: bool = (cz > 0 and chunk_outer[(cz - 1) * nc + cx] == 0)
+					var st_b: bool = (cz + 1 < nc and chunk_outer[(cz + 1) * nc + cx] == 0)
+					var iz := z0
+					while iz < z1:
+						var iz2 := mini(iz + 2, z1)
+						var ix := x0
+						while ix < x1:
+							var ix2 := mini(ix + 2, x1)
+							var need_l := st_l and ix == x0 and (iz2 - iz) == 2
+							var need_r := st_r and ix2 == x1 and (iz2 - iz) == 2
+							var need_t := st_t and iz == z0 and (ix2 - ix) == 2
+							var need_b := st_b and iz2 == z1 and (ix2 - ix) == 2
+							var i00 := iz * n + ix
+							var i10 := iz * n + ix2
+							var i01 := iz2 * n + ix
+							var i11 := iz2 * n + ix2
+							if not (need_l or need_r or need_t or need_b):
+								if H[i00] > 0.0 or H[i10] > 0.0 or H[i01] > 0.0 or H[i11] > 0.0:
+									var v00: int = get_vid.call(ix, iz)
+									var v10: int = get_vid.call(ix2, iz)
+									var v11: int = get_vid.call(ix2, iz2)
+									var v01: int = get_vid.call(ix, iz2)
+									if absf(H[i00] - H[i11]) <= absf(H[i10] - H[i01]):
+										indices.append_array([v00, v10, v11, v00, v11, v01])
+									else:
+										indices.append_array([v00, v10, v01, v10, v11, v01])
+							else:
+								var ring: Array[Vector2i] = []
+								ring.append(Vector2i(ix, iz))
+								if need_t:
+									ring.append(Vector2i(ix + 1, iz))
+								ring.append(Vector2i(ix2, iz))
+								if need_r:
+									ring.append(Vector2i(ix2, iz + 1))
+								ring.append(Vector2i(ix2, iz2))
+								if need_b:
+									ring.append(Vector2i(ix + 1, iz2))
+								ring.append(Vector2i(ix, iz2))
+								if need_l:
+									ring.append(Vector2i(ix, iz + 1))
+								var cx_m := ix + 1
+								var cz_m := iz + 1
+								var any_pos := H[cz_m * n + cx_m] > 0.0
+								if not any_pos:
+									for rp: Vector2i in ring:
+										if H[rp.y * n + rp.x] > 0.0:
+											any_pos = true
+											break
+								if any_pos:
+									var vc: int = get_vid.call(cx_m, cz_m)
+									var rn := ring.size()
+									for k in rn:
+										var pa := ring[k]
+										var pb := ring[(k + 1) % rn]
+										indices.append(vc)
+										indices.append(get_vid.call(pa.x, pa.y))
+										indices.append(get_vid.call(pb.x, pb.y))
+							ix = ix2
+						iz = iz2
 				if indices.is_empty():
 					continue
 				var arr := []
@@ -941,11 +1020,18 @@ static func build(raid) -> void:
 				var mi := MeshInstance3D.new()
 				mi.mesh = mesh
 				mi.material_override = mat
-				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+				var ch_x0 := min_c + float(x0) * cell
+				var ch_x1 := min_c + float(x1) * cell
+				var ch_z0 := min_c + float(z0) * cell
+				var ch_z1 := min_c + float(z1) * cell
+				var shadow_lim := half_f + 90.0
+				var in_sh_range := ch_x1 >= -shadow_lim and ch_x0 <= shadow_lim and ch_z1 >= -shadow_lim and ch_z0 <= shadow_lim
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if in_sh_range else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				mtn_root.add_child(mi)
 				chunk_cnt += 1
 
-		# 7b. 不等宽冲积扇碎石过渡裙边（5.2–14.8m 动态自然延展）
+		# 7b. 不等宽冲积扇碎石过渡裙边（5.2–14.8m 动态自然延展；按 32x32 网格分块 + 视距剔除，彻底消除全图 950m 单网格无剔除透明过绘）
 		var out_mask := PackedByteArray()
 		out_mask.resize(total)
 		for i in total:
@@ -975,62 +1061,93 @@ static func build(raid) -> void:
 							if not is_surf or not raid.in_wet(Vector2(wx, wz), 0.9):
 								skirt_a[idx] = smoothstep(fan_reach, out_solid, dout)
 
-		var sk_verts := PackedVector3Array()
-		var sk_nrms := PackedVector3Array()
-		var sk_cols := PackedColorArray()
-		var sk_uvs := PackedVector2Array()
-		var sk_idx := PackedInt32Array()
-		var sk_map := PackedInt32Array()
-		sk_map.resize(total)
-		sk_map.fill(-1)
-		for iz in range(1, n - 2):
-			var r0 := iz * n
-			var r1 := r0 + n
-			for ix in range(1, n - 2):
-				var i00 := r0 + ix
-				var i10 := i00 + 1
-				var i01 := r1 + ix
-				var i11 := i01 + 1
-				if skirt_a[i00] <= 0.01 and skirt_a[i10] <= 0.01 and skirt_a[i01] <= 0.01 and skirt_a[i11] <= 0.01:
+		var skirt_mat := _make_skirt_mat(prof, orig)
+		for cz in nc:
+			var z0 := maxi(1, cz * csz)
+			var z1 := mini((cz + 1) * csz, n - 2)
+			if z0 >= z1:
+				continue
+			for cx in nc:
+				var x0 := maxi(1, cx * csz)
+				var x1 := mini((cx + 1) * csz, n - 2)
+				if x0 >= x1:
 					continue
-				var corners := [[ix, iz, i00], [ix + 1, iz, i10], [ix + 1, iz + 1, i11], [ix, iz + 1, i01]]
-				var ci := [0, 0, 0, 0]
-				for k in 4:
-					var gidx: int = corners[k][2]
-					var vid := sk_map[gidx]
-					if vid < 0:
-						vid = sk_verts.size()
-						sk_map[gidx] = vid
-						var wx := min_c + float(corners[k][0]) * cell
-						var wz := min_c + float(corners[k][1]) * cell
-						var hv := H[gidx]
-						var sy := maxf(0.0, hv) + (0.048 if hv > 0.04 else 0.028)
-						var sn := Vector3.UP if hv <= 0.04 else Vector3.UP.lerp(norms[gidx], smoothstep(0.0, 1.6, hv)).normalized()
-						sk_verts.append(Vector3(wx, sy, wz))
-						sk_nrms.append(sn)
-						sk_cols.append(Color(vcols[gidx].r, 1.0, 0.0, skirt_a[gidx]))
-						sk_uvs.append(Vector2(wx * 0.1, wz * 0.1))
-					ci[k] = vid
-				if absf(H[i00] - H[i11]) <= absf(H[i10] - H[i01]):
-					sk_idx.append_array([ci[0], ci[1], ci[2], ci[0], ci[2], ci[3]])
-				else:
-					sk_idx.append_array([ci[0], ci[1], ci[3], ci[1], ci[2], ci[3]])
-		if not sk_idx.is_empty():
-			var sk_arr := []
-			sk_arr.resize(Mesh.ARRAY_MAX)
-			sk_arr[Mesh.ARRAY_VERTEX] = sk_verts
-			sk_arr[Mesh.ARRAY_NORMAL] = sk_nrms
-			sk_arr[Mesh.ARRAY_COLOR] = sk_cols
-			sk_arr[Mesh.ARRAY_TEX_UV] = sk_uvs
-			sk_arr[Mesh.ARRAY_INDEX] = sk_idx
-			var sk_mesh := ArrayMesh.new()
-			sk_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, sk_arr)
-			var sk_mi := MeshInstance3D.new()
-			sk_mi.name = "MountainSkirt"
-			sk_mi.mesh = sk_mesh
-			sk_mi.material_override = _make_skirt_mat(prof, orig)
-			sk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			mtn_root.add_child(sk_mi)
+				var has_sk := false
+				for iz in range(z0, z1 + 1):
+					var row := iz * n
+					for ix in range(x0, x1 + 1):
+						if skirt_a[row + ix] > 0.01:
+							has_sk = true
+							break
+					if has_sk:
+						break
+				if not has_sk:
+					continue
+				var sk_verts := PackedVector3Array()
+				var sk_nrms := PackedVector3Array()
+				var sk_cols := PackedColorArray()
+				var sk_uvs := PackedVector2Array()
+				var sk_idx := PackedInt32Array()
+				var w_sub := x1 - x0 + 1
+				var h_sub := z1 - z0 + 1
+				var sk_map := PackedInt32Array()
+				sk_map.resize(w_sub * h_sub)
+				sk_map.fill(-1)
+				for iz in range(z0, z1):
+					var r0 := iz * n
+					var r1 := r0 + n
+					for ix in range(x0, x1):
+						var i00 := r0 + ix
+						var i10 := i00 + 1
+						var i01 := r1 + ix
+						var i11 := i01 + 1
+						if skirt_a[i00] <= 0.01 and skirt_a[i10] <= 0.01 and skirt_a[i01] <= 0.01 and skirt_a[i11] <= 0.01:
+							continue
+						var corners := [[ix, iz, i00], [ix + 1, iz, i10], [ix + 1, iz + 1, i11], [ix, iz + 1, i01]]
+						var ci := [0, 0, 0, 0]
+						for k in 4:
+							var lx: int = corners[k][0] - x0
+							var lz: int = corners[k][1] - z0
+							var slot := lz * w_sub + lx
+							var vid := sk_map[slot]
+							if vid < 0:
+								vid = sk_verts.size()
+								sk_map[slot] = vid
+								var gidx: int = corners[k][2]
+								var wx := min_c + float(corners[k][0]) * cell
+								var wz := min_c + float(corners[k][1]) * cell
+								var hv := H[gidx]
+								var sy := maxf(0.0, hv) + (0.048 if hv > 0.04 else 0.028)
+								var sn := Vector3.UP if hv <= 0.04 else Vector3.UP.lerp(norms[gidx], smoothstep(0.0, 1.6, hv)).normalized()
+								sk_verts.append(Vector3(wx, sy, wz))
+								sk_nrms.append(sn)
+								sk_cols.append(Color(vcols[gidx].r, 1.0, 0.0, skirt_a[gidx]))
+								sk_uvs.append(Vector2(wx * 0.1, wz * 0.1))
+							ci[k] = vid
+						if absf(H[i00] - H[i11]) <= absf(H[i10] - H[i01]):
+							sk_idx.append_array([ci[0], ci[1], ci[2], ci[0], ci[2], ci[3]])
+						else:
+							sk_idx.append_array([ci[0], ci[1], ci[3], ci[1], ci[2], ci[3]])
+				if sk_idx.is_empty():
+					continue
+				var sk_arr := []
+				sk_arr.resize(Mesh.ARRAY_MAX)
+				sk_arr[Mesh.ARRAY_VERTEX] = sk_verts
+				sk_arr[Mesh.ARRAY_NORMAL] = sk_nrms
+				sk_arr[Mesh.ARRAY_COLOR] = sk_cols
+				sk_arr[Mesh.ARRAY_TEX_UV] = sk_uvs
+				sk_arr[Mesh.ARRAY_INDEX] = sk_idx
+				var sk_mesh := ArrayMesh.new()
+				sk_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, sk_arr)
+				var sk_mi := MeshInstance3D.new()
+				sk_mi.name = "MountainSkirt_%d_%d" % [cx, cz]
+				sk_mi.mesh = sk_mesh
+				sk_mi.material_override = skirt_mat
+				sk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				sk_mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+				sk_mi.visibility_range_end = 340.0
+				sk_mi.visibility_range_end_margin = 14.0
+				mtn_root.add_child(sk_mi)
 
 		# 7c. 深渊井斜切六棱黑曜岩柱群 + 坡脚半埋崩积碎岩 + 平顶稀疏灌木
 		var prng := RandomNumberGenerator.new()
@@ -1061,7 +1178,8 @@ static func build(raid) -> void:
 						var pos := Vector3(wx - nrm.x * 1.15, h - sv.y * 0.95, wz - nrm.z * 1.15)
 						outcrops.append(Transform3D(bs.scaled_local(sv), pos))
 			outcrop_cnt = outcrops.size()
-			_add_shared_mm(mtn_root, _obsidian_column_cluster_mesh(), mat, outcrops, true)
+			if not outcrops.is_empty():
+				raid._multimesh(_obsidian_column_cluster_mesh(), mat, outcrops, true)
 
 		for iz in range(2, n - 2, 2):
 			var wz := min_c + float(iz) * cell
@@ -1089,12 +1207,13 @@ static func build(raid) -> void:
 						ledge_shrubs.append(Transform3D(Basis(Vector3.UP, prng.randf() * TAU).scaled_local(Vector3(ss * 1.12, ss * 0.82, ss * 1.12)), Vector3(wx, h - 0.24, wz)))
 					elif roll < veg_d + 0.005 and absf(wx) < half_f + 30.0 and absf(wz) < half_f + 30.0:
 						var th := prng.randf_range(2.8, 4.6)
-						ledge_trunks.append(Transform3D(Basis(Vector3.UP, prng.randf() * TAU).scaled_local(Vector3(th * 0.22, th, th * 0.22)), Vector3(wx, h - 0.30, wz)))
-		_add_shared_mm(mtn_root, A.rock_mesh(2 if is_surf else 7), mat, talus_boulders, false)
+						ledge_trunks.append(Transform3D(Basis(Vector3.UP, prng.randf() * TAU).scaled_local(Vector3.ONE * th), Vector3(wx, h - 0.30, wz)))
+		if not talus_boulders.is_empty():
+			raid._multimesh(A.rock_mesh_low(2 if is_surf else 7), mat, talus_boulders, false)
 		if not ledge_shrubs.is_empty():
 			raid._multimesh(A.shrub_mesh(0), A.foliage_mat("shrub"), ledge_shrubs, false)
 		if not ledge_trunks.is_empty():
-			raid._multimesh(A.tree_trunk_mesh(0, true), A.bark_mat(Color(0.28, 0.24, 0.19)), ledge_trunks, false)
+			raid._multimesh(A.dead_tree_mesh(0), A.bark_mat(Color(0.28, 0.24, 0.19)), ledge_trunks, false)
 
 	# 8. 贴合山脚轮廓的 2.5m 精度二维矩形合并空气墙碰撞体（空间分桶 StaticBody3D，全覆盖至 MapEdgeAirWall 边界）
 	# 必须打上 water_bank 元数据：与 MapEdgeAirWall / 河湖岸墙一致，防止 landmarks._clear_aprons() 误删！

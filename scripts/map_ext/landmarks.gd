@@ -79,6 +79,16 @@ static func _build_one(raid, t: String, p: Vector3, rot: float) -> void:
 		"crystal_cluster": _crystal_cluster(raid, p, rot)
 		"drill_derrick": _drill_derrick(raid, p, rot)
 		"coolant_channel": _coolant_channel(raid, p, rot)
+		"lighthouse": _prefab_landmark(raid, p, rot, "poi_abyss_lighthouse_remake", Vector3(14.0, 16.8, 12.0), Vector3(10.8, 14.0, 9.6), Vector3(14.4, 1.0, 12.4))
+		"airship_mast": _prefab_landmark(raid, p, rot, "poi_airship_mooring_mast_remake", Vector3(16.0, 17.2, 14.0), Vector3(9.0, 15.0, 9.0), Vector3(16.0, 1.0, 14.0), true)
+		"coastal_battery": _prefab_landmark(raid, p, rot, "poi_coastal_artillery_remake", Vector3(18.0, 10.6, 15.0), Vector3(14.6, 8.8, 11.8), Vector3(18.2, 1.0, 15.2))
+		"cooling_tower": _prefab_landmark(raid, p, rot, "bldg_cooling_tower_unit_remake", Vector3(17.6, 16.4, 16.0), Vector3(13.2, 15.0, 13.2), Vector3(17.8, 1.0, 16.2), true)
+		"drawbridge_gate": _prefab_landmark(raid, p, rot, "bldg_drawbridge_gatehouse_remake", Vector3(20.6, 13.0, 12.6), Vector3(17.2, 10.5, 9.8), Vector3(20.8, 1.0, 12.8))
+		"observatory_dome": _prefab_landmark(raid, p, rot, "poi_astronomical_observatory_remake", Vector3(16.8, 13.8, 13.4), Vector3(13.0, 11.5, 10.6), Vector3(17.0, 1.0, 13.6))
+		"biodome": _prefab_landmark(raid, p, rot, "poi_hydroponic_biodome_remake", Vector3(18.6, 11.4, 14.4), Vector3(14.4, 9.5, 11.2), Vector3(18.8, 1.0, 14.6))
+		"radar_tower": _prefab_landmark(raid, p, rot, "poi_radar_array_tower_remake", Vector3(14.6, 15.4, 12.4), Vector3(10.6, 13.0, 9.6), Vector3(14.8, 1.0, 12.6))
+		"geothermal_well": _prefab_landmark(raid, p, rot, "poi_geothermal_wellhead_remake", Vector3(17.6, 15.6, 13.0), Vector3(13.4, 13.5, 10.2), Vector3(17.8, 1.0, 13.2))
+		"helipad_pad": _prefab_landmark(raid, p, rot, "b6_helipad", Vector3(11.8, 6.2, 8.6), Vector3(6.2, 4.8, 5.4), Vector3(12.0, 1.0, 8.8))
 	_register_landmark_loot(raid, t, p, rot)
 
 
@@ -143,6 +153,36 @@ static func _register_landmark_loot(raid, t: String, p: Vector3, rot: float) -> 
 		"coolant_channel":
 			add_lm.call(Vector3(6.2, 0, 9.0), "tech", 96)
 			add_lm.call(Vector3(-6.2, 0, 9.0), "cache", 95)
+		"lighthouse":
+			add_lm.call(Vector3(8.2, 0, 4.2), "tech", 96)
+			add_lm.call(Vector3(-8.2, 0, 3.8), "supply", 94)
+		"airship_mast":
+			add_lm.call(Vector3(9.0, 0, 4.4), "military", 96)
+			add_lm.call(Vector3(-8.8, 0, 4.0), "tech", 95)
+		"coastal_battery":
+			add_lm.call(Vector3(10.2, 0, 4.8), "weapon", 97)
+			add_lm.call(Vector3(-10.2, 0, 4.4), "ammo", 95)
+		"cooling_tower":
+			add_lm.call(Vector3(9.8, 0, 4.8), "tool", 96)
+			add_lm.call(Vector3(-9.8, 0, 4.2), "tech", 94)
+		"drawbridge_gate":
+			add_lm.call(Vector3(11.2, 0, 4.6), "military", 96)
+			add_lm.call(Vector3(-11.2, 0, -4.4), "tool", 93)
+		"observatory_dome":
+			add_lm.call(Vector3(9.4, 0, 4.2), "tech", 97)
+			add_lm.call(Vector3(-9.2, 0, 4.0), "safe", 95)
+		"biodome":
+			add_lm.call(Vector3(10.4, 0, 4.6), "med", 97)
+			add_lm.call(Vector3(-10.2, 0, 4.2), "supply", 95)
+		"radar_tower":
+			add_lm.call(Vector3(8.4, 0, 4.2), "tech", 97)
+			add_lm.call(Vector3(-8.2, 0, 3.8), "military", 94)
+		"geothermal_well":
+			add_lm.call(Vector3(9.8, 0, 4.4), "tech", 97)
+			add_lm.call(Vector3(-9.6, 0, 4.2), "cache", 95)
+		"helipad_pad":
+			add_lm.call(Vector3(7.2, 0, 3.6), "military", 96)
+			add_lm.call(Vector3(-7.0, 0, 3.2), "med", 94)
 
 
 ## 灰港断桥：两截错位的桥面悬在河上（T型盖梁桥墩 + 桥底钢箱梁 + 柏油标线桥面 + 防撞护墙），中段整跨塌进水里
@@ -194,14 +234,29 @@ static func _broken_bridge(raid, p: Vector3, rot: float) -> void:
 			A.add(n, A.bevel_box(Vector3(0.18, 0.95, 0.42), 0.03), A.metal(STEEL), Vector3(sgn * 12.6, 6.25, -3.2 + i * 2.2), Vector3(0, 0, sgn * -6))
 
 
+## 通用预制件地标放置器（直接走 raid.world -> _imesh -> 48m 分块合批与 MultiMesh）
+static func _prefab_landmark(
+	raid,
+	p: Vector3,
+	rot: float,
+	prefab_id: String,
+	sz: Vector3,
+	col_sz: Vector3,
+	block_sz: Vector3,
+	cyl := false
+) -> void:
+	PrefabLib.place_at_ground(raid, raid.world, prefab_id, p + Vector3(0.0, -0.04, 0.0), rot, sz, false, null, false)
+	K.blocker(raid, p, col_sz, rot, cyl)
+	var fp := block_sz
+	if not cyl and absf(fmod(absf(rot), 180.0) - 90.0) < 45.0:
+		fp = Vector3(block_sz.z, block_sz.y, block_sz.x)
+	raid.blocks.append(raid._rect_for(p, Vector3(fp.x, 1.0, fp.z)))
+
+
 ## 灰港广播塔：塔顶折弯的战损格构通讯铁塔 + 坠落微波锅 + 受损机房（lm_radio_mast 精修巨构）
 static func _radio_mast(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
 	var sz := Vector3(12.0, 21.8, 12.0)
-	PrefabLib.place_at_ground(raid, n, "lm_radio_mast", Vector3(0.0, -0.04, 0.0), 0.0, sz, false, null, false)
+	PrefabLib.place_at_ground(raid, raid.world, "lm_radio_mast", p + Vector3(0.0, -0.04, 0.0), rot, sz, false, null, false)
 	K.blocker(raid, p, Vector3(4.8, 18.0, 4.8), rot)
 	raid.blocks.append(raid._rect_for(p, Vector3(11.6, 1.0, 11.6)))
 
@@ -244,14 +299,18 @@ static func _elevated_road(raid, p: Vector3, rot: float) -> void:
 	raid._wreck_car(p + Vector3(-9.0, 8.0, 0.6).rotated(Vector3.UP, deg_to_rad(rot)))
 
 
-## 铁锈龙门吊：轨道上的重型双梁门式起重机与编组站信号灯桥（B6-29 poi_gantry_rail 精修巨构）
+## 铁锈龙门吊：按港区/工业带自动匹配 Wave6 港口集装箱龙门吊、Wave4 干船坞重型门座吊或轨道龙门吊
 static func _gantry(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
+	var h := absi(hash("%s|%d|%d" % [raid.map_id, roundi(p.x), roundi(p.z)]))
+	var pick := 0 if raid.map_id == "bayport" else (1 if (h % 3 == 0) else 2)
+	if pick == 0:
+		_prefab_landmark(raid, p, rot, "bldg_dockside_gantry_remake", Vector3(21.0, 15.2, 13.6), Vector3(17.4, 13.5, 10.6), Vector3(21.4, 1.0, 14.0))
+		return
+	if pick == 1:
+		_prefab_landmark(raid, p, rot, "poi_drydock_crane_remake", Vector3(20.2, 16.4, 15.6), Vector3(16.6, 14.0, 12.4), Vector3(20.6, 1.0, 16.0))
+		return
 	var sz := Vector3(19.8, 15.2, 13.0)
-	PrefabLib.place_at_ground(raid, n, "poi_gantry_rail", Vector3(0, -0.05, 0), 0.0, sz, false, null, true)
+	PrefabLib.place_at_ground(raid, raid.world, "poi_gantry_rail", p + Vector3(0.0, -0.05, 0.0), rot, sz, false, null, false)
 	var rad_r := deg_to_rad(rot)
 	var sx_leg := 6.15 * (sz.x / 15.8)
 	var z_crane := 1.25 * (sz.z / 10.2)
@@ -337,11 +396,7 @@ static func _windmill(raid, p: Vector3, rot: float) -> void:
 	var sz := Vector3(12.2, 18.8, 7.7)
 	for i in 3:
 		var q := base + Vector3(-15.0 + i * 15.0, 0, 0).rotated(Vector3.UP, deg_to_rad(rot))
-		var n := Node3D.new()
-		raid.world.add_child(n)
-		n.position = q
-		n.rotation_degrees.y = rot + float(i - 1) * 18.0
-		PrefabLib.place_at_ground(raid, n, "lm_wind_turbine", Vector3(0.0, -0.04, 0.0), 0.0, sz, false, null, false)
+		PrefabLib.place_at_ground(raid, raid.world, "lm_wind_turbine", q + Vector3(0.0, -0.04, 0.0), rot + float(i - 1) * 18.0, sz, false, null, false)
 		K.blocker(raid, q, Vector3(2.6, 17.0, 2.6), 0.0, true)
 		raid.blocks.append(raid._rect_for(q, Vector3(5.6, 1.0, 5.6)))
 
@@ -358,14 +413,18 @@ static func _pylon_row(raid, p: Vector3, rot: float) -> void:
 		prev = q
 
 
-## 农场筒仓与防空雷达台站：双联波纹钢筒仓 + 刮板连廊提升机 + 相控阵雷达地堡（B6-28 poi_silo_radar）
+## 农场筒仓与粮仓提升塔：优先接入 Wave6 联体混凝土断仓粮仓与提升塔 / Batch6 残破筒仓变体
 static func _silo(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
+	var h := absi(hash("%s|%d|%d" % [raid.map_id, roundi(p.x), roundi(p.z)]))
+	var pick := 0 if raid.map_id == "dustfield" else (1 if (h % 2 == 0) else 2)
+	if pick == 0:
+		_prefab_landmark(raid, p, rot, "bldg_grain_silo_elevator_remake", Vector3(18.0, 15.6, 12.6), Vector3(14.8, 14.0, 9.8), Vector3(18.4, 1.0, 13.0))
+		return
+	if pick == 1:
+		_prefab_landmark(raid, p, rot, "bldg_grain_silo", Vector3(14.2, 11.5, 9.6), Vector3(11.6, 10.2, 7.6), Vector3(14.6, 1.0, 10.0))
+		return
 	var sz := Vector3(16.8, 12.6, 11.2)
-	PrefabLib.place_at_ground(raid, n, "poi_silo_radar", Vector3(0, -0.05, 0), 0.0, sz, false, null, true)
+	PrefabLib.place_at_ground(raid, raid.world, "poi_silo_radar", p + Vector3(0.0, -0.05, 0.0), rot, sz, false, null, false)
 	var rad_r := deg_to_rad(rot)
 	var sx_sc := sz.x / 14.4
 	var sz_sc := sz.z / 9.6
@@ -405,12 +464,8 @@ static func _boardwalk(raid, p: Vector3, rot: float) -> void:
 
 ## 环湖装甲瞭望哨塔：炮击战损装甲哨塔 + 折斜雷达 + 钢梯与防爆基座（lm_observation_tower 精修巨构）
 static func _observation_tower(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
 	var sz := Vector3(8.2, 15.4, 8.2)
-	PrefabLib.place_at_ground(raid, n, "lm_observation_tower", Vector3(0.0, -0.04, 0.0), 0.0, sz, false, null, false)
+	PrefabLib.place_at_ground(raid, raid.world, "lm_observation_tower", p + Vector3(0.0, -0.04, 0.0), rot, sz, false, null, false)
 	K.blocker(raid, p, Vector3(6.4, 12.0, 6.4), rot)
 	raid.blocks.append(raid._rect_for(p, Vector3(8.4, 1.0, 8.4)))
 
@@ -452,25 +507,88 @@ static func _cable_tower(raid, p: Vector3, rot: float) -> void:
 	A.add(cab_n, A.bevel_box(Vector3(1.1, 0.24, 0.9), 0.03), M_DARK, Vector3(0, 1.28, 0))
 
 
-## 矿场筒仓：三只高精度高筒仓 + 锥顶集尘塔 + 仓顶贯通皮带廊 + 斜皮带廊 + 装车口
+## 矿场筒仓：三只高精度高筒仓 + 锥顶集尘塔 + 仓顶贯通皮带廊 + 钢桁架斜皮带廊 + 混凝土基座装车破碎站
 static func _ore_silos(raid, p: Vector3, rot: float) -> void:
 	var n := Node3D.new()
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	var M_CAP := A.paint(Color(0.42, 0.4, 0.36), 0.4, 0.6, {"rust": 0.6})
+	var M_CAP := A.paint(Color(0.42, 0.4, 0.36), 0.4, 0.6, {"rust": 0.6, "grime": 0.65})
 	var M_ST := A.metal(STEEL)
+	var M_DARK := A.metal(Color(0.16, 0.17, 0.18))
+	var M_CONC := A.concrete(Color(0.36, 0.34, 0.31), false)
+	var M_ROOF := A.tar_roof(Color(0.21, 0.215, 0.225), 0.32)
+	var M_SLOPE_ROOF := A.roof_mat(Color(0.26, 0.27, 0.28), 0.56, true)
+	var M_HAZ := A.hazard()
+	var M_CLAD_TOP := A.corrugated(Color(0.40, 0.38, 0.34), 0.58, 0.28)
+	var M_CLAD_CONV := A.corrugated(Color(0.33, 0.31, 0.28), 0.72, 0.28)
+	var M_CLAD_SHED := A.corrugated(Color(0.38, 0.34, 0.28), 0.65, 0.28)
 	for i in 3:
 		var q := Vector3(-7.0 + i * 7.0, 0, 0)
 		K.tower(raid, p + q.rotated(Vector3.UP, deg_to_rad(rot)), 2.8, 14.0, 2.8, Color(0.46, 0.44, 0.4))
 		A.add(n, A.cyl(0.95, 2.2, 2.95, 40), M_CAP, q + Vector3(0, 15.1, 0))
 		A.add(n, A.cyl(0.75, 1.4, 0.82, 28), M_ST, q + Vector3(0, 16.8, 0))
 		A.add(n, A.torus(0.76, 0.9, 28), M_ST, q + Vector3(0, 17.4, 0), Vector3.ZERO, Vector3(1, 0.5, 1), false)
-	# 贯通三座筒仓顶部的封闭配矿廊桥
-	A.add(n, A.bevel_box(Vector3(16.2, 1.3, 1.8), 0.05), A.corrugated(Color(0.42, 0.40, 0.36), 0.58, 0.32), Vector3(0, 16.6, 0))
-	A.add(n, A.bevel_box(Vector3(3.0, 0.5, 18.0), 0.06), A.corrugated(Color(0.34, 0.32, 0.29), 0.72, 0.32), Vector3(0.0, 8.0, 9.0), Vector3(-26, 0, 0))
-	A.add(n, A.bevel_box(Vector3(4.6, 3.0, 4.0), 0.08), A.corrugated(Color(0.40, 0.36, 0.28), 0.65, 0.32), Vector3(0, 1.5, 5.0))
-	raid.blocks.append(raid._rect_for(p + Vector3(0, 0, 5.0).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(5.0, 1, 4.4)))
+	# 贯通三座筒仓顶部的封闭配矿廊桥（暗色压顶盖板 + 钢桁肋，彻底消除顶面拉伸条纹）
+	A.add(n, A.bevel_box(Vector3(16.2, 1.24, 1.76), 0.04), M_CLAD_TOP, Vector3(0, 16.56, 0))
+	A.add(n, A.bevel_box(Vector3(16.56, 0.18, 2.08), 0.03), M_ROOF, Vector3(0, 17.26, 0))
+	A.add(n, A.bevel_box(Vector3(16.52, 0.16, 1.92), 0.02), M_DARK, Vector3(0, 15.92, 0))
+	for gx: float in [-7.0, -3.5, 0.0, 3.5, 7.0]:
+		A.add(n, A.bevel_box(Vector3(0.22, 1.42, 1.98), 0.02), M_ST, Vector3(gx, 16.6, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 顺坡下接装车站的 42° 钢桁架斜皮带廊（独立屋面盖板 + 钢箱底梁 + 7 道环抱钢肋 + 侧向检修走道护栏）
+	var conv := Node3D.new()
+	n.add_child(conv)
+	conv.position = Vector3(0.0, 9.0, 7.6)
+	conv.rotation_degrees = Vector3(42.0, 0.0, 0.0)
+	A.add(conv, A.bevel_box(Vector3(2.56, 0.92, 19.6), 0.04), M_CLAD_CONV, Vector3.ZERO)
+	A.add(conv, A.bevel_box(Vector3(2.92, 0.14, 19.8), 0.03), M_SLOPE_ROOF, Vector3(0.0, 0.50, 0.0))
+	A.add(conv, A.bevel_box(Vector3(2.74, 0.22, 19.7), 0.02), M_DARK, Vector3(0.0, -0.52, 0.0))
+	for rx_s: float in [-1.32, 1.32]:
+		A.add(conv, A.bevel_box(Vector3(0.14, 0.16, 19.8), 0.01), M_ST, Vector3(rx_s, 0.42, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	for ri in 7:
+		var rz := -8.4 + float(ri) * 2.8
+		A.add(conv, A.bevel_box(Vector3(2.86, 1.12, 0.18), 0.02), M_ST, Vector3(0.0, 0.0, rz), Vector3.ZERO, Vector3.ONE, false)
+	# 侧向检修走道与护栏
+	A.add(conv, A.bevel_box(Vector3(0.64, 0.10, 18.8), 0.01), M_DARK, Vector3(1.62, -0.44, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(conv, A.bevel_box(Vector3(0.06, 0.08, 18.8), 0.01), M_ST, Vector3(1.92, 0.34, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(conv, A.bevel_box(Vector3(0.06, 0.06, 18.8), 0.01), M_ST, Vector3(1.92, -0.04, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	for pi in 8:
+		var pz_r := -8.4 + float(pi) * 2.4
+		A.add(conv, A.bevel_box(Vector3(0.06, 0.84, 0.06), 0.01), M_ST, Vector3(1.92, -0.04, pz_r), Vector3.ZERO, Vector3.ONE, false)
+	# 双跨钢架支腿（混凝土杯口基础墩 + H型钢柱 + 横系梁与交叉斜撑）
+	for tz: Array in [[6.4, 9.8], [11.2, 5.4]]:
+		var lz: float = float(tz[0])
+		var lh: float = float(tz[1])
+		for sx: float in [-1.2, 1.2]:
+			A.add(n, A.bevel_box(Vector3(0.76, 0.44, 0.76), 0.03), M_CONC, Vector3(sx, 0.22, lz))
+			A.add(n, A.bevel_box(Vector3(0.30, lh, 0.30), 0.02), M_ST, Vector3(sx, lh * 0.5, lz))
+		A.add(n, A.bevel_box(Vector3(2.8, 0.28, 0.30), 0.02), M_ST, Vector3(0.0, lh - 0.16, lz))
+		A.add(n, A.bevel_box(Vector3(2.4, 0.18, 0.18), 0.01), M_DARK, Vector3(0.0, lh * 0.52, lz), Vector3.ZERO, Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(2.6, 0.12, 0.12), 0.01), M_DARK, Vector3(0.0, lh * 0.74, lz), Vector3(0.0, 0.0, 28.0), Vector3.ONE, false)
+		A.add(n, A.bevel_box(Vector3(2.6, 0.12, 0.12), 0.01), M_DARK, Vector3(0.0, lh * 0.74, lz), Vector3(0.0, 0.0, -28.0), Vector3.ONE, false)
+	# 底部装车破碎转运站：混凝土基座 + 压型钢板墙身 + 四角钢柱 + 沥青卷材平屋顶压檐 + 屋顶除尘风箱 + 内凹装车料斗门洞
+	var shed_c := Vector3(0.0, 0.0, 14.6)
+	A.add(n, A.bevel_box(Vector3(5.05, 0.34, 4.65), 0.04), M_CONC, shed_c + Vector3(0.0, 0.17, 0.0))
+	A.add(n, A.bevel_box(Vector3(4.48, 2.86, 4.08), 0.05), M_CLAD_SHED, shed_c + Vector3(0.0, 1.72, 0.0))
+	for cx_s: float in [-2.24, 2.24]:
+		for cz_s: float in [-2.04, 2.04]:
+			A.add(n, A.bevel_box(Vector3(0.28, 3.04, 0.28), 0.02), M_ST, shed_c + Vector3(cx_s, 1.78, cz_s))
+	A.add(n, A.bevel_box(Vector3(4.66, 0.16, 4.26), 0.02), M_DARK, shed_c + Vector3(0.0, 1.72, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	# 暗色沥青卷材屋面 + 钢包边女儿墙檐口 + 除尘风机与排风烟囱（彻底消灭俯视角屋顶条纹拉伸）
+	A.add(n, A.bevel_box(Vector3(4.92, 0.24, 4.52), 0.04), M_ROOF, shed_c + Vector3(0.0, 3.24, 0.0))
+	A.add(n, A.bevel_box(Vector3(5.02, 0.10, 4.62), 0.02), M_DARK, shed_c + Vector3(0.0, 3.36, 0.0), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(1.55, 0.72, 1.35), 0.03), M_ST, shed_c + Vector3(-0.95, 3.74, 0.45))
+	A.add(n, A.cyl(0.28, 1.25, 0.32, 14), M_DARK, shed_c + Vector3(-1.15, 4.48, 0.45))
+	A.add(n, A.bevel_box(Vector3(1.05, 0.20, 0.95), 0.02), M_DARK, shed_c + Vector3(1.15, 3.48, 0.65), Vector3.ZERO, Vector3.ONE, false)
+	# 正面内凹装车料斗口 + 警示防撞过梁 + 两侧工业散热百叶格栅
+	A.add(n, A.bevel_box(Vector3(2.45, 2.18, 0.22), 0.02), M_DARK, shed_c + Vector3(0.0, 1.38, 2.04), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(2.86, 0.28, 0.26), 0.02), M_HAZ, shed_c + Vector3(0.0, 2.54, 2.10), Vector3.ZERO, Vector3.ONE, false)
+	A.add(n, A.bevel_box(Vector3(2.10, 0.56, 0.58), 0.03), M_ST, shed_c + Vector3(0.0, 2.02, 2.18), Vector3(24.0, 0.0, 0.0), Vector3.ONE, false)
+	for sx_v: float in [-1.0, 1.0]:
+		A.add(n, A.bevel_box(Vector3(0.14, 0.92, 1.68), 0.02), M_DARK, shed_c + Vector3(sx_v * 2.26, 2.12, 0.2), Vector3.ZERO, Vector3.ONE, false)
+		for lv in 4:
+			A.add(n, A.bevel_box(Vector3(0.18, 0.08, 1.54), 0.01), M_ST, shed_c + Vector3(sx_v * 2.29, 1.80 + float(lv) * 0.22, 0.2), Vector3(0.0, 0.0, sx_v * 18.0), Vector3.ONE, false)
+	raid.blocks.append(raid._rect_for(p + Vector3(0, 0, 14.6).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(5.0, 1, 4.6)))
 	raid.blocks.append(raid._rect_for(p, Vector3(20.0, 1, 6.0)))
 
 
@@ -497,27 +615,28 @@ static func _rope_bridge(raid, p: Vector3, rot: float) -> void:
 
 ## 深渊高压结晶矿脉露头与地质激光测绘阵（lm_crystal_survey_rig 精修巨构）
 static func _crystal_cluster(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
-	A.ground_decal(raid.world, A.cloud_tex(), Color(0.09, 0.07, 0.11, 0.62), 14.0, p + Vector3(0, 0.03, 0))
+	var rad_r := deg_to_rad(rot)
+	A.ground_decal(raid.world, A.cloud_tex(), Color(0.08, 0.06, 0.11, 0.65), 14.5, p + Vector3(0, 0.03, 0))
+	A.ground_decal(raid.world, A.cloud_tex(), Color(0.08, 0.56, 0.66, 0.26), 9.2, p + Vector3(-0.6, 0.04, -0.3).rotated(Vector3.UP, rad_r))
 	var sz := Vector3(9.6, 6.2, 8.7)
-	PrefabLib.place_at_ground(raid, n, "lm_crystal_survey_rig", Vector3(0.0, -0.04, 0.0), 0.0, sz, false, null, false)
+	PrefabLib.place_at_ground(raid, raid.world, "lm_crystal_survey_rig", p + Vector3(0.0, -0.04, 0.0), rot, sz, false, null, false)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.24, 0.90, 0.98)
+	glow.light_energy = 2.6
+	glow.omni_range = 17.5
+	glow.omni_attenuation = 1.5
+	glow.position = p + Vector3(-0.78, 2.75, -0.45).rotated(Vector3.UP, rad_r)
+	raid.world.add_child(glow)
 	K.blocker(raid, p, Vector3(4.2, 5.5, 4.2), 0.0, true)
 	raid.blocks.append(raid._rect_for(p, Vector3(9.6, 1.0, 8.8)))
 
 
-## 深渊封印井环门与地热钻井塔台（B6-30 poi_abyss_gate_rig 精修巨构）
+## 深渊封印井环门与地热钻井塔台（Wave5 重制 poi_abyss_gate_rig -> bldg_abyss_gate_rig_remake）
 static func _drill_derrick(raid, p: Vector3, rot: float) -> void:
-	var n := Node3D.new()
-	raid.world.add_child(n)
-	n.position = p
-	n.rotation_degrees.y = rot
-	var sz := Vector3(16.0, 14.8, 16.0)
-	PrefabLib.place_at_ground(raid, n, "poi_abyss_gate_rig", Vector3(0, -0.05, 0), 0.0, sz, false, null, true)
+	var sz := Vector3(16.0, 13.4, 16.0)
+	PrefabLib.place_at_ground(raid, raid.world, "poi_abyss_gate_rig", p + Vector3(0.0, -0.05, 0.0), rot, sz, false, null, false)
 	var rad_r := deg_to_rad(rot)
-	K.blocker(raid, p, Vector3(7.6, 14.0, 7.6), 0.0, true)
+	K.blocker(raid, p, Vector3(7.6, 13.0, 7.6), 0.0, true)
 	var mb := p + Vector3(-4.65, 0.0, -4.65).rotated(Vector3.UP, rad_r)
 	K.blocker(raid, mb, Vector3(3.4, 3.2, 2.8), rot)
 	raid.blocks.append(raid._rect_for(p, Vector3(14.6, 1.0, 14.6)))

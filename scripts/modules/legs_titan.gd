@@ -21,7 +21,7 @@ static func build(ctx: Dictionary) -> Node3D:
 
 	# ---- 骨盆：宽厚箱形腰胯 + 前后双层裙甲 ----
 	K.bb(root, Vector3(1.7, 0.7, 1.3), M_FRAME, Vector3(0, hip + 0.04, 0.02), Vector3.ZERO, 0.08)
-	K.bb(root, Vector3(1.3, 0.34, 1.1), M_LEG2, Vector3(0, hip + 0.38, 0.02), Vector3.ZERO, 0.06)
+	K.bb(root, Vector3(1.26, 0.24, 1.04), M_LEG2, Vector3(0, hip + 0.33, 0.02), Vector3.ZERO, 0.055)
 	K.plate(root, K.trap(1.0, 1.4, 0.66, 0.12), 0.24, M_LEG, Vector3(0, hip - 0.06, -0.74), Vector3(14, 0, 0), 0.05)
 	K.plate(root, K.trap(0.7, 1.0, 0.34, 0.08), 0.12, M_LEG2, Vector3(0, hip - 0.06, -0.9), Vector3(14, 0, 0), 0.03)
 	K.plate(root, K.crect(0.7, 0.08), 0.25, M_ACC, Vector3(0, hip + 0.2, -0.78), Vector3(14, 0, 0), 0.01)
@@ -103,12 +103,12 @@ static func build(ctx: Dictionary) -> Node3D:
 		leg.set_meta("sole", -1.52 - 0.185 - hip)
 		leg_parts.append(leg)
 
-	# ---- 粗壮腰柱（顶端 HP-C1 母座） ----
-	K.cy(root, 0.6, 0.7, M_FRAME, Vector3(0, hip + 0.2, 0), Vector3.ZERO, 0.6, 28)
-	K.cy(root, 0.62, 0.1, M_DARK, Vector3(0, hip + 0.5, 0), Vector3.ZERO, 0.64, 28)
+	# ---- 阶梯收口重型腰柱（顶端承接 HP-C1 母座） ----
+	K.cy(root, 0.42, 0.36, M_FRAME, Vector3(0, hip + 0.34, 0), Vector3.ZERO, 0.48, 28)
+	K.cy(root, 0.36, 0.10, M_DARK, Vector3(0, hip + 0.485, 0), Vector3.ZERO, 0.43, 28)
 	for i in 6:
 		var a := TAU * i / 6.0 + 0.3
-		A.hose(root, Vector3(cos(a) * 0.6, hip + 0.26, sin(a) * 0.6), Vector3(cos(a) * 0.5, hip + 0.52, sin(a) * 0.5), Vector3(cos(a) * 0.1, 0, sin(a) * 0.1), 0.024)
+		A.hose(root, Vector3(cos(a) * 0.49, hip + 0.36, sin(a) * 0.49), Vector3(cos(a) * 0.38, hip + 0.50, sin(a) * 0.38), Vector3(cos(a) * 0.06, 0, sin(a) * 0.06), 0.022)
 	K.socket(root, "core", Vector3(0, hip + 0.55, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "biped")

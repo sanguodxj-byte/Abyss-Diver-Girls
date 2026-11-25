@@ -28,14 +28,14 @@ static func build(ctx: Dictionary) -> Node3D:
 		K.plate(legs, K.crect(sw, 0.84, [0.18, 0.18, 0.18, 0.18]), 0.28, M_LEG if seg_z == 0.0 else M_LEG2, Vector3(0, hip + 0.20, seg_z), Vector3(90, 0, 0), 0.042)
 	K.plate(legs, K.crect(1.32, 2.36, [0.28, 0.28, 0.28, 0.28]), 0.24, M_LEG2, Vector3(0, hip - 0.18, 0.0), Vector3(90, 0, 0), 0.04)
 	# 中央重装回转座塔台 + 8道加强腹板 + 6根液压脐带软管
-	K.cy(legs, 0.66, 0.30, M_LEG, Vector3(0, hip + 0.38, 0.0), Vector3.ZERO, 0.78, 28)
-	K.cy(legs, 0.62, 0.10, M_DARK, Vector3(0, hip + 0.52, 0.0), Vector3.ZERO, 0.64, 28)
+	K.cy(legs, 0.44, 0.28, M_LEG, Vector3(0, hip + 0.39, 0.0), Vector3.ZERO, 0.60, 28)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.52, 0.0), Vector3.ZERO, 0.46, 28)
 	for i in 8:
 		var ga := TAU * i / 8.0
-		K.bb(legs, Vector3(0.06, 0.24, 0.20), M_GUN, Vector3(cos(ga) * 0.68, hip + 0.36, sin(ga) * 0.68), Vector3(0, -rad_to_deg(ga), 0), 0.01)
+		K.bb(legs, Vector3(0.055, 0.22, 0.16), M_GUN, Vector3(cos(ga) * 0.52, hip + 0.38, sin(ga) * 0.52), Vector3(0, -rad_to_deg(ga), 0), 0.01)
 	for i in 6:
 		var ha := TAU * i / 6.0 + 0.25
-		A.hose(legs, Vector3(cos(ha) * 0.64, hip + 0.26, sin(ha) * 0.64), Vector3(cos(ha) * 0.54, hip + 0.52, sin(ha) * 0.54), Vector3(cos(ha) * 0.09, 0, sin(ha) * 0.09), 0.024)
+		A.hose(legs, Vector3(cos(ha) * 0.60, hip + 0.30, sin(ha) * 0.60), Vector3(cos(ha) * 0.42, hip + 0.52, sin(ha) * 0.42), Vector3(cos(ha) * 0.06, 0, sin(ha) * 0.06), 0.022)
 
 	# ---- 车首楔形攻城破障撞锤船首（四缸液压缓冲驻退梁 + 上倾反应装甲迎弹坡面 + 笼罩探照灯） ----
 	var prow := K.node(legs, Vector3(0, hip + 0.10, -1.38), Vector3(34, 0, 0))

@@ -26,11 +26,11 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.plate(legs, K.crect(1.56, 2.52, [0.38, 0.38, 0.34, 0.34]), 0.30, M_LEG, Vector3(0, 1.16, 0.0), Vector3(90, 0, 0), 0.05)
 	K.plate(legs, K.crect(1.20, 2.16, [0.30, 0.30, 0.28, 0.28]), 0.22, M_LEG2, Vector3(0, 0.74, 0.0), Vector3(90, 0, 0), 0.04)
 	K.plate(legs, K.crect(1.36, 1.48, [0.32, 0.32, 0.32, 0.32]), 0.24, M_LEG2, Vector3(0, 1.38, 0.0), Vector3(90, 0, 0), 0.045)
-	K.cy(legs, 0.62, 0.24, M_LEG, Vector3(0, 1.54, 0.0), Vector3.ZERO, 0.72, 28)
-	K.cy(legs, 0.60, 0.10, M_DARK, Vector3(0, 1.68, 0.0), Vector3.ZERO, 0.62, 28)
+	K.cy(legs, 0.42, 0.22, M_LEG, Vector3(0, 1.56, 0.0), Vector3.ZERO, 0.56, 28)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, 1.68, 0.0), Vector3.ZERO, 0.44, 28)
 	for i in 6:
 		var ha := TAU * i / 6.0 + 0.3
-		A.hose(legs, Vector3(cos(ha) * 0.62, 1.40, sin(ha) * 0.62), Vector3(cos(ha) * 0.52, 1.68, sin(ha) * 0.52), Vector3(cos(ha) * 0.08, 0, sin(ha) * 0.08), 0.022)
+		A.hose(legs, Vector3(cos(ha) * 0.57, 1.48, sin(ha) * 0.57), Vector3(cos(ha) * 0.42, 1.68, sin(ha) * 0.42), Vector3(cos(ha) * 0.06, 0, sin(ha) * 0.06), 0.022)
 
 	# 车首重型倾斜首上装甲（+36°）+ 防撞推梁 + 牵引耳座 + 装甲防爆投光灯 + 编号钢印
 	var prow := K.node(legs, Vector3(0, 1.06, -1.24), Vector3(36, 0, 0))

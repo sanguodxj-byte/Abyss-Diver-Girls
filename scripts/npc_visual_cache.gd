@@ -92,5 +92,10 @@ static func signature() -> Dictionary:
 	for path in sources: result[path] = FileAccess.get_sha256("res://scripts/" + path)
 	for path in DirAccess.get_files_at("res://scripts/modules"):
 		if path.ends_with(".gd"): result[path] = FileAccess.get_sha256("res://scripts/modules/" + path)
+	if DirAccess.dir_exists_absolute("res://assets/models/mech_modules"):
+		for path in DirAccess.get_files_at("res://assets/models/mech_modules"):
+			if path.ends_with(".glb"): result["glb:" + path] = FileAccess.get_sha256("res://assets/models/mech_modules/" + path)
+	if FileAccess.file_exists("res://shaders/mech_trim.gdshader"):
+		result["shader:mech_trim"] = FileAccess.get_sha256("res://shaders/mech_trim.gdshader")
 	result.equipment = FileAccess.get_sha256("res://data/ext/equipment.gd")
 	return result

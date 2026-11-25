@@ -56,7 +56,7 @@ static func build(h, body: Node3D, kind: String, s: float) -> void:
 
 
 # ---------------------------------------------------------------- 工业共用构件（同时供 boss_models 调用）
-static func _bone() -> StandardMaterial3D:
+static func _bone() -> Material:
 	return BugBase._vmat_solid(BONE)
 
 
@@ -212,10 +212,10 @@ static func _mantis(h, body: Node3D, s: float) -> void:
 		h._jag(sh, 0.20 * s, 1.08 * s, 0.045 * s, h._chrome(), Vector3(sx * 0.32, 0.20, -0.76) * s, Vector3(-58, sx * 12.0, 0), 5, -1.0, sx * 0.08 * s)
 		h._bar(sh, wr, wr + Vector3(sx * 0.04, -0.52, -0.38) * s, 0.052 * s, 0.065 * s, DK)
 		h.scythes.append(sh)
-	# 四足反关节高速机械腿
+	# 四足反关节高速机械腿（加粗承力截面）
 	for sx: float in [-1.0, 1.0]:
-		h._zleg(body, Vector3(sx * 0.24 * s, by - 0.16 * s, -0.22 * s), sx * -28.0, sx, 0.82 * s, by * 1.15, 0.085 * s, PI if sx > 0 else 0.0, true)
-		h._zleg(body, Vector3(sx * 0.26 * s, by - 0.16 * s, 0.26 * s), sx * 30.0, sx, 0.70 * s, by * 1.05, 0.075 * s, 0.0 if sx > 0 else PI, false)
+		h._zleg(body, Vector3(sx * 0.25 * s, by - 0.16 * s, -0.22 * s), sx * -28.0, sx, 0.84 * s, by * 1.15, 0.095 * s, PI if sx > 0 else 0.0, true)
+		h._zleg(body, Vector3(sx * 0.27 * s, by - 0.16 * s, 0.26 * s), sx * 30.0, sx, 0.72 * s, by * 1.05, 0.085 * s, 0.0 if sx > 0 else PI, false)
 
 
 # ---------------------------------------------------------------- 2. 重装高压危化品自爆工兵车 (bomber)
@@ -517,17 +517,20 @@ static func _wasp(h, body: Node3D, s: float) -> void:
 			h._prism(w, [Vector2(0.0, 0.0), Vector2(wid * 0.5, wlen * 0.4), Vector2(wid * 0.18, wlen), Vector2(-wid * 0.36, wlen * 0.62), Vector2(-wid * 0.5, 0.1)],
 				0.016 * s, 0.02, _wing_mat(), Vector3.ZERO, Vector3(0, sx * 90.0, 0))
 			h.wings.append(w)
-	# 六条折叠起落驻爪（legs）
+	# 六条折叠伺服起落驻爪（legs：髋伺服 + 装甲股臂 + 膝伺服 + 锻钢抓地钩爪）
 	for i in 3:
 		for sx: float in [-1.0, 1.0]:
 			var hip := Node3D.new()
-			hip.position = Vector3(sx * 0.14 * s, by - 0.18 * s, (-0.16 + i * 0.16) * s)
+			hip.position = Vector3(sx * 0.15 * s, by - 0.18 * s, (-0.17 + i * 0.17) * s)
 			hip.rotation_degrees = Vector3(0, sx * (-16.0 + i * 16.0), 0)
 			body.add_child(hip)
-			var knee := Vector3(sx * 0.13 * s, -0.04 * s, 0)
-			var tip := Vector3(sx * 0.22 * s, -0.24 * s, 0.08 * s)
-			h._bar(hip, Vector3.ZERO, knee, 0.045 * s, 0.05 * s, DK)
-			h._bar(hip, knee, tip, 0.032 * s, 0.036 * s, SH2)
+			var knee := Vector3(sx * 0.14 * s, -0.05 * s, 0)
+			var tip := Vector3(sx * 0.23 * s, -0.25 * s, 0.08 * s)
+			h._servo(hip, Vector3.ZERO, 0.038 * s)
+			h._limb(hip, Vector3.ZERO, knee, 0.064 * s, 0.072 * s, DK, 0.82, 1.16)
+			h._servo(hip, knee, 0.032 * s)
+			h._limb(hip, knee, tip, 0.048 * s, 0.055 * s, SH2, 0.65, 1.10)
+			h._box(hip, h._steel(), tip + Vector3(sx * 0.02 * s, -0.02 * s, -0.02 * s), Vector3(0.036, 0.052, 0.085) * s, Vector3(24, 0, sx * -18.0))
 			hip.set_meta("side", sx)
 			hip.set_meta("phase", float(i % 2) * PI + (PI if sx > 0 else 0.0))
 			hip.set_meta("base_y", hip.rotation.y)

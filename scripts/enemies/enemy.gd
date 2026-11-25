@@ -147,7 +147,8 @@ func _build_visual() -> void:
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
-	Models.build(self, body, kind, s)
+	if not EnemyGlb.build(self, body, kind, s):
+		Models.build(self, body, kind, s)
 
 
 # ================= 受击与死亡 =================
@@ -1097,6 +1098,11 @@ func _animate_impl(delta: float, mv: float) -> void:
 			var on: bool = act != "" and act != "recover"
 			var w: float = float(sp[3]) if on else float(sp[2])
 			sp[0].rotate_object_local(sp[1], w * delta)
+	if has_meta("hd_wheels") and move_amt > 0.005:
+		var w_ang := -move_amt * 9.5 * delta
+		for wn in get_meta("hd_wheels"):
+			if is_instance_valid(wn):
+				(wn as Node3D).rotate_object_local(Vector3.RIGHT, w_ang)
 	if core_mi and core_mi.material_override is StandardMaterial3D:
 		var em: StandardMaterial3D = core_mi.material_override
 		var e0: float = 1.6 + sin(anim_t * 3.2) * 0.4

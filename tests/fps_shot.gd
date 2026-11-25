@@ -202,7 +202,7 @@ func run() -> void:
 	ev_up1.physical_keycode = KEY_F5
 	ev_up1.pressed = false
 	Input.parse_input_event(ev_up1)
-	if not check(not raid.is_first_person() and raid.view_mode == 0 and is_equal_approx(raid.camera.fov, 40.0) and not m._fp_passthrough,
+	if not check(not raid.is_first_person() and raid.view_mode == 0 and is_equal_approx(raid.camera.fov, raid.TPS_FOV) and not m._fp_passthrough,
 		"按 F5 切回第三人称失败: vm=%s fov=%s pause=%s set=%s" % [raid.view_mode, raid.camera.fov, hud.pause_panel.visible, hud.settings_panel.visible]):
 		return
 	_press_f5()

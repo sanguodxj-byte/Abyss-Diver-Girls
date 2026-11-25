@@ -1,0 +1,248 @@
+{
+  "pack_id": "abyss_diver_girls_poi_buildings_wave7_ruined",
+  "name": "潜渊少女 · 审计清单新批（深渊科研与铁道船坞 10 项 · 全部残破）",
+  "condition": "ruined",
+  "condition_label": "残破废墟",
+  "uv_mapping": "metric_local_box_and_seamless_cylindrical_uv1_uv2",
+  "pbr_texture_channels": [
+    "albedo_srgb",
+    "tangent_normal_linear",
+    "roughness_linear"
+  ],
+  "pbr_surfaces": [
+    "concrete_formwork",
+    "concrete_bunker",
+    "plaster_stucco",
+    "stone_ashlar",
+    "rubble_aggregate",
+    "brick_masonry",
+    "brick_refractory",
+    "steel_riveted",
+    "steel_galvanized",
+    "steel_oxidized",
+    "corrugated_metal",
+    "painted_metal",
+    "brushed_alloy",
+    "asphalt_road",
+    "tar_membrane",
+    "timber_plank",
+    "woven_canvas",
+    "ceramic_tile"
+  ],
+  "upstream_repo": "sanguodxj-byte/Abyss-Diver-Girls",
+  "total_buildings": 10,
+  "total_meshes": 4232,
+  "total_triangles": 275280,
+  "buildings": [
+    {
+      "id": "poi_astronomical_observatory",
+      "code": "LAB-01",
+      "audit_tag": "P2-LAB-01",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "观测穹顶正面三瓣双曲钢壳炸穿，内部28段黄铜赤道仪折射望远镜受创歪斜伸出；西侧计时附楼整角掀顶崩墙。",
+      "name": "天文观测穹顶台（残破）",
+      "en_name": "Ruined Astronomical Observatory Dome",
+      "upstream_source": "scripts/map_ext/poi/astronomical_observatory.gd",
+      "gd_output_path": "scripts/map_ext/poi/astronomical_observatory_remake.gd",
+      "footprint_m": [
+        16.8,
+        13.8,
+        13.4
+      ],
+      "meshes": 343,
+      "triangles": 26080,
+      "old_defects": "旧版观测台穹顶使用 12 边低段球体切半、无观测天窗双拱槽与赤道仪望远镜内构，圆筒塔缺少悬挑观星廊。",
+      "remake_highlights": "【残破废墟版】48段高精度圆柱石砌观测塔 + 48段悬挑环形走道与笼梯 + 双曲放样8瓣钢穹顶（正面三瓣炸穿露28段黄铜折射望远镜） + 计时机房附楼。"
+    },
+    {
+      "id": "poi_bathysphere_dock",
+      "code": "LAB-02",
+      "audit_tag": "P2-LAB-02",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "干船坞内深潜器从龙骨墩倾侧移位；拱形钢构吊装龙门行车与吊梁歪斜并崩断单侧钢索；西侧减压控制室角墙塌陷。",
+      "name": "深潜器干船坞与吊装台（残破）",
+      "en_name": "Ruined Bathysphere Dry-Dock & Gantry",
+      "upstream_source": "scripts/map_ext/poi/bathysphere_dock.gd",
+      "gd_output_path": "scripts/map_ext/poi/bathysphere_dock_remake.gd",
+      "footprint_m": [
+        18.4,
+        12.4,
+        13.8
+      ],
+      "meshes": 400,
+      "triangles": 27776,
+      "old_defects": "旧版深潜器用单节圆柱配球体拼凑、吊装龙门仅两根方柱且无船坞地坑、减压舱与高压气瓶组。",
+      "remake_highlights": "【残破废墟版】阶梯干船坞混凝土坞坑 + 28段平滑放样流线型深潜器（含黄铜舷窗、侧压载舱与涵道螺旋桨，倾侧移位） + 连续钢拱龙门吊 + 减压控制室。"
+    },
+    {
+      "id": "poi_geothermal_wellhead",
+      "code": "LAB-03",
+      "audit_tag": "P2-LAB-03",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "四腿钢桁地热钻塔上部天车段剧烈折弯16度；东南高压汽水分离罐双曲碟形顶盖爆裂缺口；红砖阀控房消音器歪斜且角顶坍塌。",
+      "name": "地热高压井口与分离站（残破）",
+      "en_name": "Ruined Geothermal Wellhead & Separator",
+      "upstream_source": "scripts/map_ext/poi/geothermal_wellhead.gd",
+      "gd_output_path": "scripts/map_ext/poi/geothermal_wellhead_remake.gd",
+      "footprint_m": [
+        17.6,
+        15.6,
+        13
+      ],
+      "meshes": 426,
+      "triangles": 28684,
+      "old_defects": "旧版井架为简单四方锥、蒸汽分离罐仅 12 边平顶圆柱，缺少防喷阀树、弯曲高压输汽管与蒸汽控制室。",
+      "remake_highlights": "【残破废墟版】四腿收分钢桁架地热钻塔（上段剧烈折弯）+ 井口法兰防喷树与黄铜手轮阀 + 双座32段双曲碟形封头蒸汽分离罐（南罐顶盖爆裂）+ 红砖控制房。"
+    },
+    {
+      "id": "poi_hydroponic_biodome",
+      "code": "LAB-04",
+      "audit_tag": "P2-LAB-04",
+      "condition": "ruined",
+      "condition_badge": "破顶残破",
+      "ruin_notes": "双曲玻璃温室穹顶正面三瓣彻底碎裂暴露连续弯曲钢拱骨架与内部水培培育架；顶部采光天窗震斜；西侧营养液气闸附楼角墙崩塌。",
+      "name": "生态水培穹顶温室（残破）",
+      "en_name": "Ruined Hydroponic Conservatory Biodome",
+      "upstream_source": "scripts/map_ext/poi/hydroponic_biodome.gd",
+      "gd_output_path": "scripts/map_ext/poi/hydroponic_biodome_remake.gd",
+      "footprint_m": [
+        18.6,
+        11.4,
+        14.4
+      ],
+      "meshes": 392,
+      "triangles": 28692,
+      "old_defects": "旧版生态温室使用低段多面球体、内部空心无水培培育床与中央喷灌柱，附楼缺少屋顶营养液水箱。",
+      "remake_highlights": "【残破废墟版】7段真实圆弧混凝土矮墙底座 + 4道全跨连续弯曲子午钢拱 + 双曲半透明玻璃穹顶（正面三瓣破碎露内部双层水培架与黄铜喷灌环） + 营养液泵房。"
+    },
+    {
+      "id": "poi_comms_dish_station",
+      "code": "LAB-05",
+      "audit_tag": "P2-LAB-05",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "巨型真凹面射电抛物面天线受创歪斜仰角失锁、剥离两片双曲反射瓣暴露辐射钢背架并震弯单侧馈源腿；西侧测控地堡整角掀顶。",
+      "name": "深空射电抛物面接收站（残破）",
+      "en_name": "Ruined Deep-Space Parabolic Dish",
+      "upstream_source": "scripts/map_ext/poi/comms_dish_station.gd",
+      "gd_output_path": "scripts/map_ext/poi/comms_dish_station_remake.gd",
+      "footprint_m": [
+        17.6,
+        15.2,
+        13.8
+      ],
+      "meshes": 348,
+      "triangles": 20536,
+      "old_defects": "旧版射电抛物面天线为平盘加细棍、缺少真实凹面抛物曲面与辐射背桁架，混凝土地堡无电缆沟与测控机柜。",
+      "remake_highlights": "【残破废墟版】36段带6道斜扶壁混凝土天线基座 + 方位俯仰双耳轴与配重鼓 + 8瓣双曲放样真凹面抛物面大锅（剥离两瓣露背架） + 三脚黄铜馈源舱 + 测控地堡。"
+    },
+    {
+      "id": "bldg_locomotive_roundhouse",
+      "code": "LOG-01",
+      "audit_tag": "P2-LOG-01",
+      "condition": "ruined",
+      "condition_badge": "塌顶残破",
+      "ruin_notes": "扇形机车库东侧车位扇形屋盖彻底塌空暴露径向钢梁；锅炉房32段高耸砖烟囱在56%高度拦腰折断露锯齿断口；转盘桥脱轨倾斜。",
+      "name": "扇形机车检修库与转盘（残破）",
+      "en_name": "Ruined Brick Locomotive Roundhouse",
+      "upstream_source": "scripts/buildings/bldg_locomotive_roundhouse.gd",
+      "gd_output_path": "scripts/buildings/bldg_locomotive_roundhouse_remake.gd",
+      "footprint_m": [
+        20.4,
+        11.8,
+        15.6
+      ],
+      "meshes": 371,
+      "triangles": 23512,
+      "old_defects": "旧版扇形车库用直方盒拼折扇弧、转盘仅为 12 边圆盘且无放射状铁轨、拱形车库门洞与锅炉大烟囱。",
+      "remake_highlights": "【残破废墟版】真实圆弧红砖三跨扇形机车库（3道连续贝塞尔拱门 + 东跨扇形屋盖塌空） + 48段凹陷圆弧转盘基坑与脱轨钢板梁桥 + 拦腰折断32段砖砌大烟囱。"
+    },
+    {
+      "id": "bldg_fuel_tank_farm",
+      "code": "LOG-02",
+      "audit_tag": "P2-LOG-02",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "48段主立式储油罐双曲穹顶正面三瓣爆裂掀开；东南侧卧式高压储罐震斜移位；西侧红砖输油泵房整角掀顶崩墙。",
+      "name": "石化储油罐区与泵房（残破）",
+      "en_name": "Ruined Petrochemical Fuel Tank Farm",
+      "upstream_source": "scripts/buildings/bldg_fuel_tank_farm.gd",
+      "gd_output_path": "scripts/buildings/bldg_fuel_tank_farm_remake.gd",
+      "footprint_m": [
+        19.4,
+        11.4,
+        14.2
+      ],
+      "meshes": 406,
+      "triangles": 29996,
+      "old_defects": "旧版储油罐仅 14 边平顶圆筒且卧罐用球体封端，缺少防溢混凝土围堰、高架管廊与带阀门组的输油泵房。",
+      "remake_highlights": "【残破废墟版】混凝土防溢围堰 + 48段铆接立式巨型油罐（双曲穹顶正面三瓣爆裂） + 双座32段平滑放样椭球封头卧式压力罐 + 高架三联输油管廊与外挂钢梯 + 红砖泵房。"
+    },
+    {
+      "id": "bldg_drawbridge_gatehouse",
+      "code": "LOG-03",
+      "audit_tag": "P2-LOG-03",
+      "condition": "ruined",
+      "condition_badge": "战损残破",
+      "ruin_notes": "重型钢桁开启桥桥面卡死在半抬28度并轻微扭曲；南侧起吊钢索崩断垂落；双座石砌桥头控制塔角墙与女儿墙受损。",
+      "name": "双塔液压开启桥头堡（残破）",
+      "en_name": "Ruined Hydraulic Bascule Drawbridge",
+      "upstream_source": "scripts/buildings/bldg_drawbridge_gatehouse.gd",
+      "gd_output_path": "scripts/buildings/bldg_drawbridge_gatehouse_remake.gd",
+      "footprint_m": [
+        20.6,
+        13,
+        12.6
+      ],
+      "meshes": 635,
+      "triangles": 31968,
+      "old_defects": "旧版开启桥为平铺长条板且桥塔无滑轮机房与人行拱门，缺少河道驳岸与拉索结构。",
+      "remake_highlights": "【残破废墟版】运河深水驳岸 + 双座双层石砌防御桥头控制塔（配28段巨型钢索滑轮机房 + 4道连续贝塞尔人行石拱） + 半抬28度卡死钢桁开启桥面与崩断垂地钢索。"
+    },
+    {
+      "id": "bldg_ore_crusher_tipple",
+      "code": "LOG-04",
+      "audit_tag": "P2-LOG-04",
+      "condition": "ruined",
+      "condition_badge": "重度残破",
+      "ruin_notes": "斜坡皮带传送钢桁廊中段两跨波纹顶罩掀空下垂暴露橡胶皮带；高架48段钢制矿仓双曲顶盖正面三瓣炸穿；南侧旋风除尘器震斜。",
+      "name": "矿石破碎选矿楼与传送廊（残破）",
+      "en_name": "Ruined Ore Crusher Tipple & Conveyor",
+      "upstream_source": "scripts/buildings/bldg_ore_crusher_tipple.gd",
+      "gd_output_path": "scripts/buildings/bldg_ore_crusher_tipple_remake.gd",
+      "footprint_m": [
+        20.6,
+        14.4,
+        12.4
+      ],
+      "meshes": 534,
+      "triangles": 27952,
+      "old_defects": "旧版选矿楼为单层方盒、传送廊无倾斜桁架与中跨排架，装矿仓缺少倒锥卸料斗与底部矿车铁轨。",
+      "remake_highlights": "【残破废墟版】三层退台式重工选矿破碎塔楼（含双座24段旋风除尘器与规范外挂钢梯） + 中段掀顶下垂斜坡皮带传送钢桁廊 + 跨铁轨48段倒锥卸料高架矿仓（顶盖炸穿）。"
+    },
+    {
+      "id": "bldg_salvage_foundry",
+      "code": "LOG-05",
+      "audit_tag": "P2-LOG-05",
+      "condition": "ruined",
+      "condition_badge": "塌顶残破",
+      "ruin_notes": "红砖铸造车间连续弯曲弧形拱顶剥离两跨暴露钢拱与室内行车熔炉坩埚；东侧36段炼铁高炉顶段炸裂截断露锯齿断口；堆场集装箱错位。",
+      "name": "废土重工熔炉铸造车间（残破）",
+      "en_name": "Ruined Salvage Foundry & Blast Furnace",
+      "upstream_source": "scripts/buildings/bldg_salvage_foundry.gd",
+      "gd_output_path": "scripts/buildings/bldg_salvage_foundry_remake.gd",
+      "footprint_m": [
+        20,
+        14.2,
+        13.6
+      ],
+      "meshes": 377,
+      "triangles": 30084,
+      "old_defects": "旧版铸造车间平顶无弧形钢桁架与行车吊包，高炉为单节 12 边圆筒且缺少环形热风围管、重力除尘器与弯曲下降煤气管。",
+      "remake_highlights": "【残破废墟版】红砖铸造主厂房（5道连续弯曲贝塞尔钢拱 + 50%拱壳剥离露赭黄行车天车与悬吊熔炉坩埚） + 截断36段炼铁高炉 + 弯曲下降煤气管与28段除尘罐 + 波纹集装箱。"
+    }
+  ]
+}

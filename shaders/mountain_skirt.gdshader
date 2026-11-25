@@ -32,6 +32,10 @@ void fragment() {
 
 	vec2 gxz = wp.xz + world_offset;
 	float dist_cam = length(CAMERA_POSITION_WORLD - wp);
+	float dist_fade = smoothstep(340.0, 230.0, dist_cam);
+	if (dist_fade <= 0.005) {
+		discard;
+	}
 	float lod_far = smoothstep(90.0, 280.0, dist_cam);
 
 	float n_mac = texture(n_low, gxz * 0.0085).r;
@@ -44,10 +48,10 @@ void fragment() {
 	vec3 sr = mix(texture(scree_r, suv1).rgb, texture(scree_r, suv2).rgb, clamp(scale_mix * 0.42 + lod_far * 0.28, 0.0, 0.85));
 	vec2 sn = (texture(scree_n, suv1).rg * 2.0 - 1.0) * mix(0.70, 0.34, lod_far) + (texture(scree_n, suv2).rg * 2.0 - 1.0) * 0.36;
 
-	// 高度图驱动冲积扇碎石溶解：外沿自然散落碎石颗粒，中心交界带完全实体盖住 y=0 硬线
+	// 高度图驱动冲积扇碎石溶解：外沿自然散落碎石颗粒，中心交界带完全实体盖住 y=0 硬线，远距 230..340m 平滑淡出避免硬接缝
 	float pebble_h = clamp(sr.b * 0.70 + n_mid * 0.30, 0.0, 1.0);
 	float edge_noise = (n_mid - 0.5) * 0.34 + (pebble_h - 0.48) * 0.44;
-	float alpha = smoothstep(0.05, 0.76, base_m + edge_noise * (1.0 - smoothstep(0.74, 0.95, base_m)));
+	float alpha = smoothstep(0.05, 0.76, base_m + edge_noise * (1.0 - smoothstep(0.74, 0.95, base_m))) * dist_fade;
 	if (alpha <= 0.01) {
 		discard;
 	}
@@ -62,13 +66,13 @@ void fragment() {
 	vec3 w_nrm = normalize(N + n_pert);
 
 	float wet = clamp(weather_wet, 0.0, 1.0);
-	col *= mix(1.0, 0.78, wet * 0.85);
+	col *= mix(1.0, 0.76, wet * 0.85);
 
 	NORMAL = normalize((VIEW_MATRIX * vec4(w_nrm, 0.0)).xyz);
 	ALBEDO = col;
 	ALPHA = alpha;
-	ROUGHNESS = clamp(sr.r - wet * 0.35, 0.35, 0.97);
-	SPECULAR = mix(0.26, 0.44, wet * 0.75);
+	ROUGHNESS = clamp(sr.r - wet * 0.12, mix(0.45, 0.66, wet), 0.97);
+	SPECULAR = mix(0.25, 0.32, wet * 0.65);
 	AO = clamp(ao_v * mix(0.60, 1.0, sr.g), 0.38, 1.0);
 	AO_LIGHT_AFFECT = 0.45;
 }

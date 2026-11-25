@@ -24,11 +24,11 @@ static func build(ctx: Dictionary) -> Node3D:
 	K.bb(legs, Vector3(1.26, 0.44, 1.26), M_FRAME, Vector3(0, hip, 0), Vector3.ZERO, 0.06)
 	K.plate(legs, K.crect(1.48, 1.48, [0.36, 0.36, 0.36, 0.36]), 0.24, M_LEG, Vector3(0, hip + 0.16, 0), Vector3(90, 0, 0), 0.045)
 	K.plate(legs, K.crect(1.18, 1.18, [0.28, 0.28, 0.28, 0.28]), 0.22, M_LEG2, Vector3(0, hip - 0.14, 0), Vector3(90, 0, 0), 0.04)
-	K.cy(legs, 0.54, 0.34, M_LEG2, Vector3(0, hip + 0.36, 0), Vector3.ZERO, 0.68, 24)
-	K.cy(legs, 0.52, 0.10, M_DARK, Vector3(0, hip + 0.50, 0), Vector3.ZERO, 0.55, 26)
+	K.cy(legs, 0.38, 0.28, M_LEG2, Vector3(0, hip + 0.36, 0), Vector3.ZERO, 0.50, 24)
+	K.cy(legs, 0.36, 0.09, M_DARK, Vector3(0, hip + 0.49, 0), Vector3.ZERO, 0.40, 26)
 	for i in 8:
 		var ga := TAU * i / 8.0
-		K.bb(legs, Vector3(0.05, 0.22, 0.18), M_GUN, Vector3(cos(ga) * 0.58, hip + 0.34, sin(ga) * 0.58), Vector3(0, -rad_to_deg(ga), 0), 0.008)
+		K.bb(legs, Vector3(0.045, 0.18, 0.14), M_GUN, Vector3(cos(ga) * 0.44, hip + 0.34, sin(ga) * 0.44), Vector3(0, -rad_to_deg(ga), 0), 0.008)
 	for sx in [-0.28, 0.28]:
 		K.bb(legs, Vector3(0.15, 0.09, 0.09), M_DARK, Vector3(sx, hip + 0.06, -0.74), Vector3.ZERO, 0.012)
 		A.lens(legs, Vector3(sx, hip + 0.06, -0.785), Vector3(-90, 0, 0), 0.026, Color(1.0, 0.94, 0.80), 2.0)
@@ -104,7 +104,7 @@ static func build(ctx: Dictionary) -> Node3D:
 
 	for i in 4:
 		var a := TAU * i / 4.0 + 0.4
-		A.hose(legs, Vector3(cos(a) * 0.48, hip + 0.22, sin(a) * 0.48), Vector3(cos(a) * 0.42, hip + 0.48, sin(a) * 0.42), Vector3(cos(a) * 0.07, 0, sin(a) * 0.07), 0.020)
+		A.hose(legs, Vector3(cos(a) * 0.52, hip + 0.26, sin(a) * 0.52), Vector3(cos(a) * 0.39, hip + 0.49, sin(a) * 0.39), Vector3(cos(a) * 0.055, 0, sin(a) * 0.055), 0.020)
 	K.socket(root, "core", Vector3(0, hip + 0.55, 0), Vector3.UP)
 	root.set_meta("leg_parts", leg_parts)
 	root.set_meta("leg_type", "quad")

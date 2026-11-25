@@ -7,18 +7,18 @@ extends RefCounted
 
 const FONT := "res://assets/fonts/hd2_ui_sc.ttf"
 
-const ACCENT := Color(0.78, 0.48, 0.16)       ## #C77A29 Weathered Industrial Ochre
-const ACCENT_HI := Color(0.87, 0.59, 0.25)    ## #DE9640 Oxidized Amber Highlight
-const ACCENT_DK := Color(0.55, 0.33, 0.11)    ## #8C541C Deep Rusted Ochre
-const STEEL_LT := Color(0.46, 0.49, 0.52)     ## #757D85 Machined Gunmetal Trim
-const STEEL_MID := Color(0.30, 0.33, 0.35)    ## #4D5459 Dark Anodized Steel
-const TEXT := Color(0.88, 0.88, 0.85)         ## #E0E0D9 Chalk Stencil Ink
-const MUTED := Color(0.56, 0.58, 0.58)        ## #8F9494 Muted Industrial Ash Grey
-const BG := Color(0.082, 0.088, 0.094, 0.96)  ## #151618 Grey-Black Gunmetal Chassis
-const BG_CARD := Color(0.118, 0.126, 0.134, 0.97)
-const BG_INSET := Color(0.052, 0.056, 0.062, 0.97)
-const LINE := Color(0.22, 0.24, 0.26, 0.94)
-const LINE_HI := Color(0.42, 0.45, 0.48, 0.95)
+const ACCENT := Color(0.96, 0.63, 0.20)       ## #F5A133 AC6 Optical Amber
+const ACCENT_HI := Color(1.00, 0.74, 0.34)    ## #FFBD57 Bright Lock-On Amber
+const ACCENT_DK := Color(0.66, 0.41, 0.12)    ## #A8691F Deep Amber
+const STEEL_LT := Color(0.64, 0.76, 0.84)     ## #A3C2D6 Optical Cyan-Steel Hairline
+const STEEL_MID := Color(0.36, 0.44, 0.52)    ## #5C7085 Slate Reticle Frame
+const TEXT := Color(0.92, 0.94, 0.96)         ## #EBF0F5 Crisp HUD Readout Ink
+const MUTED := Color(0.56, 0.63, 0.69)        ## #8FA1B0 Muted Telemetry Grey-Blue
+const BG := Color(0.016, 0.020, 0.026, 0.86)  ## Optical Dark Glass
+const BG_CARD := Color(0.022, 0.028, 0.036, 0.88)
+const BG_INSET := Color(0.012, 0.016, 0.022, 0.82)
+const LINE := Color(0.46, 0.54, 0.62, 0.42)
+const LINE_HI := Color(0.68, 0.80, 0.88, 0.78)
 
 static var _built: Theme
 static var _sb_cache: Dictionary = {}
@@ -420,45 +420,126 @@ static func _make_plate_tex(name: String) -> ImageTexture:
 	if _tex_cache.has(ck):
 		var cached: ImageTexture = _tex_cache[ck]
 		return cached
-	var s := _plate_spec(name)
-	var w: int = int(s["w"])
-	var h: int = int(s["h"])
-	var c_tl: float = float(s["c_tl"])
-	var c_tr: float = float(s["c_tr"])
-	var c_bl: float = float(s["c_bl"])
-	var c_br: float = float(s["c_br"])
-	var ft: Color = s["fill_top"]
-	var fb: Color = s["fill_bot"]
-	var rhi: Color = s["rim_hi"]
-	var rlo: Color = s["rim_lo"]
-	var rim_w: float = float(s["rim_w"])
-	var inner_seam: float = float(s["inner_seam"])
-	var lbw: float = float(s["left_bar_w"])
-	var lbc: Color = s["left_bar_col"]
-	var trh: float = float(s["top_rail_h"])
-	var trc: Color = s["top_rail_col"]
-	var tr_notch: Color = s["top_rail_notch"]
-	var brh: float = float(s["bot_rail_h"])
-	var brc: Color = s["bot_rail_col"]
-	var br_acc: Color = s["bot_rail_accent"]
-	var rivets: bool = bool(s["rivets"])
-	var rcol: Color = s["rivet_col"]
-	var cticks: bool = bool(s["corner_ticks"])
-	var tcol: Color = s["tick_col"]
-	var hatch: bool = bool(s["hatch"])
-	var recessed: bool = bool(s["recessed"])
-	var worn: bool = bool(s["worn"])
-	var grain: float = float(s["grain"])
-	var seed_v: int = int(s["seed"])
-	var translucent: bool = bool(s["translucent"])
-	var tm_lr: int = int(s["tm_lr"])
-	var tm_tb: int = int(s["tm_tb"])
+	var spec := _plate_spec(name)
+	var w: int = int(spec["w"])
+	var h: int = int(spec["h"])
+	var tm_lr: int = int(spec["tm_lr"])
+	var tm_tb: int = int(spec["tm_tb"])
+	var c_tl: float = minf(float(spec["c_tl"]), 6.0)
+	var c_tr: float = minf(float(spec["c_tr"]), 4.0)
+	var c_bl: float = minf(float(spec["c_bl"]), 4.0)
+	var c_br: float = minf(float(spec["c_br"]), 6.0)
+	var lbw: float = float(spec["left_bar_w"])
+	var tr_notch: Color = spec["top_rail_notch"]
+
+	var ft := Color(0.016, 0.020, 0.026, 0.84)
+	var fb := Color(0.014, 0.018, 0.024, 0.90)
+	var rim := Color(0.46, 0.54, 0.62, 0.46)
+	var bracket_col := Color(0.70, 0.80, 0.88, 0.82)
+	var draw_brackets := true
+	var top_rar := Color(0, 0, 0, 0)
+	var amber := Color(0.96, 0.63, 0.20, 1.0)
+	var rar_cols := [
+		Color(0.58, 0.64, 0.70),
+		Color(0.44, 0.82, 0.56),
+		Color(0.44, 0.74, 0.96),
+		Color(0.96, 0.66, 0.22),
+	]
+
+	if name == "btn9_main_n":
+		ft = Color(0.96, 0.63, 0.20, 0.98)
+		fb = Color(0.88, 0.55, 0.16, 0.98)
+		rim = Color(1.0, 0.82, 0.48, 0.95)
+		c_tl = 5.0; c_br = 5.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name == "btn9_main_h":
+		ft = Color(1.0, 0.72, 0.30, 1.0)
+		fb = Color(0.94, 0.62, 0.20, 1.0)
+		rim = Color(1.0, 0.90, 0.62, 1.0)
+		c_tl = 5.0; c_br = 5.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name == "btn9_main_p":
+		ft = Color(0.80, 0.50, 0.14, 1.0)
+		fb = Color(0.72, 0.44, 0.12, 1.0)
+		rim = amber
+		c_tl = 5.0; c_br = 5.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name == "btn9_main_d":
+		ft = Color(0.20, 0.22, 0.25, 0.80)
+		fb = Color(0.16, 0.18, 0.20, 0.80)
+		rim = Color(0.38, 0.42, 0.46, 0.55)
+		c_tl = 5.0; c_br = 5.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name == "bar_fill9":
+		ft = amber
+		fb = Color(0.86, 0.54, 0.16, 1.0)
+		rim = amber
+		draw_brackets = false
+	elif name == "key9":
+		ft = Color(0.10, 0.13, 0.16, 0.95)
+		fb = Color(0.07, 0.09, 0.12, 0.95)
+		rim = Color(0.64, 0.74, 0.82, 0.72)
+		draw_brackets = false
+	elif name == "btn9_d":
+		ft = Color(0.025, 0.030, 0.038, 0.60)
+		fb = Color(0.020, 0.025, 0.032, 0.60)
+		rim = Color(0.30, 0.34, 0.38, 0.35)
+		draw_brackets = false
+	elif name == "cell9_sel":
+		ft = Color(0.96, 0.63, 0.20, 0.16)
+		fb = Color(0.96, 0.63, 0.20, 0.08)
+		rim = Color(0.98, 0.68, 0.24, 0.96)
+		c_tl = 3.0; c_br = 3.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name == "cell9_hover":
+		ft = Color(0.48, 0.85, 0.95, 0.12)
+		fb = Color(0.48, 0.85, 0.95, 0.06)
+		rim = Color(0.64, 0.82, 0.92, 0.85)
+		c_tl = 3.0; c_br = 3.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
+	elif name.ends_with("_on") or name.ends_with("_p"):
+		ft = Color(0.16, 0.10, 0.03, 0.84)
+		fb = Color(0.11, 0.07, 0.02, 0.86)
+		rim = Color(0.96, 0.63, 0.20, 0.92)
+		bracket_col = amber
+		draw_brackets = true
+	elif name.ends_with("_h"):
+		ft = Color(0.048, 0.060, 0.076, 0.86)
+		fb = Color(0.036, 0.046, 0.060, 0.88)
+		rim = Color(0.64, 0.76, 0.84, 0.85)
+		bracket_col = Color(0.80, 0.90, 0.96, 0.90)
+	elif name in ["inset9", "strip9", "cell9_empty", "slot9_empty", "prompt9"]:
+		ft = Color(0.012, 0.016, 0.022, 0.78)
+		fb = Color(0.010, 0.014, 0.019, 0.82)
+		rim = Color(0.42, 0.50, 0.58, 0.28)
+		c_tl = 0.0; c_tr = 0.0; c_bl = 0.0; c_br = 0.0
+		draw_brackets = false
+	elif name == "cell9_bad":
+		ft = Color(0.82, 0.22, 0.18, 0.16)
+		fb = Color(0.75, 0.18, 0.14, 0.10)
+		rim = Color(0.96, 0.36, 0.30, 0.92)
+		bracket_col = Color(0.96, 0.36, 0.30, 0.95)
+	elif name.begins_with("cell9_r"):
+		var ridx := clampi(int(name.substr(7)), 0, 3)
+		var rc: Color = rar_cols[ridx]
+		var ml := Engine.get_main_loop()
+		if ml is SceneTree:
+			var gd := (ml as SceneTree).root.get_node_or_null("GameData")
+			if gd != null and "RARITY_COLORS" in gd:
+				rc = gd.RARITY_COLORS[ridx]
+		ft = Color(rc.r * 0.14 + 0.016, rc.g * 0.14 + 0.020, rc.b * 0.14 + 0.026, 0.88)
+		fb = Color(rc.r * 0.08 + 0.012, rc.g * 0.08 + 0.016, rc.b * 0.08 + 0.022, 0.92)
+		rim = Color(rc.r * 0.65 + 0.20, rc.g * 0.65 + 0.22, rc.b * 0.65 + 0.25, 0.72)
+		top_rar = Color(rc.r, rc.g, rc.b, 0.95)
+		c_tl = 3.0; c_br = 3.0; c_tr = 0.0; c_bl = 0.0
+		draw_brackets = false
 
 	var buf := PackedByteArray()
 	buf.resize(w * h * 4)
 	var inv_sqrt2 := 0.70710678
 	var wf := float(w)
 	var hf := float(h)
+	var arm := float(maxi(2, mini(tm_lr, tm_tb) - 1))
 
 	for y in h:
 		var py := float(y) + 0.5
@@ -476,102 +557,35 @@ static func _make_plate_tex(name: String) -> ImageTexture:
 				sd = maxf(sd, (c_br - (wf - px) - (hf - py)) * inv_sqrt2)
 
 			var mask := clampf(0.5 - sd, 0.0, 1.0)
+			var o := (y * w + x) * 4
 			if mask <= 0.002:
-				var o0 := (y * w + x) * 4
-				buf[o0] = 0; buf[o0 + 1] = 0; buf[o0 + 2] = 0; buf[o0 + 3] = 0
+				buf[o] = 0; buf[o + 1] = 0; buf[o + 2] = 0; buf[o + 3] = 0
 				continue
 
 			var depth := -sd
-			var col := Color(
-				lerpf(ft.r, fb.r, vy),
-				lerpf(ft.g, fb.g, vy),
-				lerpf(ft.b, fb.b, vy),
-				lerpf(ft.a, fb.a, vy)
-			)
+			var col := ft.lerp(fb, vy)
 
-			if grain > 0.0:
-				var streak := _hash2(x >> 2, y, seed_v) - 0.5
-				var speck := _hash2(x, y, seed_v + 31) - 0.5
-				var dv := (streak * 0.7 + speck * 0.3) * grain
-				col.r = clampf(col.r + dv, 0.0, 1.0)
-				col.g = clampf(col.g + dv, 0.0, 1.0)
-				col.b = clampf(col.b + dv * 0.95, 0.0, 1.0)
+			if top_rar.a > 0.01 and py >= 1.0 and py <= 2.6 and depth >= 0.8:
+				col = _blend_col(col, top_rar, top_rar.a)
 
-			if worn and not translucent:
-				var edge_ao := clampf((depth - rim_w) / 6.0, 0.0, 1.0)
-				var grime := _hash2(x >> 1, y >> 1, seed_v + 97) * 0.055 * (1.0 - edge_ao)
-				var shade := (0.91 if recessed else 0.93) + (0.09 if recessed else 0.07) * edge_ao - grime
-				col.r *= shade; col.g *= shade; col.b *= shade
+			if lbw > 0.0 and px >= 1.2 and px < 3.2 and py >= 4.0 and py <= hf - 4.0 and depth >= 0.8:
+				col = _blend_col(col, amber, 0.92)
 
-			if hatch:
-				var diag := posmod(x + y, 8)
-				if diag == 0 or diag == 1:
-					col = Color(col.r + 0.015, col.g + 0.016, col.b + 0.017, col.a)
+			if tr_notch.a > 0.01 and py >= 1.0 and py <= 2.4 and px >= float(tm_lr) * 0.6 and px < float(tm_lr) * 1.45:
+				col = _blend_col(col, amber, 0.92)
 
-			# Left structural / accent bar (kept strictly inside margin)
-			if lbw > 0.0 and px >= rim_w and px < rim_w + lbw and depth >= rim_w * 0.6:
-				col = lbc
-			elif lbw > 0.0 and px >= rim_w + lbw and px < rim_w + lbw + 1.0 and depth >= rim_w * 0.6:
-				col = Color(0.05, 0.055, 0.06, col.a)
+			if depth < 1.15:
+				var rcov := clampf(1.15 - depth + 0.35, 0.0, 1.0)
+				col = _blend_col(col, rim, rcov * rim.a)
 
-			# Top structural rail (with optional left weathered-ochre lock notch)
-			if trh > 0.0 and py >= rim_w and py < rim_w + trh and depth >= rim_w * 0.5:
-				if tr_notch.a > 0.01 and px >= float(tm_lr) * 0.6 and px < float(tm_lr) * 1.45:
-					col = tr_notch
-				else:
-					col = trc
+			if draw_brackets:
+				var in_l := px >= 0.5 and px <= arm
+				var in_r := px >= wf - arm and px <= wf - 0.5
+				var in_t := py >= 0.5 and py <= arm
+				var in_b := py >= hf - arm and py <= hf - 0.5
+				if (in_l or in_r) and (in_t or in_b) and depth < 1.35:
+					col = _blend_col(col, bracket_col, bracket_col.a)
 
-			# Bottom structural rail
-			if brh > 0.0 and py <= hf - rim_w and py > hf - rim_w - brh and depth >= rim_w * 0.5:
-				if br_acc.a > 0.01 and int(x / 6) % 4 == 0 and x >= tm_lr and x <= w - tm_lr:
-					col = br_acc
-				else:
-					col = brc
-
-			# Inner recessed bevel seam just inside the outer rim
-			if inner_seam > 0.0 and depth >= rim_w and depth < rim_w + 1.0:
-				var seam_c := Color(0.05, 0.055, 0.06, inner_seam)
-				col = _blend_col(col, seam_c, inner_seam)
-
-			# Outer machined metallic rim (bright top-left light, darker weathered bottom-right)
-			if depth < rim_w:
-				var top_left := (px / wf + py / hf) < 1.02
-				var rcol_edge := rhi if top_left else rlo
-				if worn:
-					var chip := _hash2(x, y, seed_v + 55)
-					if chip > 0.90:
-						rcol_edge = rcol_edge.darkened(0.24)
-					elif chip < 0.08:
-						rcol_edge = rcol_edge.lightened(0.14)
-				var rim_cov := clampf(rim_w - depth + 0.5, 0.0, 1.0)
-				col = _blend_col(col, rcol_edge, rim_cov * rcol_edge.a)
-
-			# Subtle corner brackets (in non-stretched corners)
-			if cticks:
-				var in_l := px >= 1.0 and px < float(tm_lr) - 0.5
-				var in_r := px > wf - float(tm_lr) + 0.5 and px <= wf - 1.0
-				var in_t := py >= 1.0 and py < float(tm_tb) - 0.5
-				var in_b := py > hf - float(tm_tb) + 0.5 and py <= hf - 1.0
-				if (in_l or in_r) and (in_t or in_b):
-					var b_x := px < 2.2 or px > wf - 2.2
-					var b_y := py < 2.2 or py > hf - 2.2
-					if b_x or b_y:
-						col = _blend_col(col, tcol, tcol.a)
-
-			# Micro rivets in corners (inside fixed texture margins)
-			if rivets:
-				var rx0 := maxf(4.5, c_tl * 0.72 + 2.5)
-				var ry0 := maxf(3.5, minf(float(tm_tb) - 2.0, c_tl * 0.55 + 2.2))
-				var rx1 := wf - maxf(4.5, c_tr * 0.72 + 2.5)
-				var ry1 := hf - maxf(3.5, minf(float(tm_tb) - 2.0, c_br * 0.55 + 2.2))
-				var pts := [Vector2(rx0, ry0), Vector2(rx1, ry0), Vector2(maxf(4.5, c_bl * 0.72 + 2.5), ry1), Vector2(wf - maxf(4.5, c_br * 0.72 + 2.5), ry1)]
-				for rp: Vector2 in pts:
-					var d_riv := Vector2(px, py).distance_to(rp)
-					if d_riv < 1.8:
-						var rc := Color(0.06, 0.065, 0.07, 0.9) if d_riv > 1.15 else rcol
-						col = _blend_col(col, rc, rc.a)
-
-			var o := (y * w + x) * 4
 			buf[o] = clampi(int(roundf(col.r * 255.0)), 0, 255)
 			buf[o + 1] = clampi(int(roundf(col.g * 255.0)), 0, 255)
 			buf[o + 2] = clampi(int(roundf(col.b * 255.0)), 0, 255)

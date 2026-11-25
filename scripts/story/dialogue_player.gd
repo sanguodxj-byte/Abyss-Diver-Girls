@@ -724,7 +724,7 @@ class PortraitPlace extends Control:
 	var _anim_off := Vector2.ZERO
 
 	func _ready() -> void:
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		resized.connect(queue_redraw)
 		if not AP.animated_portraits_enabled():
 			set_process(false)
