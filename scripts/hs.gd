@@ -123,6 +123,21 @@ static func crect(w: float, h: float, c := 0.25) -> Array:
 		Vector2(-x + cx, y), Vector2(-x, y - cy), Vector2(-x, -y + cy), Vector2(-x + cx, -y)]
 
 
+## 远景建筑的 28 面切角体块，保持原正交占地与单一实例批次。
+static func distant_building_mesh(floor_origin := false) -> ArrayMesh:
+	var key := "distant_building_%s" % floor_origin
+	if not _cache.has(key):
+		var hull := loft(crect(1.0, 1.0, 0.16), [
+			[-0.5, Vector2.ONE, Vector2.ZERO], [0.5, Vector2.ONE, Vector2.ZERO],
+		])
+		var shift := Vector3.UP * 0.5 if floor_origin else Vector3.ZERO
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.append_from(hull, 0, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), shift))
+		_cache[key] = st.commit()
+	return _cache[key]
+
+
 ## 正 n 边形截面
 static func ngon(n: int, r: float, rot := 0.0) -> Array:
 	var o: Array = []

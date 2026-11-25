@@ -258,9 +258,16 @@ static func casing_mesh(heavy := false, red_shell := false) -> ArrayMesh:
 	var x0 := -l * 0.5
 	var pr: PackedVector2Array
 	if red_shell:
-		# 霰弹壳：黄铜底座 + 塑料壳身 + 折叠封口（以顶点色区分底座）
-		pr = PackedVector2Array([Vector2(0.0, x0), Vector2(r * 1.16, x0), Vector2(r * 1.16, x0 + l * 0.05), Vector2(r * 1.02, x0 + l * 0.07), Vector2(r, x0 + l * 0.26),
-			Vector2(r, x0 + l * 0.96), Vector2(r * 0.82, x0 + l), Vector2(r * 0.45, x0 + l * 0.985), Vector2(0.0, x0 + l * 0.97)])
+		# 霰弹壳：抽壳槽、黄铜底座肩部、压筋壳身和折叠封口。
+		pr = PackedVector2Array([
+			Vector2(0.0, x0), Vector2(r * 1.13, x0), Vector2(r * 1.16, x0 + l * 0.04),
+			Vector2(r * 0.98, x0 + l * 0.07), Vector2(r * 0.98, x0 + l * 0.10),
+			Vector2(r * 1.09, x0 + l * 0.12), Vector2(r * 1.09, x0 + l * 0.22),
+			Vector2(r * 1.01, x0 + l * 0.24), Vector2(r, x0 + l * 0.25),
+			Vector2(r, x0 + l * 0.51), Vector2(r, x0 + l * 0.52), Vector2(r, x0 + l * 0.59),
+			Vector2(r, x0 + l * 0.60), Vector2(r, x0 + l * 0.93), Vector2(r * 0.97, x0 + l * 0.97),
+			Vector2(r * 0.82, x0 + l), Vector2(r * 0.45, x0 + l * 0.985), Vector2(0.0, x0 + l * 0.97),
+		])
 	else:
 		pr = PackedVector2Array([Vector2(0.0, x0), Vector2(r * 0.28, x0), Vector2(r * 0.28, x0 + 0.002), Vector2(r * 1.08, x0 + 0.0005), Vector2(r * 1.08, x0 + l * 0.06),
 			Vector2(r * 0.86, x0 + l * 0.08), Vector2(r * 0.86, x0 + l * 0.12), Vector2(r, x0 + l * 0.14), Vector2(r * 0.95, x0 + l * 0.68),
@@ -272,26 +279,35 @@ static func casing_mesh(heavy := false, red_shell := false) -> ArrayMesh:
 	var arr := st.commit_to_arrays()
 	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 	var nn: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
 	var cols := PackedColorArray()
 	for i in v.size():
+		var along := clampf((v[i].z - x0) / l, 0.0, 1.0)
+		var turn := uv[i].x
+		var edge_wear := 0.5 + 0.5 * sin(TAU * (turn * 13.0 + along * 2.0))
+		var tint := Color(0.73, 0.49, 0.22).lerp(Color(0.43, 0.27, 0.13), smoothstep(0.60, 1.0, along) * 0.75)
+		if red_shell and along > 0.245:
+			tint = Color(0.58, 0.16, 0.10).lerp(Color(0.72, 0.27, 0.16), edge_wear * 0.60)
+			if along > 0.515 and along < 0.595:
+				tint = Color(0.34, 0.22, 0.15)
+		cols.append(tint.darkened(edge_wear * 0.18))
 		v[i] = Vector3(v[i].z, v[i].y, -v[i].x)
 		nn[i] = Vector3(nn[i].z, nn[i].y, -nn[i].x)
-		var brass_base := red_shell and v[i].x < x0 + l * 0.25
-		cols.append(Color(1.6, 1.25, 0.55) if brass_base else Color(1, 1, 1))
+		uv[i].y = along
 	arr[Mesh.ARRAY_VERTEX] = v
 	arr[Mesh.ARRAY_NORMAL] = nn
 	arr[Mesh.ARRAY_COLOR] = cols
+	arr[Mesh.ARRAY_TEX_UV] = uv
 	arr[Mesh.ARRAY_TANGENT] = null
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = red_shell
-	mat.albedo_color = Color(0.76, 0.16, 0.11) if red_shell else Color(0.92, 0.72, 0.28)
-	mat.metallic = 0.35 if red_shell else 0.72
-	mat.roughness = 0.42 if red_shell else 0.28
-	mat.emission_enabled = true
-	mat.emission = Color(0.38, 0.10, 0.04) if red_shell else Color(0.45, 0.32, 0.08)
-	mat.emission_energy_multiplier = 0.35
+	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
+	mat.albedo_texture = A.world_tex("steel_plate_a.png")
+	mat.metallic = 0.29 if red_shell else 0.67
+	mat.roughness = 0.59 if red_shell else 0.45
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	m.surface_set_material(0, mat)
 	_cache[key] = m
 	return m
@@ -341,7 +357,10 @@ static func sabot_petal_mesh(thick_k := 1.0) -> ArrayMesh:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.58, 0.60, 0.63)
 	mat.metallic = 0.88
-	mat.roughness = 0.30
+	mat.roughness = 0.44
+	mat.albedo_texture = A.world_tex("steel_plate_a.png")
+	mat.uv1_triplanar = true
+	mat.uv1_scale = Vector3.ONE * 15.0
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.surface_set_material(0, mat)
 	_cache[key] = m
@@ -374,10 +393,10 @@ static func debris_mesh(kind := "metal", variant := 0) -> ArrayMesh:
 				if over > 0.0:
 					p -= (pl[0] as Vector3) * over
 			if kind == "metal":
-				p.y *= 0.42  # 薄片状装甲破片
+				p.y = p.y * 0.32 + p.x * p.x * 0.6  # 翘起的薄装甲断片
 			elif kind == "chitin":
 				p.y = p.y * 0.35 + (p.x * p.x + p.z * p.z) * 0.6  # 弯曲甲壳片
-			row.append(p * Vector3(sz.x, sz.y * (2.4 if kind == "metal" else 1.0), sz.z) * 1.05)
+			row.append(p * sz * 1.05)
 		pts.append(row)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -397,19 +416,25 @@ static func debris_mesh(kind := "metal", variant := 0) -> ArrayMesh:
 	var m := st.commit()
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
+	mat.uv1_triplanar = true
+	mat.uv1_scale = Vector3.ONE * 20.0
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if kind == "metal":
 		mat.albedo_color = Color(0.68, 0.70, 0.74)
+		mat.albedo_texture = A.world_tex("steel_plate_a.png")
 		mat.metallic = 0.48
 		mat.roughness = 0.34
 	elif kind == "chitin":
 		mat.albedo_color = Color(0.42, 0.45, 0.30)
+		mat.albedo_texture = A._bug_tex("chitin_gray.png")
 		mat.metallic = 0.22
 		mat.roughness = 0.36
 		mat.clearcoat_enabled = true
 		mat.clearcoat = 0.8
 	else:
 		mat.albedo_color = Color(0.58, 0.54, 0.48)
+		mat.albedo_texture = A.world_tex("rock_strata_a.png")
 		mat.metallic = 0.05
 		mat.roughness = 0.88
 	m.surface_set_material(0, mat)

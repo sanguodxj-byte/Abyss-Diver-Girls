@@ -742,13 +742,14 @@ static func place_on_body(
 	tint_mat: Material = null,
 	y_off := -999.0,
 	with_stencil := false,
-	stencil_text := ""
+	stencil_text := "",
+	fit_height := true
 ) -> void:
 	var pf := get_prefab(id)
 	if pf.is_empty():
 		return
 	var bsz: Vector3 = pf["base_sz"]
-	var safe_sz := clamp_building_height(id, target_sz)
+	var safe_sz := clamp_building_height(id, target_sz) if fit_height else target_sz
 	var scl := Vector3(
 		maxf(0.15, safe_sz.x / maxf(0.1, bsz.x)),
 		maxf(0.15, safe_sz.y / maxf(0.1, bsz.y)),

@@ -266,25 +266,55 @@ static func _build_distress_visual() -> Node3D:
 
 static func _build_cargo_visual() -> Node3D:
 	var n := Node3D.new()
-	var M := A.paint(Color(0.32, 0.34, 0.3), 0.45, 0.58, {"wear": 0.72, "rust": 0.7, "dust": 0.5, "panel_scale": 1.2})
-	var M_RIB := A.paint(Color(0.24, 0.26, 0.24), 0.5, 0.58, {"rust": 0.8})
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
 	var body := Node3D.new()
 	n.add_child(body)
 	body.rotation_degrees = Vector3(18, 24, -12)
-	A.add(body, A.bevel_box(Vector3(2.4, 2.4, 6.0), 0.1), M, Vector3.ZERO)
-	for i in 7:
-		A.add(body, A.bevel_box(Vector3(2.50, 2.46, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.55 + i * 0.85))
-	for sx in [-1.18, 1.18]:
-		for sy in [-1.18, 1.18]:
-			for sz in [-2.96, 2.96]:
-				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
-	A.add(body, A.bevel_box(Vector3(2.52, 0.28, 6.04), 0.03), A.hazard(), Vector3(0, -0.95, 0))
-	for rx_c in [-0.75, 0.75]:
-		A.add(body, A.cyl(0.34, 0.45, 0.42, 12), M_DARK, Vector3(rx_c, 0.75, 3.12), Vector3(90, 0, 0))
+	_build_cargo_body(body, Vector3(2.4, 2.4, 6.0), false)
 	A.emitter(n, Vector3(0, 1.2, 0), {"amount": 24, "life": 0.7, "size": 0.7, "vmin": 1.0, "vmax": 2.6, "gravity": Vector3(0, 2.0, 0), "radius": 0.4,
 		"c0": Color(1.0, 0.75, 0.3), "cmid": Color(1.0, 0.35, 0.08), "c1": Color(0.4, 0.05, 0.0, 0.0), "grow0": 1.0, "grow1": 0.2})
 	return n
+
+
+static func _build_cargo_body(body: Node3D, size: Vector3, wrecked: bool) -> void:
+	var panel := A.corrugated(Color(0.31, 0.34, 0.31), 0.76, 0.64)
+	var roof := A.roof_mat(Color(0.38, 0.32, 0.28), 0.74, false)
+	var frame := A.metal(Color(0.18, 0.20, 0.21))
+	var dark := A.metal(Color(0.12, 0.13, 0.14))
+	var half := size * 0.5
+	# 底架与门框独立成形，开裂的一端能看进货舱内部。
+	A.add(body, A.bevel_box(Vector3(size.x, 0.20, size.z), 0.046), dark, Vector3(0, -half.y + 0.10, 0))
+	A.add(body, A.bevel_box(Vector3(size.x - 0.16, size.y - 0.30, 0.13), 0.03), panel, Vector3(0, 0, half.z - 0.09))
+	for side in [-1.0, 1.0]:
+		var x: float = side * (half.x - 0.08)
+		A.add(body, A.bevel_box(Vector3(0.15, size.y - 0.28, size.z - 0.12), 0.04), panel, Vector3(x, 0, 0))
+		for y in [-half.y + 0.15, half.y - 0.13]:
+			A.add(body, A.bevel_box(Vector3(0.21, 0.18, size.z), 0.025), frame, Vector3(x, y, 0))
+		for z in [-half.z + 0.12, 0.0, half.z - 0.12]:
+			A.add(body, A.bevel_box(Vector3(0.23, size.y, 0.22), 0.036), frame, Vector3(x, 0, z))
+		for z in [-half.z * 0.52, half.z * 0.52]:
+			A.add(body, A.bevel_box(Vector3(0.08, 0.82, 0.67), 0.020), A.hazard(), Vector3(x + side * 0.08, -0.46, z))
+		var door := Node3D.new()
+		door.position = Vector3(x, 0.0, -half.z + 0.11)
+		door.rotation_degrees.y = -side * (43.0 if wrecked else 0.0)
+		body.add_child(door)
+		var dx: float = -side * (half.x - 0.15) * 0.5
+		var door_size := Vector3(half.x - 0.16, size.y - 0.32, 0.16)
+		var door_mesh: Mesh = A.bevel_box(door_size, 0.035)
+		if wrecked and side < 0:
+			var edge := door_size * 0.5
+			door_mesh = A.prism(PackedVector2Array([Vector2(-edge.x, -edge.y), Vector2(edge.x, -edge.y),
+				Vector2(edge.x, edge.y - 0.52), Vector2(edge.x - 0.34, edge.y - 0.16),
+				Vector2(-edge.x, edge.y)]), door_size.z, 0.025)
+		A.add(door, door_mesh, panel, Vector3(dx, 0, 0))
+		A.add(door, A.cyl(0.045, size.y - 0.52, 0.045, 16), frame, Vector3(dx, 0, -0.11))
+		for y in [-0.47, 0.47]:
+			A.add(door, A.cyl(0.075, 0.28, 0.075, 16), dark, Vector3(0, y, -0.065))
+	for z in [-1, 0, 1]:
+		var tilt := Vector3(0, 0, 13.0) if wrecked and z == -1 else Vector3.ZERO
+		var pos := Vector3(0, half.y - 0.05, z * size.z / 3.0)
+		if wrecked and z == -1:
+			pos += Vector3(0.05, 0.13, 0)
+		A.add(body, A.bevel_box(Vector3(size.x - 0.18, 0.13, size.z / 3.0 - 0.06), 0.035), roof, pos, tilt)
 
 
 static func _build_wreck_visual() -> Node3D:
@@ -292,23 +322,11 @@ static func _build_wreck_visual() -> Node3D:
 	var yaw: float = 16.0
 	w.rotation_degrees.y = yaw
 	A.ground_vfx(w, A.cloud_tex(), Color(0.06, 0.05, 0.04, 0.78), 8.5, Vector3(0, 0.038, 0))
-	var M := A.paint(Color(0.28, 0.30, 0.26), 0.48, 0.62, {"wear": 0.75, "rust": 0.78, "grime": 0.85, "panel_scale": 1.2})
-	var M_RIB := A.paint(Color(0.20, 0.22, 0.20), 0.52, 0.60, {"rust": 0.85, "grime": 0.8})
-	var M_DARK := A.metal(Color(0.14, 0.15, 0.16))
 	var body := Node3D.new()
 	w.add_child(body)
 	body.position = Vector3(0, 0.92, 0)
 	body.rotation_degrees = Vector3(11, 0, -8)
-	A.add(body, A.bevel_box(Vector3(2.35, 2.25, 5.6), 0.10), M, Vector3.ZERO)
-	for i in 6:
-		A.add(body, A.bevel_box(Vector3(2.46, 2.32, 0.14), 0.03), M_RIB, Vector3(0, 0, -2.25 + i * 0.90))
-	for sx in [-1.14, 1.14]:
-		for sy in [-1.08, 1.08]:
-			for sz in [-2.76, 2.76]:
-				A.add(body, A.bevel_box(Vector3(0.26, 0.26, 0.28), 0.02), M_DARK, Vector3(sx, sy, sz))
-	A.add(body, A.bevel_box(Vector3(2.42, 0.26, 5.64), 0.03), A.hazard(), Vector3(0, 0.62, 0))
-	for rx_c in [-0.72, 0.72]:
-		A.add(body, A.cyl(0.32, 0.44, 0.40, 12), M_DARK, Vector3(rx_c, 0.65, 2.92), Vector3(90, 0, 0))
+	_build_cargo_body(body, Vector3(2.35, 2.25, 5.6), true)
 	for dk in 4:
 		var da := TAU * float(dk) / 4.0 + 0.4
 		A.add(w, A.rock_mesh((dk * 3 + 1) % 12), A.rock_mat(Color(0.26, 0.22, 0.18)),

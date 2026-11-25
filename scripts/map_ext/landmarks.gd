@@ -442,22 +442,35 @@ static func _boardwalk(raid, p: Vector3, rot: float) -> void:
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	var WOOD := A.paint(Color(0.32, 0.26, 0.19), 0.0, 0.9, {"wear": 0.7, "dust": 0.5, "panel_scale": 0.6})
-	A.add(n, A.bevel_box(Vector3(5.0, 0.24, 22.0), 0.05), WOOD, Vector3(0, 0.12, 0))
-	for k in 11:
-		A.add(n, A.bevel_box(Vector3(4.9, 0.03, 0.14), 0.01), A.paint(Color(0.24, 0.2, 0.15), 0.0, 0.9, {"wear": 0.8}), Vector3(0, 0.25, -10.0 + k * 2.0))
+	var WOOD := A.wood_mat(Color(0.38, 0.30, 0.22))
+	var OLD_WOOD := A.wood_mat(Color(0.29, 0.24, 0.18))
+	var planks := [4.93, 4.88, 4.96]
+	for k in 44:
+		A.add(n, A.bevel_box(Vector3(planks[k % 3], 0.14, 0.477), 0.022), WOOD if k % 7 < 4 else OLD_WOOD,
+			Vector3(float(k % 3 - 1) * 0.024, 0.17, -10.75 + k * 0.5), Vector3(0, 0, float(k % 5 - 2) * 0.24), Vector3.ONE, false)
 	for sx in [-2.3, 2.3]:
+		for k in 4:
+			A.add(n, A.bevel_box(Vector3(0.28, 0.21, 5.49), 0.03), OLD_WOOD, Vector3(sx * 0.83, 0.025, -8.25 + k * 5.5))
 		K.railing(raid, p + Vector3(sx, 0, 0).rotated(Vector3.UP, deg_to_rad(rot)), 22.0, rot + 90.0, 1.0)
 		for k in 4:
-			A.add(n, A.cyl(0.18, 2.6, 0.18, 16), A.paint(Color(0.26, 0.21, 0.15), 0.0, 0.9), Vector3(sx, -1.0, -8.0 + k * 5.4))
+			A.add(n, A.cyl(0.18, 2.6, 0.18, 16), OLD_WOOD, Vector3(sx, -1.0, -8.0 + k * 5.4))
 	# 观景亭：四柱 + 破顶（基座落地，立柱与坡顶紧密衔接）
 	var pav := Vector3(0, 0, -9.0)
 	A.add(n, A.bevel_box(Vector3(5.4, 0.26, 5.4), 0.05), A.concrete(Color(0.4, 0.38, 0.34), false), pav + Vector3(0, 0.13, 0))
 	for sx in [-2.0, 2.0]:
 		for sz in [-2.0, 2.0]:
-			A.add(n, A.cyl(0.14, 2.8, 0.14, 16), A.paint(Color(0.3, 0.24, 0.18), 0.0, 0.9), pav + Vector3(sx, 1.62, sz))
+			A.add(n, A.cyl(0.14, 2.8, 0.14, 16), WOOD, pav + Vector3(sx, 1.62, sz))
 			K.blocker(raid, p + (pav + Vector3(sx, 0, sz)).rotated(Vector3.UP, deg_to_rad(rot)), Vector3(0.3, 3.0, 0.3), 0.0, true)
-	A.add(n, A.prism(PackedVector2Array([Vector2(-3.0, 0), Vector2(0, 1.8), Vector2(3.0, 0)]), 5.0, 0.06), A.paint(Color(0.3, 0.24, 0.17), 0.1, 0.85, {"wear": 0.6}), pav + Vector3(0, 2.98, 0), Vector3(2, 6, 0))
+	var roof := A.roof_mat(Color(0.36, 0.29, 0.24), 0.78, true)
+	for sx in [-1, 1]:
+		for k in 5:
+			var z := -2.08 + k * 1.04
+			A.add(n, A.bevel_box(Vector3(3.46, 0.19, 0.15), 0.025), WOOD,
+				pav + Vector3(sx * 1.47, 3.82, z), Vector3(0, 0, -sx * 28.0))
+			if sx < 0 or k < 2:
+				A.add(n, A.bevel_box(Vector3(3.44, 0.14, 1.025), 0.025), roof,
+					pav + Vector3(sx * 1.46, 3.97, z + 0.05), Vector3(0, 0, -sx * 28.0))
+	A.add(n, A.bevel_box(Vector3(0.19, 0.20, 5.05), 0.04), OLD_WOOD, pav + Vector3(0, 4.72, 0))
 	K.bench(raid, p + pav.rotated(Vector3.UP, deg_to_rad(rot)) + Vector3(0, 0.2, 1.6).rotated(Vector3.UP, deg_to_rad(rot)), rot)
 	K.lamp(raid, p + Vector3(0, 0, -7.0).rotated(Vector3.UP, deg_to_rad(rot)), Color(1.0, 0.75, 0.45))
 
@@ -597,20 +610,38 @@ static func _rope_bridge(raid, p: Vector3, rot: float) -> void:
 	var dir := Vector3.FORWARD.rotated(Vector3.UP, deg_to_rad(rot))
 	var a := p - dir * 16.0
 	var b := p + dir * 16.0
+	var wood := A.wood_mat(Color(0.40, 0.33, 0.24))
+	var old_wood := A.wood_mat(Color(0.30, 0.24, 0.18))
+	var steel := A.metal(Color(0.30, 0.28, 0.26))
+	var pier := A.concrete(Color(0.42, 0.40, 0.36), true)
+	var pier_base := A.concrete(Color(0.36, 0.34, 0.31), false)
 	for q in [a, b]:
-		A.add(raid.world, A.bevel_box(Vector3(3.6, 6.0, 3.6), 0.12), A.concrete(Color(0.42, 0.4, 0.36), true), q + Vector3(0, 3.0, 0))
+		A.add(raid.world, A.bevel_box(Vector3(3.6, 1.15, 3.6), 0.12, 0.92), pier_base, q + Vector3(0, 0.575, 0), Vector3(0, rot, 0))
+		A.add(raid.world, A.bevel_box(Vector3(3.28, 4.76, 3.24), 0.17, 0.89), pier, q + Vector3(0, 3.42, 0), Vector3(0, rot, 0))
+		A.add(raid.world, A.bevel_box(Vector3(3.82, 0.28, 3.72), 0.055), steel, q + Vector3(0, 5.85, 0), Vector3(0, rot, 0))
 		K.blocker(raid, q, Vector3(3.6, 6.0, 3.6), rot)
 		raid.blocks.append(raid._rect_for(q, Vector3(3.8, 1, 3.8)))
 	var side := dir.cross(Vector3.UP)
-	for off in [-1.4, 1.4]:
-		K.cable(raid, a + side * off + Vector3(0, 6.0, 0), b + side * off + Vector3(0, 6.0, 0), 2.0, 0.05)
-	for k in 13:
-		var t := float(k) / 12.0
+	for off: float in [-0.96, 0.96]:
+		for q in [a, b]:
+			A.add(raid.world, A.bevel_box(Vector3(0.21, 0.94, 0.21), 0.04), steel,
+				q + side * off + Vector3(0, 6.37, 0), Vector3(0, rot, 0))
+		K.cable(raid, a + side * off + Vector3(0, 6.82, 0), b + side * off + Vector3(0, 6.82, 0), 2.1, 0.050)
+		K.cable(raid, a + side * off + Vector3(0, 5.50, 0), b + side * off + Vector3(0, 5.50, 0), 2.4, 0.042)
+		for k in range(1, 12):
+			var t := float(k) / 12.0
+			var q := a.lerp(b, t) + side * off
+			var deck_y := q.y + 5.4 - sin(t * PI) * 2.4
+			A.add(raid.world, A.cyl(0.030, 1.66, 0.030, 12), steel, Vector3(q.x, deck_y + 0.79, q.z), Vector3.ZERO, Vector3.ONE, false)
+	for k in range(2, 59):
+		if k in [11, 29, 30, 47]:
+			continue
+		var t := float(k) / 60.0
 		var q := a.lerp(b, t)
 		q.y = 5.4 - sin(t * PI) * 2.4
-		if k == 6:
-			continue
-		A.add(raid.world, A.bevel_box(Vector3(1.4, 0.12, 2.4), 0.03), A.paint(Color(0.34, 0.27, 0.19), 0.0, 0.9, {"wear": 0.8, "dust": 0.5}), q, Vector3(0, rot, 8.0 * (-1.0 if k % 2 == 0 else 1.0)))
+		var pitch := -rad_to_deg(atan(2.4 * PI / 32.0 * cos(t * PI)))
+		A.add(raid.world, A.bevel_box(Vector3(2.02, 0.13, 0.50), 0.027), wood if k % 5 < 3 else old_wood,
+			q, Vector3(pitch, rot, float(k % 5 - 2) * 1.8), Vector3.ONE, false)
 
 
 ## 深渊高压结晶矿脉露头与地质激光测绘阵（lm_crystal_survey_rig 精修巨构）
@@ -642,34 +673,61 @@ static func _drill_derrick(raid, p: Vector3, rot: float) -> void:
 	raid.blocks.append(raid._rect_for(p, Vector3(14.6, 1.0, 14.6)))
 
 
-## 干涸冷却渠：一条 60 米长的混凝土渠槽横切过场地，渠底开裂、盖板翻倒
+## 干涸冷却渠：分段导流槽、锈蚀供回管与中段检修道口。
 static func _coolant_channel(raid, p: Vector3, rot: float) -> void:
 	var n := Node3D.new()
+	n.name = "CoolingCanal"
 	raid.world.add_child(n)
 	n.position = p
 	n.rotation_degrees.y = rot
-	var M := A.concrete(Color(0.34, 0.33, 0.31), true)
+	var wall := A.concrete(Color(0.43, 0.40, 0.36), true)
+	var ribs := A.concrete(Color(0.30, 0.28, 0.26), false)
+	var pipe := A.paint(Color(0.32, 0.24, 0.20), 0.53, 0.62, {"rust": 0.72, "wear": 0.48})
+	var steel := A.metal(Color(0.24, 0.26, 0.27))
+	var bed := A.rock_mat(Color(0.31, 0.26, 0.23))
+	var silt := A.gravel_mat(Color(0.20, 0.25, 0.22))
 	for sx in [-3.4, 3.4]:
+		var inner: float = sx - signf(sx) * 0.43
 		for seg in [[-15.0, 30.0], [24.0, 12.0]]:
 			var cz: float = seg[0]
 			var lz: float = seg[1]
 			var wp := p + Vector3(sx, 0, cz).rotated(Vector3.UP, deg_to_rad(rot))
-			A.add(n, A.bevel_box(Vector3(0.8, 2.4, lz), 0.08), M, Vector3(sx, 1.2, cz))
 			K.blocker(raid, wp, Vector3(0.8, 2.4, lz), rot)
 			raid.blocks.append(raid._rect_for(wp, Vector3(0.9, 1, lz)))
-	A.add(n, A.bevel_box(Vector3(6.0, 0.26, 59.8), 0.05), A.concrete(Color(0.28, 0.27, 0.25), false), Vector3(0, 0.14, 0))
-	A.add(n, A.bevel_box(Vector3(7.4, 0.22, 17.8), 0.05), A.concrete(Color(0.32, 0.31, 0.29), false), Vector3(0, 0.19, 9.0))
+			var cells := int(lz / 6.0)
+			for i in cells:
+				var z := cz - lz * 0.5 + 3.0 + i * 6.0
+				A.add(n, A.bevel_box(Vector3(0.74, 2.28, 5.95), 0.11, 0.89), wall, Vector3(sx, 1.14, z))
+				A.add(n, A.bevel_box(Vector3(0.81, 0.18, 5.93), 0.045), ribs, Vector3(sx, 2.30, z))
+				A.add(n, A.bevel_box(Vector3(0.72, 2.26, 0.57), 0.07, 0.83), ribs, Vector3(sx, 1.13, z - 2.65))
+				A.add(n, A.cyl(0.18, 5.92, 0.18, 24), pipe, Vector3(inner, 1.79, z), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(n, A.cyl(0.26, 0.21, 0.26, 24), steel, Vector3(inner, 1.79, z - 2.87), Vector3(90, 0, 0), Vector3.ONE, false)
+				A.add(n, A.bevel_box(Vector3(0.48, 0.16, 0.34), 0.035), steel, Vector3(sx, 1.54, z), Vector3.ZERO, Vector3.ONE, false)
+	# 裂开的混凝土衬砌包住深色沉积槽。中心道口保持低矮，可沿原路线横穿。
+	for i in 12:
+		var z := -27.5 + i * 5.0
+		A.add(n, A.bevel_box(Vector3(2.55, 0.07, 4.99), 0.025), silt, Vector3(0, 0.045, z), Vector3.ZERO, Vector3.ONE, false)
+		for sx in [-2.17, 2.17]:
+			A.add(n, A.bevel_box(Vector3(1.7, 0.18, 4.91), 0.06, 0.94), wall if i % 3 == 0 else bed, Vector3(sx, 0.105, z), Vector3.ZERO, Vector3.ONE, false)
+		if i in [1, 4, 9, 11]:
+			for k in 8:
+				A.add(n, A.bevel_box(Vector3(2.48, 0.08, 0.09), 0.025), steel, Vector3(0, 0.105, z - 0.68 + k * 0.19), Vector3.ZERO, Vector3.ONE, false)
+	for i in 5:
+		A.add(n, A.bevel_box(Vector3(7.34, 0.15, 0.57), 0.045), steel, Vector3(0, 0.22, 7.8 + i * 0.61))
+	for z in [7.45, 10.59]:
+		A.add(n, A.bevel_box(Vector3(7.42, 0.12, 0.18), 0.025), A.hazard(), Vector3(0, 0.25, z), Vector3.ZERO, Vector3.ONE, false)
+	# 保留原有随机采样顺序，散放掀起的盖板与泥沙碎块。
 	for i in 6:
 		var zc := -26.0 + i * 10.0
 		var rx: float = raid.rng.randf_range(-1.2, 1.2)
 		var rot_v := Vector3(raid.rng.randf_range(-16, 16), raid.rng.randf_range(-6, 6), raid.rng.randf_range(-18, 18))
 		if zc < -2.0 or zc > 20.0:
-			A.add(n, A.bevel_box(Vector3(6.6, 0.2, 6.0), 0.04), A.concrete(Color(0.3, 0.29, 0.27), false), Vector3(rx, 0.62, zc), rot_v)
+			A.add(n, A.rock_mesh(i + 2), bed, Vector3(rx * 1.8, 0.16, zc), rot_v, Vector3(0.88, 0.33, 0.53))
 	for i in 5:
 		var zb := -24.0 + i * 12.0
 		var rot_b := Vector3(0, raid.rng.randf_range(-8, 8), raid.rng.randf_range(-30, 30))
 		if zb < -2.0 or zb > 20.0:
-			A.add(n, A.bevel_box(Vector3(1.0, 1.6, 0.14), 0.02), A.paint(Color(0.3, 0.29, 0.26), 0.5, 0.6, {"rust": 0.7}), Vector3(0, 0.75, zb), rot_b)
+			A.add(n, A.bevel_box(Vector3(0.96, 0.10, 1.54), 0.035), pipe, Vector3(1.26, 0.26, zb), rot_b)
 
 
 ## 程序化街区会在遗迹所在的整块街区里随机盖房，偶尔压进院落。

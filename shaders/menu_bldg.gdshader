@@ -14,7 +14,7 @@ varying highp vec2 bldg_seed;
 
 void vertex() {
 	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	wn = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 	ln = NORMAL;
 	bsz = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
 	lp = VERTEX * bsz;
@@ -27,7 +27,7 @@ void fragment() {
 	float ndl = max(dot(wn, L), 0.0);
 	float hgt = wp.y - ground_y;
 	float side = step(abs(ln.y), 0.5);
-	float u = abs(ln.x) > 0.5 ? lp.z : lp.x;
+	float u = side > 0.5 ? dot(lp.xz, vec2(-ln.z, ln.x)) : lp.x;
 	float fn = fbm(vec2(u * 0.25 + wp.x * 0.01, hgt * 0.3), 3);
 	vec3 c = cus.rgb * (0.78 + fn * 0.4);
 	vec3 sky_amb = mix(vec3(0.34, 0.36, 0.44), vec3(0.55, 0.42, 0.34), clamp(wn.y, 0.0, 1.0));

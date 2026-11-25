@@ -16,6 +16,7 @@ const A = preload("res://scripts/art.gd")
 const FM = preload("res://scripts/modules/field_models.gd")
 const DM = preload("res://scripts/modules/device_models.gd")
 const MM = preload("res://scripts/modules/munition_models.gd")
+const HS = preload("res://scripts/hs.gd")
 const Growth = preload("res://scripts/progression/growth.gd")
 const BuildingsExt = preload("res://scripts/buildings_ext.gd")
 const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
@@ -1842,14 +1843,8 @@ func _building(p: Vector3, size: Vector3, yaw := 0.0) -> void:
 		var M_WALL0: ShaderMaterial = A.brick(c0) if is_brick0 else (A.limestone(c0) if c0.v >= 0.58 else A.concrete(c0, false))
 		var sb0 := _bldg_body(size, p + Vector3(0, size.y * 0.5, 0))
 		sb0.rotation.y = -yaw
-		var hy0 := size.y * 0.5
-		var M_DARK := A.concrete(Color(0.30, 0.29, 0.27) if is_brick0 else c0.darkened(0.36), false)
-		var M_TRIM := A.limestone(Color(0.60, 0.57, 0.51)) if is_brick0 else A.concrete(c0.lightened(0.12), false)
-		_ibox(sb0, size, 0.02, M_WALL0)
-		_ibox(sb0, Vector3(size.x + 0.22, 0.32, size.z + 0.22), 0.02, M_DARK, Vector3(0, -hy0 + 0.16, 0))
-		_ibox(sb0, Vector3(size.x + 0.16, 0.14, size.z + 0.16), 0.02, M_TRIM, Vector3(0, hy0 - 0.04, 0))
-		if vista != null:
-			vista.add_box(p + Vector3(0.0, size.y * 0.5, 0.0), size, -yaw, c0, 0, sb0)
+		# 极窄地块沿用原有占地和高度，并使用岗亭的窗洞、门框和破损屋檐。
+		PrefabLib.place_on_body(self, sb0, "bldg_guard_kiosk", size, true, M_WALL0, -999.0, false, "", false)
 		return
 
 	var pf_id := "poi_generic_building"
@@ -10092,10 +10087,17 @@ func _build_rails() -> void:
 	var BALLAST: ShaderMaterial = _terrain_feather_mat(Color(0.35, 0.33, 0.31, 0.88), 0.44, 0.94, 0.10, -7)
 	var nb := _emit_soft_polys(st, ballast_polys, 0.62, 0.086)
 	_st_commit(st, BALLAST, nb)
-	_multimesh(A.bevel_box(Vector3.ONE, 0.02), A.paint(Color(0.3, 0.24, 0.18), 0.0, 0.9, {"wear": 0.4, "dust": 0.6, "panel_scale": 0.0}), ties, false)
-	_multimesh(A.bevel_box(Vector3.ONE, 0.0), A.metal(Color(0.42, 0.38, 0.34)), rails, false)
+	var rail_section := [
+		Vector2(0.50, -0.50), Vector2(0.50, -0.32), Vector2(0.20, -0.24),
+		Vector2(0.20, 0.19), Vector2(0.40, 0.28), Vector2(0.40, 0.50),
+		Vector2(-0.40, 0.50), Vector2(-0.40, 0.28), Vector2(-0.20, 0.19),
+		Vector2(-0.20, -0.24), Vector2(-0.50, -0.32), Vector2(-0.50, -0.50),
+	]
+	var rail_mesh := HS.loft(rail_section, [[-0.5, Vector2.ONE, Vector2.ZERO], [0.5, Vector2.ONE, Vector2.ZERO]])
+	_multimesh(A.bevel_box(Vector3.ONE, 0.02), A.wood_mat(Color(0.33, 0.27, 0.20)), ties, false)
+	_multimesh(rail_mesh, A.metal(Color(0.42, 0.38, 0.34)), rails, false)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.008), A.concrete(Color(0.37, 0.37, 0.36), true), x_slabs, false)
-	_multimesh(A.bevel_box(Vector3.ONE, 0.0), A.metal(Color(0.28, 0.28, 0.29)), x_guards, false)
+	_multimesh(rail_mesh, A.metal(Color(0.28, 0.28, 0.29)), x_guards, false)
 	_multimesh(A.bevel_box(Vector3.ONE, 0.004), A.hazard(), x_haz, false)
 
 
@@ -10139,19 +10141,32 @@ func _wagon(p: Vector3, horiz: bool) -> void:
 		_imesh(sb, A.cyl(0.50, 0.38, 0.54, 14), M_DARK, Vector3(0, 1.78, 0))
 		_ibox(sb, Vector3(1.56, 0.06, 2.2), 0.01, M_STEEL, Vector3(0, 1.76, 0), Vector3.ZERO, Vector3.ONE, false)
 		_ibox(sb, Vector3(0.08, 2.45, 0.44), 0.01, M_DARK, Vector3(1.38, 0.48, 0.0), Vector3.ZERO, Vector3.ONE, false)
+		for ry in 6:
+			_ibox(sb, Vector3(0.25, 0.06, 0.46), 0.015, M_STEEL, Vector3(1.39, -0.52 + ry * 0.38, 0), Vector3.ZERO, Vector3.ONE, false)
+		for sx in [-0.65, 0.65]:
+			_ibox(sb, Vector3(0.06, 0.50, 2.2), 0.015, M_DARK, Vector3(sx, 2.02, 0), Vector3.ZERO, Vector3.ONE, false)
+		_imesh(sb, A.cyl(0.14, 0.39, 0.17, 18), M_STEEL, Vector3(-0.39, 2.00, 0.61), Vector3.ZERO, Vector3.ONE, false)
 	else:
 		# 重型高边敞车与帆布捆扎重机设备箱：钢板矮帮 + 侧立柱 + 双联油布机械货箱
-		var M_TARP := A.paint(Color(0.32, 0.34, 0.27), 0.05, 0.88, {"wear": 0.5, "dust": 0.55, "panel_scale": 0.0})
+		var M_TARP := A.fabric_mat(Color(0.36, 0.38, 0.29), 0.76)
 		for sx in [-1.38, 1.38]:
 			_ibox(sb, Vector3(0.14, 1.05, 11.85), 0.02, M_BODY, Vector3(sx, -0.42, 0))
 			for ri in 6:
 				_ibox(sb, Vector3(0.20, 1.12, 0.14), 0.01, M_DARK, Vector3(sx * 1.03, -0.40, -4.5 + ri * 1.8), Vector3.ZERO, Vector3.ONE, false)
 		for ez in [-5.86, 5.86]:
 			_ibox(sb, Vector3(2.86, 1.08, 0.16), 0.02, M_BODY, Vector3(0, -0.40, ez))
+		var load_profile := PackedVector2Array([
+			Vector2(-1.19, -0.91), Vector2(1.19, -0.91), Vector2(1.16, 0.18),
+			Vector2(0.94, 0.69), Vector2(0.46, 0.92), Vector2(-0.38, 0.97),
+			Vector2(-0.99, 0.70), Vector2(-1.18, 0.25),
+		])
+		var load_mesh := A.prism(load_profile, 4.8, 0.07)
+		var strap_mesh := A.tube([Vector3(-1.17, 0.16, 0), Vector3(-1.0, 0.70, 0),
+			Vector3(-0.39, 0.99, 0), Vector3(0.48, 0.95, 0), Vector3(1.02, 0.67, 0), Vector3(1.17, 0.16, 0)], 0.036, 14, 8)
 		for cz in [-2.75, 2.75]:
-			_ibox(sb, Vector3(2.42, 1.95, 4.85), 0.06, M_TARP, Vector3(0, 0.58, cz))
+			_imesh(sb, load_mesh, M_TARP, Vector3(0, 0.58, cz))
 			for sz_s in [-1.4, 1.4]:
-				_ibox(sb, Vector3(2.48, 2.00, 0.09), 0.01, M_DARK, Vector3(0, 0.58, cz + sz_s), Vector3.ZERO, Vector3.ONE, false)
+				_imesh(sb, strap_mesh, M_DARK, Vector3(0, 0.58, cz + sz_s), Vector3.ZERO, Vector3.ONE, false)
 	blocks.append(_rect_for(p, fp + Vector3(1, 0, 1)))
 	add_contact_shadow(p, 4.2, 13.4, 90.0 if horiz else 0.0)
 
@@ -10517,30 +10532,28 @@ func _build_backdrop(sliced := false) -> void:
 				bd_cliffs.append(Transform3D(Basis(Vector3.UP, brng.randf() * TAU).scaled_local(Vector3(rsc * 1.4, rsc * 0.55, rsc)),
 					Vector3(cp_r.x + brng.randf_range(-2.2, 1.2), rsc * 0.18, cp_r.y)))
 
-	var box_m := BoxMesh.new()
-	box_m.size = Vector3.ONE
-	var win_box_m := BoxMesh.new()
-	win_box_m.size = Vector3.ONE
+	var hull_m := HS.distant_building_mesh()
+	var trim_m := A.bevel_box(Vector3.ONE, 0.018)
 	var gable_m := A.prism(PackedVector2Array([Vector2(-0.5, 0.0), Vector2(0.0, 1.0), Vector2(0.5, 0.0)]), 1.0, 0.01)
 	var saw_m := A.prism(PackedVector2Array([Vector2(-0.5, 0.0), Vector2(-0.18, 1.0), Vector2(0.5, 0.0)]), 1.0, 0.01)
 	var cyl_m := A.cyl(1.0, 1.0, 1.0, 14)
 	var silo_cyl_m := A.cyl(0.5, 1.0, 0.5, 16)
-	_multimesh(box_m, A.limestone(Color(0.54, 0.51, 0.47)), hull_con0)
-	_multimesh(box_m, A.concrete(Color(0.42, 0.41, 0.40), false), hull_con1)
-	_multimesh(box_m, A.brick(Color(0.41, 0.28, 0.22)), hull_brick)
-	_multimesh(box_m, A.corrugated(Color(0.36, 0.40, 0.43), 0.48, 0.32), hull_wh)
-	_multimesh(box_m, A.corrugated(Color(0.29, 0.32, 0.26), 0.40, 0.32), hull_mil)
-	_multimesh(box_m, A.concrete(Color(0.29, 0.28, 0.27), false), trim_dark, false)
-	_multimesh(box_m, A.tar_roof(Color(0.24, 0.25, 0.27)), roof_dark, false)
-	_multimesh(win_box_m, A.window_mat(0.14, Vector2(0.85, 0.55)), win_dark, false)
+	_multimesh(hull_m, A.limestone(Color(0.54, 0.51, 0.47)), hull_con0)
+	_multimesh(hull_m, A.concrete(Color(0.42, 0.41, 0.40), false), hull_con1)
+	_multimesh(hull_m, A.brick(Color(0.41, 0.28, 0.22)), hull_brick)
+	_multimesh(hull_m, A.corrugated(Color(0.36, 0.40, 0.43), 0.48, 0.32), hull_wh)
+	_multimesh(hull_m, A.corrugated(Color(0.29, 0.32, 0.26), 0.40, 0.32), hull_mil)
+	_multimesh(trim_m, A.concrete(Color(0.29, 0.28, 0.27), false), trim_dark, false)
+	_multimesh(trim_m, A.tar_roof(Color(0.24, 0.25, 0.27)), roof_dark, false)
+	_multimesh(trim_m, A.window_mat(0.14, Vector2(0.85, 0.55)), win_dark, false)
 	_multimesh(gable_m, A.roof_mat(Color(0.27, 0.31, 0.35), 0.32, true), gable_slate, false)
 	_multimesh(gable_m, A.roof_mat(Color(0.40, 0.26, 0.20), 0.46, true), gable_rust, false)
 	_multimesh(cyl_m, A.corrugated(Color(0.33, 0.36, 0.38), 0.50, 0.32), barrel_wh, false)
 	_multimesh(saw_m, A.roof_mat(Color(0.35, 0.26, 0.21), 0.55, true), saw_shed, false)
 	_multimesh(silo_cyl_m, A.paint(Color(0.45, 0.45, 0.42), 0.48, 0.64, {"rust": 0.72, "grime": 0.78, "wear": 0.52, "panel_scale": 0.35, "dust": 0.24}), tank_cyls)
 	_multimesh(silo_cyl_m, A.paint(Color(0.25, 0.26, 0.28), 0.52, 0.66, {"rust": 0.74, "grime": 0.82, "panel_scale": 0.0}), tank_rings, false)
-	_multimesh(box_m, A.corrugated(Color(0.24, 0.37, 0.49), 0.48, 0.38), cont_blue, false)
-	_multimesh(box_m, A.corrugated(Color(0.54, 0.29, 0.19), 0.55, 0.38), cont_rust, false)
+	_multimesh(trim_m, A.corrugated(Color(0.24, 0.37, 0.49), 0.48, 0.38), cont_blue, false)
+	_multimesh(trim_m, A.corrugated(Color(0.54, 0.29, 0.19), 0.55, 0.38), cont_rust, false)
 	_multimesh(A.tree_trunk_mesh(1), A.bark_mat(), bd_trunks, false)
 	_multimesh(A.pine_crown_mesh(1), A.foliage_mat("pine"), bd_pines, false)
 	_multimesh(A.broad_crown_mesh(1), A.foliage_mat("broad"), bd_broads, false)

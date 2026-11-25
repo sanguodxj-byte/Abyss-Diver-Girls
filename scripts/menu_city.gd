@@ -15,12 +15,13 @@ const H_SCALE := 1.0        ## 楼高按战区原比例（与俯拍贴图里的�
 const SPEED := 6.0          ## 地面流速（米/秒）
 const VIEW_X := 2900.0      ## 楼体生成的 x 半宽
 const VIEW_ZMIN := -2700.0
+const HS = preload("res://scripts/hs.gd")
 
 var layouts: Array = []     ## 每张图的楼房列表
 var cells: Array = []       ## [i][j] -> {map, k, mirror, urban}
 var ground_mat: ShaderMaterial
 var bldg_mat: ShaderMaterial
-var box_mesh: ArrayMesh
+var building_mesh: ArrayMesh
 var city: Node3D
 var cols := {}              ## 世界列号 -> MultiMeshInstance3D
 var offset := 0.0
@@ -153,15 +154,7 @@ func setup(sky_mat: ShaderMaterial, sun_dir: Vector3) -> void:
 	for p in common:
 		if common[p] != null:
 			bldg_mat.set_shader_parameter(p, common[p])
-	var st := SurfaceTool.new()
-	st.create_from(BoxMesh.new(), 0)
-	var arr := st.commit_to_arrays()
-	var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	for vi in vs.size():
-		vs[vi].y += 0.5
-	arr[Mesh.ARRAY_VERTEX] = vs
-	box_mesh = ArrayMesh.new()
-	box_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	building_mesh = HS.distant_building_mesh(true)
 	city = Node3D.new()
 	city.position = Vector3(0, -ALT, 0)
 	add_child(city)
@@ -378,7 +371,7 @@ func _build_col(wi: int) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
-	mm.mesh = box_mesh
+	mm.mesh = building_mesh
 	mm.instance_count = xf.size()
 	for n in xf.size():
 		mm.set_instance_transform(n, xf[n])

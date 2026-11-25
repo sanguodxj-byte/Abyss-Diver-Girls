@@ -8,6 +8,7 @@ extends RefCounted
 ##   - geothermal_vault  零号深渊井 · 地热磁约束腔（八角加劲钢肋压力安全壳 + 裂隙泄压穹顶 + 双联地热冷凝换热塔）
 
 const A = preload("res://scripts/art.gd")
+const HS = preload("res://scripts/hs.gd")
 const K = preload("res://scripts/map_ext/poi_kit.gd")
 const PrefabLib = preload("res://scripts/buildings/prefab_lib.gd")
 
@@ -164,9 +165,21 @@ static func _spillway_dam(raid, p: Vector3, rot: float) -> void:
 	var M_ST := A.paint(Color(0.24, 0.30, 0.33), 0.62, 0.50, {"rust": 0.68, "wear": 0.56})
 	var M_RST := A.paint(Color(0.36, 0.23, 0.15), 0.52, 0.66, {"rust": 0.88, "wear": 0.60})
 	var M_HAZ := A.hazard()
-	# 消力池混凝土护坦前场（长宽 24m，平齐可战）+ 导流消力齿墩（低矮倒角不卡步足）
-	A.add(n, A.bevel_box(Vector3(24.0, 0.16, 25.0), 0.05), M_WET, Vector3(0, 0.08, 0.6), Vector3.ZERO, Vector3.ONE, false)
-	A.add(n, A.bevel_box(Vector3(18.6, 0.08, 14.8), 0.03), M_CON, Vector3(0, 0.16, 4.6), Vector3.ZERO, Vector3.ONE, false)
+	# 消力池护坦由连续施工缝和排水沟分段，表面全程与原步足通路平齐。
+	var M_SILT := A.gravel_mat(Color(0.30, 0.29, 0.25))
+	var M_DAMP := A.concrete(Color(0.42, 0.41, 0.38), true)
+	var apron_slab := A.bevel_box(Vector3(4.67, 0.16, 4.91), 0.06)
+	var drain := A.bevel_box(Vector3(0.76, 0.07, 0.12), 0.02)
+	for row in 5:
+		for col in 5:
+			var mat := M_DAMP if row < 3 or (row == 3 and col == 1) else M_CON
+			var x := (col - 2) * 4.8
+			if col == 2:
+				mat = M_SILT
+			A.add(n, apron_slab, mat, Vector3(x, 0.08, -9.4 + row * 5.0), Vector3.ZERO, Vector3.ONE, false)
+	for sx in [-1, 1]:
+		for ri in 12:
+			A.add(n, drain, M_ST, Vector3(sx * 2.35, 0.18, 7.6 + ri * 0.28), Vector3.ZERO, Vector3.ONE, false)
 	# 后部重力溢流坝主体墙（z = -9.6m，高 13.8m，宽 25.2m）
 	A.add(n, A.bevel_box(Vector3(25.2, 13.2, 4.6), 0.12), M_CON, Vector3(0, 6.6, -10.2))
 	A.add(n, A.bevel_box(Vector3(25.6, 3.6, 6.4), 0.10), M_WET, Vector3(0, 1.8, -9.4))
@@ -180,7 +193,15 @@ static func _spillway_dam(raid, p: Vector3, rot: float) -> void:
 		A.add(n, A.bevel_box(Vector3(1.6, 4.2, 9.4), 0.08), M_WET, Vector3(sx * 11.2, 2.1, -0.8))
 		A.add(n, A.bevel_box(Vector3(1.8, 0.36, 9.6), 0.04), M_CON, Vector3(sx * 11.2, 4.3, -0.8))
 		_add_pillar_block(raid, p, Vector3(sx * 11.2, 0, -0.8), Vector3(1.8, 4.4, 9.5), rot)
-	# 双孔巨型钢制弧形溢洪闸门（Tainter Gate）+ 溢流滑道面 + 支撑斜臂
+	# 弧形双闸的剖面沿坝宽放样，让受光面、加劲肋和支臂贴着同一曲面。
+	var gate_section: Array[Vector2] = []
+	for i in 9:
+		var y := -2.8 + i * 0.7
+		gate_section.append(Vector2(-_gate_bulge(y), y))
+	for i in range(8, -1, -1):
+		var y := -2.8 + i * 0.7
+		gate_section.append(Vector2(0.22 - _gate_bulge(y), y))
+	var gate_mesh := HS.loft(gate_section, [[-3.3, Vector2.ONE, Vector2.ZERO], [3.3, Vector2.ONE, Vector2.ZERO]])
 	for gx: float in [-4.8, 4.8]:
 		# 溢流曲面滑槽
 		A.add(n, A.bevel_box(Vector3(6.8, 0.65, 6.2), 0.06), M_WET, Vector3(gx, 4.6, -6.8), Vector3(38, 0, 0))
@@ -189,11 +210,13 @@ static func _spillway_dam(raid, p: Vector3, rot: float) -> void:
 		n.add_child(gate)
 		gate.position = Vector3(gx, 8.4, -7.2)
 		gate.rotation_degrees.x = 14.0
-		A.add(gate, A.bevel_box(Vector3(6.6, 5.6, 0.48), 0.04), M_ST, Vector3.ZERO)
+		A.add(gate, gate_mesh, M_ST, Vector3.ZERO, Vector3(0, 90, 0))
 		for ri in 4:
 			var ry := -2.1 + ri * 1.4
-			A.add(gate, A.bevel_box(Vector3(6.7, 0.28, 0.72), 0.02), M_RST, Vector3(0, ry, 0.16))
-		A.add(gate, A.bevel_box(Vector3(6.52, 0.42, 0.56), 0.02), M_HAZ, Vector3(0, 2.65, 0.05))
+			A.add(gate, A.bevel_box(Vector3(6.7, 0.24, 0.24), 0.035), M_RST, Vector3(0, ry, _gate_bulge(ry) + 0.08))
+			for sx in [-3.19, 3.19]:
+				A.add(gate, A.cyl(0.088, 0.1, 0.088, 16), M_ST, Vector3(sx, ry, _gate_bulge(ry) + 0.22), Vector3(90, 0, 0))
+		A.add(gate, A.bevel_box(Vector3(6.52, 0.32, 0.26), 0.036), M_HAZ, Vector3(0, 2.65, _gate_bulge(2.65) + 0.05))
 		for ax: float in [-2.6, 2.6]:
 			A.add(n, A.bevel_box(Vector3(0.36, 0.42, 4.4), 0.02), M_RST, Vector3(gx + ax, 7.6, -9.0), Vector3(-16, 0, 0))
 	# 坝顶交通廊桥、压型钢板卷扬启闭机房与混凝土调度控制室（总高 18.6m）
@@ -214,6 +237,10 @@ static func _spillway_dam(raid, p: Vector3, rot: float) -> void:
 	A.add(n, A.bevel_box(Vector3(5.95, 0.24, 3.95), 0.04), M_WET, Vector3(0, 19.1, -7.8))
 
 
+static func _gate_bulge(y: float) -> float:
+	return sqrt(4.55 * 4.55 - y * y) - 3.55
+
+
 # ---------------------------------------------------------------- 5. 裂谷矿区：斗轮挖掘机平台 (bucket_excavator)
 static func _bucket_excavator(raid, p: Vector3, rot: float) -> void:
 	var n := Node3D.new()
@@ -228,8 +255,14 @@ static func _bucket_excavator(raid, p: Vector3, rot: float) -> void:
 	var M_DARK := A.metal(DARK_STEEL)
 	var M_CAB_WIN := A.window_mat(0.34, Vector2(0.56, 0.52))
 	var M_HAZ := A.hazard()
-	# 采掘工作面碎石硬化台阶平台
-	A.add(n, A.bevel_box(Vector3(23.0, 0.16, 26.0), 0.05), M_PAD, Vector3(0, 0.08, 1.0), Vector3.ZERO, Vector3.ONE, false)
+	# 两道履带压实的碎石路基，中间保留原地表。散石限定在工作面边缘。
+	for sx in [-1.0, 1.0]:
+		for i in 5:
+			var z := -9.4 + i * 4.95
+			A.add(n, A.bevel_box(Vector3(4.8, 0.08, 5.12), 0.03, 0.90), M_PAD,
+				Vector3(sx * 4.4, 0.05, z), Vector3(0, float(i % 3 - 1) * 3.0, 0), Vector3.ONE, false)
+			A.add(n, A.rock_mesh(i + 4), M_PAD, Vector3(sx * (9.1 + i % 2 * 1.15), 0.14, z),
+				Vector3(0, i * 42.0, 0), Vector3(1.1, 0.36, 0.82), false)
 	# 双巨型履带行走底盘（置于 z = -7.8m，前场 z = -1..+13m 为开阔矿台，斗轮悬于前场上空！）
 	var base := Vector3(0, 0, -7.8)
 	for sx: float in [-1.0, 1.0]:
@@ -274,14 +307,27 @@ static func _bucket_excavator(raid, p: Vector3, rot: float) -> void:
 		A.add(n, A.bevel_box(Vector3(0.58, 9.2, 0.62), 0.03), M_ST, base + Vector3(sx * 2.4, 13.6, -0.2), Vector3(8, 0, sx * 12.0))
 	A.add(n, A.bevel_box(Vector3(3.8, 0.9, 1.2), 0.04), M_RST, base + Vector3(0, 17.8, -0.8))
 	A.add(n, A.bevel_box(Vector3(4.2, 1.6, 8.6), 0.05), M_ST, base + Vector3(0, 8.4, -7.8), Vector3(-6, 0, 0))
-	A.add(n, A.bevel_box(Vector3(5.6, 3.2, 3.4), 0.08), A.concrete(Color(0.38, 0.36, 0.33), true), base + Vector3(0, 7.6, -12.2))
+	var ballast := base + Vector3(0, 7.6, -12.2)
+	A.add(n, A.bevel_box(Vector3(5.62, 0.29, 3.40), 0.06), M_DARK, ballast + Vector3(0, -1.42, 0))
+	for sx in [-1.42, 1.42]:
+		A.add(n, A.bevel_box(Vector3(2.70, 2.97, 3.32), 0.18, 0.86), M_YEL_CLAD, ballast + Vector3(sx, 0.09, 0))
+		for sz in [-1.48, 1.48]:
+			A.add(n, A.bevel_box(Vector3(2.56, 0.23, 0.19), 0.035), M_RST, ballast + Vector3(sx, 1.47, sz))
+		for x_off in [-0.82, 0.82]:
+			A.add(n, A.bevel_box(Vector3(0.18, 2.50, 0.16), 0.028), M_ST, ballast + Vector3(sx + x_off, -0.1, -1.67))
 	# 向前上方悬挑的 15.6m 巨型斗轮钢桁臂（离地净空 5.4m..8.8m，机甲与首领可在斗轮下方自由穿行激战！）
 	var boom := Node3D.new()
 	n.add_child(boom)
 	boom.position = base + Vector3(0, 7.4, 3.2)
 	boom.rotation_degrees.x = -5.0
 	for sx: float in [-1.35, 1.35]:
-		A.add(boom, A.bevel_box(Vector3(0.42, 1.55, 13.8), 0.03), M_YEL, Vector3(sx, 0, 6.4))
+		for y in [-0.56, 0.66]:
+			A.add(boom, A.bevel_box(Vector3(0.33, 0.24, 13.8), 0.04), M_YEL, Vector3(sx, y, 6.4))
+		for i in 7:
+			var z := -0.38 + i * 1.95
+			A.add(boom, A.bevel_box(Vector3(0.24, 1.36, 0.20), 0.027), M_ST, Vector3(sx, 0.05, z))
+			A.add(boom, A.bevel_box(Vector3(0.18, 0.19, 2.30), 0.022), M_YEL, Vector3(sx, 0.05, z + 0.97),
+				Vector3(32 if i % 2 == 0 else -32, 0, 0))
 	A.add(boom, A.bevel_box(Vector3(2.3, 0.36, 13.4), 0.02), M_DARK, Vector3(0, -0.52, 6.4))
 	for bi in 6:
 		var bz := 1.0 + bi * 2.2
@@ -300,8 +346,19 @@ static func _bucket_excavator(raid, p: Vector3, rot: float) -> void:
 	for bi in 10:
 		var ba := TAU * float(bi) / 10.0
 		var bp := wc + Vector3(0, sin(ba) * 3.35, cos(ba) * 3.35)
-		A.add(n, A.bevel_box(Vector3(1.18, 0.86, 1.05), 0.04), M_YEL if bi % 2 == 0 else M_RST, bp, Vector3(-rad_to_deg(ba), 0, 0))
-		A.add(n, A.bevel_box(Vector3(1.24, 0.16, 0.32), 0.02), M_HAZ, bp + Vector3(0, sin(ba) * 0.45, cos(ba) * 0.45), Vector3(-rad_to_deg(ba), 0, 0))
+		var bucket := Node3D.new()
+		n.add_child(bucket)
+		bucket.position = bp
+		bucket.rotation_degrees.x = -rad_to_deg(ba)
+		A.add(bucket, A.bevel_box(Vector3(1.15, 0.14, 0.93), 0.055), M_RST, Vector3(0, -0.32, -0.08))
+		A.add(bucket, A.bevel_box(Vector3(1.13, 0.61, 0.18), 0.04, 0.88), M_YEL, Vector3(0, -0.03, -0.46), Vector3(-17, 0, 0))
+		var cheek := A.prism(PackedVector2Array([Vector2(-0.49, -0.31), Vector2(0.44, -0.31),
+			Vector2(0.24, 0.15), Vector2(-0.42, 0.30)]), 0.11, 0.025)
+		for sx in [-0.53, 0.53]:
+			A.add(bucket, cheek, M_YEL, Vector3(sx, 0, 0), Vector3(0, -90, 0))
+		A.add(bucket, A.bevel_box(Vector3(1.21, 0.14, 0.24), 0.025), M_ST, Vector3(0, -0.30, 0.43))
+		for tx in [-0.40, 0.0, 0.40]:
+			A.add(bucket, A.bevel_box(Vector3(0.16, 0.14, 0.26), 0.035, 0.66), M_HAZ, Vector3(tx, -0.28, 0.57), Vector3(-11, 0, 0))
 
 
 # ---------------------------------------------------------------- 6. 零号深渊井：地热磁约束腔 (geothermal_vault)

@@ -5,6 +5,7 @@ const Prof = preload("res://scripts/prof.gd")
 const MechScript = preload("res://scripts/mech.gd")
 
 const A = preload("res://scripts/art.gd")
+const K = preload("res://scripts/modules/kit.gd")
 
 var hp := 260.0
 var raid
@@ -33,8 +34,8 @@ func setup(r) -> void:
 	cs.position.y = 2.0
 	add_child(cs)
 
-	var M_SLAG := A.concrete(Color(0.15, 0.14, 0.13), false)
-	var M_CONC := A.concrete(Color(0.40, 0.39, 0.37), false)
+	var M_SLAG := A.rock_mat(Color(0.26, 0.20, 0.16))
+	var M_CONC := A.rock_mat(Color(0.33, 0.29, 0.25))
 	var M_IRON := A.metal(Color(0.20, 0.21, 0.23))
 	var M_STEEL := A.metal(Color(0.34, 0.36, 0.38))
 	var M_RUST := A.paint(Color(0.42, 0.22, 0.15), 0.35, 0.72, {"rust": 0.65, "wear": 0.55})
@@ -44,12 +45,12 @@ func setup(r) -> void:
 	var M_HAZ := A.hazard()
 	var M_GLOW := A.emit(Color(1.0, 0.40, 0.11), 1.35)
 
-	# 1. 破土焦黑矿渣地面裙边 + 八角重铸铁竖井井圈 + 深黑炉膛内壁
-	A.add(self, A.cyl(4.4, 0.06, 5.8, 24), M_SLAG, Vector3(0, 0.03, 0), Vector3.ZERO, Vector3.ONE, false)
-	A.add(self, A.cyl(2.05, 0.68, 2.38, 8), M_IRON, Vector3(0, 0.34, 0))
-	A.add(self, A.torus(1.62, 1.94, 16), M_BRASS, Vector3(0, 0.70, 0), Vector3.ZERO, Vector3(1.0, 0.55, 1.0))
-	A.add(self, A.cyl(1.46, 2.05, 1.52, 16), M_RUST, Vector3(0, 1.05, 0))
-	A.add(self, A.cyl(1.32, 2.12, 1.32, 16), M_BORE, Vector3(0, 1.08, 0), Vector3.ZERO, Vector3.ONE, false)
+	# 破土边缘由不等高的断岩包住收分的铸铁井圈。
+	A.ground_vfx(self, A.grime_stain_tex(), Color(0.15, 0.11, 0.08, 0.80), 10.5, Vector3(0, 0.026, 0))
+	A.add(self, A.cyl(1.98, 0.68, 2.28, 32), M_IRON, Vector3(0, 0.34, 0))
+	A.add(self, A.torus(1.61, 1.93, 32), M_BRASS, Vector3(0, 0.70, 0), Vector3.ZERO, Vector3(1, 0.55, 1))
+	A.add(self, A.cyl(1.30, 2.05, 1.54, 28), M_RUST, Vector3(0, 1.05, 0))
+	A.add(self, A.cyl(1.20, 2.12, 1.33, 28), M_BORE, Vector3(0, 1.08, 0), Vector3.ZERO, Vector3.ONE, false)
 	# 顶部铸钢排烟吊装冠环
 	A.add(self, A.torus(0.76, 1.02, 16), M_IRON, Vector3(0, 3.06, 0), Vector3.ZERO, Vector3(1.0, 0.60, 1.0))
 	A.add(self, A.cyl(0.68, 0.16, 0.68, 12), M_BORE, Vector3(0, 3.06, 0), Vector3.ZERO, Vector3.ONE, false)
@@ -61,9 +62,12 @@ func setup(r) -> void:
 		var sa := sin(a)
 		var yaw := rad_to_deg(atan2(ca, sa))
 		# 破土翻起的混凝土残块与外露扭曲螺纹钢筋
-		var rc := 2.65 + float(i % 3) * 0.22
-		A.add(self, A.bevel_box(Vector3(1.05, 0.32, 0.78), 0.05, 0.85), M_CONC,
-			Vector3(ca * rc, 0.16, sa * rc), Vector3(-22.0 - float(i % 2) * 8.0, yaw, float(i % 3 - 1) * 7.0))
+		var rc := 2.37 + float(i % 3) * 0.32
+		var rock_scale := Vector3(1.12 + float(i % 3) * 0.19, 0.36 + float(i % 4) * 0.12, 0.76)
+		A.add(self, A.rock_mesh(i + 3), M_SLAG if i % 3 != 1 else M_CONC,
+			Vector3(ca * rc, 0.17, sa * rc), Vector3(-12.0, yaw + float(i % 4) * 17.0, float(i % 3 - 1) * 12.0), rock_scale)
+		A.add(self, A.rock_mesh(i + 6), M_CONC if i % 3 != 1 else M_SLAG,
+			Vector3(ca * (rc + 1.05), 0.08, sa * (rc + 0.76)), Vector3(0, yaw + 32.0, 0), Vector3(0.42, 0.23, 0.34), false)
 		A.add(self, A.cyl(0.024, 0.68, 0.022, 6), M_RUST,
 			Vector3(ca * (rc - 0.15), 0.42, sa * (rc - 0.15)), Vector3(-34.0, yaw + 12.0, 0), Vector3.ONE, false)
 		# 地锚驻锄底座 + 警示黄端头
@@ -73,8 +77,14 @@ func setup(r) -> void:
 			A.add(self, A.bevel_box(Vector3(0.46, 0.10, 0.24), 0.02), M_HAZ,
 				Vector3(ca * 2.48, 0.32, sa * 2.48), Vector3(0, yaw, 0))
 		# 外翻液压防爆花瓣舱门 + 镀铬顶杆
-		A.add(self, A.bevel_box(Vector3(0.76, 1.72, 0.15), 0.03, 0.78), M_STEEL if i % 2 == 0 else M_RUST,
-			Vector3(ca * 1.78, 1.48, sa * 1.78), Vector3(-28.0, yaw, 0))
+		var notch := 0.46 if i % 3 == 0 else 0.80
+		var panel := [Vector2(-0.39, -0.78), Vector2(0.38, -0.78), Vector2(0.44, 0.22),
+			Vector2(0.23, notch), Vector2(-0.19, 0.83), Vector2(-0.36, 0.45)]
+		var door_rot := Vector3(-24.0 - float(i % 3) * 9.0, yaw, float(i % 3 - 1) * 10.0)
+		var door_pos := Vector3(ca * 1.79, 1.44, sa * 1.79)
+		K.plate(self, panel, 0.16, M_STEEL if i % 2 == 0 else M_RUST, door_pos, door_rot, 0.025)
+		A.add(self, A.bevel_box(Vector3(0.12, 0.91, 0.10), 0.022), M_IRON,
+			door_pos + Vector3(ca * 0.10, -0.06, sa * 0.10), door_rot, Vector3.ONE, false)
 		A.add(self, A.cyl(0.065, 0.76, 0.075, 8), M_IRON,
 			Vector3(ca * 2.02, 0.68, sa * 2.02), Vector3(24.0, yaw, 0))
 		A.add(self, A.cyl(0.038, 0.68, 0.038, 8), M_CHROME,
@@ -84,6 +94,10 @@ func setup(r) -> void:
 			Vector3(ca * 1.18, 2.38, sa * 1.18), Vector3(22.0, yaw, 0))
 		A.add(self, A.bevel_box(Vector3(0.28, 0.14, 0.08), 0.015), M_GLOW,
 			Vector3(ca * 1.44, 0.92, sa * 1.44), Vector3(0, yaw, 0), Vector3.ONE, false)
+		if i % 2 == 0:
+			var hose_path := [Vector3(ca * 1.10, 2.64, sa * 1.10), Vector3(ca * 1.58, 2.38, sa * 1.58),
+				Vector3(ca * 1.98, 0.73, sa * 1.98), Vector3(ca * 2.35, 0.53, sa * 2.35)]
+			A.add(self, A.tube(hose_path, 0.079, 16, 8), M_BORE, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 
 	# 3. 井膛中央感应熔炼炉芯（保留 pulse 呼吸缩放与受击脉动）
 	pulse = A.add(self, A.cyl(0.54, 0.96, 0.64, 10), M_GLOW, Vector3(0, 2.18, 0), Vector3.ZERO, Vector3.ONE, false)
